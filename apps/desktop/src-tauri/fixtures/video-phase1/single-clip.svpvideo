@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "11111111-1111-4111-8111-111111111111",
+  "name": "Phase 1 single-clip fixture",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "currentRevisionId": "22222222-2222-4222-8222-222222222222",
+  "revisions": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "parentRevisionId": null,
+      "sequenceNumber": 0,
+      "committedAt": "2026-01-01T00:00:00.000Z",
+      "commandSummary": "Created deterministic single-clip fixture",
+      "state": {
+        "asset": {
+          "id": "33333333-3333-4333-8333-333333333333",
+          "displayName": "single-clip.mp4",
+          "locator": {
+            "relativePath": "single-clip.mp4"
+          },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "realFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 1,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 129211
+          }
+        },
+        "sequence": {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "rate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "width": 320,
+          "height": 180,
+          "audioSampleRate": 48000,
+          "videoTracks": [
+            {
+              "id": "55555555-5555-4555-8555-555555555555",
+              "clips": [
+                {
+                  "id": "66666666-6666-4666-8666-666666666666",
+                  "assetId": "33333333-3333-4333-8333-333333333333",
+                  "timelineStart": {
+                    "value": 0,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceIn": {
+                    "value": 0,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceOut": {
+                    "value": 60,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
