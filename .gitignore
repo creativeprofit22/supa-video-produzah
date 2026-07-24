@@ -1,0 +1,42 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+target/
+*.tsbuildinfo
+
+# Local state, logs, and environment
+*.log
+*.local
+.env
+.env.*
+!.env.example
+.cache/
+coverage/
+
+# Product-owned runtime artifacts
+video-phase1/
+*.svp-part-*.mp4
+*.temp-render.mp4
+*.svpvideo.autosave
+
+# User media is never committed; retain the deterministic fixture only
+*.mp4
+!apps/desktop/src-tauri/fixtures/video-phase1/single-clip.mp4
+
+# Evidence is committed only from the documented evidence directory
+screenshots/
+!apps/desktop/evidence/
+!apps/desktop/evidence/**
+
+# IDE and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

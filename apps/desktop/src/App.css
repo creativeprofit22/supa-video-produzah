@@ -1,0 +1,26 @@
+:root {
+  color: #f4f4f3;
+  background: #111210;
+  font-family: sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.boot-shell {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  text-align: center;
+}
+
+.boot-shell h1,
+.boot-shell p {
+  margin: 0;
+}
+
+.boot-shell p {
+  margin-block-start: 0.5rem;
+  color: #a9aaa5;
+}

@@ -1,0 +1,9 @@
+node_modules
+dist
+target
+**/src-tauri/gen/**
+**/.vscode/**
+pnpm-lock.yaml
+*.mp4
+.gg
+ROADMAP.md
