@@ -1,10 +1,18 @@
 import {
   mediaProbeSchema,
+  prepareVideoAssetRequestSchema,
+  preparedVideoAssetSchema,
   VideoDomainError,
   videoErrorCodes,
   videoToolStatusSchema,
 } from "@supa-video/contracts";
-import type { MediaProbe, VideoErrorCode, VideoToolStatus } from "@supa-video/contracts";
+import type {
+  MediaProbe,
+  PreparedVideoAsset,
+  PrepareVideoAssetRequest,
+  VideoErrorCode,
+  VideoToolStatus,
+} from "@supa-video/contracts";
 import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
 
@@ -77,4 +85,12 @@ export async function pickVideoSource(): Promise<string | null> {
 export async function probeVideoSource(path: string): Promise<MediaProbe> {
   const response = await invokeVideoCommand("video_probe_media", { path });
   return parseResponse(mediaProbeSchema.safeParse(response));
+}
+
+export async function prepareVideoAsset(
+  request: PrepareVideoAssetRequest,
+): Promise<PreparedVideoAsset> {
+  const args = prepareVideoAssetRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_prepare_asset", args);
+  return parseResponse(preparedVideoAssetSchema.safeParse(response));
 }

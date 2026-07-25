@@ -1,6 +1,7 @@
 use std::{ffi::OsString, fs, io, path::Path, time::Duration};
 
 use serde::Deserialize;
+use serde_json::Value;
 use tauri::{Runtime, State, WebviewWindow};
 
 use super::{
@@ -8,8 +9,8 @@ use super::{
     grants::{GrantCategory, VideoPathGrants},
     process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec, SupervisedOutput},
     types::{
-        MediaAudioShape, MediaProbe, RationalRate, VideoToolInfo, VideoToolProblem,
-        VideoToolStatus, MAX_SAFE_INTEGER,
+        MediaAudioShape, MediaColorMetadata, MediaDisplayShape, MediaProbe, RationalRate,
+        VideoToolInfo, VideoToolProblem, VideoToolStatus, MAX_SAFE_INTEGER,
     },
 };
 
@@ -20,7 +21,7 @@ const MAX_VERSION_LINE_CHARS: usize = 256;
 const MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const MEDIA_PROBE_STDOUT_LIMIT: usize = 1024 * 1024;
 const MEDIA_PROBE_STDERR_TAIL_LIMIT: usize = 64 * 1024;
-const FFPROBE_ENTRIES: &str = "format=duration,size:stream=codec_type,codec_name,duration,width,height,avg_frame_rate,r_frame_rate,sample_rate,channels:stream_disposition=attached_pic";
+const FFPROBE_ENTRIES: &str = "format=duration,size:stream=index,codec_type,codec_name,duration,width,height,pix_fmt,color_range,color_space,color_primaries,color_transfer,avg_frame_rate,r_frame_rate,sample_aspect_ratio,display_aspect_ratio,sample_rate,channels:stream_disposition=attached_pic:stream_tags=rotate:stream_side_data=rotation";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VideoTool {
@@ -149,8 +150,19 @@ pub(crate) async fn probe_media_with_program(
     cancellation: ProcessCancellation,
 ) -> Result<MediaProbe, VideoCommandError> {
     let source = grants.authorize(owner_label, GrantCategory::Source, requested_path)?;
-    let file_size_bytes = fs::metadata(&source)
-        .map_err(|_| VideoCommandError::invalid_media("probe_media", "metadata"))?
+    probe_trusted_media_with_program(&source, ffprobe_program, cancellation, "probe_media")
+        .await
+        .map(|inspected| inspected.probe)
+}
+
+pub(crate) async fn probe_trusted_media_with_program(
+    trusted_path: &Path,
+    ffprobe_program: OsString,
+    cancellation: ProcessCancellation,
+    operation: &'static str,
+) -> Result<InspectedMedia, VideoCommandError> {
+    let file_size_bytes = fs::metadata(trusted_path)
+        .map_err(|_| VideoCommandError::invalid_media(operation, "metadata"))?
         .len();
     let spec = ProcessSpec {
         program: ffprobe_program,
@@ -162,9 +174,9 @@ pub(crate) async fn probe_media_with_program(
             OsString::from("-show_entries"),
             OsString::from(FFPROBE_ENTRIES),
             OsString::from("-i"),
-            source.into_os_string(),
+            trusted_path.as_os_str().to_owned(),
         ],
-        operation: "probe_media",
+        operation,
         timeout: MEDIA_PROBE_TIMEOUT,
         stdout_limit: MEDIA_PROBE_STDOUT_LIMIT,
         stderr_tail_limit: MEDIA_PROBE_STDERR_TAIL_LIMIT,
@@ -172,12 +184,12 @@ pub(crate) async fn probe_media_with_program(
     let output = run_supervised(spec, cancellation)
         .await
         .map_err(map_probe_process_failure)?;
-    parse_ffprobe_json(&output.stdout, file_size_bytes).map_err(|error| {
+    parse_ffprobe_json_inspected(&output.stdout, file_size_bytes).map_err(|error| {
         let category = match error {
             ProbeParseError::InvalidJson => "invalid_json",
             ProbeParseError::InvalidMedia => "unsupported_metadata",
         };
-        VideoCommandError::invalid_media("probe_media", category)
+        VideoCommandError::invalid_media(operation, category)
     })
 }
 
@@ -210,6 +222,16 @@ fn map_probe_process_failure(failure: ProcessFailure) -> VideoCommandError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InspectedMedia {
+    pub(crate) probe: MediaProbe,
+    pub(crate) video_stream_index: u64,
+    pub(crate) audio_stream_index: Option<u64>,
+    pub(crate) pixel_format: Option<String>,
+    pub(crate) color: MediaColorMetadata,
+    pub(crate) display_shape: MediaDisplayShape,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeParseError {
     InvalidJson,
@@ -230,16 +252,26 @@ struct ProbeFormat {
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
+    index: Option<u64>,
     codec_type: Option<String>,
     codec_name: Option<String>,
     duration: Option<String>,
     width: Option<u64>,
     height: Option<u64>,
+    pix_fmt: Option<String>,
+    color_range: Option<String>,
+    color_space: Option<String>,
+    color_primaries: Option<String>,
+    color_transfer: Option<String>,
     avg_frame_rate: Option<String>,
     r_frame_rate: Option<String>,
+    sample_aspect_ratio: Option<String>,
+    display_aspect_ratio: Option<String>,
     sample_rate: Option<String>,
     channels: Option<u64>,
     disposition: Option<ProbeDisposition>,
+    tags: Option<ProbeTags>,
+    side_data_list: Option<Vec<ProbeSideData>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,19 +279,41 @@ struct ProbeDisposition {
     attached_pic: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ProbeTags {
+    rotate: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeSideData {
+    rotation: Option<Value>,
+}
+
 struct SelectedVideo<'a> {
     stream: &'a ProbeStream,
+    stream_index: u64,
     codec_name: String,
+    pixel_format: Option<String>,
+    color: MediaColorMetadata,
     width: u64,
     height: u64,
     average_frame_rate: RationalRate,
     real_frame_rate: RationalRate,
+    display_shape: MediaDisplayShape,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_ffprobe_json(
     bytes: &[u8],
     file_size_bytes: u64,
 ) -> Result<MediaProbe, ProbeParseError> {
+    parse_ffprobe_json_inspected(bytes, file_size_bytes).map(|inspected| inspected.probe)
+}
+
+pub(crate) fn parse_ffprobe_json_inspected(
+    bytes: &[u8],
+    file_size_bytes: u64,
+) -> Result<InspectedMedia, ProbeParseError> {
     let envelope: ProbeEnvelope =
         serde_json::from_slice(bytes).map_err(|_| ProbeParseError::InvalidJson)?;
     parse_probe_envelope(envelope, file_size_bytes)
@@ -268,12 +322,13 @@ pub(crate) fn parse_ffprobe_json(
 fn parse_probe_envelope(
     envelope: ProbeEnvelope,
     file_size_bytes: u64,
-) -> Result<MediaProbe, ProbeParseError> {
+) -> Result<InspectedMedia, ProbeParseError> {
     let selected = envelope
         .streams
         .iter()
-        .filter(|stream| stream.codec_type.as_deref() == Some("video"))
-        .find_map(select_video_stream)
+        .enumerate()
+        .filter(|(_, stream)| stream.codec_type.as_deref() == Some("video"))
+        .find_map(|(position, stream)| select_video_stream(stream, position))
         .ok_or(ProbeParseError::InvalidMedia)?;
 
     parse_positive_integer_text(
@@ -298,19 +353,24 @@ fn parse_probe_envelope(
         })
         .ok_or(ProbeParseError::InvalidMedia)?;
 
-    let audio = envelope
+    let (audio, audio_stream_index) = match envelope
         .streams
         .iter()
-        .find(|stream| stream.codec_type.as_deref() == Some("audio"))
-        .map(parse_audio_stream)
-        .transpose()?
-        .flatten();
+        .enumerate()
+        .find(|(_, stream)| stream.codec_type.as_deref() == Some("audio"))
+    {
+        Some((position, stream)) => (
+            parse_audio_stream(stream)?,
+            Some(selected_stream_index(stream, position)?),
+        ),
+        None => (None, None),
+    };
 
     let variable_frame_rate =
         rates_differ_over_tolerance(&selected.average_frame_rate, &selected.real_frame_rate)
             .ok_or(ProbeParseError::InvalidMedia)?;
 
-    MediaProbe::checked(
+    let probe = MediaProbe::checked(
         duration_microseconds,
         selected.average_frame_rate,
         selected.real_frame_rate,
@@ -321,10 +381,18 @@ fn parse_probe_envelope(
         audio,
         file_size_bytes,
     )
-    .ok_or(ProbeParseError::InvalidMedia)
+    .ok_or(ProbeParseError::InvalidMedia)?;
+    Ok(InspectedMedia {
+        probe,
+        video_stream_index: selected.stream_index,
+        audio_stream_index,
+        pixel_format: selected.pixel_format,
+        color: selected.color,
+        display_shape: selected.display_shape,
+    })
 }
 
-fn select_video_stream(stream: &ProbeStream) -> Option<SelectedVideo<'_>> {
+fn select_video_stream(stream: &ProbeStream, position: usize) -> Option<SelectedVideo<'_>> {
     if stream
         .disposition
         .as_ref()?
@@ -333,6 +401,7 @@ fn select_video_stream(stream: &ProbeStream) -> Option<SelectedVideo<'_>> {
     {
         return None;
     }
+    let stream_index = selected_stream_index(stream, position).ok()?;
     let codec_name = normalize_codec_name(stream.codec_name.as_deref()?)?;
     let width = stream
         .width
@@ -350,14 +419,38 @@ fn select_video_stream(stream: &ProbeStream) -> Option<SelectedVideo<'_>> {
         .as_deref()
         .and_then(parse_rational_rate)
         .unwrap_or_else(|| average.clone());
+    let sample_aspect_ratio = parse_optional_aspect_ratio(stream.sample_aspect_ratio.as_deref())?
+        .unwrap_or(RationalRate {
+            numerator: 1,
+            denominator: 1,
+        });
+    let calculated_display_aspect_ratio =
+        calculate_display_aspect_ratio(width, height, &sample_aspect_ratio)?;
+    let display_aspect_ratio = parse_optional_aspect_ratio(stream.display_aspect_ratio.as_deref())?
+        .unwrap_or_else(|| calculated_display_aspect_ratio.clone());
+    if display_aspect_ratio != calculated_display_aspect_ratio {
+        return None;
+    }
+    let rotation_degrees = parse_rotation_degrees(stream)?;
+    let display_shape =
+        MediaDisplayShape::checked(sample_aspect_ratio, display_aspect_ratio, rotation_degrees)?;
 
     Some(SelectedVideo {
         stream,
+        stream_index,
         codec_name,
+        pixel_format: stream.pix_fmt.as_deref().and_then(normalize_codec_name),
+        color: MediaColorMetadata {
+            color_range: normalize_optional_metadata(stream.color_range.as_deref()),
+            color_space: normalize_optional_metadata(stream.color_space.as_deref()),
+            color_primaries: normalize_optional_metadata(stream.color_primaries.as_deref()),
+            color_transfer: normalize_optional_metadata(stream.color_transfer.as_deref()),
+        },
         width,
         height,
         average_frame_rate: average,
         real_frame_rate: real,
+        display_shape,
     })
 }
 
@@ -381,20 +474,105 @@ fn parse_audio_stream(stream: &ProbeStream) -> Result<Option<MediaAudioShape>, P
         .ok_or(ProbeParseError::InvalidMedia)
 }
 
+fn selected_stream_index(
+    stream: &ProbeStream,
+    fallback_position: usize,
+) -> Result<u64, ProbeParseError> {
+    stream
+        .index
+        .or_else(|| u64::try_from(fallback_position).ok())
+        .filter(|index| *index <= MAX_SAFE_INTEGER)
+        .ok_or(ProbeParseError::InvalidMedia)
+}
+
 fn normalize_codec_name(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty() && value.encode_utf16().count() <= 512).then(|| value.to_owned())
 }
 
+fn normalize_optional_metadata(value: Option<&str>) -> Option<String> {
+    value.and_then(normalize_codec_name)
+}
+
 fn parse_rational_rate(value: &str) -> Option<RationalRate> {
-    let (numerator, denominator) = value.split_once('/')?;
-    if denominator.contains('/') {
+    parse_rational(value, '/')
+}
+
+fn parse_optional_aspect_ratio(value: Option<&str>) -> Option<Option<RationalRate>> {
+    match value.map(str::trim) {
+        None | Some("") | Some("N/A") | Some("0:1") => Some(None),
+        Some(value) => parse_rational(value, ':').map(Some),
+    }
+}
+
+fn parse_rational(value: &str, separator: char) -> Option<RationalRate> {
+    let (numerator, denominator) = value.split_once(separator)?;
+    if denominator.contains(separator) {
         return None;
     }
     RationalRate::checked_reduced(
         parse_positive_integer_text(numerator).ok()?,
         parse_positive_integer_text(denominator).ok()?,
     )
+}
+
+fn calculate_display_aspect_ratio(
+    width: u64,
+    height: u64,
+    sample_aspect_ratio: &RationalRate,
+) -> Option<RationalRate> {
+    let numerator = u128::from(width).checked_mul(u128::from(sample_aspect_ratio.numerator))?;
+    let denominator =
+        u128::from(height).checked_mul(u128::from(sample_aspect_ratio.denominator))?;
+    let divisor = greatest_common_divisor_u128(numerator, denominator);
+    RationalRate::checked_reduced(
+        u64::try_from(numerator / divisor).ok()?,
+        u64::try_from(denominator / divisor).ok()?,
+    )
+}
+
+fn parse_rotation_degrees(stream: &ProbeStream) -> Option<u16> {
+    let mut side_data_rotation = None;
+    for value in stream
+        .side_data_list
+        .iter()
+        .flatten()
+        .filter_map(|side_data| side_data.rotation.as_ref())
+    {
+        let rotation = normalize_rotation(parse_rotation_value(value)?)?;
+        if side_data_rotation.is_some_and(|existing| existing != rotation) {
+            return None;
+        }
+        side_data_rotation = Some(rotation);
+    }
+    if let Some(rotation) = side_data_rotation {
+        return Some(rotation);
+    }
+
+    match stream.tags.as_ref().and_then(|tags| tags.rotate.as_deref()) {
+        Some(value) => normalize_rotation(value.trim().parse::<i64>().ok()?),
+        None => Some(0),
+    }
+}
+
+fn parse_rotation_value(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str()?.trim().parse::<i64>().ok())
+}
+
+fn normalize_rotation(degrees: i64) -> Option<u16> {
+    let normalized = degrees.rem_euclid(360);
+    matches!(normalized, 0 | 90 | 180 | 270).then(|| normalized as u16)
+}
+
+fn greatest_common_divisor_u128(mut left: u128, mut right: u128) -> u128 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
 }
 
 fn parse_positive_integer_text(value: &str) -> Result<u64, ProbeParseError> {

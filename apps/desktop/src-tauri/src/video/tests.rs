@@ -1,12 +1,14 @@
 use std::{
+    cell::Cell,
     env,
     ffi::OsString,
     fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::mpsc,
     thread,
-    time::Duration,
+    time::{Duration, UNIX_EPOCH},
 };
 
 use serde::Deserialize;
@@ -14,15 +16,28 @@ use serde_json::Value;
 use tempfile::{tempdir, NamedTempFile};
 
 use super::{
+    derived::{
+        acquire_profile_cache_lock_with, artifact_paths, artifact_paths_in_validated_cache,
+        cache_pair_is_valid_with, create_temp_artifacts, duration_within_one_frame,
+        ensure_profile_cache_directory, fit_proxy_dimensions, fit_proxy_dimensions_for_display,
+        map_cache_error, one_frame_tolerance_microseconds, prepare_asset_core,
+        promote_validated_pair, promote_validated_pair_with, proxy_ffmpeg_args, run_derived_ffmpeg,
+        source_fingerprint, source_fingerprint_with_profile, thumbnail_ffmpeg_args,
+        unix_time_parts, validate_proxy_artifact, validate_thumbnail_artifact, ArtifactFileFacts,
+        ArtifactValidationError, CacheLifecycleError, DerivedArtifactPaths, DerivedModelError,
+        MediaPrograms, OutputDimensions, PrepareAssetCoreRequest, SourceIdentity,
+        ValidatedDerivedInput, PREVIEW_PROFILE,
+    },
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
     probe::{
-        parse_ffprobe_json, parse_tool_banner, probe_media_with_program, tool_info_from_result,
-        video_ffmpeg_status_with_programs, VideoTool,
+        parse_ffprobe_json, parse_ffprobe_json_inspected, parse_tool_banner,
+        probe_media_with_program, probe_trusted_media_with_program, tool_info_from_result,
+        video_ffmpeg_status_with_programs, InspectedMedia, VideoTool,
     },
     process::{
-        run_supervised_with_test_environment, ProcessCancellation, ProcessFailure, ProcessSpec,
-        SupervisedOutput,
+        run_supervised, run_supervised_with_test_environment, ProcessCancellation, ProcessFailure,
+        ProcessSpec, SupervisedOutput,
     },
     project_io::{
         atomic_save_with, dialog_path, ensure_canonical_source_containment, open_project_from_path,
@@ -30,8 +45,9 @@ use super::{
         MAX_PROJECT_BYTES,
     },
     types::{
-        is_recognizable_absolute_path, parse_project_json, parse_project_value, RationalRate,
-        VideoProjectFileV1, VideoToolProblem,
+        is_recognizable_absolute_path, parse_project_json, parse_project_value, MediaAudioShape,
+        MediaColorMetadata, MediaDisplayShape, MediaProbe, RationalRate, VideoProjectFileV1,
+        VideoToolProblem,
     },
 };
 
@@ -368,6 +384,16 @@ fn create_file_symlink(source: &Path, link: &Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_file(source, link)
 }
 
+#[cfg(unix)]
+fn create_directory_symlink(source: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, link)
+}
+
+#[cfg(windows)]
+fn create_directory_symlink(source: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(source, link)
+}
+
 #[test]
 fn successful_atomic_save_replaces_with_pretty_valid_json() {
     let directory = tempdir().expect("temporary directory must be created");
@@ -513,6 +539,1801 @@ fn named_temp_file_type_remains_same_directory_capable() {
     let directory = tempdir().expect("temporary directory must be created");
     let temporary = NamedTempFile::new_in(directory.path()).expect("temp file must be created");
     assert_eq!(temporary.path().parent(), Some(directory.path()));
+}
+
+const DERIVED_PROJECT_ID: &str = "11111111-1111-4111-8111-111111111111";
+const DERIVED_ASSET_ID: &str = "22222222-2222-4222-8222-222222222222";
+
+fn derived_rate() -> RationalRate {
+    RationalRate {
+        numerator: 30_000,
+        denominator: 1_001,
+    }
+}
+
+fn derived_identity(path: &Path) -> SourceIdentity<'_> {
+    SourceIdentity {
+        canonical_path: path,
+        file_size_bytes: 129_211,
+        modified_unix_seconds: 1_700_000_000,
+        modified_nanoseconds: 123_456_789,
+    }
+}
+
+fn display_shape(
+    sample_numerator: u64,
+    sample_denominator: u64,
+    display_numerator: u64,
+    display_denominator: u64,
+    rotation_degrees: u16,
+) -> MediaDisplayShape {
+    MediaDisplayShape::checked(
+        RationalRate::checked_reduced(sample_numerator, sample_denominator)
+            .expect("test sample aspect ratio must be valid"),
+        RationalRate::checked_reduced(display_numerator, display_denominator)
+            .expect("test display aspect ratio must be valid"),
+        rotation_degrees,
+    )
+    .expect("test display shape must be valid")
+}
+
+fn expected_ffmpeg_prefix(source: &Path) -> Vec<OsString> {
+    let mut args: Vec<OsString> = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    args.push(source.as_os_str().to_owned());
+    args
+}
+
+fn extend_os_tokens(args: &mut Vec<OsString>, tokens: &[&str]) {
+    args.extend(tokens.iter().map(OsString::from));
+}
+
+#[test]
+fn derived_identity_validation_rejects_malicious_ids_and_non_reduced_rates() {
+    let uppercase_project = DERIVED_PROJECT_ID.to_ascii_uppercase();
+    let input = ValidatedDerivedInput::new(&uppercase_project, DERIVED_ASSET_ID, derived_rate())
+        .expect("canonical uppercase UUID text must normalize safely");
+    assert_eq!(input.project_segment, DERIVED_PROJECT_ID);
+    assert_eq!(input.asset_segment, DERIVED_ASSET_ID);
+
+    for malicious in [
+        "../11111111-1111-4111-8111-111111111111",
+        "11111111-1111-4111-8111-111111111111/escape",
+        r"11111111-1111-4111-8111-111111111111\escape",
+        "11111111111141118111111111111111",
+        "11111111-1111-9111-8111-111111111111",
+        "11111111-1111-4111-c111-111111111111",
+        "",
+    ] {
+        assert_eq!(
+            ValidatedDerivedInput::new(malicious, DERIVED_ASSET_ID, derived_rate()),
+            Err(DerivedModelError::ProjectId),
+            "malicious project ID must fail: {malicious:?}"
+        );
+        assert_eq!(
+            ValidatedDerivedInput::new(DERIVED_PROJECT_ID, malicious, derived_rate()),
+            Err(DerivedModelError::AssetId),
+            "malicious asset ID must fail: {malicious:?}"
+        );
+    }
+
+    for invalid_rate in [
+        RationalRate {
+            numerator: 0,
+            denominator: 1,
+        },
+        RationalRate {
+            numerator: 1,
+            denominator: 0,
+        },
+        RationalRate {
+            numerator: 60,
+            denominator: 2,
+        },
+        RationalRate {
+            numerator: 9_007_199_254_740_992,
+            denominator: 1,
+        },
+    ] {
+        assert_eq!(
+            ValidatedDerivedInput::new(DERIVED_PROJECT_ID, DERIVED_ASSET_ID, invalid_rate),
+            Err(DerivedModelError::SequenceRate)
+        );
+    }
+}
+
+#[test]
+fn derived_unix_time_parts_preserve_pre_epoch_timestamps() {
+    assert_eq!(unix_time_parts(UNIX_EPOCH), Some((0, 0)));
+    assert_eq!(
+        unix_time_parts(UNIX_EPOCH + Duration::new(1, 250_000_000)),
+        Some((1, 250_000_000))
+    );
+    assert_eq!(
+        unix_time_parts(UNIX_EPOCH - Duration::new(1, 250_000_000)),
+        Some((-2, 750_000_000))
+    );
+    assert_eq!(
+        unix_time_parts(UNIX_EPOCH - Duration::from_secs(1)),
+        Some((-1, 0))
+    );
+}
+
+#[test]
+fn derived_geometry_fits_landscape_portrait_odd_and_tiny_sources_without_upscaling() {
+    assert_eq!(
+        fit_proxy_dimensions(1_920, 1_080).expect("landscape dimensions must fit"),
+        OutputDimensions {
+            width: 1_280,
+            height: 720
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions(1_080, 1_920).expect("portrait dimensions must fit"),
+        OutputDimensions {
+            width: 404,
+            height: 720
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions(2_560, 1_080).expect("wide dimensions must fit"),
+        OutputDimensions {
+            width: 1_280,
+            height: 540
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions(640, 360).expect("small dimensions must not upscale"),
+        OutputDimensions {
+            width: 640,
+            height: 360
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions(321, 181).expect("odd dimensions must round down"),
+        OutputDimensions {
+            width: 320,
+            height: 180
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions(3, 3).expect("small viable dimensions must remain viable"),
+        OutputDimensions {
+            width: 2,
+            height: 2
+        }
+    );
+    for (width, height) in [(0, 10), (10, 0), (1, 100), (100, 1)] {
+        assert_eq!(
+            fit_proxy_dimensions(width, height),
+            Err(DerivedModelError::Dimensions)
+        );
+    }
+}
+
+#[test]
+fn derived_geometry_uses_rotation_and_pixel_aspect_for_display_correct_outputs() {
+    assert_eq!(
+        fit_proxy_dimensions_for_display(1_920, 1_080, &display_shape(1, 1, 16, 9, 90))
+            .expect("rotated source dimensions must fit"),
+        OutputDimensions {
+            width: 404,
+            height: 720,
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions_for_display(720, 576, &display_shape(16, 15, 4, 3, 0))
+            .expect("anamorphic source dimensions must fit"),
+        OutputDimensions {
+            width: 720,
+            height: 540,
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions_for_display(720, 576, &display_shape(16, 15, 4, 3, 270))
+            .expect("rotated anamorphic source dimensions must fit"),
+        OutputDimensions {
+            width: 540,
+            height: 720,
+        }
+    );
+    assert_eq!(
+        fit_proxy_dimensions_for_display(720, 576, &display_shape(16, 15, 4, 3, 180))
+            .expect("half-turn source dimensions must fit"),
+        OutputDimensions {
+            width: 720,
+            height: 540,
+        }
+    );
+}
+
+#[test]
+fn derived_fingerprint_is_stable_and_invalidates_on_every_identity_and_profile_input() {
+    let directory = tempdir().expect("temporary root must be created");
+    let source = directory.path().join("source clip.mp4");
+    let other_source = directory.path().join("other clip.mp4");
+    let identity = derived_identity(&source);
+    let rate = derived_rate();
+    let baseline = source_fingerprint(&identity, &rate).expect("fingerprint must be created");
+    assert_eq!(baseline.len(), 64);
+    assert!(baseline
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    assert_eq!(
+        source_fingerprint(&identity, &rate).expect("fingerprint must be deterministic"),
+        baseline
+    );
+
+    for changed_identity in [
+        SourceIdentity {
+            canonical_path: &other_source,
+            ..identity.clone()
+        },
+        SourceIdentity {
+            file_size_bytes: identity.file_size_bytes + 1,
+            ..identity.clone()
+        },
+        SourceIdentity {
+            modified_unix_seconds: identity.modified_unix_seconds + 1,
+            ..identity.clone()
+        },
+        SourceIdentity {
+            modified_nanoseconds: identity.modified_nanoseconds + 1,
+            ..identity.clone()
+        },
+    ] {
+        assert_ne!(
+            source_fingerprint(&changed_identity, &rate).expect("changed identity must hash"),
+            baseline
+        );
+    }
+    for changed_rate in [
+        RationalRate {
+            numerator: 24_000,
+            denominator: 1_001,
+        },
+        RationalRate {
+            numerator: 30_000,
+            denominator: 1_003,
+        },
+    ] {
+        assert_ne!(
+            source_fingerprint(&identity, &changed_rate).expect("changed rate must hash"),
+            baseline
+        );
+    }
+
+    macro_rules! assert_profile_field_is_hashed {
+        ($field:ident, $changed:expr) => {{
+            let mut profile = PREVIEW_PROFILE;
+            profile.$field = $changed;
+            assert_ne!(
+                source_fingerprint_with_profile(&identity, &rate, &profile)
+                    .expect("changed profile must hash"),
+                baseline,
+                "profile field was omitted from fingerprint: {}",
+                stringify!($field)
+            );
+        }};
+    }
+    assert_profile_field_is_hashed!(directory_name, "preview-v2");
+    assert_profile_field_is_hashed!(proxy_max_width, 1_278);
+    assert_profile_field_is_hashed!(proxy_max_height, 718);
+    assert_profile_field_is_hashed!(scale_flags, "bicubic");
+    assert_profile_field_is_hashed!(proxy_video_encoder, "h264");
+    assert_profile_field_is_hashed!(proxy_video_encoder_color_range, "full");
+    assert_profile_field_is_hashed!(proxy_preset, "fast");
+    assert_profile_field_is_hashed!(proxy_crf, 22);
+    assert_profile_field_is_hashed!(proxy_pixel_format, "yuv422p");
+    assert_profile_field_is_hashed!(proxy_sample_aspect_ratio, "4/3");
+    assert_profile_field_is_hashed!(proxy_color_range, "pc");
+    assert_profile_field_is_hashed!(proxy_color_space, "smpte170m");
+    assert_profile_field_is_hashed!(proxy_color_primaries, "smpte170m");
+    assert_profile_field_is_hashed!(proxy_color_transfer, "smpte170m");
+    assert_profile_field_is_hashed!(proxy_hdr_linear_transfer, "bt709");
+    assert_profile_field_is_hashed!(proxy_hdr_nominal_peak_luminance, "203");
+    assert_profile_field_is_hashed!(proxy_hdr_intermediate_pixel_format, "gbrp16le");
+    assert_profile_field_is_hashed!(proxy_hdr_tonemap, "mobius");
+    assert_profile_field_is_hashed!(proxy_hdr_tonemap_desaturation, "1");
+    assert_profile_field_is_hashed!(proxy_hdr_signal_peak, "4");
+    assert_profile_field_is_hashed!(proxy_hdr_dither, "ordered");
+    assert_profile_field_is_hashed!(proxy_movflags, "empty_moov");
+    assert_profile_field_is_hashed!(proxy_audio_encoder, "pcm_s16le");
+    assert_profile_field_is_hashed!(proxy_audio_bitrate, "128k");
+    assert_profile_field_is_hashed!(proxy_audio_sample_rate, 44_100);
+    assert_profile_field_is_hashed!(thumbnail_count, 9);
+    assert_profile_field_is_hashed!(thumbnail_cell_width, 158);
+    assert_profile_field_is_hashed!(thumbnail_cell_height, 88);
+    assert_profile_field_is_hashed!(thumbnail_pad_color, "white");
+    assert_profile_field_is_hashed!(thumbnail_tile_layout, "5x2");
+    assert_profile_field_is_hashed!(thumbnail_encoder, "png");
+    assert_profile_field_is_hashed!(thumbnail_quality, 3);
+
+    let relative = Path::new("relative/source.mp4");
+    assert_eq!(
+        source_fingerprint(&derived_identity(relative), &rate),
+        Err(DerivedModelError::SourceIdentity)
+    );
+    let invalid_timestamp = SourceIdentity {
+        modified_nanoseconds: 1_000_000_000,
+        ..identity
+    };
+    assert_eq!(
+        source_fingerprint(&invalid_timestamp, &rate),
+        Err(DerivedModelError::SourceIdentity)
+    );
+}
+
+#[test]
+fn derived_artifact_paths_are_safe_descendants_with_owned_names() {
+    let directory = tempdir().expect("temporary cache root must be created");
+    let input = ValidatedDerivedInput::new(DERIVED_PROJECT_ID, DERIVED_ASSET_ID, derived_rate())
+        .expect("derived input must validate");
+    let fingerprint = "a".repeat(64);
+    let paths = artifact_paths(directory.path(), &input, &fingerprint)
+        .expect("artifact paths must be built");
+    let expected_directory = directory
+        .path()
+        .join("video-phase1")
+        .join(DERIVED_PROJECT_ID)
+        .join(DERIVED_ASSET_ID)
+        .join("preview-v1");
+    assert_eq!(paths.profile_directory, expected_directory);
+    assert_eq!(
+        paths.proxy_path,
+        expected_directory.join(format!("proxy-{fingerprint}.mp4"))
+    );
+    assert_eq!(
+        paths.thumbnail_path,
+        expected_directory.join(format!("thumbnail-{fingerprint}.jpg"))
+    );
+    assert!(paths.profile_directory.starts_with(directory.path()));
+    assert!(paths.proxy_path.starts_with(directory.path()));
+    assert!(paths.thumbnail_path.starts_with(directory.path()));
+
+    for unsafe_fingerprint in [
+        "a",
+        "../escape",
+        &"A".repeat(64),
+        &format!("{}g", "a".repeat(63)),
+    ] {
+        assert_eq!(
+            artifact_paths(directory.path(), &input, unsafe_fingerprint),
+            Err(DerivedModelError::Fingerprint)
+        );
+    }
+}
+
+#[test]
+fn derived_duration_tolerance_is_exactly_one_ceil_frame() {
+    let rate = derived_rate();
+    assert_eq!(
+        one_frame_tolerance_microseconds(&rate).expect("frame tolerance must compute"),
+        33_367
+    );
+    assert!(duration_within_one_frame(2_000_000, 2_033_367, &rate)
+        .expect("valid durations must compare"));
+    assert!(!duration_within_one_frame(2_000_000, 2_033_368, &rate)
+        .expect("valid durations must compare"));
+    assert_eq!(
+        duration_within_one_frame(0, 1, &rate),
+        Err(DerivedModelError::Duration)
+    );
+}
+
+#[test]
+fn derived_proxy_argv_is_exact_for_audio_and_video_only_sources() {
+    let source = PathBuf::from("source folder/input; private.mp4");
+    let destination = PathBuf::from("cache folder/proxy temp.mp4");
+    let dimensions = OutputDimensions {
+        width: 1_280,
+        height: 720,
+    };
+    let rate = derived_rate();
+
+    let mut expected_av = expected_ffmpeg_prefix(&source);
+    extend_os_tokens(
+        &mut expected_av,
+        &[
+            "-map",
+            "0:3",
+            "-map",
+            "0:7",
+            "-vf",
+            "scale=1280:720:flags=lanczos:out_color_matrix=bt709:out_range=tv,setsar=1,fps=30000/1001",
+            "-c:v",
+            "libx264",
+            "-x264-params",
+            "colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "tv",
+            "-colorspace",
+            "bt709",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-movflags",
+            "+faststart",
+            "-f",
+            "mp4",
+        ],
+    );
+    expected_av.push(destination.as_os_str().to_owned());
+    assert_eq!(
+        proxy_ffmpeg_args(&source, &destination, dimensions, &rate, false, 3, Some(7))
+            .expect("AV proxy argv must build"),
+        expected_av
+    );
+
+    let mut expected_video_only = expected_ffmpeg_prefix(&source);
+    extend_os_tokens(
+        &mut expected_video_only,
+        &[
+            "-map",
+            "0:3",
+            "-vf",
+            "scale=1280:720:flags=lanczos:out_color_matrix=bt709:out_range=tv,setsar=1,fps=30000/1001",
+            "-c:v",
+            "libx264",
+            "-x264-params",
+            "colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "tv",
+            "-colorspace",
+            "bt709",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-an",
+            "-movflags",
+            "+faststart",
+            "-f",
+            "mp4",
+        ],
+    );
+    expected_video_only.push(destination.as_os_str().to_owned());
+    assert_eq!(
+        proxy_ffmpeg_args(&source, &destination, dimensions, &rate, false, 3, None)
+            .expect("video-only proxy argv must build"),
+        expected_video_only
+    );
+
+    let hdr = proxy_ffmpeg_args(&source, &destination, dimensions, &rate, true, 3, None)
+        .expect("HDR proxy argv must build");
+    let filter_index = hdr
+        .iter()
+        .position(|token| token == "-vf")
+        .expect("HDR argv must contain a video filter");
+    assert_eq!(
+        hdr[filter_index + 1],
+        "zscale=transfer=linear:npl=100,format=gbrpf32le,tonemap=tonemap=hable:desat=2:peak=10,zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=tv:dither=error_diffusion,scale=1280:720:flags=lanczos:out_color_matrix=bt709:out_range=tv,setsar=1,fps=30000/1001"
+    );
+}
+
+#[test]
+fn derived_thumbnail_argv_is_one_exact_ten_frame_tile_plan() {
+    let source = PathBuf::from("source folder/input; private.mp4");
+    let destination = PathBuf::from("cache folder/thumbnail temp.jpg");
+    let mut expected = expected_ffmpeg_prefix(&source);
+    extend_os_tokens(
+        &mut expected,
+        &[
+            "-map",
+            "0:3",
+            "-vf",
+            "fps=10000000/2000000:round=down:start_time=0,scale=160:90:force_original_aspect_ratio=decrease:reset_sar=1:flags=lanczos,pad=160:90:(ow-iw)/2:(oh-ih)/2:color=black,tile=10x1",
+            "-frames:v",
+            "1",
+            "-c:v",
+            "mjpeg",
+            "-q:v",
+            "2",
+            "-f",
+            "image2",
+        ],
+    );
+    expected.push(destination.as_os_str().to_owned());
+    assert_eq!(
+        thumbnail_ffmpeg_args(&source, &destination, 2_000_000, 3)
+            .expect("thumbnail argv must build"),
+        expected
+    );
+    assert_eq!(
+        thumbnail_ffmpeg_args(&source, &destination, 0, 3),
+        Err(DerivedModelError::Duration)
+    );
+}
+
+fn derived_valid_inspected(source_has_audio: bool) -> InspectedMedia {
+    InspectedMedia {
+        probe: MediaProbe {
+            duration_microseconds: 2_000_000,
+            average_frame_rate: derived_rate(),
+            real_frame_rate: derived_rate(),
+            variable_frame_rate: false,
+            width: 1_280,
+            height: 720,
+            video_codec_name: "h264".to_owned(),
+            audio: source_has_audio.then(|| MediaAudioShape {
+                codec_name: "aac".to_owned(),
+                channels: 2,
+                sample_rate: 48_000,
+            }),
+            file_size_bytes: 4_096,
+        },
+        video_stream_index: 0,
+        audio_stream_index: source_has_audio.then_some(1),
+        pixel_format: Some("yuv420p".to_owned()),
+        color: MediaColorMetadata {
+            color_range: Some("tv".to_owned()),
+            color_space: Some("bt709".to_owned()),
+            color_primaries: Some("bt709".to_owned()),
+            color_transfer: Some("bt709".to_owned()),
+        },
+        display_shape: display_shape(1, 1, 16, 9, 0),
+    }
+}
+
+fn derived_valid_file_facts() -> ArtifactFileFacts {
+    ArtifactFileFacts {
+        is_regular_file: true,
+        byte_len: 4_096,
+    }
+}
+
+fn derived_expected_dimensions() -> OutputDimensions {
+    OutputDimensions {
+        width: 1_280,
+        height: 720,
+    }
+}
+
+#[test]
+fn derived_probe_parser_exposes_pixel_format_without_changing_public_media_probe() {
+    let json = br#"{
+        "streams": [
+            {
+                "index": 0,
+                "codec_type": "video",
+                "disposition": { "attached_pic": 1 }
+            },
+            {
+                "index": 3,
+                "codec_type": "video",
+                "codec_name": "h264",
+                "pix_fmt": "yuv420p",
+                "color_range": "tv",
+                "color_space": "bt709",
+                "color_primaries": "bt709",
+                "color_transfer": "bt709",
+                "width": 1280,
+                "height": 720,
+                "avg_frame_rate": "30000/1001",
+                "r_frame_rate": "30000/1001",
+                "disposition": { "attached_pic": 0 }
+            },
+            {
+                "index": 7,
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2
+            }
+        ],
+        "format": { "duration": "2.000000", "size": "4096" }
+    }"#;
+    let inspected =
+        parse_ffprobe_json_inspected(json, 4_096).expect("derived ffprobe metadata must parse");
+    let public = parse_ffprobe_json(json, 4_096).expect("public ffprobe metadata must still parse");
+    assert_eq!(inspected.video_stream_index, 3);
+    assert_eq!(inspected.audio_stream_index, Some(7));
+    assert_eq!(inspected.pixel_format.as_deref(), Some("yuv420p"));
+    assert_eq!(
+        inspected.color,
+        MediaColorMetadata {
+            color_range: Some("tv".to_owned()),
+            color_space: Some("bt709".to_owned()),
+            color_primaries: Some("bt709".to_owned()),
+            color_transfer: Some("bt709".to_owned()),
+        }
+    );
+    assert!(!inspected.color.is_hdr());
+    assert_eq!(inspected.display_shape, display_shape(1, 1, 16, 9, 0));
+    assert_eq!(public, inspected.probe);
+    let public_json = serde_json::to_value(&public).expect("public probe must serialize");
+    assert_eq!(
+        public_json
+            .as_object()
+            .expect("probe must be an object")
+            .len(),
+        9
+    );
+    assert!(public_json.get("rotationDegrees").is_none());
+    assert!(public_json.get("sampleAspectRatio").is_none());
+    assert!(public_json.get("displayAspectRatio").is_none());
+
+    let legacy_fixture = parse_ffprobe_json_inspected(&ffprobe_fixture("av.json"), 129_211)
+        .expect("existing source fixture without pixel format must remain valid");
+    assert_eq!(legacy_fixture.video_stream_index, 0);
+    assert_eq!(legacy_fixture.audio_stream_index, Some(1));
+    assert_eq!(legacy_fixture.pixel_format, None);
+    assert_eq!(legacy_fixture.color, MediaColorMetadata::default());
+    assert!(!legacy_fixture.color.is_hdr());
+    assert_eq!(legacy_fixture.display_shape, display_shape(1, 1, 16, 9, 0));
+}
+
+#[test]
+fn derived_probe_parser_retains_color_metadata_and_classifies_hdr_by_transfer() {
+    let pq_json = br#"{
+        "streams": [{
+            "codec_type": "video",
+            "codec_name": "hevc",
+            "pix_fmt": "yuv420p10le",
+            "color_range": "tv",
+            "color_space": "bt2020nc",
+            "color_primaries": "bt2020",
+            "color_transfer": "smpte2084",
+            "width": 3840,
+            "height": 2160,
+            "avg_frame_rate": "24/1",
+            "r_frame_rate": "24/1",
+            "disposition": { "attached_pic": 0 }
+        }],
+        "format": { "duration": "1.000000", "size": "4096" }
+    }"#;
+    let pq = parse_ffprobe_json_inspected(pq_json, 4_096).expect("PQ metadata must parse");
+    assert_eq!(pq.color.color_range.as_deref(), Some("tv"));
+    assert_eq!(pq.color.color_space.as_deref(), Some("bt2020nc"));
+    assert_eq!(pq.color.color_primaries.as_deref(), Some("bt2020"));
+    assert_eq!(pq.color.color_transfer.as_deref(), Some("smpte2084"));
+    assert!(pq.color.is_hdr());
+
+    let hlg_json = String::from_utf8(pq_json.to_vec())
+        .expect("test JSON must be UTF-8")
+        .replace("smpte2084", "arib-std-b67");
+    let hlg =
+        parse_ffprobe_json_inspected(hlg_json.as_bytes(), 4_096).expect("HLG metadata must parse");
+    assert!(hlg.color.is_hdr());
+
+    let wide_gamut_sdr_json = String::from_utf8(pq_json.to_vec())
+        .expect("test JSON must be UTF-8")
+        .replace("smpte2084", "bt2020-10");
+    let wide_gamut_sdr = parse_ffprobe_json_inspected(wide_gamut_sdr_json.as_bytes(), 4_096)
+        .expect("wide-gamut SDR metadata must parse");
+    assert!(!wide_gamut_sdr.color.is_hdr());
+}
+
+#[test]
+fn derived_probe_parser_reads_anamorphic_ratios_and_normalizes_rotation() {
+    let json = br#"{
+        "streams": [{
+            "codec_type": "video",
+            "codec_name": "h264",
+            "pix_fmt": "yuv420p",
+            "width": 720,
+            "height": 576,
+            "sample_aspect_ratio": "16:15",
+            "display_aspect_ratio": "4:3",
+            "avg_frame_rate": "25/1",
+            "r_frame_rate": "25/1",
+            "disposition": { "attached_pic": 0 },
+            "tags": { "rotate": "180" },
+            "side_data_list": [{ "rotation": -90 }]
+        }],
+        "format": { "duration": "1.000000", "size": "4096" }
+    }"#;
+    let inspected =
+        parse_ffprobe_json_inspected(json, 4_096).expect("anamorphic rotated metadata must parse");
+    assert_eq!(inspected.probe.width, 720);
+    assert_eq!(inspected.probe.height, 576);
+    assert_eq!(inspected.display_shape, display_shape(16, 15, 4, 3, 270));
+
+    let tag_only = String::from_utf8(json.to_vec())
+        .expect("test JSON must be UTF-8")
+        .replace("[{ \"rotation\": -90 }]", "[]");
+    let tag_inspected = parse_ffprobe_json_inspected(tag_only.as_bytes(), 4_096)
+        .expect("legacy rotate tag must parse");
+    assert_eq!(
+        tag_inspected.display_shape,
+        display_shape(16, 15, 4, 3, 180)
+    );
+
+    let mismatched_dar = String::from_utf8(json.to_vec())
+        .expect("test JSON must be UTF-8")
+        .replace("\"4:3\"", "\"16:9\"");
+    assert!(parse_ffprobe_json(mismatched_dar.as_bytes(), 4_096).is_err());
+    let invalid_rotation = String::from_utf8(json.to_vec())
+        .expect("test JSON must be UTF-8")
+        .replace("-90", "45");
+    assert!(parse_ffprobe_json(invalid_rotation.as_bytes(), 4_096).is_err());
+}
+
+#[test]
+fn derived_proxy_validator_accepts_only_the_controlled_video_shape() {
+    let valid = derived_valid_inspected(true);
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &valid,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Ok(())
+    );
+
+    let mut wrong_codec = valid.clone();
+    wrong_codec.probe.video_codec_name = "hevc".to_owned();
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_codec,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::VideoCodec)
+    );
+
+    let mut wrong_dimensions = valid.clone();
+    wrong_dimensions.probe.width = 1_278;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_dimensions,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Dimensions)
+    );
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &valid,
+            OutputDimensions {
+                width: 1_282,
+                height: 720,
+            },
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Dimensions)
+    );
+
+    let mut wrong_pixel_format = valid.clone();
+    wrong_pixel_format.pixel_format = Some("yuv422p".to_owned());
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_pixel_format,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::PixelFormat)
+    );
+    let mut missing_pixel_format = valid.clone();
+    missing_pixel_format.pixel_format = None;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &missing_pixel_format,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::PixelFormat)
+    );
+
+    let mut wrong_color = valid.clone();
+    wrong_color.color.color_transfer = Some("smpte2084".to_owned());
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_color,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::ColorMetadata)
+    );
+    let mut missing_color = valid.clone();
+    missing_color.color.color_range = None;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &missing_color,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::ColorMetadata)
+    );
+}
+
+#[test]
+fn derived_proxy_validator_compares_display_dimensions_not_coded_dimensions() {
+    let mut anamorphic = derived_valid_inspected(true);
+    anamorphic.probe.width = 960;
+    anamorphic.probe.height = 720;
+    anamorphic.display_shape = display_shape(4, 3, 16, 9, 0);
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &anamorphic,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Ok(())
+    );
+
+    let mut rotated = derived_valid_inspected(true);
+    rotated.probe.width = 720;
+    rotated.probe.height = 1_280;
+    rotated.display_shape = display_shape(1, 1, 9, 16, 90);
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &rotated,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Ok(())
+    );
+
+    rotated.display_shape = display_shape(1, 1, 9, 16, 0);
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &rotated,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Dimensions)
+    );
+}
+
+#[test]
+fn derived_proxy_validator_rejects_rate_vfr_audio_and_duration_mismatches() {
+    let valid = derived_valid_inspected(true);
+
+    let mut wrong_average_rate = valid.clone();
+    wrong_average_rate.probe.average_frame_rate = RationalRate {
+        numerator: 24,
+        denominator: 1,
+    };
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_average_rate,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::FrameRate)
+    );
+    let mut wrong_real_rate = valid.clone();
+    wrong_real_rate.probe.real_frame_rate = RationalRate {
+        numerator: 24,
+        denominator: 1,
+    };
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_real_rate,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::FrameRate)
+    );
+
+    let mut vfr = valid.clone();
+    vfr.probe.variable_frame_rate = true;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &vfr,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::VariableFrameRate)
+    );
+
+    let mut wrong_audio = valid.clone();
+    wrong_audio
+        .probe
+        .audio
+        .as_mut()
+        .expect("audio exists")
+        .codec_name = "mp3".to_owned();
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_audio,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Audio)
+    );
+    let mut wrong_audio_rate = valid.clone();
+    wrong_audio_rate
+        .probe
+        .audio
+        .as_mut()
+        .expect("audio exists")
+        .sample_rate = 44_100;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &wrong_audio_rate,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Audio)
+    );
+    let video_only = derived_valid_inspected(false);
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &video_only,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            false,
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &video_only,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Audio)
+    );
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &valid,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            false,
+        ),
+        Err(ArtifactValidationError::Audio)
+    );
+
+    let mut boundary_duration = valid.clone();
+    boundary_duration.probe.duration_microseconds = 2_033_367;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &boundary_duration,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Ok(())
+    );
+    boundary_duration.probe.duration_microseconds = 2_033_368;
+    assert_eq!(
+        validate_proxy_artifact(
+            derived_valid_file_facts(),
+            &boundary_duration,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::Duration)
+    );
+}
+
+#[test]
+fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
+    let valid = derived_valid_inspected(true);
+    assert_eq!(
+        validate_proxy_artifact(
+            ArtifactFileFacts {
+                is_regular_file: false,
+                byte_len: 4_096,
+            },
+            &valid,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::NotRegularFile)
+    );
+    assert_eq!(
+        validate_proxy_artifact(
+            ArtifactFileFacts {
+                is_regular_file: true,
+                byte_len: 0,
+            },
+            &valid,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::EmptyFile)
+    );
+    assert_eq!(
+        validate_proxy_artifact(
+            ArtifactFileFacts {
+                is_regular_file: true,
+                byte_len: 4_095,
+            },
+            &valid,
+            derived_expected_dimensions(),
+            &derived_rate(),
+            2_000_000,
+            true,
+        ),
+        Err(ArtifactValidationError::ProbeSizeMismatch)
+    );
+
+    let expected = Path::new("cache/thumbnail-fingerprint.jpg");
+    assert_eq!(
+        validate_thumbnail_artifact(expected, expected, derived_valid_file_facts()),
+        Ok(())
+    );
+    assert_eq!(
+        validate_thumbnail_artifact(
+            Path::new("cache/other.jpg"),
+            expected,
+            derived_valid_file_facts(),
+        ),
+        Err(ArtifactValidationError::Path)
+    );
+    assert_eq!(
+        validate_thumbnail_artifact(
+            Path::new("cache/thumbnail-fingerprint.png"),
+            Path::new("cache/thumbnail-fingerprint.png"),
+            derived_valid_file_facts(),
+        ),
+        Err(ArtifactValidationError::FileExtension)
+    );
+    assert_eq!(
+        validate_thumbnail_artifact(
+            expected,
+            expected,
+            ArtifactFileFacts {
+                is_regular_file: true,
+                byte_len: 0,
+            },
+        ),
+        Err(ArtifactValidationError::EmptyFile)
+    );
+    assert_eq!(
+        validate_thumbnail_artifact(
+            expected,
+            expected,
+            ArtifactFileFacts {
+                is_regular_file: false,
+                byte_len: 4_096,
+            },
+        ),
+        Err(ArtifactValidationError::NotRegularFile)
+    );
+}
+
+fn derived_cache_input() -> ValidatedDerivedInput {
+    ValidatedDerivedInput::new(DERIVED_PROJECT_ID, DERIVED_ASSET_ID, derived_rate())
+        .expect("derived cache input must validate")
+}
+
+fn derived_fingerprint_hex(byte: char) -> String {
+    std::iter::repeat_n(byte, 64).collect()
+}
+
+fn derived_file_matches(path: &Path, expected: &[u8]) -> bool {
+    fs::read(path).is_ok_and(|bytes| bytes == expected)
+}
+
+#[test]
+fn derived_cache_directory_is_created_componentwise_and_rejects_symlink_escapes() {
+    let workspace = tempdir().expect("cache workspace must be created");
+    let cache_root = workspace.path().join("app-cache");
+    let input = derived_cache_input();
+    let directory = ensure_profile_cache_directory(&cache_root, &input)
+        .expect("contained cache directory must be created");
+    let canonical_root = fs::canonicalize(&cache_root).expect("cache root must canonicalize");
+    let expected = canonical_root
+        .join("video-phase1")
+        .join(DERIVED_PROJECT_ID)
+        .join(DERIVED_ASSET_ID)
+        .join("preview-v1");
+    assert_eq!(directory.profile_directory, expected);
+    assert!(directory.profile_directory.is_dir());
+    assert_eq!(
+        fs::canonicalize(&directory.profile_directory).expect("profile must canonicalize"),
+        directory.profile_directory
+    );
+
+    let escape_workspace = tempdir().expect("escape workspace must be created");
+    let escape_root = escape_workspace.path().join("app-cache");
+    let outside = tempdir().expect("outside directory must be created");
+    fs::create_dir(&escape_root).expect("escape cache root must be created");
+    let namespace_link = escape_root.join("video-phase1");
+    if let Err(error) = create_directory_symlink(outside.path(), &namespace_link) {
+        eprintln!("SKIPPED derived cache symlink assertion: symlink setup unsupported: {error}");
+        return;
+    }
+    assert_eq!(
+        ensure_profile_cache_directory(&escape_root, &input),
+        Err(CacheLifecycleError::Escape)
+    );
+    assert_eq!(
+        fs::read_dir(outside.path())
+            .expect("outside directory must remain readable")
+            .count(),
+        0,
+        "cache creation must not write through an escaping link"
+    );
+}
+
+#[test]
+fn derived_profile_cache_lock_serializes_different_fingerprint_promotion_and_cleanup() {
+    let workspace = tempdir().expect("cache lock workspace must be created");
+    let directory =
+        ensure_profile_cache_directory(&workspace.path().join("app-cache"), &derived_cache_input())
+            .expect("cache directory must be created");
+    let first_paths = artifact_paths_in_validated_cache(&directory, &derived_fingerprint_hex('a'))
+        .expect("first artifact paths must be created");
+    let second_paths = artifact_paths_in_validated_cache(&directory, &derived_fingerprint_hex('b'))
+        .expect("second artifact paths must be created");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("first lock runtime must build");
+    let first_lock = runtime
+        .block_on(acquire_profile_cache_lock_with(
+            &directory,
+            Duration::from_secs(1),
+            Duration::from_millis(1),
+            || {},
+        ))
+        .expect("first profile lock must be acquired");
+
+    let (contended_sender, contended_receiver) = mpsc::channel();
+    let (acquired_sender, acquired_receiver) = mpsc::channel();
+    let second_directory = directory.clone();
+    let second_paths_for_thread = second_paths.clone();
+    let second_thread = thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("second lock runtime must build");
+        let mut contended_sender = Some(contended_sender);
+        let _second_lock = runtime
+            .block_on(acquire_profile_cache_lock_with(
+                &second_directory,
+                Duration::from_secs(5),
+                Duration::from_millis(1),
+                || {
+                    if let Some(sender) = contended_sender.take() {
+                        sender
+                            .send(())
+                            .expect("contention marker must be delivered");
+                    }
+                },
+            ))
+            .expect("second profile lock must acquire after the first releases");
+        acquired_sender
+            .send(())
+            .expect("acquisition marker must be delivered");
+
+        let temporary = create_temp_artifacts(&second_directory)
+            .expect("second temporary pair must be created");
+        fs::write(&temporary.proxy, b"second-proxy")
+            .expect("second proxy temporary must be written");
+        fs::write(&temporary.thumbnail, b"second-thumbnail")
+            .expect("second thumbnail temporary must be written");
+        promote_validated_pair(
+            &second_directory,
+            &second_paths_for_thread,
+            temporary,
+            |path| derived_file_matches(path, b"second-proxy"),
+            |path| derived_file_matches(path, b"second-thumbnail"),
+        )
+        .expect("second pair must promote while holding the profile lock");
+    });
+
+    contended_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("second preparation must observe the held profile lock");
+    assert_eq!(
+        acquired_receiver.try_recv(),
+        Err(mpsc::TryRecvError::Empty),
+        "second preparation must not enter the lifecycle while the first holds the lock"
+    );
+
+    let temporary =
+        create_temp_artifacts(&directory).expect("first temporary pair must be created");
+    fs::write(&temporary.proxy, b"first-proxy").expect("first proxy temporary must be written");
+    fs::write(&temporary.thumbnail, b"first-thumbnail")
+        .expect("first thumbnail temporary must be written");
+    promote_validated_pair(
+        &directory,
+        &first_paths,
+        temporary,
+        |path| derived_file_matches(path, b"first-proxy"),
+        |path| derived_file_matches(path, b"first-thumbnail"),
+    )
+    .expect("first pair must complete while holding the profile lock");
+    assert!(derived_file_matches(
+        &first_paths.proxy_path,
+        b"first-proxy"
+    ));
+    assert!(derived_file_matches(
+        &first_paths.thumbnail_path,
+        b"first-thumbnail"
+    ));
+    assert!(!second_paths.proxy_path.exists());
+    assert!(!second_paths.thumbnail_path.exists());
+
+    drop(first_lock);
+    acquired_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("second preparation must acquire after release");
+    second_thread
+        .join()
+        .expect("second preparation thread must finish");
+    assert!(derived_file_matches(
+        &second_paths.proxy_path,
+        b"second-proxy"
+    ));
+    assert!(derived_file_matches(
+        &second_paths.thumbnail_path,
+        b"second-thumbnail"
+    ));
+    assert!(!first_paths.proxy_path.exists());
+    assert!(!first_paths.thumbnail_path.exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_profile_cache_lock_timeout_is_bounded_typed_and_redacted() {
+    let workspace = tempdir().expect("cache lock workspace must be created");
+    let secret_cache_root = workspace.path().join("private-cache-lock-secret");
+    let directory = ensure_profile_cache_directory(&secret_cache_root, &derived_cache_input())
+        .expect("cache directory must be created");
+    let first_lock = acquire_profile_cache_lock_with(
+        &directory,
+        Duration::from_secs(1),
+        Duration::from_millis(1),
+        || {},
+    )
+    .await
+    .expect("first profile lock must be acquired");
+    let mut contention_count = 0;
+
+    let timeout = acquire_profile_cache_lock_with(
+        &directory,
+        Duration::ZERO,
+        Duration::from_millis(1),
+        || contention_count += 1,
+    )
+    .await
+    .expect_err("contended zero-duration lock attempt must time out");
+    assert_eq!(timeout, CacheLifecycleError::LockTimeout);
+    assert_eq!(contention_count, 1);
+
+    let command_error = map_cache_error(timeout);
+    assert_eq!(command_error.code, VideoErrorCode::ProjectIo);
+    assert_eq!(command_error.details["operation"], "prepare_asset");
+    assert_eq!(command_error.details["category"], "cache_lock_timeout");
+    let serialized =
+        serde_json::to_string(&command_error).expect("cache lock error must serialize safely");
+    assert!(!serialized.contains("private-cache-lock-secret"));
+    assert!(!serialized.contains(&directory.profile_directory.to_string_lossy().to_string()));
+
+    drop(first_lock);
+    acquire_profile_cache_lock_with(&directory, Duration::ZERO, Duration::from_millis(1), || {})
+        .await
+        .expect("released profile lock must be immediately reusable");
+}
+
+#[test]
+fn derived_temp_artifacts_are_suffixed_same_directory_paths_and_delete_on_drop() {
+    let workspace = tempdir().expect("cache workspace must be created");
+    let directory =
+        ensure_profile_cache_directory(&workspace.path().join("app-cache"), &derived_cache_input())
+            .expect("cache directory must be created");
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    let proxy_path = temporary.proxy.to_path_buf();
+    let thumbnail_path = temporary.thumbnail.to_path_buf();
+    assert_eq!(
+        proxy_path.parent(),
+        Some(directory.profile_directory.as_path())
+    );
+    assert_eq!(
+        thumbnail_path.parent(),
+        Some(directory.profile_directory.as_path())
+    );
+    assert_eq!(
+        proxy_path.extension().and_then(|value| value.to_str()),
+        Some("mp4")
+    );
+    assert_eq!(
+        thumbnail_path.extension().and_then(|value| value.to_str()),
+        Some("jpg")
+    );
+    assert!(proxy_path.is_file());
+    assert!(thumbnail_path.is_file());
+    drop(temporary);
+    assert!(!proxy_path.exists());
+    assert!(!thumbnail_path.exists());
+}
+
+#[test]
+fn derived_cache_promotion_repairs_corruption_validates_finals_and_cleans_only_owned_stale_files() {
+    let workspace = tempdir().expect("cache workspace must be created");
+    let directory =
+        ensure_profile_cache_directory(&workspace.path().join("app-cache"), &derived_cache_input())
+            .expect("cache directory must be created");
+    let paths = artifact_paths_in_validated_cache(&directory, &derived_fingerprint_hex('a'))
+        .expect("owned paths must be created");
+    fs::write(&paths.proxy_path, b"corrupt-proxy").expect("corrupt proxy must be written");
+    fs::write(&paths.thumbnail_path, b"corrupt-thumbnail")
+        .expect("corrupt thumbnail must be written");
+    assert!(!cache_pair_is_valid_with(
+        &directory,
+        &paths,
+        |path| derived_file_matches(path, b"valid-proxy"),
+        |path| derived_file_matches(path, b"valid-thumbnail"),
+    )
+    .expect("cache hit validation must run"));
+
+    let stale_proxy = directory
+        .profile_directory
+        .join(format!("proxy-{}.mp4", derived_fingerprint_hex('b')));
+    let stale_thumbnail = directory
+        .profile_directory
+        .join(format!("thumbnail-{}.jpg", derived_fingerprint_hex('c')));
+    let stale_partial = directory
+        .profile_directory
+        .join(format!("proxy-{}.mp4", derived_fingerprint_hex('d')));
+    let unrelated = directory.profile_directory.join("notes.txt");
+    let similar_unowned = directory.profile_directory.join("proxy-short.mp4");
+    for path in [&stale_proxy, &stale_thumbnail, &stale_partial] {
+        fs::write(path, b"stale").expect("stale owned artifact must be written");
+    }
+    fs::write(&unrelated, b"keep").expect("unrelated file must be written");
+    fs::write(&similar_unowned, b"keep-too").expect("similar file must be written");
+
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    let temporary_proxy = temporary.proxy.to_path_buf();
+    let temporary_thumbnail = temporary.thumbnail.to_path_buf();
+    fs::write(&temporary.proxy, b"valid-proxy").expect("proxy temp must be written");
+    fs::write(&temporary.thumbnail, b"valid-thumbnail").expect("thumbnail temp must be written");
+    let proxy_checks = Cell::new(0);
+    let thumbnail_checks = Cell::new(0);
+    promote_validated_pair(
+        &directory,
+        &paths,
+        temporary,
+        |path| {
+            proxy_checks.set(proxy_checks.get() + 1);
+            derived_file_matches(path, b"valid-proxy")
+        },
+        |path| {
+            thumbnail_checks.set(thumbnail_checks.get() + 1);
+            derived_file_matches(path, b"valid-thumbnail")
+        },
+    )
+    .expect("validated pair must promote");
+
+    assert_eq!(
+        proxy_checks.get(),
+        2,
+        "proxy temp and final must be validated"
+    );
+    assert_eq!(
+        thumbnail_checks.get(),
+        2,
+        "thumbnail temp and final must be validated"
+    );
+    assert_eq!(
+        fs::read(&paths.proxy_path).expect("proxy must read"),
+        b"valid-proxy"
+    );
+    assert_eq!(
+        fs::read(&paths.thumbnail_path).expect("thumbnail must read"),
+        b"valid-thumbnail"
+    );
+    assert!(!temporary_proxy.exists());
+    assert!(!temporary_thumbnail.exists());
+    assert!(!stale_proxy.exists());
+    assert!(!stale_thumbnail.exists());
+    assert!(!stale_partial.exists());
+    assert_eq!(
+        fs::read(unrelated).expect("unrelated file must survive"),
+        b"keep"
+    );
+    assert_eq!(
+        fs::read(similar_unowned).expect("similar unowned file must survive"),
+        b"keep-too"
+    );
+    assert!(cache_pair_is_valid_with(
+        &directory,
+        &paths,
+        |path| derived_file_matches(path, b"valid-proxy"),
+        |path| derived_file_matches(path, b"valid-thumbnail"),
+    )
+    .expect("repaired cache must validate"));
+}
+
+#[test]
+fn derived_pre_promotion_failures_preserve_old_pair_and_delete_temporaries() {
+    let workspace = tempdir().expect("cache workspace must be created");
+    let directory =
+        ensure_profile_cache_directory(&workspace.path().join("app-cache"), &derived_cache_input())
+            .expect("cache directory must be created");
+    let paths = artifact_paths_in_validated_cache(&directory, &derived_fingerprint_hex('a'))
+        .expect("owned paths must be created");
+    fs::write(&paths.proxy_path, b"old-proxy").expect("old proxy must be written");
+    fs::write(&paths.thumbnail_path, b"old-thumbnail").expect("old thumbnail must be written");
+    let stale = directory
+        .profile_directory
+        .join(format!("proxy-{}.mp4", derived_fingerprint_hex('b')));
+    fs::write(&stale, b"stale").expect("stale artifact must be written");
+
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    let temporary_proxy = temporary.proxy.to_path_buf();
+    let temporary_thumbnail = temporary.thumbnail.to_path_buf();
+    fs::write(&temporary.proxy, b"new-proxy").expect("proxy temp must be written");
+    fs::write(&temporary.thumbnail, b"invalid-thumbnail").expect("thumbnail temp must be written");
+    assert_eq!(
+        promote_validated_pair(
+            &directory,
+            &paths,
+            temporary,
+            |path| derived_file_matches(path, b"new-proxy"),
+            |path| derived_file_matches(path, b"new-thumbnail"),
+        ),
+        Err(CacheLifecycleError::TemporaryValidation)
+    );
+    assert_eq!(
+        fs::read(&paths.proxy_path).expect("old proxy must read"),
+        b"old-proxy"
+    );
+    assert_eq!(
+        fs::read(&paths.thumbnail_path).expect("old thumbnail must read"),
+        b"old-thumbnail"
+    );
+    assert!(!temporary_proxy.exists());
+    assert!(!temporary_thumbnail.exists());
+    assert!(
+        stale.exists(),
+        "cleanup must wait until a new pair succeeds"
+    );
+}
+
+#[test]
+fn derived_promotion_failures_are_repairable_and_cannot_write_outside_cache() {
+    let workspace = tempdir().expect("cache workspace must be created");
+    let outside = tempdir().expect("outside directory must be created");
+    let directory =
+        ensure_profile_cache_directory(&workspace.path().join("app-cache"), &derived_cache_input())
+            .expect("cache directory must be created");
+    let paths = artifact_paths_in_validated_cache(&directory, &derived_fingerprint_hex('a'))
+        .expect("owned paths must be created");
+    fs::write(&paths.proxy_path, b"old-proxy").expect("old proxy must be written");
+    fs::write(&paths.thumbnail_path, b"old-thumbnail").expect("old thumbnail must be written");
+
+    let forged_proxy = outside
+        .path()
+        .join(format!("proxy-{}.mp4", derived_fingerprint_hex('a')));
+    let forged = DerivedArtifactPaths {
+        profile_directory: directory.profile_directory.clone(),
+        proxy_path: forged_proxy.clone(),
+        thumbnail_path: paths.thumbnail_path.clone(),
+    };
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    let temporary_proxy = temporary.proxy.to_path_buf();
+    let temporary_thumbnail = temporary.thumbnail.to_path_buf();
+    fs::write(&temporary.proxy, b"new-proxy").expect("proxy temp must be written");
+    fs::write(&temporary.thumbnail, b"new-thumbnail").expect("thumbnail temp must be written");
+    assert_eq!(
+        promote_validated_pair(&directory, &forged, temporary, |_| true, |_| true,),
+        Err(CacheLifecycleError::UnsafeArtifactPath)
+    );
+    assert!(!forged_proxy.exists());
+    assert!(!temporary_proxy.exists());
+    assert!(!temporary_thumbnail.exists());
+
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    let failed_proxy_temp = temporary.proxy.to_path_buf();
+    let failed_thumbnail_temp = temporary.thumbnail.to_path_buf();
+    fs::write(&temporary.proxy, b"new-proxy").expect("proxy temp must be written");
+    fs::write(&temporary.thumbnail, b"new-thumbnail").expect("thumbnail temp must be written");
+    assert_eq!(
+        promote_validated_pair_with(
+            &directory,
+            &paths,
+            temporary,
+            |path| derived_file_matches(path, b"new-proxy"),
+            |path| derived_file_matches(path, b"new-thumbnail"),
+            |temporary, _| Err(temporary),
+        ),
+        Err(CacheLifecycleError::Promotion)
+    );
+    assert_eq!(
+        fs::read(&paths.proxy_path).expect("old proxy must read"),
+        b"old-proxy"
+    );
+    assert_eq!(
+        fs::read(&paths.thumbnail_path).expect("old thumbnail must read"),
+        b"old-thumbnail"
+    );
+    assert!(!failed_proxy_temp.exists());
+    assert!(!failed_thumbnail_temp.exists());
+
+    let temporary = create_temp_artifacts(&directory).expect("temporary pair must be created");
+    fs::write(&temporary.proxy, b"new-proxy").expect("proxy temp must be written");
+    fs::write(&temporary.thumbnail, b"new-thumbnail").expect("thumbnail temp must be written");
+    let promotion_count = Cell::new(0);
+    assert_eq!(
+        promote_validated_pair_with(
+            &directory,
+            &paths,
+            temporary,
+            |path| derived_file_matches(path, b"new-proxy"),
+            |path| derived_file_matches(path, b"new-thumbnail"),
+            |temporary, destination| {
+                promotion_count.set(promotion_count.get() + 1);
+                if promotion_count.get() == 2 {
+                    Err(temporary)
+                } else {
+                    temporary.persist(destination).map_err(|error| error.path)
+                }
+            },
+        ),
+        Err(CacheLifecycleError::Promotion)
+    );
+    assert_eq!(
+        fs::read(&paths.proxy_path).expect("new proxy must read"),
+        b"new-proxy"
+    );
+    assert_eq!(
+        fs::read(&paths.thumbnail_path).expect("old thumbnail must read"),
+        b"old-thumbnail"
+    );
+    assert!(!cache_pair_is_valid_with(
+        &directory,
+        &paths,
+        |path| derived_file_matches(path, b"new-proxy"),
+        |path| derived_file_matches(path, b"new-thumbnail"),
+    )
+    .expect("partial pair must be checked"));
+
+    let repair = create_temp_artifacts(&directory).expect("repair pair must be created");
+    fs::write(&repair.proxy, b"new-proxy").expect("repair proxy must be written");
+    fs::write(&repair.thumbnail, b"new-thumbnail").expect("repair thumbnail must be written");
+    promote_validated_pair(
+        &directory,
+        &paths,
+        repair,
+        |path| derived_file_matches(path, b"new-proxy"),
+        |path| derived_file_matches(path, b"new-thumbnail"),
+    )
+    .expect("next call must repair an incomplete pair");
+    assert_eq!(
+        fs::read(&paths.thumbnail_path).expect("repaired thumbnail must read"),
+        b"new-thumbnail"
+    );
+}
+
+fn derived_missing_programs() -> MediaPrograms {
+    MediaPrograms {
+        ffmpeg: OsString::from("missing-private-ffmpeg-secret"),
+        ffprobe: OsString::from("missing-private-ffprobe-secret"),
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_prepare_rejects_ungranted_source_before_tools_or_cache() {
+    let workspace = tempdir().expect("prepare workspace must be created");
+    let source = workspace.path().join("private-ungranted-source.mp4");
+    fs::write(&source, b"not-media").expect("source fixture must be written");
+    let cache_root = workspace.path().join("cache-must-not-exist");
+    let error = prepare_asset_core(
+        PrepareAssetCoreRequest {
+            owner_label: "ungranted-owner",
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: derived_rate(),
+        },
+        &VideoPathGrants::default(),
+        &cache_root,
+        derived_missing_programs(),
+    )
+    .await
+    .expect_err("ungranted source must fail before tool execution");
+    assert_eq!(error.code, VideoErrorCode::PathNotGranted);
+    assert_eq!(error.details["operation"], "authorize_path");
+    assert!(!cache_root.exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_prepare_rejects_malformed_ids_and_rates_before_cache_writes() {
+    let workspace = tempdir().expect("prepare workspace must be created");
+    let source = workspace.path().join("private-input-source.mp4");
+    fs::write(&source, b"not-media").expect("source fixture must be written");
+    let grants = VideoPathGrants::default();
+
+    let invalid_id_cache = workspace.path().join("invalid-id-cache");
+    let invalid_id = prepare_asset_core(
+        PrepareAssetCoreRequest {
+            owner_label: "input-owner",
+            project_id: "../escape",
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: derived_rate(),
+        },
+        &grants,
+        &invalid_id_cache,
+        derived_missing_programs(),
+    )
+    .await
+    .expect_err("malformed project ID must fail first");
+    assert_eq!(invalid_id.code, VideoErrorCode::InvalidPath);
+    assert_eq!(invalid_id.details["category"], "project_id");
+    assert!(!invalid_id_cache.exists());
+
+    let invalid_rate_cache = workspace.path().join("invalid-rate-cache");
+    let invalid_rate = prepare_asset_core(
+        PrepareAssetCoreRequest {
+            owner_label: "input-owner",
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: RationalRate {
+                numerator: 60,
+                denominator: 2,
+            },
+        },
+        &grants,
+        &invalid_rate_cache,
+        derived_missing_programs(),
+    )
+    .await
+    .expect_err("non-reduced rate must fail first");
+    assert_eq!(invalid_rate.code, VideoErrorCode::Phase1Limit);
+    assert_eq!(invalid_rate.details["category"], "sequence_rate");
+    assert!(!invalid_rate_cache.exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_prepare_missing_ffprobe_is_typed_redacted_and_precedes_cache_creation() {
+    let workspace = tempdir().expect("prepare workspace must be created");
+    let source = workspace.path().join("private-probe-source-secret.mp4");
+    fs::write(&source, b"not-media").expect("source fixture must be written");
+    let cache_root = workspace.path().join("cache-must-not-exist");
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("probe-owner", GrantCategory::Source, &source)
+        .expect("source grant must be created");
+    let error = prepare_asset_core(
+        PrepareAssetCoreRequest {
+            owner_label: "probe-owner",
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: derived_rate(),
+        },
+        &grants,
+        &cache_root,
+        derived_missing_programs(),
+    )
+    .await
+    .expect_err("missing ffprobe must fail safely");
+    assert_eq!(error.code, VideoErrorCode::ToolUnavailable);
+    assert_eq!(error.details["operation"], "prepare_source_probe");
+    assert_eq!(error.details["executable"], "ffprobe");
+    let serialized = serde_json::to_string(&error).expect("probe error must serialize");
+    assert!(!serialized.contains("private-probe-source-secret"));
+    assert!(!serialized.contains("missing-private-ffprobe-secret"));
+    assert!(!cache_root.exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_prepare_missing_ffmpeg_is_typed_and_redacts_arguments_and_program() {
+    let workspace = tempdir().expect("ffmpeg workspace must be created");
+    let secret_path = workspace.path().join("private-ffmpeg-source-secret.mp4");
+    let secret_program = "missing-private-ffmpeg-secret";
+    let error = run_derived_ffmpeg(
+        OsString::from(secret_program),
+        vec![secret_path.as_os_str().to_owned()],
+        "prepare_proxy",
+        Duration::from_secs(1),
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect_err("missing ffmpeg must fail safely");
+    assert_eq!(error.code, VideoErrorCode::ToolUnavailable);
+    assert_eq!(error.details["operation"], "prepare_proxy");
+    assert_eq!(error.details["executable"], "ffmpeg");
+    let serialized = serde_json::to_string(&error).expect("ffmpeg error must serialize");
+    assert!(!serialized.contains("private-ffmpeg-source-secret"));
+    assert!(!serialized.contains(secret_program));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn derived_trusted_probe_failures_are_typed_and_redacted() {
+    let directory = tempdir().expect("trusted probe directory must be created");
+    let secret_path = directory.path().join("private-derived-cache-secret.mp4");
+    fs::write(&secret_path, b"not-media").expect("trusted probe input must be written");
+    let secret_executable = "missing-private-ffprobe-secret";
+    let error = probe_trusted_media_with_program(
+        &secret_path,
+        OsString::from(secret_executable),
+        ProcessCancellation::new(),
+        "validate_proxy",
+    )
+    .await
+    .expect_err("missing trusted ffprobe executable must fail safely");
+    assert_eq!(error.code, VideoErrorCode::ToolUnavailable);
+    assert_eq!(error.details["operation"], "validate_proxy");
+    assert_eq!(error.details["executable"], "ffprobe");
+    let serialized = serde_json::to_string(&error).expect("probe error must serialize");
+    assert!(!serialized.contains("private-derived-cache-secret"));
+    assert!(!serialized.contains(secret_executable));
+    assert!(!serialized.contains(&secret_path.to_string_lossy().to_string()));
 }
 
 fn ffprobe_fixture(name: &str) -> Vec<u8> {
@@ -1137,4 +2958,464 @@ async fn local_ffmpeg_status_and_canonical_probe_match_fixture() {
     assert_eq!(audio.codec_name, "aac");
     assert_eq!(audio.channels, 1);
     assert_eq!(audio.sample_rate, 48_000);
+}
+
+async fn derived_probe_thumbnail_shape(path: &Path) -> Value {
+    let spec = ProcessSpec {
+        program: OsString::from("ffprobe"),
+        args: vec![
+            OsString::from("-v"),
+            OsString::from("error"),
+            OsString::from("-output_format"),
+            OsString::from("json"),
+            OsString::from("-select_streams"),
+            OsString::from("v:0"),
+            OsString::from("-show_entries"),
+            OsString::from("stream=codec_name,width,height"),
+            OsString::from("-i"),
+            path.as_os_str().to_owned(),
+        ],
+        operation: "probe_thumbnail_integration",
+        timeout: Duration::from_secs(30),
+        stdout_limit: 64 * 1024,
+        stderr_tail_limit: 64 * 1024,
+    };
+    let output = run_supervised(spec, ProcessCancellation::new())
+        .await
+        .expect("thumbnail must probe through the supervisor");
+    serde_json::from_slice(&output.stdout).expect("thumbnail ffprobe JSON must parse")
+}
+
+fn run_local_ffmpeg(args: Vec<OsString>) {
+    let output = Command::new("ffmpeg")
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .expect("system FFmpeg must start");
+    assert!(
+        output.status.success(),
+        "system FFmpeg failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg with libx265, zscale, and tonemap support"]
+async fn derived_local_ffmpeg_tone_maps_hdr_to_tagged_bt709_sdr() {
+    let workspace = tempdir().expect("HDR integration workspace must be created");
+    let source = workspace.path().join("hdr-source.mp4");
+    let proxy = workspace.path().join("sdr-proxy.mp4");
+    let mut source_args: Vec<OsString> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x180:rate=10:duration=1",
+        "-vf",
+        "format=yuv420p10le",
+        "-c:v",
+        "libx265",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p10le",
+        "-x265-params",
+        "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited",
+        "-an",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    source_args.push(source.as_os_str().to_owned());
+    run_local_ffmpeg(source_args);
+
+    let source_inspected = probe_trusted_media_with_program(
+        &source,
+        OsString::from("ffprobe"),
+        ProcessCancellation::new(),
+        "probe_hdr_source_integration",
+    )
+    .await
+    .expect("synthetic HDR source must probe");
+    assert_eq!(source_inspected.color.color_range.as_deref(), Some("tv"));
+    assert_eq!(
+        source_inspected.color.color_space.as_deref(),
+        Some("bt2020nc")
+    );
+    assert_eq!(
+        source_inspected.color.color_primaries.as_deref(),
+        Some("bt2020")
+    );
+    assert_eq!(
+        source_inspected.color.color_transfer.as_deref(),
+        Some("smpte2084")
+    );
+    assert!(source_inspected.color.is_hdr());
+
+    let rate = RationalRate {
+        numerator: 10,
+        denominator: 1,
+    };
+    let dimensions = OutputDimensions {
+        width: 320,
+        height: 180,
+    };
+    run_local_ffmpeg(
+        proxy_ffmpeg_args(
+            &source,
+            &proxy,
+            dimensions,
+            &rate,
+            source_inspected.color.is_hdr(),
+            source_inspected.video_stream_index,
+            source_inspected.audio_stream_index,
+        )
+        .expect("HDR proxy argv must build"),
+    );
+
+    let proxy_inspected = probe_trusted_media_with_program(
+        &proxy,
+        OsString::from("ffprobe"),
+        ProcessCancellation::new(),
+        "probe_hdr_proxy_integration",
+    )
+    .await
+    .expect("tone-mapped proxy must probe");
+    assert_eq!(
+        proxy_inspected.color,
+        MediaColorMetadata {
+            color_range: Some("tv".to_owned()),
+            color_space: Some("bt709".to_owned()),
+            color_primaries: Some("bt709".to_owned()),
+            color_transfer: Some("bt709".to_owned()),
+        }
+    );
+    assert!(!proxy_inspected.color.is_hdr());
+    let byte_len = fs::metadata(&proxy)
+        .expect("tone-mapped proxy metadata must exist")
+        .len();
+    assert_eq!(
+        validate_proxy_artifact(
+            ArtifactFileFacts {
+                is_regular_file: true,
+                byte_len,
+            },
+            &proxy_inspected,
+            dimensions,
+            &rate,
+            1_000_000,
+            false,
+        ),
+        Ok(())
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg with display-rotation and reset_sar support"]
+async fn derived_local_ffmpeg_normalizes_rotated_and_anamorphic_sources() {
+    let workspace = tempdir().expect("display geometry workspace must be created");
+    let base = workspace.path().join("rotation-base.mp4");
+    let rotated = workspace.path().join("rotated.mp4");
+    let anamorphic = workspace.path().join("anamorphic.mp4");
+
+    let generated_video_args = |filter_input: &str, destination: &Path| {
+        let mut args: Vec<OsString> = [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            filter_input,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        args.push(destination.as_os_str().to_owned());
+        args
+    };
+    run_local_ffmpeg(generated_video_args(
+        "testsrc2=size=320x180:rate=10:duration=1",
+        &base,
+    ));
+    let mut rotate_args: Vec<OsString> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-display_rotation",
+        "90",
+        "-i",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    rotate_args.push(base.as_os_str().to_owned());
+    extend_os_tokens(&mut rotate_args, &["-map", "0:v:0", "-c", "copy"]);
+    rotate_args.push(rotated.as_os_str().to_owned());
+    run_local_ffmpeg(rotate_args);
+
+    let mut anamorphic_args: Vec<OsString> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=720x576:rate=10:duration=1",
+        "-vf",
+        "setsar=16/15",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-an",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    anamorphic_args.push(anamorphic.as_os_str().to_owned());
+    run_local_ffmpeg(anamorphic_args);
+
+    let cache_root = workspace.path().join("app-cache");
+    let grants = VideoPathGrants::default();
+    let cases = [
+        (
+            "rotated-integration",
+            "33333333-3333-4333-8333-333333333333",
+            rotated.as_path(),
+            display_shape(1, 1, 16, 9, 90),
+            OutputDimensions {
+                width: 180,
+                height: 320,
+            },
+        ),
+        (
+            "anamorphic-integration",
+            "44444444-4444-4444-8444-444444444444",
+            anamorphic.as_path(),
+            display_shape(16, 15, 4, 3, 0),
+            OutputDimensions {
+                width: 720,
+                height: 540,
+            },
+        ),
+    ];
+
+    for (owner, asset_id, source, expected_source_shape, expected_dimensions) in cases {
+        let source_inspected = probe_trusted_media_with_program(
+            source,
+            OsString::from("ffprobe"),
+            ProcessCancellation::new(),
+            "probe_display_source_integration",
+        )
+        .await
+        .expect("synthetic display source must probe");
+        assert_eq!(source_inspected.display_shape, expected_source_shape);
+        grants
+            .grant_existing_file(owner, GrantCategory::Source, source)
+            .expect("synthetic display source must be granted");
+        let prepared = prepare_asset_core(
+            PrepareAssetCoreRequest {
+                owner_label: owner,
+                project_id: DERIVED_PROJECT_ID,
+                asset_id,
+                source_path: source,
+                sequence_rate: RationalRate {
+                    numerator: 10,
+                    denominator: 1,
+                },
+            },
+            &grants,
+            &cache_root,
+            MediaPrograms {
+                ffmpeg: OsString::from("ffmpeg"),
+                ffprobe: OsString::from("ffprobe"),
+            },
+        )
+        .await
+        .expect("display source must prepare");
+        assert_eq!(prepared.proxy_probe.width, expected_dimensions.width);
+        assert_eq!(prepared.proxy_probe.height, expected_dimensions.height);
+
+        let proxy_inspected = probe_trusted_media_with_program(
+            Path::new(&prepared.proxy_path),
+            OsString::from("ffprobe"),
+            ProcessCancellation::new(),
+            "probe_display_proxy_integration",
+        )
+        .await
+        .expect("normalized display proxy must probe");
+        assert_eq!(
+            proxy_inspected.display_shape,
+            display_shape(
+                1,
+                1,
+                expected_dimensions.width,
+                expected_dimensions.height,
+                0,
+            )
+        );
+        let thumbnail = derived_probe_thumbnail_shape(Path::new(&prepared.thumbnail_path)).await;
+        assert_eq!(thumbnail["streams"][0]["width"], 1_600);
+        assert_eq!(thumbnail["streams"][0]["height"], 90);
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts() {
+    let workspace = tempdir().expect("derived integration workspace must be created");
+    let cache_root = workspace.path().join("app-cache");
+    let source =
+        workspace_root().join("apps/desktop/src-tauri/fixtures/video-phase1/single-clip.mp4");
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("derived-integration", GrantCategory::Source, &source)
+        .expect("canonical source must be granted");
+    let request = || PrepareAssetCoreRequest {
+        owner_label: "derived-integration",
+        project_id: DERIVED_PROJECT_ID,
+        asset_id: DERIVED_ASSET_ID,
+        source_path: &source,
+        sequence_rate: RationalRate {
+            numerator: 30,
+            denominator: 1,
+        },
+    };
+    let actual_programs = || MediaPrograms {
+        ffmpeg: OsString::from("ffmpeg"),
+        ffprobe: OsString::from("ffprobe"),
+    };
+
+    let prepared = prepare_asset_core(request(), &grants, &cache_root, actual_programs())
+        .await
+        .expect("canonical fixture must prepare");
+    assert_eq!(prepared.proxy_probe.video_codec_name, "h264");
+    assert_eq!(prepared.proxy_probe.width, 320);
+    assert_eq!(prepared.proxy_probe.height, 180);
+    assert_eq!(
+        prepared.proxy_probe.average_frame_rate,
+        RationalRate {
+            numerator: 30,
+            denominator: 1,
+        }
+    );
+    assert_eq!(
+        prepared.proxy_probe.real_frame_rate,
+        prepared.proxy_probe.average_frame_rate
+    );
+    assert!(!prepared.proxy_probe.variable_frame_rate);
+    assert_eq!(
+        prepared
+            .proxy_probe
+            .audio
+            .as_ref()
+            .expect("prepared proxy must contain audio")
+            .codec_name,
+        "aac"
+    );
+    let proxy_path = PathBuf::from(&prepared.proxy_path);
+    let thumbnail_path = PathBuf::from(&prepared.thumbnail_path);
+    assert!(proxy_path.is_file());
+    assert!(thumbnail_path.is_file());
+    let thumbnail_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(thumbnail_probe["streams"][0]["codec_name"], "mjpeg");
+    assert_eq!(thumbnail_probe["streams"][0]["width"], 1_600);
+    assert_eq!(thumbnail_probe["streams"][0]["height"], 90);
+
+    let profile_directory = proxy_path
+        .parent()
+        .expect("proxy must have a profile directory")
+        .to_path_buf();
+    let stale_proxy = profile_directory.join(format!("proxy-{}.mp4", derived_fingerprint_hex('e')));
+    let stale_thumbnail =
+        profile_directory.join(format!("thumbnail-{}.jpg", derived_fingerprint_hex('f')));
+    let stale_partial =
+        profile_directory.join(format!("proxy-{}.mp4", derived_fingerprint_hex('1')));
+    for path in [&stale_proxy, &stale_thumbnail, &stale_partial] {
+        fs::write(path, b"stale-owned-artifact").expect("stale artifact must be writable");
+    }
+
+    let reused = prepare_asset_core(
+        request(),
+        &grants,
+        &cache_root,
+        MediaPrograms {
+            ffmpeg: OsString::from("missing-ffmpeg-proves-cache-reuse"),
+            ffprobe: OsString::from("ffprobe"),
+        },
+    )
+    .await
+    .expect("valid prepared pair must be reused without ffmpeg");
+    assert_eq!(reused, prepared);
+    assert!(!stale_proxy.exists());
+    assert!(!stale_thumbnail.exists());
+    assert!(!stale_partial.exists());
+
+    for path in [&stale_proxy, &stale_thumbnail, &stale_partial] {
+        fs::write(path, b"stale-owned-artifact").expect("stale artifact must be writable");
+    }
+    fs::write(&proxy_path, b"corrupt-proxy").expect("proxy corruption must be injected");
+
+    let repaired = prepare_asset_core(request(), &grants, &cache_root, actual_programs())
+        .await
+        .expect("corrupt prepared pair must be repaired");
+    assert_eq!(repaired.proxy_path, prepared.proxy_path);
+    assert_eq!(repaired.thumbnail_path, prepared.thumbnail_path);
+    assert_eq!(repaired.proxy_probe.video_codec_name, "h264");
+    assert_eq!(repaired.proxy_probe.width, 320);
+    assert_eq!(repaired.proxy_probe.height, 180);
+    assert!(!stale_proxy.exists());
+    assert!(!stale_thumbnail.exists());
+    assert!(!stale_partial.exists());
+    let repaired_thumbnail_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(
+        repaired_thumbnail_probe["streams"][0]["codec_name"],
+        "mjpeg"
+    );
+    assert_eq!(repaired_thumbnail_probe["streams"][0]["width"], 1_600);
+    assert_eq!(repaired_thumbnail_probe["streams"][0]["height"], 90);
+
+    let mut remaining_owned = Vec::new();
+    for entry in fs::read_dir(&profile_directory).expect("profile directory must remain readable") {
+        let entry = entry.expect("profile entry must be readable");
+        let name = entry.file_name().to_string_lossy().into_owned();
+        assert!(
+            !name.starts_with(".svp-video-"),
+            "temporary artifact survived: {name}"
+        );
+        if name.starts_with("proxy-") || name.starts_with("thumbnail-") {
+            remaining_owned.push(name);
+        }
+    }
+    remaining_owned.sort();
+    let mut expected_owned = vec![
+        proxy_path
+            .file_name()
+            .expect("proxy filename must exist")
+            .to_string_lossy()
+            .into_owned(),
+        thumbnail_path
+            .file_name()
+            .expect("thumbnail filename must exist")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    expected_owned.sort();
+    assert_eq!(remaining_owned, expected_owned);
 }

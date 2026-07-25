@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getVideoToolStatus,
   pickVideoSource,
+  prepareVideoAsset,
   probeVideoSource,
   VideoIpcResponseError,
 } from "./video-ipc";
@@ -31,6 +32,19 @@ const mediaProbe = {
   videoCodecName: "h264",
   audio: { codecName: "aac", channels: 2, sampleRate: 48_000 },
   fileSizeBytes: 12_000_000,
+} as const;
+
+const prepareRequest = {
+  projectId: "00000000-0000-4000-8000-000000000001",
+  assetId: "00000000-0000-4000-8000-000000000002",
+  path: "C:\\Media\\clip.mp4",
+  sequenceRate: mediaProbe.averageFrameRate,
+} as const;
+
+const preparedAsset = {
+  proxyPath: "C:\\Cache\\proxy.mp4",
+  thumbnailPath: "C:\\Cache\\thumbnail.jpg",
+  proxyProbe: { ...mediaProbe, width: 1_280, height: 720, fileSizeBytes: 5_000_000 },
 } as const;
 
 describe("video IPC adapter", () => {
@@ -79,6 +93,38 @@ describe("video IPC adapter", () => {
       VideoIpcResponseError,
     );
   });
+
+  it("validates a prepared asset and invokes the exact command arguments", async () => {
+    invokeMock.mockResolvedValueOnce(preparedAsset);
+
+    await expect(prepareVideoAsset(prepareRequest)).resolves.toEqual(preparedAsset);
+    expect(invokeMock).toHaveBeenCalledWith("video_prepare_asset", prepareRequest);
+  });
+
+  it("rejects a malformed prepared asset response", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ...preparedAsset,
+      proxyProbe: { ...preparedAsset.proxyProbe, width: 0 },
+      rawOutput: "private",
+    });
+
+    await expect(prepareVideoAsset(prepareRequest)).rejects.toBeInstanceOf(VideoIpcResponseError);
+  });
+
+  it.each(["project_io", "process_failed", "invalid_media"] as const)(
+    "normalizes the %s preparation backend error",
+    async (code) => {
+      invokeMock.mockRejectedValueOnce({
+        code,
+        message: "Backend preparation diagnostic",
+        details: { operation: "prepare_asset", rawOutput: "private" },
+      });
+
+      const error = await prepareVideoAsset(prepareRequest).catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(VideoDomainError);
+      expect(error).toMatchObject({ code });
+    },
+  );
 
   it.each([
     "tool_unavailable",

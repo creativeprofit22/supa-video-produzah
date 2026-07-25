@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+pub(crate) mod derived;
 mod error;
 mod grants;
 pub(crate) mod probe;
@@ -5,6 +7,7 @@ mod process;
 pub(crate) mod project_io;
 mod types;
 
+pub use derived::video_prepare_asset;
 pub use error::{VideoCommandError, VideoErrorCode};
 pub use grants::{GrantCategory, VideoPathGrants};
 pub use probe::{video_ffmpeg_status, video_probe_media};
@@ -14,8 +17,8 @@ pub use project_io::{
     MAX_PROJECT_BYTES,
 };
 pub use types::{
-    MediaProbe, VideoProjectFileV1, VideoToolInfo, VideoToolProblem, VideoToolStatus,
-    MAX_SAFE_INTEGER,
+    MediaProbe, PreparedVideoAsset, VideoProjectFileV1, VideoToolInfo, VideoToolProblem,
+    VideoToolStatus, MAX_SAFE_INTEGER,
 };
 
 #[cfg(test)]

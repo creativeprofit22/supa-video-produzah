@@ -10,6 +10,7 @@ import { AlertCircle, CheckCircle2, Film, FolderOpen, RefreshCw } from "lucide-r
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./App.css";
+import { useVideoProject } from "./use-video-project";
 import { getVideoToolStatus, pickVideoSource, probeVideoSource } from "./video-ipc";
 
 type ReadinessState =
@@ -26,6 +27,22 @@ const sourceErrorMessages: Partial<Record<VideoErrorCode, string>> = {
   path_not_granted: "Access to that file expired. Choose it again to restore access.",
 };
 
+const preparationErrorMessages: Partial<Record<VideoErrorCode, string>> = {
+  tool_unavailable:
+    "FFmpeg or FFprobe became unavailable. Recheck the media tools, then try again.",
+  process_failed: "FFmpeg could not create a safe preview for this video. Try another video file.",
+  process_timeout: "Preview preparation took too long. Try the video again.",
+  process_cancelled:
+    "Preview preparation was cancelled. Choose the video again when you are ready.",
+  process_output_limit: "The media tools returned more output than the app can safely process.",
+  invalid_media: "A safe preview could not be created from this video. Try another supported file.",
+  invalid_path: "That file location is no longer valid. Choose the video again.",
+  path_not_granted: "Access to that file expired. Choose it again to restore access.",
+  invalid_project: "The project media settings are invalid. Choose the video again.",
+  invalid_rate: "The video frame rate is not supported. Try another video file.",
+  project_io: "The preview cache could not be written. Check available disk space, then try again.",
+};
+
 const toolProblemMessages: Record<VideoToolProblem, string> = {
   not_found: "Install it and add it to your system PATH, then check again.",
   timed_out: "The version check timed out. Check security software, then try again.",
@@ -36,6 +53,16 @@ const toolProblemMessages: Record<VideoToolProblem, string> = {
 function sourceErrorMessage(error: Error): string {
   if (error instanceof VideoDomainError) {
     return sourceErrorMessages[error.code] ?? "The video could not be opened. Choose it again.";
+  }
+  return "The desktop service returned an unexpected response. Restart the app and try again.";
+}
+
+function preparationErrorMessage(error: Error): string {
+  if (error instanceof VideoDomainError) {
+    return (
+      preparationErrorMessages[error.code] ??
+      "The preview could not be prepared. Choose the video again."
+    );
   }
   return "The desktop service returned an unexpected response. Restart the app and try again.";
 }
@@ -131,6 +158,7 @@ function App() {
   const [sourceProbe, setSourceProbe] = useState<MediaProbe | null>(null);
   const [sourceError, setSourceError] = useState<Error | null>(null);
   const [sourcePending, setSourcePending] = useState(false);
+  const { preparation, prepareImportedSource } = useVideoProject();
 
   const checkReadiness = useCallback(async () => {
     const request = ++readinessRequest.current;
@@ -155,9 +183,11 @@ function App() {
   }, [checkReadiness]);
 
   const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
+  const preparationPending = preparation.phase === "pending";
+  const sourceOperationPending = sourcePending || preparationPending;
 
   const chooseSource = async () => {
-    if (!toolsReady || sourcePending) {
+    if (!toolsReady || sourceOperationPending) {
       return;
     }
     setSourceError(null);
@@ -165,7 +195,9 @@ function App() {
     try {
       const path = await pickVideoSource();
       if (path !== null) {
-        setSourceProbe(await probeVideoSource(path));
+        const probe = await probeVideoSource(path);
+        setSourceProbe(probe);
+        await prepareImportedSource(path, probe);
       }
     } catch (error) {
       setSourceError(error instanceof Error ? error : new Error());
@@ -267,7 +299,7 @@ function App() {
         <section
           className="source-panel"
           aria-labelledby="source-title"
-          aria-busy={sourcePending}
+          aria-busy={sourceOperationPending}
           aria-live="polite"
         >
           <div className="section-heading">
@@ -278,20 +310,22 @@ function App() {
             <button
               className="primary-button"
               type="button"
-              disabled={!toolsReady || sourcePending}
+              disabled={!toolsReady || sourceOperationPending}
               onClick={() => void chooseSource()}
               aria-describedby={!toolsReady ? "source-prerequisite" : undefined}
             >
-              {sourcePending ? (
+              {sourceOperationPending ? (
                 <span className="button-spinner" aria-hidden />
               ) : (
                 <FolderOpen size={17} aria-hidden />
               )}
-              {sourcePending
-                ? "Inspecting video"
-                : sourceProbe === null
-                  ? "Choose video"
-                  : "Choose another"}
+              {preparationPending
+                ? "Preparing preview"
+                : sourcePending
+                  ? "Inspecting video"
+                  : sourceProbe === null
+                    ? "Choose video"
+                    : "Choose another"}
             </button>
           </div>
 
@@ -320,6 +354,36 @@ function App() {
           ) : (
             <SourceSummary probe={sourceProbe} />
           )}
+
+          {preparation.phase === "pending" ? (
+            <div className="preparation-status" role="status">
+              <span className="spinner" aria-hidden />
+              <div>
+                <strong>Preparing preview</strong>
+                <p>Creating a controlled proxy and thumbnail in the app cache.</p>
+              </div>
+            </div>
+          ) : null}
+
+          {preparation.phase === "success" ? (
+            <div className="preparation-status is-success" role="status">
+              <CheckCircle2 size={20} aria-hidden />
+              <div>
+                <strong>Preview prepared</strong>
+                <p>The proxy and thumbnail are validated and ready for the editor.</p>
+              </div>
+            </div>
+          ) : null}
+
+          {preparation.phase === "error" ? (
+            <div className="inline-error" role="alert">
+              <AlertCircle size={18} aria-hidden />
+              <div>
+                <strong>Could not prepare the preview</strong>
+                <p>{preparationErrorMessage(preparation.error)}</p>
+              </div>
+            </div>
+          ) : null}
         </section>
       </main>
     </div>

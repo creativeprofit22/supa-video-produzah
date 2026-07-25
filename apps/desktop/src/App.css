@@ -400,6 +400,37 @@ a:focus-visible {
   line-height: 1.5;
 }
 
+.preparation-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.preparation-status > svg,
+.preparation-status > .spinner {
+  flex: 0 0 auto;
+  margin-block-start: 1px;
+}
+
+.preparation-status.is-success > svg {
+  color: var(--success);
+}
+
+.preparation-status strong {
+  font-size: 0.9rem;
+}
+
+.preparation-status p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
 .source-summary {
   padding: 22px;
   border: 1px solid var(--border-strong);
@@ -529,5 +560,9 @@ a:focus-visible {
   .inline-error {
     border: 1px solid CanvasText;
     border-inline-start-width: 3px;
+  }
+
+  .preparation-status {
+    border-color: CanvasText;
   }
 }

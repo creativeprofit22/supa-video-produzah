@@ -8,7 +8,7 @@ import {
   ratesEqual,
 } from "./time.js";
 
-const uuidSchema = z.string().uuid();
+export const projectUuidSchema = z.uuid();
 const dateTimeSchema = z.string().datetime({ offset: true });
 const safeNonNegativeIntegerSchema = z.number().int().safe().nonnegative();
 const safePositiveIntegerSchema = z.number().int().safe().positive();
@@ -78,7 +78,7 @@ export type MediaProbe = z.infer<typeof mediaProbeSchema>;
 
 export const videoAssetSchema = z
   .object({
-    id: uuidSchema,
+    id: projectUuidSchema,
     displayName: nonBlankSchema,
     locator: assetLocatorSchema,
     probe: mediaProbeSchema,
@@ -89,8 +89,8 @@ export type VideoAsset = z.infer<typeof videoAssetSchema>;
 
 export const videoClipSchema = z
   .object({
-    id: uuidSchema,
-    assetId: uuidSchema,
+    id: projectUuidSchema,
+    assetId: projectUuidSchema,
     timelineStart: rationalTimeSchema,
     sourceIn: rationalTimeSchema,
     sourceOut: rationalTimeSchema,
@@ -123,7 +123,7 @@ export type VideoClip = z.infer<typeof videoClipSchema>;
 
 export const videoTrackSchema = z
   .object({
-    id: uuidSchema,
+    id: projectUuidSchema,
     clips: z.array(videoClipSchema).max(1),
   })
   .strict();
@@ -132,7 +132,7 @@ export type VideoTrack = z.infer<typeof videoTrackSchema>;
 
 export const videoSequenceSchema = z
   .object({
-    id: uuidSchema,
+    id: projectUuidSchema,
     rate: rationalRateSchema,
     width: safePositiveIntegerSchema.refine((value) => value % 2 === 0, "Width must be even"),
     height: safePositiveIntegerSchema.refine((value) => value % 2 === 0, "Height must be even"),
@@ -173,8 +173,8 @@ export type VideoProjectState = z.infer<typeof videoProjectStateSchema>;
 
 export const projectRevisionSchema = z
   .object({
-    id: uuidSchema,
-    parentRevisionId: uuidSchema.nullable(),
+    id: projectUuidSchema,
+    parentRevisionId: projectUuidSchema.nullable(),
     sequenceNumber: safeNonNegativeIntegerSchema,
     committedAt: dateTimeSchema,
     commandSummary: nonBlankSchema,
@@ -187,11 +187,11 @@ export type ProjectRevision = z.infer<typeof projectRevisionSchema>;
 export const videoProjectFileV1Schema = z
   .object({
     schemaVersion: z.literal(1),
-    id: uuidSchema,
+    id: projectUuidSchema,
     name: nonBlankSchema,
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
-    currentRevisionId: uuidSchema,
+    currentRevisionId: projectUuidSchema,
     revisions: z.array(projectRevisionSchema).min(1).max(10_000),
   })
   .strict()

@@ -15,6 +15,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::probe::video_ffmpeg_status,
             video::probe::video_probe_media,
             video::project_io::video_pick_source,
+            video::derived::video_prepare_asset,
             video::project_io::video_pick_new_project_path,
             video::project_io::video_open_project,
             video::project_io::video_pick_export_path,
@@ -81,6 +82,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 video::probe::video_ffmpeg_status,
                 video::probe::video_probe_media,
+                video::derived::video_prepare_asset,
             ])
             .on_window_event(revoke_video_grants_on_destroyed)
             .build(mock_context(noop_assets()))
@@ -113,6 +115,30 @@ mod tests {
                 .is_some_and(|message| message.contains("not found")),
             "unexpected unknown-command response: {unknown}"
         );
+    }
+
+    #[test]
+    fn video_prepare_asset_is_reachable_over_mock_ipc() {
+        let app = mock_video_app();
+        let webview = WebviewWindowBuilder::new(&app, "prepare-owner", Default::default())
+            .build()
+            .expect("test webview must build");
+        let error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_prepare_asset",
+                json!({
+                    "projectId": "../escape",
+                    "assetId": "22222222-2222-4222-8222-222222222222",
+                    "path": "ungranted.mp4",
+                    "sequenceRate": { "numerator": 30000, "denominator": 1001 }
+                }),
+            ),
+        )
+        .expect_err("malformed prepare request must return a typed command error");
+        assert_eq!(error["code"], "invalid_path");
+        assert_eq!(error["details"]["operation"], "prepare_asset");
+        assert_eq!(error["details"]["category"], "project_id");
     }
 
     #[test]

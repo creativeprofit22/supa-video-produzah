@@ -32,7 +32,7 @@ impl<'de> Deserialize<'de> for ProjectUuid {
     }
 }
 
-fn is_contract_uuid(text: &str) -> bool {
+pub(crate) fn is_contract_uuid(text: &str) -> bool {
     if text.len() != 36
         || !text.is_ascii()
         || ![8, 13, 18, 23]
@@ -142,6 +142,57 @@ impl RationalRate {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MediaDisplayShape {
+    pub(crate) sample_aspect_ratio: RationalRate,
+    pub(crate) display_aspect_ratio: RationalRate,
+    pub(crate) rotation_degrees: u16,
+}
+
+impl MediaDisplayShape {
+    pub(crate) fn checked(
+        sample_aspect_ratio: RationalRate,
+        display_aspect_ratio: RationalRate,
+        rotation_degrees: u16,
+    ) -> Option<Self> {
+        let sample_aspect_ratio = RationalRate::checked_reduced(
+            sample_aspect_ratio.numerator,
+            sample_aspect_ratio.denominator,
+        )
+        .filter(|reduced| *reduced == sample_aspect_ratio)?;
+        let display_aspect_ratio = RationalRate::checked_reduced(
+            display_aspect_ratio.numerator,
+            display_aspect_ratio.denominator,
+        )
+        .filter(|reduced| *reduced == display_aspect_ratio)?;
+        if !matches!(rotation_degrees, 0 | 90 | 180 | 270) {
+            return None;
+        }
+        Some(Self {
+            sample_aspect_ratio,
+            display_aspect_ratio,
+            rotation_degrees,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct MediaColorMetadata {
+    pub(crate) color_range: Option<String>,
+    pub(crate) color_space: Option<String>,
+    pub(crate) color_primaries: Option<String>,
+    pub(crate) color_transfer: Option<String>,
+}
+
+impl MediaColorMetadata {
+    pub(crate) fn is_hdr(&self) -> bool {
+        matches!(
+            self.color_transfer.as_deref(),
+            Some("smpte2084" | "arib-std-b67")
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RationalTime {
@@ -163,6 +214,14 @@ pub struct MediaProbe {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub audio: Option<MediaAudioShape>,
     pub file_size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedVideoAsset {
+    pub proxy_path: String,
+    pub thumbnail_path: String,
+    pub proxy_probe: MediaProbe,
 }
 
 impl MediaProbe {

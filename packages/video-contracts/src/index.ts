@@ -1,4 +1,5 @@
 export * from "./commands.js";
+export * from "./derived-media.js";
 export * from "./errors.js";
 export * from "./migrations.js";
 export * from "./project.js";

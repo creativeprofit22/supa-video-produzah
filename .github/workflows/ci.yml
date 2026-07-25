@@ -306,6 +306,19 @@ jobs:
             --exact `
             --nocapture
 
+      - name: Smoke derived FFmpeg preparation, cache reuse, and repair
+        shell: pwsh
+        run: |
+          cargo test `
+            --locked `
+            --all-features `
+            --manifest-path apps/desktop/src-tauri/Cargo.toml `
+            video::tests::derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts `
+            -- `
+            --ignored `
+            --exact `
+            --nocapture
+
       - name: Install and launch packaged GUI executable
         shell: pwsh
         run: |
