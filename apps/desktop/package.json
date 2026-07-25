@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
+    "build": "pnpm run build:workspace-dependencies && pnpm run build:frontend",
+    "build:workspace-dependencies": "pnpm --filter \"@supa-video/desktop...\" --filter \"!@supa-video/desktop\" build",
+    "build:frontend": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
     "check": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false",
     "test": "vitest run --passWithNoTests",
     "preview": "vite preview",
