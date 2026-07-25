@@ -67,41 +67,45 @@ The bootstrap creates root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yam
 **Depends on:** A clean checkout of this repository, Node 22, pnpm 10, the Rust/Tauri prerequisites, and local FFmpeg availability during development  
 **Goal:** Bootstrap the product and prove the thinnest complete path from local media to an edited exported file through its own UI
 
-## Implementation checkpoint — re-audited and verified 24 July 2026
+## Implementation checkpoint — re-audited and verified 25 July 2026
 
-Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard completion gate passes.
+Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard completion gate passes. The clean-checkout desktop build regression is repaired and Step 10 is now unblocked.
 
 | Implementation item | State | Audit evidence |
 |---|---|---|
-| Workspace and desktop scaffold | Complete | Root pnpm workspace, Tauri v2/React 19 shell, strict TypeScript, lint, formatting, and package boundaries are tracked and build successfully. |
+| Workspace and desktop scaffold | Complete | The root pnpm workspace, Tauri v2/React 19 shell, strict TypeScript, lint, formatting, and package boundaries build successfully. The desktop package now builds all transitive workspace dependencies before its frontend, so standalone frontend and Tauri builds work from a frozen clean checkout. |
 | Browser-safe contracts and rational time | Complete | Strict V1 project/command/render schemas, explicit rational-time rounding, migrations, and contract tests are present. |
 | Project command engine and history | Complete | `ImportAsset`, `CreateSequence`, `InsertClip`, and `TrimClip`, immutable revisions, stale-base checks, undo/redo, and branch truncation are implemented. |
 | Deterministic render-plan compiler | Complete | Immutable revisions compile to validated FFmpeg argv arrays for AV and video-only inputs without filesystem or process access. |
-| Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, fixture provenance, and the supporting `.gitignore` exception are included in this checkpoint. |
-| Rust project boundary | Complete | Strict mirrored V1 DTOs share a 23-document parity corpus with TypeScript; owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and unit tested. Runtime command/plugin registration remains deferred to Step 12. |
-| Native FFmpeg discovery, process supervision, and media probe | Complete | System `ffmpeg`/`ffprobe` checks, bounded no-shell Tokio execution through Unix process groups or Windows Job Objects, strict ffprobe parsing, owner-granted source probing, typed redacted errors, and focused tests are implemented. The commands compile but remain unreachable from the webview until Step 12 runtime registration. |
-| Derived media, render jobs, and export pipeline | **Next** | Step 10 begins controlled proxy/thumbnail preparation on top of the supervisor. Render jobs/progress/cancellation remain Step 11, and runtime registration remains Step 12. |
-| React editing workflow | Not started | The desktop UI is still a boot placeholder; no IPC adapter, controller, opener, monitor, timeline, trim inspector, or export panel exists. |
-| Runtime and visual completion evidence | Not started | The real create/open/trim/export/cancel/reopen flow and required responsive/accessibility captures have not been run. |
+| Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, fixture provenance, and the supporting `.gitignore` exception are tracked; the committed bytes still match the recorded probe data and SHA-256. |
+| Rust project boundary | Complete | Strict mirrored V1 DTOs share a 23-document parity corpus with TypeScript; owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and unit tested. The dialog plugin, grant state, seven native handlers, and destroyed-window grant revocation are now registered in the production builder. |
+| Native FFmpeg discovery, process supervision, and media probe | Complete | System `ffmpeg`/`ffprobe` checks, bounded no-shell Tokio execution through Unix process groups or Windows Job Objects, strict ffprobe parsing, owner-granted source probing, typed redacted errors, production handler registration, and focused IPC/frontend coverage are implemented. |
+| Controlled proxy and thumbnail preparation | **Next** | Step 10 remains absent: there is no `derived.rs`, `video_prepare_asset`, cache fingerprint/profile, controlled proxy, thumbnail strip, atomic artifact promotion, derived-media validation, or cleanup coverage. |
+| Render jobs and export pipeline | Not started | Step 11 render-plan revalidation, owner-scoped jobs/events, progress, collision handling, cancellation, post-render probing, final promotion, preview copy, and partial cleanup are absent. |
+| React editing workflow | Partial | The React shell now checks tool readiness, invokes the Rust-owned source picker/probe through a validated IPC adapter, displays safe probe metadata, and has focused tests. There is still no `useVideoProject` controller, project create/open/save flow, prepared-media playback, timeline, trim inspector, undo/redo integration, or export panel. |
+| Runtime and visual completion evidence | Partial | Native status/probe IPC smoke tests and a local no-bundle production Tauri build pass. The real create/open/prepare/trim/export/cancel/reopen flow cannot run yet, and the required responsive/accessibility captures remain unverified. |
 
 ### Next implementation item
 
-Complete **Phase 1 implementation Step 10** from `.gg/plans/video-phase-01-single-clip.md`: add controlled proxy and thumbnail preparation on top of the verified process supervisor and strict source probe. Do not begin render jobs/progress/cancellation, runtime Tauri registration, React workflow work, or Phase 2 in this item.
+Complete **Phase 1 implementation Step 10** from `.gg/plans/video-phase-01-single-clip.md`: add controlled proxy and thumbnail preparation on top of the verified process supervisor and strict source probe. Do not expand this item into Step 11 render jobs, the remaining Step 12 security/lifecycle work, the Step 13–15 editing workflow, or Phase 2.
 
 ### Latest verification evidence
 
-- A frozen pnpm install, every root build/typecheck/test/lint/format gate, Rust formatting, Clippy with warnings denied, and all 22 portable Cargo tests pass on the Step 9 worktree.
-- The source contains 33 unique passing TypeScript tests: 19 contracts/time, 5 project/history, and 9 render compiler tests.
-- The Rust crate contains 22 portable passing tests plus one explicit local-FFmpeg integration test; parser, tool-status, grant-first probing, timeout, cancellation, stdout-limit, bounded-stderr, and kill/wait settlement cases pass.
-- The canonical fixture probes through the new native boundary as 2,000,000 microseconds, 320×180 H.264 at 30/1 CFR, mono 48 kHz AAC, and 129,211 bytes; its recorded SHA-256 remains `b82a6f35bde38dc8783e923140976393e73daf9f11c23689c05eae734eb23e93`.
-- System FFmpeg 8.1.2 is discovered by both bounded version checks, and the explicit system probe test passes against `single-clip.mp4`.
-- Native dialog, tool-status, and media-probe commands compile, but plugin/state/handler lifecycle registration and real Tauri IPC smoke coverage remain intentionally deferred until Step 12; all visual/accessibility verification also remains unverified.
+- A fresh clone of commit `e082e8d` passed `pnpm install --frozen-lockfile`, the exact Windows frontend command `pnpm --dir apps/desktop build`, and the exact production command `pnpm --dir apps/desktop tauri build --no-bundle --ci`; the expected Windows executable was produced. The local audited worktree also passes every root build/check/test/lint/format gate, Rust formatting, Clippy with warnings denied, and the explicit local-FFmpeg tests.
+- The source contains 52 unique passing TypeScript tests: 20 contracts/time, 5 project/history, 9 render compiler, and 18 desktop IPC/React tests.
+- The Rust crate contains 26 portable passing tests plus two explicit local-FFmpeg tests. Contract parity, project I/O, grants, parser behavior, tool status, grant-first probing, timeout, cancellation, descendant termination, output limits, bounded stderr, runtime command reachability, and destroyed-window revocation are covered.
+- The canonical fixture probes through the native boundary as 2,000,000 microseconds, 320×180 H.264 at 30/1 CFR, mono 48 kHz AAC, and 129,211 bytes; its SHA-256 remains `b82a6f35bde38dc8783e923140976393e73daf9f11c23689c05eae734eb23e93`.
+- System FFmpeg 8.1.2 is discovered by both bounded version checks, and both ignored local integrations pass against `single-clip.mp4`, including probe reachability over Tauri IPC.
+- GitHub Actions run `30149484897` passes for commit `e082e8d`: TypeScript contracts/desktop bundle, Linux Rust formatting/Clippy/tests, and the full Windows frontend/Clippy/tests/Tauri executable build are green. The signed-installer job is correctly skipped because this was a branch push, not a release.
 
 ### Audit notes
 
-- `README.md` currently describes native path grants, FFmpeg checks, persistence, proxy playback, trimming, and verified export as if they are implemented; treat that text as the intended Phase 1 contract until the native and React work lands.
+- Runtime registration and frontend work have advanced beyond the old Step 9 checkpoint: production currently registers the dialog plugin, grant state, project commands, tool status, and media probe; the React shell invokes status, picker, and probe commands.
+- Step 12 is still incomplete despite that early registration. `tauri.conf.json` still has `csp: null`, no narrow `$APPCACHE/video-phase1/**/*` asset-protocol scope exists, and app-exit render-job cleanup cannot exist until Step 11 adds jobs.
+- Desktop test scripts still include `--passWithNoTests`, but 18 desktop tests now run. The CI warning claiming desktop UI tests are absent is stale and should be removed in a later CI-maintenance change.
 - The render package test command also discovers compiled tests under `dist/` after a build, so it reports 18 executions for 9 unique source tests.
-- Desktop web tests still use `--passWithNoTests`; the 22 portable Rust tests plus one explicit local-FFmpeg test prove native core behavior but do not prove runtime IPC wiring.
+- `README.md` correctly labels proxy playback, trimming, and export as the Phase 1 target rather than current behavior; those capabilities remain pending.
+- Required visual evidence is still unverified. Browser captures could not be produced in this audit environment because the optional Playwright Chromium runtime is not installed.
 - Phase completion is determined only by the hard completion gate below, not by the number of completed foundation rows.
 
 ## Scope
