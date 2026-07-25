@@ -20,7 +20,35 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": ["'self'"],
+        "connect-src": ["ipc:", "http://ipc.localhost"],
+        "font-src": ["'self'"],
+        "img-src": ["'self'", "asset:", "http://asset.localhost"],
+        "media-src": ["'self'", "asset:", "http://asset.localhost"],
+        "object-src": ["'none'"],
+        "script-src": ["'self'"],
+        "style-src": ["'self'"],
+        "base-uri": ["'none'"],
+        "form-action": ["'none'"]
+      },
+      "devCsp": {
+        "default-src": ["'self'"],
+        "connect-src": ["ipc:", "http://ipc.localhost", "ws:"],
+        "font-src": ["'self'"],
+        "img-src": ["'self'", "asset:", "http://asset.localhost"],
+        "media-src": ["'self'", "asset:", "http://asset.localhost"],
+        "object-src": ["'none'"],
+        "script-src": ["'self'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "base-uri": ["'none'"],
+        "form-action": ["'none'"]
+      },
+      "capabilities": ["default"],
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPCACHE/video-phase1/**/*"]
+      }
     }
   },
   "bundle": {

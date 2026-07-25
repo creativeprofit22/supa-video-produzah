@@ -224,6 +224,95 @@ pub struct PreparedVideoAsset {
     pub proxy_probe: MediaProbe,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderExpectation {
+    pub duration_frames: u64,
+    pub rate: RationalRate,
+    pub width: u64,
+    pub height: u64,
+    pub audio: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderPlanV1 {
+    pub schema_version: u64,
+    pub plan_id: ProjectUuid,
+    pub revision_id: ProjectUuid,
+    pub executable: String,
+    pub input_path: String,
+    pub output_path: String,
+    pub expected: RenderExpectation,
+    pub argv: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoRenderStarted {
+    pub job_id: String,
+    pub plan_id: String,
+    pub revision_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedRenderOutput {
+    pub output_path: String,
+    pub preview_path: String,
+    pub probe: MediaProbe,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum VideoRenderEvent {
+    Started {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        #[serde(rename = "planId")]
+        plan_id: String,
+        #[serde(rename = "revisionId")]
+        revision_id: String,
+    },
+    Progress {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        #[serde(rename = "planId")]
+        plan_id: String,
+        #[serde(rename = "revisionId")]
+        revision_id: String,
+        #[serde(rename = "completedMicroseconds")]
+        completed_microseconds: u64,
+        #[serde(rename = "durationMicroseconds")]
+        duration_microseconds: u64,
+    },
+    Completed {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        #[serde(rename = "planId")]
+        plan_id: String,
+        #[serde(rename = "revisionId")]
+        revision_id: String,
+        output: VerifiedRenderOutput,
+    },
+    Failed {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        #[serde(rename = "planId")]
+        plan_id: String,
+        #[serde(rename = "revisionId")]
+        revision_id: String,
+        error: VideoCommandError,
+    },
+    Cancelled {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        #[serde(rename = "planId")]
+        plan_id: String,
+        #[serde(rename = "revisionId")]
+        revision_id: String,
+    },
+}
 impl MediaProbe {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn checked(

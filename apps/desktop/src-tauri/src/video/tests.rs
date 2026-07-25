@@ -6,7 +6,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::mpsc,
+    sync::{mpsc, Arc, Mutex},
     thread,
     time::{Duration, UNIX_EPOCH},
 };
@@ -36,18 +36,25 @@ use super::{
         video_ffmpeg_status_with_programs, InspectedMedia, VideoTool,
     },
     process::{
-        run_supervised, run_supervised_with_test_environment, ProcessCancellation, ProcessFailure,
-        ProcessSpec, SupervisedOutput,
+        run_supervised, run_supervised_streaming_with_test_environment,
+        run_supervised_with_test_environment, ProcessCancellation, ProcessFailure, ProcessSpec,
+        StdoutRecordObserver, SupervisedOutput,
     },
     project_io::{
         atomic_save_with, dialog_path, ensure_canonical_source_containment, open_project_from_path,
         read_project_bounded, sanitize_default_name, save_project_to_path, VideoSourceStatus,
         MAX_PROJECT_BYTES,
     },
+    render::{
+        create_owned_partial, ensure_preview_directory, parse_and_validate_render_plan,
+        partial_render_path, promote_render_partial, render_execution_arguments, run_render_worker,
+        validate_render_output, RenderEventSink, RenderProgress, RenderWorkerRequest,
+        VideoRenderJobs,
+    },
     types::{
         is_recognizable_absolute_path, parse_project_json, parse_project_value, MediaAudioShape,
         MediaColorMetadata, MediaDisplayShape, MediaProbe, RationalRate, VideoProjectFileV1,
-        VideoToolProblem,
+        VideoRenderEvent, VideoToolProblem,
     },
 };
 
@@ -2429,6 +2436,902 @@ fn ffprobe_parser_rejects_malformed_and_unsupported_metadata() {
     assert!(parse_ffprobe_json(&ffprobe_fixture("av.json"), 0).is_err());
 }
 
+const RENDER_PLAN_ID: &str = "33333333-3333-4333-8333-333333333333";
+const RENDER_REVISION_ID: &str = "44444444-4444-4444-8444-444444444444";
+
+fn render_plan_value(input: &Path, output: &Path, audio: bool, plan_id: &str) -> Value {
+    render_plan_value_for_profile(input, output, audio, plan_id, 60, 30_000, 1_001, 1_280, 720)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_plan_value_for_profile(
+    input: &Path,
+    output: &Path,
+    audio: bool,
+    plan_id: &str,
+    duration_frames: u64,
+    rate_numerator: u64,
+    rate_denominator: u64,
+    width: u64,
+    height: u64,
+) -> Value {
+    let input = input.to_string_lossy().into_owned();
+    let output = output.to_string_lossy().into_owned();
+    let duration_numerator = u128::from(duration_frames) * u128::from(rate_denominator) * 1_000_000;
+    let duration_denominator = u128::from(rate_numerator);
+    let duration_microseconds =
+        u64::try_from((duration_numerator + duration_denominator / 2) / duration_denominator)
+            .expect("test render duration must fit u64");
+    let duration = format!(
+        "{}.{:06}",
+        duration_microseconds / 1_000_000,
+        duration_microseconds % 1_000_000
+    );
+    let filter = format!(
+        "scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,fps={rate_numerator}/{rate_denominator}"
+    );
+    let mut argv = vec![
+        "-hide_banner".to_owned(),
+        "-nostdin".to_owned(),
+        "-loglevel".to_owned(),
+        "warning".to_owned(),
+        "-progress".to_owned(),
+        "pipe:1".to_owned(),
+        "-nostats".to_owned(),
+        "-i".to_owned(),
+        input.clone(),
+        "-ss".to_owned(),
+        "0.000000".to_owned(),
+        "-t".to_owned(),
+        duration,
+        "-map".to_owned(),
+        "0:v:0".to_owned(),
+    ];
+    if audio {
+        argv.extend(["-map".to_owned(), "0:a:0".to_owned()]);
+    } else {
+        argv.push("-an".to_owned());
+    }
+    argv.extend([
+        "-vf".to_owned(),
+        filter,
+        "-c:v".to_owned(),
+        "libx264".to_owned(),
+        "-pix_fmt".to_owned(),
+        "yuv420p".to_owned(),
+    ]);
+    if audio {
+        argv.extend([
+            "-c:a".to_owned(),
+            "aac".to_owned(),
+            "-ar".to_owned(),
+            "48000".to_owned(),
+        ]);
+    }
+    argv.extend([
+        "-movflags".to_owned(),
+        "+faststart".to_owned(),
+        output.clone(),
+    ]);
+    serde_json::json!({
+        "schemaVersion": 1,
+        "planId": plan_id,
+        "revisionId": RENDER_REVISION_ID,
+        "executable": "ffmpeg",
+        "inputPath": input,
+        "outputPath": output,
+        "expected": {
+            "durationFrames": duration_frames,
+            "rate": { "numerator": rate_numerator, "denominator": rate_denominator },
+            "width": width,
+            "height": height,
+            "audio": audio
+        },
+        "argv": argv
+    })
+}
+
+fn validated_render_fixture(
+    directory: &Path,
+    audio: bool,
+    plan_id: &str,
+) -> (VideoPathGrants, super::render::ValidatedRenderPlan) {
+    let source = directory.join(format!("source-{plan_id}.mp4"));
+    let output = directory.join(format!("output-{plan_id}.mp4"));
+    fs::write(&source, b"source").expect("source must be written");
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("source must be granted");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("output must be granted");
+    let validated = parse_and_validate_render_plan(
+        render_plan_value(&source, &output, audio, plan_id),
+        "owner",
+        &grants,
+    )
+    .expect("exact compiler plan must validate");
+    (grants, validated)
+}
+
+#[test]
+fn render_plan_validation_accepts_exact_av_and_video_only_and_rejects_mutations() {
+    for audio in [true, false] {
+        let directory = tempdir().expect("render workspace must be created");
+        let (_, validated) = validated_render_fixture(directory.path(), audio, RENDER_PLAN_ID);
+        assert_eq!(validated.duration_microseconds, 2_002_000);
+        let partial = partial_render_path(&validated).expect("partial path must derive");
+        assert_eq!(
+            partial.file_name().and_then(|name| name.to_str()),
+            Some(".svp-part-33333333-3333-4333-8333-333333333333.mp4")
+        );
+        assert!(
+            !validated.plan.argv.iter().any(|argument| argument == "-y"),
+            "validated plan must retain destination no-clobber semantics"
+        );
+    }
+
+    let directory = tempdir().expect("strict workspace must be created");
+    let source = directory.path().join("strict-source.mp4");
+    let output = directory.path().join("strict-output.mp4");
+    fs::write(&source, b"source").expect("source must be written");
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("output must grant");
+    let exact = render_plan_value(&source, &output, true, RENDER_PLAN_ID);
+    let invalid_plans = [
+        {
+            let mut value = exact.clone();
+            value["executable"] = Value::String("sh".to_owned());
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["expected"]["width"] = Value::from(1279);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["argv"][0] = Value::String("-y".to_owned());
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["argv"][12] = Value::String("2.000000".to_owned());
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["argv"][10] = Value::String("00.000000".to_owned());
+            value
+        },
+        {
+            let mut value = exact;
+            value["surprise"] = Value::Bool(true);
+            value
+        },
+    ];
+    for invalid in invalid_plans {
+        assert_eq!(
+            parse_and_validate_render_plan(invalid, "owner", &grants)
+                .expect_err("mutated render plan must fail")
+                .code,
+            VideoErrorCode::InvalidRenderPlan
+        );
+    }
+}
+
+#[test]
+fn render_execution_argv_exactly_overwrites_only_the_owned_partial() {
+    for audio in [true, false] {
+        let directory = tempdir().expect("render execution workspace must be created");
+        let (_, validated) = validated_render_fixture(directory.path(), audio, RENDER_PLAN_ID);
+        let partial = partial_render_path(&validated).expect("partial path must derive");
+        let source = validated.input_path.to_string_lossy().into_owned();
+        let partial = partial.to_string_lossy().into_owned();
+        let mut expected = vec![
+            "-hide_banner".to_owned(),
+            "-nostdin".to_owned(),
+            "-y".to_owned(),
+            "-loglevel".to_owned(),
+            "warning".to_owned(),
+            "-progress".to_owned(),
+            "pipe:1".to_owned(),
+            "-nostats".to_owned(),
+            "-i".to_owned(),
+            source,
+            "-ss".to_owned(),
+            "0.000000".to_owned(),
+            "-t".to_owned(),
+            "2.002000".to_owned(),
+            "-map".to_owned(),
+            "0:v:0".to_owned(),
+        ];
+        if audio {
+            expected.extend(["-map".to_owned(), "0:a:0".to_owned()]);
+        } else {
+            expected.push("-an".to_owned());
+        }
+        expected.extend([
+            "-vf".to_owned(),
+            "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001".to_owned(),
+            "-c:v".to_owned(),
+            "libx264".to_owned(),
+            "-pix_fmt".to_owned(),
+            "yuv420p".to_owned(),
+        ]);
+        if audio {
+            expected.extend([
+                "-c:a".to_owned(),
+                "aac".to_owned(),
+                "-ar".to_owned(),
+                "48000".to_owned(),
+            ]);
+        }
+        expected.extend(["-movflags".to_owned(), "+faststart".to_owned(), partial]);
+
+        assert_eq!(
+            render_execution_arguments(
+                &validated,
+                &partial_render_path(&validated).expect("partial path must derive")
+            )
+            .expect("execution arguments must build"),
+            expected
+        );
+        assert_eq!(
+            validated.plan.argv.last(),
+            Some(&validated.output_path.to_string_lossy().into_owned()),
+            "the validated plan must still target the final destination"
+        );
+    }
+}
+
+#[test]
+fn render_progress_is_monotonic_clamped_and_prefers_out_time_us() {
+    let mut progress = RenderProgress::new(2_000_000);
+    assert_eq!(
+        progress.ingest_record(b"out_time_ms=100\r\nprogress=continue\r\n"),
+        Some(100)
+    );
+    assert_eq!(
+        progress.ingest_record(b"out_time_ms=900\nout_time_us=700\nprogress=continue\n"),
+        Some(700)
+    );
+    assert_eq!(
+        progress.ingest_record(b"out_time_us=699\nprogress=continue\n"),
+        None
+    );
+    assert_eq!(
+        progress.ingest_record(b"out_time_us=-1\nout_time_ms=bad\n"),
+        None
+    );
+    assert_eq!(
+        progress.ingest_record(b"out_time_us=999999999999999999999999\n"),
+        None
+    );
+    assert_eq!(
+        progress.ingest_record(b"out_time_us=3000000\n"),
+        Some(2_000_000)
+    );
+    assert_eq!(progress.ingest_record(b"progress=end\n"), None);
+}
+
+#[test]
+fn render_registry_is_owner_scoped_and_bounds_tombstones() {
+    let directory = tempdir().expect("registry workspace must be created");
+    let (_, first) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
+    let jobs = VideoRenderJobs::with_tombstone_limit(2);
+    let (identity, _) = jobs.register("owner", &first).expect("job must register");
+    assert_eq!(
+        jobs.register("owner", &first)
+            .expect_err("duplicate id must fail")
+            .code,
+        VideoErrorCode::InvalidRenderPlan
+    );
+    assert_eq!(
+        jobs.cancel("intruder", &identity.job_id)
+            .expect_err("wrong owner must fail")
+            .code,
+        VideoErrorCode::InvalidRenderPlan
+    );
+    jobs.cancel("owner", &identity.job_id)
+        .expect("owner cancel must work");
+    jobs.cancel("owner", &identity.job_id)
+        .expect("repeat cancel must work");
+    assert!(jobs.settle(&identity.job_id).expect("settlement must work"));
+    assert!(!jobs
+        .settle(&identity.job_id)
+        .expect("repeat settlement must be inert"));
+    jobs.cancel("owner", &identity.job_id)
+        .expect("settled cancellation must be idempotent");
+
+    for (index, id) in [
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (_, plan) = validated_render_fixture(directory.path(), index % 2 == 0, id);
+        let (identity, _) = jobs
+            .register("owner", &plan)
+            .expect("new job must register");
+        assert!(jobs.settle(&identity.job_id).expect("new job must settle"));
+    }
+    assert_eq!(jobs.tombstone_count(), 2);
+}
+
+#[test]
+fn render_registry_bulk_cancellation_is_scoped_idempotent_and_worker_settled() {
+    let directory = tempdir().expect("bulk cancellation workspace must be created");
+    let jobs = VideoRenderJobs::default();
+    let mut registered = Vec::new();
+    for (owner, job_id) in [
+        ("first-owner", "77777777-7777-4777-8777-777777777777"),
+        ("first-owner", "88888888-8888-4888-8888-888888888888"),
+        ("second-owner", "99999999-9999-4999-8999-999999999999"),
+    ] {
+        let (_, validated) = validated_render_fixture(directory.path(), false, job_id);
+        let (identity, cancellation) = jobs
+            .register(owner, &validated)
+            .expect("bulk cancellation job must register");
+        registered.push((identity.job_id, cancellation));
+    }
+
+    jobs.cancel_owner("first-owner")
+        .expect("owner cleanup must cancel its jobs");
+    jobs.cancel_owner("first-owner")
+        .expect("repeated owner cleanup must be idempotent");
+    assert!(registered[0].1.is_cancelled());
+    assert!(registered[1].1.is_cancelled());
+    assert!(!registered[2].1.is_cancelled());
+    assert!(registered.iter().all(|(job_id, _)| jobs.is_active(job_id)));
+    assert_eq!(jobs.tombstone_count(), 0);
+
+    jobs.cancel_all().expect("shutdown must cancel every job");
+    jobs.cancel_all()
+        .expect("repeated shutdown cleanup must be idempotent");
+    assert!(registered
+        .iter()
+        .all(|(job_id, cancellation)| cancellation.is_cancelled() && jobs.is_active(job_id)));
+    assert_eq!(jobs.tombstone_count(), 0);
+
+    for (job_id, _) in registered {
+        assert!(jobs
+            .settle(&job_id)
+            .expect("the worker must retain terminal settlement ownership"));
+    }
+    assert_eq!(jobs.tombstone_count(), 3);
+}
+
+#[test]
+fn render_output_validation_and_preview_directory_reject_unsafe_shapes() {
+    let directory = tempdir().expect("render validation workspace must be created");
+    let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
+    let artifact = directory.path().join("artifact.mp4");
+    fs::write(&artifact, vec![0_u8; 4_096]).expect("artifact must be written");
+    let mut inspected = derived_valid_inspected(true);
+    inspected.probe.duration_microseconds = 2_002_000;
+    assert_eq!(
+        validate_render_output(&artifact, &inspected, &validated),
+        Ok(())
+    );
+    inspected.pixel_format = Some("yuv422p".to_owned());
+    assert_eq!(
+        validate_render_output(&artifact, &inspected, &validated)
+            .expect_err("wrong pixel format must fail")
+            .code,
+        VideoErrorCode::InvalidMedia
+    );
+
+    let cache = directory.path().join("cache");
+    fs::create_dir(&cache).expect("cache root must exist");
+    let preview = ensure_preview_directory(&cache, RENDER_PLAN_ID)
+        .expect("controlled preview directory must be created");
+    assert!(preview.starts_with(&cache));
+    assert_eq!(
+        preview.file_name().and_then(|name| name.to_str()),
+        Some(RENDER_PLAN_ID)
+    );
+    assert_eq!(
+        ensure_preview_directory(&cache, "../escape")
+            .expect_err("escaping job id must fail")
+            .code,
+        VideoErrorCode::InvalidRenderPlan
+    );
+}
+
+#[test]
+fn render_partial_workflow_precreates_cleans_and_preserves_final_no_clobber() {
+    let directory = tempdir().expect("promotion workspace must be created");
+    let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
+    let partial_path = partial_render_path(&validated).expect("partial path must derive");
+    let unrelated = directory.path().join(".svp-part-unrelated.mp4");
+    fs::write(&unrelated, b"unrelated").expect("unrelated file must be written");
+    {
+        let partial = create_owned_partial(&partial_path).expect("partial must be owned");
+        let metadata = fs::symlink_metadata(&partial_path).expect("partial must be pre-created");
+        assert!(metadata.file_type().is_file());
+        assert_eq!(metadata.len(), 0, "pre-created partial must start empty");
+        assert_eq!(
+            create_owned_partial(&partial_path)
+                .expect_err("an existing partial must never be claimed")
+                .code,
+            VideoErrorCode::InvalidRenderPlan
+        );
+
+        let execution = render_execution_arguments(&validated, &partial_path)
+            .expect("execution arguments must target the owned partial");
+        assert_eq!(&execution[1..3], ["-nostdin", "-y"]);
+        assert_eq!(
+            execution.last().map(String::as_str),
+            partial_path.to_str(),
+            "FFmpeg must overwrite only the pre-created partial"
+        );
+        assert!(
+            !execution
+                .iter()
+                .any(|argument| argument == validated.output_path.to_string_lossy().as_ref()),
+            "FFmpeg must never receive the final destination"
+        );
+
+        let mut ffmpeg_output = fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&partial)
+            .expect("the owned partial must be reopenable for controlled overwrite");
+        ffmpeg_output
+            .write_all(b"new export")
+            .expect("controlled overwrite must succeed");
+    }
+    assert!(!partial_path.exists(), "owned partial must drop cleanly");
+    assert_eq!(
+        fs::read(&unrelated).expect("unrelated file must remain"),
+        b"unrelated"
+    );
+
+    fs::write(&validated.output_path, b"old export").expect("old export must exist");
+    let partial = create_owned_partial(&partial_path).expect("replacement partial must be owned");
+    fs::write(&partial, b"replacement").expect("replacement must write");
+    assert_eq!(
+        promote_render_partial(partial, &validated.output_path, false)
+            .expect_err("no-clobber promotion must reject existing destination")
+            .code,
+        VideoErrorCode::OutputExists
+    );
+    assert_eq!(
+        fs::read(&validated.output_path).expect("old export must remain"),
+        b"old export"
+    );
+    assert!(
+        !partial_path.exists(),
+        "failed promotion must clean partial"
+    );
+
+    let partial = create_owned_partial(&partial_path).expect("overwrite partial must be owned");
+    fs::write(&partial, b"replacement").expect("replacement must write");
+    promote_render_partial(partial, &validated.output_path, true)
+        .expect("explicit overwrite must atomically replace");
+    assert_eq!(
+        fs::read(&validated.output_path).expect("replacement must exist"),
+        b"replacement"
+    );
+    assert_eq!(
+        fs::read(&unrelated).expect("unrelated file must remain"),
+        b"unrelated"
+    );
+}
+
+const RENDER_INTEGRATION_OWNER: &str = "render-worker-integration";
+const RENDER_AV_PLAN_ID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const RENDER_VIDEO_ONLY_PLAN_ID: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const RENDER_COLLISION_PLAN_ID: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const RENDER_CANCELLATION_PLAN_ID: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+#[derive(Clone, Copy)]
+struct RenderTestProfile {
+    duration_frames: u64,
+    rate_numerator: u64,
+    rate_denominator: u64,
+    width: u64,
+    height: u64,
+}
+
+const CANONICAL_RENDER_PROFILE: RenderTestProfile = RenderTestProfile {
+    duration_frames: 60,
+    rate_numerator: 30,
+    rate_denominator: 1,
+    width: 320,
+    height: 180,
+};
+
+const CANCELLATION_RENDER_PROFILE: RenderTestProfile = RenderTestProfile {
+    duration_frames: 900,
+    rate_numerator: 30,
+    rate_denominator: 1,
+    width: 1_280,
+    height: 720,
+};
+
+fn canonical_media_fixture() -> PathBuf {
+    workspace_root().join("apps/desktop/src-tauri/fixtures/video-phase1/single-clip.mp4")
+}
+
+fn validated_system_render_fixture(
+    directory: &Path,
+    source: &Path,
+    audio: bool,
+    plan_id: &str,
+    profile: RenderTestProfile,
+) -> super::render::ValidatedRenderPlan {
+    let output = directory.join(format!("output-{plan_id}.mp4"));
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file(RENDER_INTEGRATION_OWNER, GrantCategory::Source, source)
+        .expect("integration source must be granted");
+    let output = grants
+        .grant_destination(RENDER_INTEGRATION_OWNER, GrantCategory::Output, &output)
+        .expect("integration output must be granted");
+    parse_and_validate_render_plan(
+        render_plan_value_for_profile(
+            &source,
+            &output,
+            audio,
+            plan_id,
+            profile.duration_frames,
+            profile.rate_numerator,
+            profile.rate_denominator,
+            profile.width,
+            profile.height,
+        ),
+        RENDER_INTEGRATION_OWNER,
+        &grants,
+    )
+    .expect("integration render plan must validate")
+}
+
+fn registered_system_render_worker(
+    validated: super::render::ValidatedRenderPlan,
+    overwrite: bool,
+    app_cache_dir: PathBuf,
+) -> (
+    RenderWorkerRequest,
+    VideoRenderJobs,
+    Arc<Mutex<Vec<VideoRenderEvent>>>,
+) {
+    let jobs = VideoRenderJobs::default();
+    let (identity, cancellation) = jobs
+        .register(RENDER_INTEGRATION_OWNER, &validated)
+        .expect("integration render job must register");
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let events_for_sink = captured.clone();
+    let events: RenderEventSink = Arc::new(move |event| {
+        events_for_sink
+            .lock()
+            .expect("integration event capture must lock")
+            .push(event);
+        Ok(())
+    });
+    events.as_ref()(identity.started()).expect("started event must be captured");
+    let request = RenderWorkerRequest {
+        validated,
+        overwrite,
+        app_cache_dir,
+        ffmpeg_program: OsString::from("ffmpeg"),
+        ffprobe_program: OsString::from("ffprobe"),
+        cancellation,
+        identity,
+        jobs: jobs.clone(),
+        events,
+    };
+    (request, jobs, captured)
+}
+
+fn captured_render_events(captured: &Arc<Mutex<Vec<VideoRenderEvent>>>) -> Vec<VideoRenderEvent> {
+    captured
+        .lock()
+        .expect("integration event capture must lock")
+        .clone()
+}
+
+fn is_render_terminal_event(event: &VideoRenderEvent) -> bool {
+    matches!(
+        event,
+        VideoRenderEvent::Completed { .. }
+            | VideoRenderEvent::Failed { .. }
+            | VideoRenderEvent::Cancelled { .. }
+    )
+}
+
+fn assert_worker_event_order(events: &[VideoRenderEvent]) {
+    assert!(
+        matches!(events.first(), Some(VideoRenderEvent::Started { .. })),
+        "started must be the first event: {events:?}"
+    );
+    assert!(
+        events.len() >= 3,
+        "worker must emit started, progress, and terminal events: {events:?}"
+    );
+    assert!(
+        events[1..events.len() - 1]
+            .iter()
+            .all(|event| matches!(event, VideoRenderEvent::Progress { .. })),
+        "only progress may appear between started and terminal: {events:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| is_render_terminal_event(event))
+            .count(),
+        1,
+        "worker must emit exactly one terminal event: {events:?}"
+    );
+    assert!(
+        is_render_terminal_event(events.last().expect("terminal event must exist")),
+        "terminal event must be last: {events:?}"
+    );
+}
+
+async fn probe_and_validate_system_render(
+    path: &Path,
+    validated: &super::render::ValidatedRenderPlan,
+    operation: &'static str,
+) -> InspectedMedia {
+    let inspected = probe_trusted_media_with_program(
+        path,
+        OsString::from("ffprobe"),
+        ProcessCancellation::new(),
+        operation,
+    )
+    .await
+    .expect("render artifact must probe through the supervised system FFprobe");
+    validate_render_output(path, &inspected, validated)
+        .expect("render artifact must satisfy the worker's verified output contract");
+    inspected
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events() {
+    let source = canonical_media_fixture();
+    for (audio, plan_id) in [
+        (true, RENDER_AV_PLAN_ID),
+        (false, RENDER_VIDEO_ONLY_PLAN_ID),
+    ] {
+        let workspace = tempdir().expect("render integration workspace must be created");
+        let validated = validated_system_render_fixture(
+            workspace.path(),
+            &source,
+            audio,
+            plan_id,
+            CANONICAL_RENDER_PROFILE,
+        );
+        let (request, _, captured) = registered_system_render_worker(
+            validated.clone(),
+            false,
+            workspace.path().join("app-cache"),
+        );
+
+        run_render_worker(request).await;
+
+        let events = captured_render_events(&captured);
+        assert_worker_event_order(&events);
+        let completed = match events.last().expect("completed event must exist") {
+            VideoRenderEvent::Completed { output, .. } => output.clone(),
+            other => panic!("valid system render must complete, got {other:?}"),
+        };
+        assert_eq!(
+            completed.output_path,
+            validated.output_path.to_string_lossy()
+        );
+        let preview_path = PathBuf::from(&completed.preview_path);
+        let final_inspected = probe_and_validate_system_render(
+            &validated.output_path,
+            &validated,
+            "probe_render_final_integration",
+        )
+        .await;
+        let preview_inspected = probe_and_validate_system_render(
+            &preview_path,
+            &validated,
+            "probe_render_preview_integration",
+        )
+        .await;
+        assert_eq!(completed.probe, preview_inspected.probe);
+        assert_eq!(final_inspected.probe, preview_inspected.probe);
+        assert_eq!(final_inspected.probe.audio.is_some(), audio);
+        assert_eq!(
+            fs::read(&validated.output_path).expect("final render must be readable"),
+            fs::read(&preview_path).expect("preview render must be readable"),
+            "preview must be a verified copy of the final render"
+        );
+        assert!(
+            !partial_render_path(&validated)
+                .expect("partial path must derive")
+                .exists(),
+            "successful worker must promote and remove its partial"
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
+    let workspace = tempdir().expect("render collision workspace must be created");
+    let validated = validated_system_render_fixture(
+        workspace.path(),
+        &canonical_media_fixture(),
+        true,
+        RENDER_COLLISION_PLAN_ID,
+        CANONICAL_RENDER_PROFILE,
+    );
+    let preserved = b"pre-existing export must survive";
+    fs::write(&validated.output_path, preserved).expect("collision destination must be written");
+    let partial_path = partial_render_path(&validated).expect("partial path must derive");
+    let (request, _, captured) = registered_system_render_worker(
+        validated.clone(),
+        false,
+        workspace.path().join("app-cache"),
+    );
+
+    run_render_worker(request).await;
+
+    let events = captured_render_events(&captured);
+    assert_worker_event_order(&events);
+    match events.last().expect("failed event must exist") {
+        VideoRenderEvent::Failed { error, .. } => {
+            assert_eq!(error.code, VideoErrorCode::OutputExists)
+        }
+        other => panic!("no-overwrite collision must fail, got {other:?}"),
+    }
+    assert_eq!(
+        fs::read(&validated.output_path).expect("collision destination must remain readable"),
+        preserved
+    );
+    assert!(
+        !partial_path.exists(),
+        "failed no-overwrite promotion must clean the owned partial"
+    );
+    assert!(
+        !workspace
+            .path()
+            .join("app-cache/video-phase1/render-preview")
+            .exists(),
+        "failed promotion must not create a preview"
+    );
+}
+
+fn create_long_canonical_render_source(destination: &Path) {
+    let source = canonical_media_fixture();
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-loglevel"),
+        OsString::from("error"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-stream_loop"),
+        OsString::from("-1"),
+        OsString::from("-i"),
+        source.as_os_str().to_owned(),
+        OsString::from("-t"),
+        OsString::from("30.000000"),
+        OsString::from("-map"),
+        OsString::from("0:v:0"),
+        OsString::from("-map"),
+        OsString::from("0:a:0"),
+        OsString::from("-c:v"),
+        OsString::from("libx264"),
+        OsString::from("-preset"),
+        OsString::from("ultrafast"),
+        OsString::from("-pix_fmt"),
+        OsString::from("yuv420p"),
+        OsString::from("-r"),
+        OsString::from("30"),
+        OsString::from("-c:a"),
+        OsString::from("aac"),
+        OsString::from("-ar"),
+        OsString::from("48000"),
+        OsString::from("-movflags"),
+        OsString::from("+faststart"),
+    ];
+    args.push(destination.as_os_str().to_owned());
+    run_local_ffmpeg(args);
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partial_once() {
+    let workspace = tempdir().expect("render cancellation workspace must be created");
+    let long_source = workspace.path().join("long-canonical-source.mp4");
+    create_long_canonical_render_source(&long_source);
+    let validated = validated_system_render_fixture(
+        workspace.path(),
+        &long_source,
+        true,
+        RENDER_CANCELLATION_PLAN_ID,
+        CANCELLATION_RENDER_PROFILE,
+    );
+    let output_path = validated.output_path.clone();
+    let partial_path = partial_render_path(&validated).expect("partial path must derive");
+    let (request, jobs, captured) =
+        registered_system_render_worker(validated, false, workspace.path().join("app-cache"));
+    let worker = tokio::spawn(run_render_worker(request));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+
+    loop {
+        let saw_incomplete_progress = captured
+            .lock()
+            .expect("integration event capture must lock")
+            .iter()
+            .any(|event| {
+                matches!(
+                    event,
+                    VideoRenderEvent::Progress {
+                        completed_microseconds,
+                        duration_microseconds: 30_000_000,
+                        ..
+                    } if *completed_microseconds > 0 && *completed_microseconds < 30_000_000
+                )
+            });
+        if saw_incomplete_progress {
+            break;
+        }
+        if worker.is_finished() {
+            worker
+                .await
+                .expect("render worker task must join before early completion failure");
+            panic!("long real render completed before cancellation could be exercised");
+        }
+        if tokio::time::Instant::now() >= deadline {
+            jobs.cancel(RENDER_INTEGRATION_OWNER, RENDER_CANCELLATION_PLAN_ID)
+                .expect("timed-out integration worker must cancel");
+            worker
+                .await
+                .expect("timed-out integration worker task must join");
+            panic!("long real render emitted no cancellable progress before the deadline");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    jobs.cancel(RENDER_INTEGRATION_OWNER, RENDER_CANCELLATION_PLAN_ID)
+        .expect("active integration render must cancel");
+    worker
+        .await
+        .expect("cancelled integration worker task must join");
+
+    let events = captured_render_events(&captured);
+    assert_worker_event_order(&events);
+    assert!(
+        matches!(events.last(), Some(VideoRenderEvent::Cancelled { .. })),
+        "cancelled must be the sole terminal event: {events:?}"
+    );
+    assert!(
+        !output_path.exists(),
+        "cancelled worker must not commit output"
+    );
+    assert!(
+        !partial_path.exists(),
+        "cancelled worker must clean its owned partial after reaping FFmpeg"
+    );
+    fs::remove_file(&long_source)
+        .expect("reaped FFmpeg must release the generated source file handle");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        !partial_path.exists(),
+        "no surviving FFmpeg process may recreate or continue writing the partial"
+    );
+    assert_eq!(
+        captured_render_events(&captured).len(),
+        events.len(),
+        "no event may arrive after the cancelled terminal event"
+    );
+}
+
 const PROCESS_HELPER_MODE_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_MODE";
 const PROCESS_HELPER_MARKER_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_MARKER";
 const PROCESS_HELPER_READY_MARKER_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_READY_MARKER";
@@ -2576,6 +3479,19 @@ fn supervised_process_helper() {
             std::io::stdout()
                 .write_all(&vec![b'o'; 128 * 1024])
                 .expect("stdout must accept helper bytes");
+            std::io::stdout().flush().expect("stdout must flush");
+            thread::sleep(Duration::from_secs(2));
+        }
+        "progress_stream" => {
+            for index in 1..=5_000 {
+                println!("out_time_us={index}\nprogress=continue");
+            }
+            println!("progress=end");
+        }
+        "progress_overlong" => {
+            std::io::stdout()
+                .write_all(&vec![b'p'; 8 * 1024])
+                .expect("stdout must accept overlong progress line");
             std::io::stdout().flush().expect("stdout must flush");
             thread::sleep(Duration::from_secs(2));
         }
@@ -2733,6 +3649,54 @@ async fn supervisor_captures_bounds_terminates_cancels_and_reaps_without_shell()
         assert!(matches!(result, Err(ProcessFailure::Timeout { .. })));
         assert!(!marker.exists(), "settled child must not survive return");
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn streaming_supervisor_discards_progress_and_rejects_overlong_records() {
+    let records = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let captured = records.clone();
+    let observer: StdoutRecordObserver = Arc::new(move |record| {
+        captured
+            .lock()
+            .expect("record capture must lock")
+            .push(record.to_vec());
+    });
+    let output = run_supervised_streaming_with_test_environment(
+        helper_process_spec(Duration::from_secs(5), 1_024, 4_096, "progress_stream"),
+        ProcessCancellation::new(),
+        helper_process_environment("progress_stream", None),
+        observer,
+    )
+    .await
+    .expect("bounded progress stream must succeed");
+    assert!(
+        output.stdout.is_empty(),
+        "streaming mode must not retain stdout"
+    );
+    {
+        let captured = records.lock().expect("record capture must lock");
+        assert!(captured.len() >= 5_001);
+        assert!(captured
+            .iter()
+            .any(|record| record.ends_with(b"progress=end\n")));
+    }
+
+    let observer: StdoutRecordObserver = Arc::new(|_| {});
+    let overlong = run_supervised_streaming_with_test_environment(
+        helper_process_spec(Duration::from_secs(5), 1_024, 4_096, "progress_overlong"),
+        ProcessCancellation::new(),
+        helper_process_environment("progress_overlong", None),
+        observer,
+    )
+    .await
+    .expect_err("overlong unterminated record must fail");
+    assert!(matches!(
+        overlong,
+        ProcessFailure::StdoutLimit {
+            operation: "progress_overlong",
+            limit: 1_024
+        }
+    ));
 }
 
 #[cfg(any(unix, windows))]

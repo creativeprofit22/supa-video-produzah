@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { videoCommandErrorSchema } from "./errors.js";
+import { mediaProbeSchema, projectUuidSchema } from "./project.js";
 import { rationalRateSchema } from "./time.js";
 
 const safePositiveIntegerSchema = z.number().int().safe().positive();
@@ -51,3 +53,62 @@ export const renderPlanV1Schema = z
   });
 
 export type RenderPlanV1 = z.infer<typeof renderPlanV1Schema>;
+
+const renderEventIdentityShape = {
+  jobId: projectUuidSchema,
+  planId: projectUuidSchema,
+  revisionId: projectUuidSchema,
+};
+
+export const videoRenderStartedSchema = z.object(renderEventIdentityShape).strict();
+
+export type VideoRenderStarted = z.infer<typeof videoRenderStartedSchema>;
+
+export const verifiedRenderOutputSchema = z
+  .object({
+    outputPath: pathSchema,
+    previewPath: pathSchema,
+    probe: mediaProbeSchema,
+  })
+  .strict();
+
+export type VerifiedRenderOutput = z.infer<typeof verifiedRenderOutputSchema>;
+
+export const videoRenderEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("started"),
+      ...renderEventIdentityShape,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("progress"),
+      ...renderEventIdentityShape,
+      completedMicroseconds: z.number().int().safe().nonnegative(),
+      durationMicroseconds: z.number().int().safe().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("completed"),
+      ...renderEventIdentityShape,
+      output: verifiedRenderOutputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("failed"),
+      ...renderEventIdentityShape,
+      error: videoCommandErrorSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("cancelled"),
+      ...renderEventIdentityShape,
+    })
+    .strict(),
+]);
+
+export type VideoRenderEvent = z.infer<typeof videoRenderEventSchema>;

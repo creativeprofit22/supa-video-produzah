@@ -319,6 +319,32 @@ jobs:
             --exact `
             --nocapture
 
+      - name: Smoke real FFmpeg render worker valid exports
+        shell: pwsh
+        run: |
+          cargo test `
+            --locked `
+            --all-features `
+            --manifest-path apps/desktop/src-tauri/Cargo.toml `
+            video::tests::render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events `
+            -- `
+            --ignored `
+            --exact `
+            --nocapture
+
+      - name: Smoke real FFmpeg render worker cancellation
+        shell: pwsh
+        run: |
+          cargo test `
+            --locked `
+            --all-features `
+            --manifest-path apps/desktop/src-tauri/Cargo.toml `
+            video::tests::render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partial_once `
+            -- `
+            --ignored `
+            --exact `
+            --nocapture
+
       - name: Install and launch packaged GUI executable
         shell: pwsh
         run: |

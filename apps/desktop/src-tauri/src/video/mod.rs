@@ -5,6 +5,7 @@ mod grants;
 pub(crate) mod probe;
 mod process;
 pub(crate) mod project_io;
+pub(crate) mod render;
 mod types;
 
 pub use derived::video_prepare_asset;
@@ -16,8 +17,10 @@ pub use project_io::{
     video_save_project, OpenedVideoProject, VideoSourceRecord, VideoSourceStatus,
     MAX_PROJECT_BYTES,
 };
+pub use render::{video_cancel_render, video_start_render, VideoRenderJobs, VIDEO_RENDER_EVENT};
 pub use types::{
-    MediaProbe, PreparedVideoAsset, VideoProjectFileV1, VideoToolInfo, VideoToolProblem,
+    MediaProbe, PreparedVideoAsset, RenderExpectation, RenderPlanV1, VerifiedRenderOutput,
+    VideoProjectFileV1, VideoRenderEvent, VideoRenderStarted, VideoToolInfo, VideoToolProblem,
     VideoToolStatus, MAX_SAFE_INTEGER,
 };
 

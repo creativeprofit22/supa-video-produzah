@@ -6,7 +6,7 @@ import type {
   VideoToolProblem,
   VideoToolStatus,
 } from "@supa-video/contracts";
-import { AlertCircle, CheckCircle2, Film, FolderOpen, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, Film, FolderOpen, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./App.css";
@@ -43,6 +43,22 @@ const preparationErrorMessages: Partial<Record<VideoErrorCode, string>> = {
   project_io: "The preview cache could not be written. Check available disk space, then try again.",
 };
 
+const renderErrorMessages: Partial<Record<VideoErrorCode, string>> = {
+  tool_unavailable:
+    "FFmpeg or FFprobe became unavailable. Recheck the media tools, then try again.",
+  process_failed:
+    "FFmpeg could not finish this export. Check available disk space, then try again.",
+  process_timeout: "The export took too long. Try again or choose a shorter source video.",
+  process_cancelled: "The export was interrupted. Start it again when you are ready.",
+  process_output_limit: "FFmpeg returned more output than the app can safely process.",
+  invalid_media: "The exported video could not be validated. Try exporting again.",
+  invalid_path: "That export destination is no longer valid. Choose another destination.",
+  path_not_granted: "Access to that destination expired. Choose it again to restore access.",
+  project_io: "The export could not be written. Check available disk space and folder access.",
+  invalid_render_plan:
+    "The prepared project changed. Choose the source video again before exporting.",
+};
+
 const toolProblemMessages: Record<VideoToolProblem, string> = {
   not_found: "Install it and add it to your system PATH, then check again.",
   timed_out: "The version check timed out. Check security software, then try again.",
@@ -63,6 +79,13 @@ function preparationErrorMessage(error: Error): string {
       preparationErrorMessages[error.code] ??
       "The preview could not be prepared. Choose the video again."
     );
+  }
+  return "The desktop service returned an unexpected response. Restart the app and try again.";
+}
+
+function renderErrorMessage(error: Error): string {
+  if (error instanceof VideoDomainError) {
+    return renderErrorMessages[error.code] ?? "The export could not be completed. Try again.";
   }
   return "The desktop service returned an unexpected response. Restart the app and try again.";
 }
@@ -158,7 +181,17 @@ function App() {
   const [sourceProbe, setSourceProbe] = useState<MediaProbe | null>(null);
   const [sourceError, setSourceError] = useState<Error | null>(null);
   const [sourcePending, setSourcePending] = useState(false);
-  const { preparation, prepareImportedSource } = useVideoProject();
+  const {
+    preparation,
+    render,
+    destinationPending,
+    destinationError,
+    renderReady,
+    prepareImportedSource,
+    exportVideo,
+    confirmOverwrite,
+    cancelRender,
+  } = useVideoProject();
 
   const checkReadiness = useCallback(async () => {
     const request = ++readinessRequest.current;
@@ -184,10 +217,11 @@ function App() {
 
   const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
   const preparationPending = preparation.phase === "pending";
+  const renderActive = render.phase === "starting" || render.phase === "running";
   const sourceOperationPending = sourcePending || preparationPending;
 
   const chooseSource = async () => {
-    if (!toolsReady || sourceOperationPending) {
+    if (!toolsReady || sourceOperationPending || renderActive) {
       return;
     }
     setSourceError(null);
@@ -222,7 +256,7 @@ function App() {
         <div className="workspace-intro">
           <p className="eyebrow">New project</p>
           <h1>Start with one source video</h1>
-          <p>Check the local media tools, then choose the clip you want to trim.</p>
+          <p>Check the local media tools, prepare one clip, then export a finished MP4.</p>
         </div>
 
         <section className="readiness-panel" aria-labelledby="readiness-title" aria-live="polite">
@@ -310,7 +344,7 @@ function App() {
             <button
               className="primary-button"
               type="button"
-              disabled={!toolsReady || sourceOperationPending}
+              disabled={!toolsReady || sourceOperationPending || renderActive}
               onClick={() => void chooseSource()}
               aria-describedby={!toolsReady ? "source-prerequisite" : undefined}
             >
@@ -385,6 +419,171 @@ function App() {
             </div>
           ) : null}
         </section>
+
+        {toolsReady && renderReady ? (
+          <section
+            className="export-panel"
+            aria-labelledby="export-title"
+            aria-busy={destinationPending || renderActive}
+          >
+            <div className="section-heading">
+              <div>
+                <p className="state-kicker">Finished video</p>
+                <h2 id="export-title">Export video</h2>
+              </div>
+              {render.phase === "running" ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={render.cancellationPending}
+                  onClick={() => void cancelRender()}
+                >
+                  {render.cancellationPending ? "Cancelling export" : "Cancel export"}
+                </button>
+              ) : render.phase === "starting" ? null : (
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={destinationPending}
+                  onClick={() => void exportVideo()}
+                >
+                  {destinationPending ? (
+                    <span className="button-spinner" aria-hidden />
+                  ) : (
+                    <Download size={17} aria-hidden />
+                  )}
+                  {destinationPending
+                    ? "Choosing destination"
+                    : render.phase === "failed" && render.canOverwrite
+                      ? "Choose another destination"
+                      : render.phase === "completed" || render.phase === "completed_with_warning"
+                        ? "Export another"
+                        : "Export MP4"}
+                </button>
+              )}
+            </div>
+
+            {render.phase === "idle" ? (
+              <div className="export-guidance">
+                <p>Choose a destination to export the prepared clip as an MP4 video.</p>
+              </div>
+            ) : null}
+
+            {render.phase === "starting" ? (
+              <div className="render-status" role="status">
+                <span className="spinner" aria-hidden />
+                <div>
+                  <strong>Starting export</strong>
+                  <p>Validating the project and preparing FFmpeg.</p>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "running" ? (
+              <div className="render-progress" role="status">
+                <div className="progress-heading">
+                  <div>
+                    <strong>
+                      {render.cancellationPending ? "Cancelling export" : "Exporting video"}
+                    </strong>
+                    <p>Keep the app open until the finished video is verified.</p>
+                  </div>
+                  <span>{render.progress}%</span>
+                </div>
+                <progress aria-label="Video export progress" max={100} value={render.progress} />
+              </div>
+            ) : null}
+
+            {render.phase === "running" && render.cancellationError !== null ? (
+              <div className="inline-error" role="alert">
+                <AlertCircle size={18} aria-hidden />
+                <div>
+                  <strong>Could not cancel the export</strong>
+                  <p>{renderErrorMessage(render.cancellationError)}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "completed" ? (
+              <div className="render-status is-success" role="status">
+                <CheckCircle2 size={20} aria-hidden />
+                <div>
+                  <strong>Export complete</strong>
+                  <p className="output-destination">
+                    Saved to <span>{render.output.outputPath}</span>
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "completed_with_warning" ? (
+              <div className="render-status" role="status">
+                <AlertCircle size={20} aria-hidden />
+                <div>
+                  <strong>Export saved, preview unavailable</strong>
+                  <p>The final MP4 was saved, but its editor preview could not be prepared.</p>
+                  <p className="output-destination">
+                    Saved to <span>{render.outputPath}</span>
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "cancelled" ? (
+              <div className="render-status" role="status">
+                <AlertCircle size={20} aria-hidden />
+                <div>
+                  <strong>Export cancelled</strong>
+                  <p>No finished video was written. You can start the export again.</p>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "failed" && render.canOverwrite ? (
+              <div
+                className="overwrite-confirmation"
+                role="alert"
+                aria-labelledby="overwrite-title"
+              >
+                <AlertCircle size={20} aria-hidden />
+                <div>
+                  <strong id="overwrite-title">Replace the existing file?</strong>
+                  <p>
+                    A file already exists at the selected destination. Replacing it cannot be
+                    undone.
+                  </p>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    onClick={() => void confirmOverwrite()}
+                  >
+                    Replace existing file
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {render.phase === "failed" && !render.canOverwrite ? (
+              <div className="inline-error" role="alert">
+                <AlertCircle size={18} aria-hidden />
+                <div>
+                  <strong>Could not export the video</strong>
+                  <p>{renderErrorMessage(render.error)}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {destinationError !== null ? (
+              <div className="inline-error" role="alert">
+                <AlertCircle size={18} aria-hidden />
+                <div>
+                  <strong>Could not choose that destination</strong>
+                  <p>{renderErrorMessage(destinationError)}</p>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </main>
     </div>
   );

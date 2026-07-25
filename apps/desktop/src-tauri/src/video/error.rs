@@ -17,6 +17,8 @@ pub enum VideoErrorCode {
     ProcessCancelled,
     ProcessOutputLimit,
     InvalidMedia,
+    InvalidRenderPlan,
+    OutputExists,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -145,6 +147,34 @@ impl VideoCommandError {
             VideoErrorCode::InvalidMedia,
             "The media file is malformed or unsupported",
             json!({ "operation": operation, "category": category }),
+        )
+    }
+
+    pub(crate) fn invalid_render_plan(category: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::InvalidRenderPlan,
+            "The render plan failed strict validation",
+            json!({ "operation": "validate_render_plan", "category": category }),
+        )
+    }
+
+    pub(crate) fn output_exists(operation: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::OutputExists,
+            "The selected export destination already exists",
+            json!({ "operation": operation, "category": "destination_collision" }),
+        )
+    }
+
+    pub(crate) fn preview_preparation_failed(category: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::ProjectIo,
+            "The export completed but its preview could not be prepared",
+            json!({
+                "operation": "prepare_render_preview",
+                "category": category,
+                "outputExists": true,
+            }),
         )
     }
 }

@@ -1,6 +1,7 @@
 node_modules
 dist
 target
+**/test-results/**
 **/src-tauri/gen/**
 **/.vscode/**
 pnpm-lock.yaml

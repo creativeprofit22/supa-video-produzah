@@ -26,6 +26,8 @@ use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 pub(crate) const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
+pub(crate) type StdoutRecordObserver = Arc<dyn Fn(&[u8]) + Send + Sync + 'static>;
+
 #[derive(Debug, Clone)]
 pub(crate) struct ProcessSpec {
     pub(crate) program: OsString,
@@ -127,7 +129,16 @@ pub(crate) async fn run_supervised(
     cancellation: ProcessCancellation,
 ) -> Result<SupervisedOutput, ProcessFailure> {
     let command = child_command(&spec);
-    run_supervised_command(spec, cancellation, command).await
+    run_supervised_command(spec, cancellation, command, None).await
+}
+
+pub(crate) async fn run_supervised_streaming(
+    spec: ProcessSpec,
+    cancellation: ProcessCancellation,
+    observer: StdoutRecordObserver,
+) -> Result<SupervisedOutput, ProcessFailure> {
+    let command = child_command(&spec);
+    run_supervised_command(spec, cancellation, command, Some(observer)).await
 }
 
 #[cfg(test)]
@@ -135,6 +146,32 @@ pub(crate) async fn run_supervised_with_test_environment(
     spec: ProcessSpec,
     cancellation: ProcessCancellation,
     environment: Vec<(OsString, Option<OsString>)>,
+) -> Result<SupervisedOutput, ProcessFailure> {
+    run_supervised_with_test_environment_and_observer(spec, cancellation, environment, None).await
+}
+
+#[cfg(test)]
+pub(crate) async fn run_supervised_streaming_with_test_environment(
+    spec: ProcessSpec,
+    cancellation: ProcessCancellation,
+    environment: Vec<(OsString, Option<OsString>)>,
+    observer: StdoutRecordObserver,
+) -> Result<SupervisedOutput, ProcessFailure> {
+    run_supervised_with_test_environment_and_observer(
+        spec,
+        cancellation,
+        environment,
+        Some(observer),
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn run_supervised_with_test_environment_and_observer(
+    spec: ProcessSpec,
+    cancellation: ProcessCancellation,
+    environment: Vec<(OsString, Option<OsString>)>,
+    observer: Option<StdoutRecordObserver>,
 ) -> Result<SupervisedOutput, ProcessFailure> {
     let mut command = child_command(&spec);
     for (name, value) in environment {
@@ -144,7 +181,7 @@ pub(crate) async fn run_supervised_with_test_environment(
             command.env_remove(name);
         }
     }
-    run_supervised_command(spec, cancellation, command).await
+    run_supervised_command(spec, cancellation, command, observer).await
 }
 
 fn child_command(spec: &ProcessSpec) -> Command {
@@ -161,6 +198,7 @@ async fn run_supervised_command(
     spec: ProcessSpec,
     cancellation: ProcessCancellation,
     command: Command,
+    stdout_observer: Option<StdoutRecordObserver>,
 ) -> Result<SupervisedOutput, ProcessFailure> {
     let mut wrapped = CommandWrap::from(command);
     wrapped.wrap(KillOnDrop);
@@ -189,7 +227,13 @@ async fn run_supervised_command(
         });
     };
 
-    let mut stdout_task = tokio::spawn(read_stdout_bounded(stdout, spec.stdout_limit));
+    let stdout_limit = spec.stdout_limit;
+    let mut stdout_task = tokio::spawn(async move {
+        match stdout_observer {
+            Some(observer) => read_stdout_records(stdout, stdout_limit, observer).await,
+            None => read_stdout_bounded(stdout, stdout_limit).await,
+        }
+    });
     let mut stderr_task = tokio::spawn(read_stderr_tail(stderr, spec.stderr_tail_limit));
     let mut stdout_result = None;
     let mut stderr_result = None;
@@ -357,6 +401,68 @@ async fn read_stdout_bounded(
         }
         output.extend_from_slice(&buffer[..read]);
     }
+}
+
+async fn read_stdout_records(
+    mut reader: impl AsyncRead + Unpin,
+    line_limit: usize,
+    observer: StdoutRecordObserver,
+) -> Result<Vec<u8>, StdoutReadFailure> {
+    let mut pending = Vec::with_capacity(line_limit.min(8 * 1024));
+    let mut record = Vec::with_capacity(line_limit.min(8 * 1024));
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|_| StdoutReadFailure::Io)?;
+        if read == 0 {
+            if !pending.is_empty() {
+                append_progress_line(&mut record, &pending, line_limit)?;
+            }
+            if !record.is_empty() {
+                observer(&record);
+            }
+            return Ok(Vec::new());
+        }
+        for byte in &buffer[..read] {
+            if *byte == b'\n' {
+                if pending.last() == Some(&b'\r') {
+                    pending.pop();
+                }
+                append_progress_line(&mut record, &pending, line_limit)?;
+                let record_complete = pending.starts_with(b"progress=");
+                pending.clear();
+                if record_complete {
+                    observer(&record);
+                    record.clear();
+                }
+            } else {
+                if pending.len() >= line_limit {
+                    return Err(StdoutReadFailure::Limit);
+                }
+                pending.push(*byte);
+            }
+        }
+    }
+}
+
+fn append_progress_line(
+    record: &mut Vec<u8>,
+    line: &[u8],
+    line_limit: usize,
+) -> Result<(), StdoutReadFailure> {
+    let added = line.len().saturating_add(1);
+    if record
+        .len()
+        .checked_add(added)
+        .is_none_or(|size| size > line_limit)
+    {
+        return Err(StdoutReadFailure::Limit);
+    }
+    record.extend_from_slice(line);
+    record.push(b'\n');
+    Ok(())
 }
 
 async fn read_stderr_tail(

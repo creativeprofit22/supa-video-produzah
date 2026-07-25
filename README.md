@@ -34,9 +34,9 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-The native project boundary, FFmpeg/FFprobe status checks, source probe, and project commands are implemented. The current desktop shell checks the media tools and connects Rust-owned source selection and probing to the React UI; native project commands are registered but are not exposed through a project-editing workflow yet.
+The native project boundary, FFmpeg/FFprobe status and media probing, controlled proxy/thumbnail preparation, cancellable render jobs, and verified native MP4 export are implemented. The desktop shell connects source selection, preparation, render progress, cancellation, collision handling, and export results to React; native project commands are registered but are not exposed through a new/open/save workflow yet.
 
-Controlled proxy and thumbnail generation, proxy playback, trimming UI, render jobs, and verified MP4 export remain pending. The setup commands run the current checkpoint, not the complete Phase 1 workflow. See [`ROADMAP.md`](./ROADMAP.md) for live completion status and verification evidence.
+Prepared-proxy playback, project new/open/save wiring, timeline trimming, undo/redo controls, reopen, and the complete end-to-end Phase 1 UI gate remain pending. The setup commands run the current checkpoint, not the complete Phase 1 workflow. See [`ROADMAP.md`](./ROADMAP.md) for live completion status and verification evidence.
 
 ## Project format
 
@@ -44,7 +44,7 @@ Projects use the `.svpvideo` extension. A file is strict, versioned JSON contain
 
 ## Security boundary
 
-The Phase 1 architecture keeps arbitrary filesystem access and shell execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, and output paths. FFmpeg receives validated argument arrays without a shell. When derived media lands, cache media will be exposed only from the narrow `$APPCACHE/video-phase1/**/*` asset scope.
+The Phase 1 architecture keeps arbitrary filesystem access and shell execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, and output paths, and FFmpeg receives validated argument arrays without a shell. The asset protocol is active only for product-owned derived media beneath `$APPCACHE/video-phase1/**/*`; source files and final exports are excluded. Production uses an explicit local-only CSP, and the main-window capability grants only event listen/unlisten access.
 
 ## Phase 1 target contract and limitations
 

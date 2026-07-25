@@ -14,6 +14,7 @@ target/
 !.env.example
 .cache/
 coverage/
+test-results/
 
 # Product-owned runtime artifacts
 video-phase1/

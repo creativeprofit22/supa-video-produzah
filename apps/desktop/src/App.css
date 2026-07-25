@@ -141,7 +141,8 @@ a:focus-visible {
 }
 
 .readiness-panel,
-.source-panel {
+.source-panel,
+.export-panel {
   padding: 26px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -280,7 +281,8 @@ a:focus-visible {
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.danger-button {
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -325,12 +327,28 @@ a:focus-visible {
   background: var(--surface-raised);
 }
 
-.secondary-button:hover {
+.secondary-button:hover:not(:disabled) {
   border-color: #5a5f53;
   background: #242720;
 }
 
-.source-panel {
+.secondary-button:disabled {
+  color: var(--quiet);
+  cursor: wait;
+}
+
+.danger-button {
+  border: 1px solid var(--danger);
+  color: var(--text);
+  background: #3a201d;
+}
+
+.danger-button:hover {
+  background: #4a2722;
+}
+
+.source-panel,
+.export-panel {
   display: grid;
   gap: 20px;
 }
@@ -400,7 +418,8 @@ a:focus-visible {
   line-height: 1.5;
 }
 
-.preparation-status {
+.preparation-status,
+.render-status {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -411,21 +430,125 @@ a:focus-visible {
 }
 
 .preparation-status > svg,
-.preparation-status > .spinner {
+.preparation-status > .spinner,
+.render-status > svg,
+.render-status > .spinner {
   flex: 0 0 auto;
   margin-block-start: 1px;
 }
 
-.preparation-status.is-success > svg {
+.preparation-status.is-success > svg,
+.render-status.is-success > svg {
   color: var(--success);
 }
 
-.preparation-status strong {
+.preparation-status strong,
+.render-status strong {
   font-size: 0.9rem;
 }
 
-.preparation-status p {
+.preparation-status p,
+.render-status p {
   margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.export-guidance {
+  padding: 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+}
+
+.export-guidance p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.render-progress {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+}
+
+.progress-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.progress-heading strong {
+  font-size: 0.9rem;
+}
+
+.progress-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.progress-heading > span {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.render-progress progress {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--border);
+  accent-color: var(--accent);
+}
+
+.render-progress progress::-webkit-progress-bar {
+  background: var(--border);
+}
+
+.render-progress progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.output-destination span {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+}
+
+.overwrite-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--danger);
+  color: var(--text);
+  background: #22201c;
+}
+
+.overwrite-confirmation > svg {
+  flex: 0 0 auto;
+  margin-block-start: 1px;
+  color: var(--danger);
+}
+
+.overwrite-confirmation strong {
+  font-size: 0.95rem;
+}
+
+.overwrite-confirmation p {
+  margin: 5px 0 14px;
   color: var(--muted);
   font-size: 0.86rem;
   line-height: 1.5;
@@ -506,7 +629,8 @@ a:focus-visible {
   }
 
   .readiness-panel,
-  .source-panel {
+  .source-panel,
+  .export-panel {
     padding: 20px;
   }
 
@@ -516,7 +640,8 @@ a:focus-visible {
     gap: 18px;
   }
 
-  .primary-button {
+  .primary-button,
+  .secondary-button {
     width: 100%;
   }
 
@@ -562,7 +687,10 @@ a:focus-visible {
     border-inline-start-width: 3px;
   }
 
-  .preparation-status {
+  .preparation-status,
+  .render-status,
+  .render-progress,
+  .overwrite-confirmation {
     border-color: CanvasText;
   }
 }

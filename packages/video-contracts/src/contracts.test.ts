@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import { videoProjectCommandSchema } from "./commands.js";
-import { VideoDomainError } from "./errors.js";
+import { VideoDomainError, videoErrorCodes } from "./errors.js";
 import { parseVideoProjectFile } from "./migrations.js";
 import {
   assetLocatorSchema,
@@ -86,6 +86,10 @@ async function loadParityManifest(): Promise<{
 }
 
 describe("project contracts", () => {
+  it("exposes render plan and output collision error codes", () => {
+    expect(videoErrorCodes).toContain("invalid_render_plan");
+    expect(videoErrorCodes).toContain("output_exists");
+  });
   it("accepts a strict linear V1 document", () => {
     expect(parseVideoProjectFile(makeProject())).toEqual(makeProject());
   });
