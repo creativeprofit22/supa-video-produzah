@@ -2,7 +2,7 @@
 
 - **Status:** Active implementation; Phase 1 is in progress
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 24 July 2026
+- **Implementation audit:** 25 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -91,12 +91,12 @@ Complete **Phase 1 implementation Step 11** from `.gg/plans/video-phase-01-singl
 
 ### Latest verification evidence
 
-- The Step 10 worktree passes the root `pnpm build`, `check`, `test`, `lint`, and `format:check` gates; Rust formatting; all-target/all-feature Clippy with warnings denied; portable and explicit local-FFmpeg suites; `git diff --check`; and `pnpm --dir apps/desktop tauri build --no-bundle --ci`. The Windows executable was produced at `apps/desktop/src-tauri/target/release/supa-video-desktop.exe`.
+- The current commit passes frozen installation; root `pnpm build`, `check`, `test`, `lint`, and `format:check`; Rust formatting; all-target/all-feature Clippy with warnings denied; default and `tauri-ipc-test` portable suites; all five explicit local-FFmpeg integrations; `git diff --check`; and `pnpm --dir apps/desktop tauri build --no-bundle --ci`. The Windows executable was produced at `apps/desktop/src-tauri/target/release/supa-video-desktop.exe`.
 - The source contains 62 unique passing TypeScript tests: 23 contracts/time/derived-media, 5 project/history, 9 render compiler, and 25 desktop IPC/hook/React tests.
 - The Rust crate contains 52 default-feature portable passing tests. With `tauri-ipc-test`, 55 portable tests pass; five explicit local-FFmpeg integrations cover source probing, derived preparation/reuse/repair, display geometry, HDR tone mapping, and Tauri IPC reachability. Coverage also includes exact stream mapping, 48 kHz audio validation, pre-epoch source identity, cache containment, symlink rejection, atomic promotion, cache-hit stale cleanup, grant ordering, typed redaction, and the existing project/probe/process boundaries.
 - The canonical fixture prepares as a validated 2,000,000-microsecond, 320×180 H.264/yuv420p 30/1 CFR proxy with AAC audio plus a 1600×90 MJPEG thumbnail tile; a second call proves cache reuse with an intentionally missing FFmpeg executable, and corruption injection proves repair and complete owned-artifact cleanup.
 - System FFmpeg 8.1.2 is discovered by both bounded version checks, and all five ignored local integrations pass, including canonical-fixture preparation/reuse/repair, rotated/anamorphic normalization, HDR tone mapping, and source probing over Tauri IPC.
-- GitHub Actions run `30149484897` remains the latest remote clean-checkout evidence for commit `e082e8d`; the Step 10 worktree evidence above is local and has not yet been pushed.
+- GitHub Actions run `30164505514` passes the TypeScript, Linux Rust, and Windows MSVC/Tauri clean-checkout jobs for current `main` commit `38f3c0e`; the release-only signed-installer job was correctly skipped for this push.
 
 ### Audit notes
 
@@ -104,7 +104,7 @@ Complete **Phase 1 implementation Step 11** from `.gg/plans/video-phase-01-singl
 - Step 12 is still incomplete despite that early registration. `tauri.conf.json` still has `csp: null`, no narrow `$APPCACHE/video-phase1/**/*` asset-protocol scope exists, and app-exit render-job cleanup cannot exist until Step 11 adds jobs.
 - Desktop test scripts still include `--passWithNoTests`, but 25 desktop tests now run. The CI warning claiming desktop UI tests are absent is stale and should be removed in a later CI-maintenance change.
 - The render package test command also discovers compiled tests under `dist/` after a build, so it reports 18 executions for 9 unique source tests.
-- `README.md` correctly labels proxy playback, trimming, and export as the Phase 1 target rather than current behavior; those capabilities remain pending.
+- `README.md` is stale where it lists controlled proxy and thumbnail generation as pending; preparation is implemented, while proxy playback, trimming, render jobs, and verified export remain pending.
 - Required visual evidence is still unverified. Browser captures could not be produced in this audit environment because the optional Playwright Chromium runtime is not installed.
 - Phase completion is determined only by the hard completion gate below, not by the number of completed foundation rows.
 
