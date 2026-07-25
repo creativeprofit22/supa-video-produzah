@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "\uFEFF\u0085Padded project\u0085\u3000",
+  "createdAt": "2026-07-24T12:00:00.000Z",
+  "updatedAt": "2026-07-24T12:01:00.000Z",
+  "currentRevisionId": "99999999-9999-4999-8999-999999999999",
+  "revisions": [
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "parentRevisionId": null,
+      "sequenceNumber": 0,
+      "committedAt": "2026-07-24T12:00:00.000Z",
+      "commandSummary": "\t Created project \n",
+      "state": {
+        "asset": {
+          "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "displayName": "\u00A0clip-one.mp4\u00A0",
+          "locator": {
+            "relativePath": " media/clip-one.mp4 ",
+            "absolutePath": "C:\\Media\\ clip-one.mp4 "
+          },
+          "probe": {
+            "durationMicroseconds": 1000000,
+            "averageFrameRate": { "numerator": 30, "denominator": 1 },
+            "realFrameRate": { "numerator": 30, "denominator": 1 },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "\u2003h264\u2003",
+            "audio": {
+              "codecName": "\u202Faac\u202F",
+              "channels": 2,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 1000
+          }
+        },
+        "sequence": null
+      }
+    },
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "parentRevisionId": "88888888-8888-4888-8888-888888888888",
+      "sequenceNumber": 1,
+      "committedAt": "2026-07-24T12:01:00.000Z",
+      "commandSummary": "\u205F Imported asset \u205F",
+      "state": {
+        "asset": {
+          "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "displayName": "\u2009clip-two.mp4\u2009",
+          "locator": { "relativePath": " media/clip-two.mp4 " },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": { "numerator": 24, "denominator": 1 },
+            "realFrameRate": { "numerator": 24, "denominator": 1 },
+            "variableFrameRate": false,
+            "width": 640,
+            "height": 360,
+            "videoCodecName": "\u1680hevc\u1680",
+            "audio": {
+              "codecName": "\u2000opus\u2000",
+              "channels": 2,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 2000
+          }
+        },
+        "sequence": null
+      }
+    }
+  ]
+}

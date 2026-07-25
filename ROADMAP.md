@@ -78,28 +78,28 @@ Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard comp
 | Project command engine and history | Complete | `ImportAsset`, `CreateSequence`, `InsertClip`, and `TrimClip`, immutable revisions, stale-base checks, undo/redo, and branch truncation are implemented. |
 | Deterministic render-plan compiler | Complete | Immutable revisions compile to validated FFmpeg argv arrays for AV and video-only inputs without filesystem or process access. |
 | Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, fixture provenance, and the supporting `.gitignore` exception are included in this checkpoint. |
-| Rust project boundary | **Next** | Add mirrored V1 contracts/errors, TypeScript↔Rust fixture parity tests, per-window path grants, Rust-owned dialogs, safe bounded project open, locator resolution, and atomic save. |
-| Native probe/process/proxy/render pipeline | Not started | No FFmpeg discovery, ffprobe parser, process supervision, cache preparation, render jobs, progress, cancellation, validation, or cleanup exists. |
+| Rust project boundary | Complete | Strict mirrored V1 DTOs share a 23-document parity corpus with TypeScript; owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and unit tested. Runtime command/plugin registration remains deferred to Step 12. |
+| Native probe/process/proxy/render pipeline | **Next** | Begin Step 9 with FFmpeg/ffprobe discovery and supervised process execution; probing, cache preparation, render jobs, progress, cancellation, validation, and cleanup are not yet implemented. |
 | React editing workflow | Not started | The desktop UI is still a boot placeholder; no IPC adapter, controller, opener, monitor, timeline, trim inspector, or export panel exists. |
 | Runtime and visual completion evidence | Not started | The real create/open/trim/export/cancel/reopen flow and required responsive/accessibility captures have not been run. |
 
 ### Next implementation item
 
-Complete **Phase 1 implementation Step 8** from `.gg/plans/video-phase-01-single-clip.md`: create `apps/desktop/src-tauri/src/video/` with the mirrored native project contract and secure project I/O boundary. Close the existing Windows drive-relative locator gap (`C:foo`) while implementing path validation; do not begin process supervision, proxy generation, rendering, React workflow work, or Phase 2 in this item.
+Complete **Phase 1 implementation Step 9** from `.gg/plans/video-phase-01-single-clip.md`: add verified FFmpeg/ffprobe discovery and bounded process supervision on top of the secure Rust project boundary. Do not begin derived media, rendering, runtime Tauri registration, React workflow work, or Phase 2 in this item.
 
 ### Latest verification evidence
 
-- `pnpm install --frozen-lockfile`, root build, typecheck, lint, and formatting checks pass.
-- The source contains 31 unique passing TypeScript tests: 17 contracts/time, 5 project/history, and 9 render compiler tests.
-- Rust formatting, Clippy with warnings denied, and Cargo tests pass, but the Rust crate currently contains zero tests.
+- Focused contract build/typecheck/tests, Rust formatting, Clippy with warnings denied, all 14 Cargo tests, and every root build/typecheck/test/lint/format gate pass.
+- The source contains 33 unique passing TypeScript tests: 19 contracts/time, 5 project/history, and 9 render compiler tests.
+- The Rust crate contains 14 passing project-contract, grant, bounded-I/O, locator-resolution, and atomic-save tests; the shared 23-document corpus passes in TypeScript and Rust.
 - The fixture fully decodes and matches its recorded evidence: 2 seconds, 60 frames, 320×180 H.264 High/yuv420p video, mono 48 kHz AAC audio, 129,211 bytes, and SHA-256 `b82a6f35bde38dc8783e923140976393e73daf9f11c23689c05eae734eb23e93`.
-- The real Tauri runtime flow and all visual/accessibility verification remain unverified.
+- Native dialog commands compile, but plugin/state/handler lifecycle registration and real Tauri picker smoke coverage remain intentionally unverified until Step 12; all visual/accessibility verification also remains unverified.
 
 ### Audit notes
 
 - `README.md` currently describes native path grants, FFmpeg checks, persistence, proxy playback, trimming, and verified export as if they are implemented; treat that text as the intended Phase 1 contract until the native and React work lands.
 - The render package test command also discovers compiled tests under `dist/` after a build, so it reports 18 executions for 9 unique source tests.
-- Desktop tests use `--passWithNoTests`, and both desktop and Rust suites currently pass with zero tests; green root gates do not yet prove desktop behavior.
+- Desktop web tests still use `--passWithNoTests`; the 14 Rust tests prove core project I/O behavior but do not prove native dialog runtime wiring.
 - Phase completion is determined only by the hard completion gate below, not by the number of completed foundation rows.
 
 ## Scope

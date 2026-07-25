@@ -8,6 +8,9 @@ export const videoErrorCodes = [
   "invalid_command",
   "stale_revision",
   "phase1_limit",
+  "invalid_path",
+  "path_not_granted",
+  "project_io",
   "invalid_render_plan",
 ] as const;
 

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "\u0085Padded project\u0085",
+  "createdAt": "2026-07-24T12:00:00.000Z",
+  "updatedAt": "2026-07-24T12:01:00.000Z",
+  "currentRevisionId": "99999999-9999-4999-8999-999999999999",
+  "revisions": [
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "parentRevisionId": null,
+      "sequenceNumber": 0,
+      "committedAt": "2026-07-24T12:00:00.000Z",
+      "commandSummary": "Created project",
+      "state": {
+        "asset": {
+          "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "displayName": "clip-one.mp4",
+          "locator": {
+            "relativePath": " media/clip-one.mp4 ",
+            "absolutePath": "C:\\Media\\ clip-one.mp4 "
+          },
+          "probe": {
+            "durationMicroseconds": 1000000,
+            "averageFrameRate": { "numerator": 30, "denominator": 1 },
+            "realFrameRate": { "numerator": 30, "denominator": 1 },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 2,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 1000
+          }
+        },
+        "sequence": null
+      }
+    },
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "parentRevisionId": "88888888-8888-4888-8888-888888888888",
+      "sequenceNumber": 1,
+      "committedAt": "2026-07-24T12:01:00.000Z",
+      "commandSummary": "Imported asset",
+      "state": {
+        "asset": {
+          "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "displayName": "clip-two.mp4",
+          "locator": { "relativePath": " media/clip-two.mp4 " },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": { "numerator": 24, "denominator": 1 },
+            "realFrameRate": { "numerator": 24, "denominator": 1 },
+            "variableFrameRate": false,
+            "width": 640,
+            "height": 360,
+            "videoCodecName": "hevc",
+            "audio": {
+              "codecName": "opus",
+              "channels": 2,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 2000
+          }
+        },
+        "sequence": null
+      }
+    }
+  ]
+}

@@ -22,11 +22,18 @@ const pathSchema = z
   });
 
 function isSafeRelativePath(path: string): boolean {
-  if (/^(?:[a-zA-Z]:[\\/]|[\\/]{1,2})/.test(path)) {
+  if (/^[a-zA-Z]:/.test(path) || /^[\\/]/.test(path)) {
     return false;
   }
   const segments = path.replaceAll("\\", "/").split("/");
   return segments.every((segment) => segment !== ".." && segment !== "");
+}
+
+function isRecognizableAbsolutePath(path: string): boolean {
+  const driveRooted = /^[a-zA-Z]:[\\/]/.test(path);
+  const unc = /^[\\/]{2}[^\\/]+[\\/][^\\/]+(?:[\\/].*)?$/.test(path);
+  const posixRooted = path.startsWith("/");
+  return driveRooted || unc || posixRooted;
 }
 
 export const assetLocatorSchema = z
@@ -34,7 +41,9 @@ export const assetLocatorSchema = z
     relativePath: pathSchema
       .refine(isSafeRelativePath, "Project-relative path cannot escape")
       .optional(),
-    absolutePath: pathSchema.optional(),
+    absolutePath: pathSchema
+      .refine(isRecognizableAbsolutePath, "Fallback path must be absolute")
+      .optional(),
   })
   .strict()
   .refine((locator) => locator.relativePath !== undefined || locator.absolutePath !== undefined, {

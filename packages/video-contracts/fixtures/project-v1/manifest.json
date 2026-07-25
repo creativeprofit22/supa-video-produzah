@@ -1,0 +1,92 @@
+{
+  "cases": [
+    {
+      "name": "canonical-single-clip",
+      "path": "../../../../apps/desktop/src-tauri/fixtures/video-phase1/single-clip.svpvideo",
+      "expected": "valid"
+    },
+    { "name": "minimal-empty", "path": "valid-minimal.svpvideo", "expected": "valid" },
+    {
+      "name": "trimmed-nonblank-strings",
+      "path": "valid-padded-nonblank.svpvideo",
+      "expected": "valid",
+      "canonicalPath": "valid-padded-nonblank.expected.json"
+    },
+    {
+      "name": "integral-decimal-numbers",
+      "path": "valid-integral-decimals.svpvideo",
+      "expected": "valid"
+    },
+    {
+      "name": "explicit-null-audio",
+      "path": "valid-null-audio.svpvideo",
+      "expected": "valid"
+    },
+    {
+      "name": "future-schema",
+      "path": "unsupported-future.svpvideo",
+      "expected": "unsupported_schema"
+    },
+    {
+      "name": "unknown-field",
+      "path": "invalid-unknown-field.svpvideo",
+      "expected": "invalid_project"
+    },
+    { "name": "bad-uuid", "path": "invalid-uuid.svpvideo", "expected": "invalid_project" },
+    { "name": "bad-date", "path": "invalid-date.svpvideo", "expected": "invalid_project" },
+    { "name": "unsafe-integer", "path": "invalid-integer.svpvideo", "expected": "invalid_project" },
+    { "name": "unreduced-rate", "path": "invalid-rate.svpvideo", "expected": "invalid_project" },
+    { "name": "broken-history", "path": "invalid-history.svpvideo", "expected": "invalid_project" },
+    { "name": "broken-state", "path": "invalid-state.svpvideo", "expected": "invalid_project" },
+    {
+      "name": "relative-parent",
+      "path": "invalid-relative-parent.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "relative-empty-segment",
+      "path": "invalid-relative-empty.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "relative-drive",
+      "path": "invalid-relative-drive.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "relative-rooted",
+      "path": "invalid-relative-rooted.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "relative-absolute-fallback",
+      "path": "invalid-absolute-relative.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "null-optional-locator",
+      "path": "invalid-locator-null.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "missing-required-nullable-audio",
+      "path": "invalid-missing-audio.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "missing-required-nullable-asset",
+      "path": "invalid-missing-asset.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "missing-required-nullable-sequence",
+      "path": "invalid-missing-sequence.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "missing-required-nullable-parent-revision",
+      "path": "invalid-missing-parent-revision-id.svpvideo",
+      "expected": "invalid_project"
+    }
+  ]
+}

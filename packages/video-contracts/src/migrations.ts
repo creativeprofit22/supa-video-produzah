@@ -10,6 +10,17 @@ export function parseVideoProjectFile(input: unknown): VideoProjectFile {
   }
 
   const schemaVersion = (input as { schemaVersion?: unknown }).schemaVersion;
+  if (
+    typeof schemaVersion !== "number" ||
+    !Number.isSafeInteger(schemaVersion) ||
+    schemaVersion < 1
+  ) {
+    throw new VideoDomainError(
+      "invalid_project",
+      "This is not a Supa Video Producer project: schemaVersion must be a positive safe integer",
+      { schemaVersion },
+    );
+  }
   if (schemaVersion !== 1) {
     throw new VideoDomainError(
       "unsupported_schema",

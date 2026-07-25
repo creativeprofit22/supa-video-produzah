@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { videoProjectCommandSchema } from "./commands.js";
@@ -62,6 +64,26 @@ function makeProject(): VideoProjectFileV1 {
   };
 }
 
+interface ProjectParityCase {
+  readonly name: string;
+  readonly path: string;
+  readonly expected: "valid" | "invalid_project" | "unsupported_schema";
+  readonly canonicalPath?: string;
+}
+
+interface ProjectParityManifest {
+  readonly cases: readonly ProjectParityCase[];
+}
+
+async function loadParityManifest(): Promise<{
+  readonly manifest: ProjectParityManifest;
+  readonly manifestUrl: URL;
+}> {
+  const manifestUrl = new URL("../fixtures/project-v1/manifest.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8")) as ProjectParityManifest;
+  return { manifest, manifestUrl };
+}
+
 describe("project contracts", () => {
   it("accepts a strict linear V1 document", () => {
     expect(parseVideoProjectFile(makeProject())).toEqual(makeProject());
@@ -70,15 +92,77 @@ describe("project contracts", () => {
   it("fails malformed, unknown, and future documents actionably", () => {
     expect(() => parseVideoProjectFile({})).toThrowError(VideoDomainError);
     expect(() => parseVideoProjectFile({ schemaVersion: 2 })).toThrow("schema 2");
+    for (const schemaVersion of ["1", 1.5, 0, -1, null]) {
+      try {
+        parseVideoProjectFile({ schemaVersion });
+        expect.unreachable("malformed schema version must fail");
+      } catch (error) {
+        expect(error).toMatchObject({ code: "invalid_project" });
+      }
+    }
     expect(() => videoProjectFileV1Schema.parse({ ...makeProject(), surprise: true })).toThrow();
   });
 
   it("requires safe source locators", () => {
     expect(() => assetLocatorSchema.parse({})).toThrow("requires");
-    expect(() => assetLocatorSchema.parse({ relativePath: "../escape.mp4" })).toThrow("escape");
+    for (const relativePath of [
+      "../escape.mp4",
+      "media//clip.mp4",
+      "media\\\\clip.mp4",
+      "C:clip.mp4",
+      "C:\\clip.mp4",
+      "/clip.mp4",
+      "\\\\server\\share\\clip.mp4",
+    ]) {
+      expect(() => assetLocatorSchema.parse({ relativePath })).toThrow("escape");
+    }
+    for (const absolutePath of ["clip.mp4", "media/clip.mp4", "C:clip.mp4"]) {
+      expect(() => assetLocatorSchema.parse({ absolutePath })).toThrow("absolute");
+    }
+    for (const absolutePath of [
+      "/media/clip.mp4",
+      "C:\\Media\\clip.mp4",
+      "\\\\server\\share\\clip.mp4",
+    ]) {
+      expect(assetLocatorSchema.parse({ absolutePath })).toEqual({ absolutePath });
+    }
     expect(assetLocatorSchema.parse({ relativePath: "media/clip.mp4" })).toEqual({
       relativePath: "media/clip.mp4",
     });
+  });
+
+  it("matches every shared V1 parity corpus result", async () => {
+    const { manifest, manifestUrl } = await loadParityManifest();
+
+    for (const parityCase of manifest.cases) {
+      const document = JSON.parse(
+        await readFile(new URL(parityCase.path, manifestUrl), "utf8"),
+      ) as unknown;
+      try {
+        parseVideoProjectFile(document);
+        expect(parityCase.expected, parityCase.name).toBe("valid");
+      } catch (error) {
+        expect(error, parityCase.name).toBeInstanceOf(VideoDomainError);
+        expect((error as VideoDomainError).code, parityCase.name).toBe(parityCase.expected);
+      }
+    }
+  });
+
+  it("normalizes and serializes padded non-blank fields to the shared canonical structure", async () => {
+    const { manifest, manifestUrl } = await loadParityManifest();
+    const parityCase = manifest.cases.find((candidate) => candidate.canonicalPath !== undefined);
+    expect(parityCase).toBeDefined();
+
+    const input = JSON.parse(
+      await readFile(new URL(parityCase!.path, manifestUrl), "utf8"),
+    ) as unknown;
+    const expected = JSON.parse(
+      await readFile(new URL(parityCase!.canonicalPath!, manifestUrl), "utf8"),
+    ) as unknown;
+    const parsed = parseVideoProjectFile(input);
+
+    expect(parsed).toEqual(expected);
+    expect(JSON.parse(JSON.stringify(parsed))).toEqual(expected);
   });
 
   it("accepts strict discriminated commands and rejects extras", () => {
