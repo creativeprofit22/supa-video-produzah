@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -97,3 +99,282 @@ jobs:
 
       - name: Test Rust project I/O
         run: cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  windows:
+    name: Windows MSVC supervisor and Tauri build
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm 10.34.5
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.34.5
+          run_install: false
+
+      - name: Install Node.js 22.12.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install stable Rust with Clippy
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache Cargo dependencies and build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install locked JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop frontend
+        run: pnpm --dir apps/desktop build
+
+      - name: Run Windows Clippy
+        run: cargo clippy --locked --all-targets --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
+      - name: Test Windows process supervision
+        run: cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Assemble Windows production executable
+        run: pnpm --dir apps/desktop tauri build --no-bundle --ci
+
+      - name: Verify Windows production executable
+        shell: pwsh
+        run: |
+          $executable = "apps/desktop/src-tauri/target/release/supa-video-desktop.exe"
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "Tauri did not produce $executable"
+          }
+
+  windows-release:
+    name: Signed Windows installers and clean-runner smoke
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: [typescript, rust, windows]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    environment: release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm 10.34.5
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.34.5
+          run_install: false
+
+      - name: Install Node.js 22.12.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo dependencies and build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install locked JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Import protected Windows signing certificate
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+            throw "The release environment must provide WINDOWS_CERTIFICATE"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw "The release environment must provide WINDOWS_CERTIFICATE_PASSWORD"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_TIMESTAMP_URL)) {
+            throw "The release environment must provide WINDOWS_TIMESTAMP_URL"
+          }
+
+          $timestampUri = [Uri]$env:WINDOWS_TIMESTAMP_URL
+          if (-not $timestampUri.IsAbsoluteUri -or $timestampUri.Scheme -notin @("http", "https")) {
+            throw "WINDOWS_TIMESTAMP_URL must be an absolute HTTP(S) URL"
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP "windows-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+          "WINDOWS_CERTIFICATE_PATH=$certificatePath" >> $env:GITHUB_ENV
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $importedCertificates = @(
+            Import-PfxCertificate `
+              -FilePath $certificatePath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password
+          )
+          $importedThumbprints = $importedCertificates.Thumbprint -join ","
+          "WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINTS=$importedThumbprints" >> $env:GITHUB_ENV
+          $signingCertificates = @(
+            $importedCertificates | Where-Object {
+              $_.HasPrivateKey -and
+              ($_.EnhancedKeyUsageList.ObjectId.Value -contains "1.3.6.1.5.5.7.3.3")
+            }
+          )
+          if ($signingCertificates.Count -ne 1) {
+            throw "The PFX must contain exactly one private-key code-signing certificate"
+          }
+
+          $thumbprint = $signingCertificates[0].Thumbprint
+          $releaseConfigPath = Join-Path $env:RUNNER_TEMP "tauri.release.conf.json"
+          @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = $env:WINDOWS_TIMESTAMP_URL
+              }
+            }
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $releaseConfigPath -Encoding utf8
+
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
+          "TAURI_RELEASE_CONFIG=$releaseConfigPath" >> $env:GITHUB_ENV
+
+      - name: Build signed MSI and NSIS installers
+        shell: pwsh
+        run: pnpm --dir apps/desktop tauri build --bundles msi,nsis --ci --config $env:TAURI_RELEASE_CONFIG
+
+      - name: Verify installer set and Authenticode signatures
+        shell: pwsh
+        run: |
+          $target = "apps/desktop/src-tauri/target/release"
+          $application = Get-Item "$target/supa-video-desktop.exe"
+          $msi = @(Get-ChildItem "$target/bundle/msi/*.msi")
+          $nsis = @(Get-ChildItem "$target/bundle/nsis/*-setup.exe")
+          if ($msi.Count -ne 1 -or $nsis.Count -ne 1) {
+            throw "Expected exactly one MSI and one NSIS installer; found $($msi.Count) MSI and $($nsis.Count) NSIS"
+          }
+
+          foreach ($artifact in @($application) + $msi + $nsis) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $artifact.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($artifact.Name) has invalid Authenticode status: $($signature.Status)"
+            }
+            if ($signature.SignerCertificate.Thumbprint -ne $env:WINDOWS_CERTIFICATE_THUMBPRINT) {
+              throw "$($artifact.Name) was not signed by the protected release certificate"
+            }
+          }
+
+          $checksums = (@($application) + $msi + $nsis) | ForEach-Object {
+            $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName
+            "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          $checksums | Set-Content "$target/bundle/SHA256SUMS.txt" -Encoding ascii
+
+      - name: Install FFmpeg 8.1.2 for release smoke
+        shell: pwsh
+        run: choco install ffmpeg --version=8.1.2 --yes --no-progress
+
+      - name: Smoke system FFmpeg tool status and media probe
+        shell: pwsh
+        run: |
+          Get-Command ffmpeg -ErrorAction Stop
+          Get-Command ffprobe -ErrorAction Stop
+          cargo test `
+            --locked `
+            --all-features `
+            --manifest-path apps/desktop/src-tauri/Cargo.toml `
+            video::tests::local_ffmpeg_status_and_canonical_probe_match_fixture `
+            -- `
+            --ignored `
+            --exact `
+            --nocapture
+
+      - name: Install and launch packaged GUI executable
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/NS" -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "NSIS installer exited with code $($install.ExitCode)"
+          }
+
+          $installedExecutable = Join-Path $env:LOCALAPPDATA "Supa Video Producer/supa-video-desktop.exe"
+          if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+            throw "NSIS did not install $installedExecutable"
+          }
+          $installedSignature = Get-AuthenticodeSignature -LiteralPath $installedExecutable
+          if ($installedSignature.Status -ne "Valid") {
+            throw "Installed executable has invalid Authenticode status: $($installedSignature.Status)"
+          }
+
+          $bytes = [IO.File]::ReadAllBytes($installedExecutable)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          $peSignature = [Text.Encoding]::ASCII.GetString($bytes, $peOffset, 4)
+          if ($peSignature -ne "PE`0`0") {
+            throw "Installed executable does not contain a valid PE signature"
+          }
+          $subsystem = [BitConverter]::ToUInt16($bytes, $peOffset + 24 + 68)
+          if ($subsystem -ne 2) {
+            throw "Installed release executable is not a Windows GUI binary; subsystem=$subsystem"
+          }
+
+          $application = Start-Process -FilePath $installedExecutable -PassThru
+          Start-Sleep -Seconds 10
+          $application.Refresh()
+          if ($application.HasExited) {
+            throw "Installed application exited during launch smoke with code $($application.ExitCode)"
+          }
+          Stop-Process -Id $application.Id -Force
+
+      - name: Archive verified Windows release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supa-video-producer-windows-${{ github.event.release.tag_name }}
+          path: |
+            apps/desktop/src-tauri/target/release/supa-video-desktop.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            apps/desktop/src-tauri/target/release/bundle/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove installed app and signing material
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Process "supa-video-desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
+          $uninstaller = Join-Path $env:LOCALAPPDATA "Supa Video Producer/uninstall.exe"
+          if (Test-Path -LiteralPath $uninstaller -PathType Leaf) {
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) {
+              Write-Warning "NSIS uninstaller exited with code $($uninstall.ExitCode)"
+            }
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINTS)) {
+            $env:WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINTS.Split(",") | ForEach-Object {
+              Remove-Item "Cert:\CurrentUser\My\$_" -Force -ErrorAction SilentlyContinue
+            }
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PATH)) {
+            Remove-Item $env:WINDOWS_CERTIFICATE_PATH -Force -ErrorAction SilentlyContinue
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:TAURI_RELEASE_CONFIG)) {
+            Remove-Item $env:TAURI_RELEASE_CONFIG -Force -ErrorAction SilentlyContinue
+          }

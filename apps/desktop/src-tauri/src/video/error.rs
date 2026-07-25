@@ -11,6 +11,12 @@ pub enum VideoErrorCode {
     InvalidPath,
     PathNotGranted,
     ProjectIo,
+    ToolUnavailable,
+    ProcessFailed,
+    ProcessTimeout,
+    ProcessCancelled,
+    ProcessOutputLimit,
+    InvalidMedia,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -74,6 +80,70 @@ impl VideoCommandError {
         Self::new(
             VideoErrorCode::ProjectIo,
             "The project file operation failed",
+            json!({ "operation": operation, "category": category }),
+        )
+    }
+
+    pub(crate) fn tool_unavailable(operation: &'static str, executable: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::ToolUnavailable,
+            "A required media tool is unavailable",
+            json!({ "operation": operation, "executable": executable }),
+        )
+    }
+
+    pub(crate) fn process_failed(
+        operation: &'static str,
+        executable: &'static str,
+        exit_code: Option<i32>,
+    ) -> Self {
+        Self::new(
+            VideoErrorCode::ProcessFailed,
+            "The media tool process failed",
+            json!({
+                "operation": operation,
+                "executable": executable,
+                "exitCode": exit_code,
+            }),
+        )
+    }
+
+    pub(crate) fn process_timeout(operation: &'static str, executable: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::ProcessTimeout,
+            "The media tool process timed out",
+            json!({ "operation": operation, "executable": executable }),
+        )
+    }
+
+    pub(crate) fn process_cancelled(operation: &'static str, executable: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::ProcessCancelled,
+            "The media tool process was cancelled",
+            json!({ "operation": operation, "executable": executable }),
+        )
+    }
+
+    pub(crate) fn process_output_limit(
+        operation: &'static str,
+        executable: &'static str,
+        limit_bytes: usize,
+    ) -> Self {
+        Self::new(
+            VideoErrorCode::ProcessOutputLimit,
+            "The media tool returned too much structured output",
+            json!({
+                "operation": operation,
+                "executable": executable,
+                "limitBytes": limit_bytes,
+            }),
+        )
+    }
+
+    pub(crate) fn invalid_media(operation: &'static str, category: &'static str) -> Self {
+        Self::new(
+            VideoErrorCode::InvalidMedia,
+            "The media file is malformed or unsupported",
             json!({ "operation": operation, "category": category }),
         )
     }

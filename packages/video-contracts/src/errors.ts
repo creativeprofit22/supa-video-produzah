@@ -11,6 +11,12 @@ export const videoErrorCodes = [
   "invalid_path",
   "path_not_granted",
   "project_io",
+  "tool_unavailable",
+  "process_failed",
+  "process_timeout",
+  "process_cancelled",
+  "process_output_limit",
+  "invalid_media",
   "invalid_render_plan",
 ] as const;
 

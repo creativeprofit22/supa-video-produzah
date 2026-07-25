@@ -102,11 +102,44 @@ pub struct MediaAudioShape {
     pub sample_rate: u64,
 }
 
+impl MediaAudioShape {
+    pub(crate) fn checked(codec_name: String, channels: u64, sample_rate: u64) -> Option<Self> {
+        if !is_valid_codec_name(&codec_name)
+            || !(1..=64).contains(&channels)
+            || !(1..=768_000).contains(&sample_rate)
+        {
+            return None;
+        }
+        Some(Self {
+            codec_name,
+            channels,
+            sample_rate,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RationalRate {
     pub numerator: u64,
     pub denominator: u64,
+}
+
+impl RationalRate {
+    pub(crate) fn checked_reduced(numerator: u64, denominator: u64) -> Option<Self> {
+        if numerator == 0
+            || denominator == 0
+            || numerator > MAX_SAFE_INTEGER
+            || denominator > MAX_SAFE_INTEGER
+        {
+            return None;
+        }
+        let divisor = greatest_common_divisor(numerator, denominator);
+        Some(Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,6 +163,73 @@ pub struct MediaProbe {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub audio: Option<MediaAudioShape>,
     pub file_size_bytes: u64,
+}
+
+impl MediaProbe {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn checked(
+        duration_microseconds: u64,
+        average_frame_rate: RationalRate,
+        real_frame_rate: RationalRate,
+        variable_frame_rate: bool,
+        width: u64,
+        height: u64,
+        video_codec_name: String,
+        audio: Option<MediaAudioShape>,
+        file_size_bytes: u64,
+    ) -> Option<Self> {
+        let positive_safe = |value| (1..=MAX_SAFE_INTEGER).contains(&value);
+        if !positive_safe(duration_microseconds)
+            || !positive_safe(average_frame_rate.numerator)
+            || !positive_safe(average_frame_rate.denominator)
+            || !positive_safe(real_frame_rate.numerator)
+            || !positive_safe(real_frame_rate.denominator)
+            || !positive_safe(width)
+            || !positive_safe(height)
+            || !positive_safe(file_size_bytes)
+            || !is_valid_codec_name(&video_codec_name)
+        {
+            return None;
+        }
+        Some(Self {
+            duration_microseconds,
+            average_frame_rate,
+            real_frame_rate,
+            variable_frame_rate,
+            width,
+            height,
+            video_codec_name,
+            audio,
+            file_size_bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoToolProblem {
+    NotFound,
+    TimedOut,
+    Failed,
+    InvalidVersion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoToolInfo {
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<VideoToolProblem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoToolStatus {
+    pub ffmpeg: VideoToolInfo,
+    pub ffprobe: VideoToolInfo,
+    pub ready: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -714,6 +814,11 @@ fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
         right = remainder;
     }
     left
+}
+
+fn is_valid_codec_name(value: &str) -> bool {
+    let trimmed = trim_ecmascript_whitespace(value);
+    !trimmed.is_empty() && trimmed.encode_utf16().count() <= 512
 }
 
 fn add_issue(issues: &mut Vec<ValidationIssue>, path: &str, message: &str) {

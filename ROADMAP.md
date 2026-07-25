@@ -67,7 +67,7 @@ The bootstrap creates root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yam
 **Depends on:** A clean checkout of this repository, Node 22, pnpm 10, the Rust/Tauri prerequisites, and local FFmpeg availability during development  
 **Goal:** Bootstrap the product and prove the thinnest complete path from local media to an edited exported file through its own UI
 
-## Implementation checkpoint — audited 24 July 2026
+## Implementation checkpoint — re-audited and verified 24 July 2026
 
 Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard completion gate passes.
 
@@ -79,27 +79,29 @@ Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard comp
 | Deterministic render-plan compiler | Complete | Immutable revisions compile to validated FFmpeg argv arrays for AV and video-only inputs without filesystem or process access. |
 | Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, fixture provenance, and the supporting `.gitignore` exception are included in this checkpoint. |
 | Rust project boundary | Complete | Strict mirrored V1 DTOs share a 23-document parity corpus with TypeScript; owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and unit tested. Runtime command/plugin registration remains deferred to Step 12. |
-| Native probe/process/proxy/render pipeline | **Next** | Begin Step 9 with FFmpeg/ffprobe discovery and supervised process execution; probing, cache preparation, render jobs, progress, cancellation, validation, and cleanup are not yet implemented. |
+| Native FFmpeg discovery, process supervision, and media probe | Complete | System `ffmpeg`/`ffprobe` checks, bounded no-shell Tokio execution through Unix process groups or Windows Job Objects, strict ffprobe parsing, owner-granted source probing, typed redacted errors, and focused tests are implemented. The commands compile but remain unreachable from the webview until Step 12 runtime registration. |
+| Derived media, render jobs, and export pipeline | **Next** | Step 10 begins controlled proxy/thumbnail preparation on top of the supervisor. Render jobs/progress/cancellation remain Step 11, and runtime registration remains Step 12. |
 | React editing workflow | Not started | The desktop UI is still a boot placeholder; no IPC adapter, controller, opener, monitor, timeline, trim inspector, or export panel exists. |
 | Runtime and visual completion evidence | Not started | The real create/open/trim/export/cancel/reopen flow and required responsive/accessibility captures have not been run. |
 
 ### Next implementation item
 
-Complete **Phase 1 implementation Step 9** from `.gg/plans/video-phase-01-single-clip.md`: add verified FFmpeg/ffprobe discovery and bounded process supervision on top of the secure Rust project boundary. Do not begin derived media, rendering, runtime Tauri registration, React workflow work, or Phase 2 in this item.
+Complete **Phase 1 implementation Step 10** from `.gg/plans/video-phase-01-single-clip.md`: add controlled proxy and thumbnail preparation on top of the verified process supervisor and strict source probe. Do not begin render jobs/progress/cancellation, runtime Tauri registration, React workflow work, or Phase 2 in this item.
 
 ### Latest verification evidence
 
-- Focused contract build/typecheck/tests, Rust formatting, Clippy with warnings denied, all 14 Cargo tests, and every root build/typecheck/test/lint/format gate pass.
+- A frozen pnpm install, every root build/typecheck/test/lint/format gate, Rust formatting, Clippy with warnings denied, and all 22 portable Cargo tests pass on the Step 9 worktree.
 - The source contains 33 unique passing TypeScript tests: 19 contracts/time, 5 project/history, and 9 render compiler tests.
-- The Rust crate contains 14 passing project-contract, grant, bounded-I/O, locator-resolution, and atomic-save tests; the shared 23-document corpus passes in TypeScript and Rust.
-- The fixture fully decodes and matches its recorded evidence: 2 seconds, 60 frames, 320×180 H.264 High/yuv420p video, mono 48 kHz AAC audio, 129,211 bytes, and SHA-256 `b82a6f35bde38dc8783e923140976393e73daf9f11c23689c05eae734eb23e93`.
-- Native dialog commands compile, but plugin/state/handler lifecycle registration and real Tauri picker smoke coverage remain intentionally unverified until Step 12; all visual/accessibility verification also remains unverified.
+- The Rust crate contains 22 portable passing tests plus one explicit local-FFmpeg integration test; parser, tool-status, grant-first probing, timeout, cancellation, stdout-limit, bounded-stderr, and kill/wait settlement cases pass.
+- The canonical fixture probes through the new native boundary as 2,000,000 microseconds, 320×180 H.264 at 30/1 CFR, mono 48 kHz AAC, and 129,211 bytes; its recorded SHA-256 remains `b82a6f35bde38dc8783e923140976393e73daf9f11c23689c05eae734eb23e93`.
+- System FFmpeg 8.1.2 is discovered by both bounded version checks, and the explicit system probe test passes against `single-clip.mp4`.
+- Native dialog, tool-status, and media-probe commands compile, but plugin/state/handler lifecycle registration and real Tauri IPC smoke coverage remain intentionally deferred until Step 12; all visual/accessibility verification also remains unverified.
 
 ### Audit notes
 
 - `README.md` currently describes native path grants, FFmpeg checks, persistence, proxy playback, trimming, and verified export as if they are implemented; treat that text as the intended Phase 1 contract until the native and React work lands.
 - The render package test command also discovers compiled tests under `dist/` after a build, so it reports 18 executions for 9 unique source tests.
-- Desktop web tests still use `--passWithNoTests`; the 14 Rust tests prove core project I/O behavior but do not prove native dialog runtime wiring.
+- Desktop web tests still use `--passWithNoTests`; the 22 portable Rust tests plus one explicit local-FFmpeg test prove native core behavior but do not prove runtime IPC wiring.
 - Phase completion is determined only by the hard completion gate below, not by the number of completed foundation rows.
 
 ## Scope

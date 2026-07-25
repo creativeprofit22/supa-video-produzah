@@ -3,6 +3,7 @@ node_modules/
 dist/
 dist-ssr/
 target/
+.gg/target-*/
 *.tsbuildinfo
 
 # Local state, logs, and environment

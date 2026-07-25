@@ -14,6 +14,7 @@ import {
 } from "./project.js";
 import { renderPlanV1Schema } from "./render-plan.js";
 import { createRationalRate, createRationalTime } from "./time.js";
+import { videoToolStatusSchema } from "./tools.js";
 
 const ids = {
   project: "00000000-0000-4000-8000-000000000001",
@@ -210,5 +211,34 @@ describe("project contracts", () => {
       sourceOut: zero,
     };
     expect(videoProjectCommandSchema.parse(command).type).toBe("TrimClip");
+  });
+
+  it("validates media-tool readiness and availability invariants", () => {
+    const ready = {
+      ffmpeg: { available: true, version: "ffmpeg version 7.1" },
+      ffprobe: { available: true, version: "ffprobe version 7.1" },
+      ready: true,
+    };
+    expect(videoToolStatusSchema.parse(ready)).toEqual(ready);
+
+    const blocked = {
+      ffmpeg: { available: false, problem: "not_found" },
+      ffprobe: { available: false, problem: "timed_out" },
+      ready: false,
+    };
+    expect(videoToolStatusSchema.parse(blocked)).toEqual(blocked);
+    expect(() => videoToolStatusSchema.parse({ ...ready, ready: false })).toThrow("readiness");
+    expect(() =>
+      videoToolStatusSchema.parse({
+        ...blocked,
+        ffmpeg: { available: false },
+      }),
+    ).toThrow("problem");
+    expect(() =>
+      videoToolStatusSchema.parse({
+        ...ready,
+        ffmpeg: { ...ready.ffmpeg, rawOutput: "hidden" },
+      }),
+    ).toThrow();
   });
 });

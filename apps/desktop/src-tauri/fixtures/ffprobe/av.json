@@ -1,0 +1,23 @@
+{
+  "streams": [
+    {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 320,
+      "height": 180,
+      "r_frame_rate": "30/1",
+      "avg_frame_rate": "30/1",
+      "duration": "2.000000",
+      "disposition": { "attached_pic": 0 }
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 1,
+      "duration": "2.000000",
+      "disposition": { "attached_pic": 0 }
+    }
+  ],
+  "format": { "duration": "2.000000", "size": "129211" }
+}

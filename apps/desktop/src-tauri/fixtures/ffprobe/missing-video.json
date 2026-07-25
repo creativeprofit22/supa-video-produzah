@@ -1,0 +1,13 @@
+{
+  "streams": [
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "duration": "2.000000",
+      "disposition": { "attached_pic": 0 }
+    }
+  ],
+  "format": { "duration": "2.000000", "size": "1024" }
+}

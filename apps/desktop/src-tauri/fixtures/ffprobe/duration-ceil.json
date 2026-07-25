@@ -1,0 +1,15 @@
+{
+  "streams": [
+    {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 16,
+      "height": 16,
+      "r_frame_rate": "1/1",
+      "avg_frame_rate": "1/1",
+      "duration": "1.0000001",
+      "disposition": { "attached_pic": 0 }
+    }
+  ],
+  "format": { "duration": "1.0000001", "size": "1" }
+}

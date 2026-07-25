@@ -1,0 +1,15 @@
+{
+  "streams": [
+    {
+      "codec_name": "mjpeg",
+      "codec_type": "video",
+      "width": 600,
+      "height": 600,
+      "r_frame_rate": "25/1",
+      "avg_frame_rate": "25/1",
+      "duration": "2.000000",
+      "disposition": { "attached_pic": 1 }
+    }
+  ],
+  "format": { "duration": "2.000000", "size": "1024" }
+}

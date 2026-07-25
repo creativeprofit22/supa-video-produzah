@@ -1,6 +1,12 @@
 use std::{
+    env,
+    ffi::OsString,
     fs,
+    io::Write,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
 };
 
 use serde::Deserialize;
@@ -10,13 +16,22 @@ use tempfile::{tempdir, NamedTempFile};
 use super::{
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
+    probe::{
+        parse_ffprobe_json, parse_tool_banner, probe_media_with_program, tool_info_from_result,
+        video_ffmpeg_status_with_programs, VideoTool,
+    },
+    process::{
+        run_supervised_with_test_environment, ProcessCancellation, ProcessFailure, ProcessSpec,
+        SupervisedOutput,
+    },
     project_io::{
         atomic_save_with, dialog_path, ensure_canonical_source_containment, open_project_from_path,
         read_project_bounded, sanitize_default_name, save_project_to_path, VideoSourceStatus,
         MAX_PROJECT_BYTES,
     },
     types::{
-        is_recognizable_absolute_path, parse_project_json, parse_project_value, VideoProjectFileV1,
+        is_recognizable_absolute_path, parse_project_json, parse_project_value, RationalRate,
+        VideoProjectFileV1, VideoToolProblem,
     },
 };
 
@@ -498,4 +513,628 @@ fn named_temp_file_type_remains_same_directory_capable() {
     let directory = tempdir().expect("temporary directory must be created");
     let temporary = NamedTempFile::new_in(directory.path()).expect("temp file must be created");
     assert_eq!(temporary.path().parent(), Some(directory.path()));
+}
+
+fn ffprobe_fixture(name: &str) -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/ffprobe")
+            .join(name),
+    )
+    .unwrap_or_else(|error| panic!("ffprobe fixture {name} must be readable: {error}"))
+}
+
+#[test]
+fn ffprobe_parser_accepts_canonical_av_and_video_only_metadata() {
+    let av =
+        parse_ffprobe_json(&ffprobe_fixture("av.json"), 129_211).expect("AV fixture must parse");
+    assert_eq!(av.duration_microseconds, 2_000_000);
+    assert_eq!(av.width, 320);
+    assert_eq!(av.height, 180);
+    assert_eq!(av.video_codec_name, "h264");
+    assert_eq!(
+        av.average_frame_rate,
+        RationalRate {
+            numerator: 30,
+            denominator: 1,
+        }
+    );
+    assert_eq!(av.real_frame_rate, av.average_frame_rate);
+    assert!(!av.variable_frame_rate);
+    assert_eq!(av.file_size_bytes, 129_211);
+    let audio = av.audio.expect("AV fixture must contain audio");
+    assert_eq!(audio.codec_name, "aac");
+    assert_eq!(audio.channels, 1);
+    assert_eq!(audio.sample_rate, 48_000);
+
+    let video_only = parse_ffprobe_json(&ffprobe_fixture("video-only.json"), 2_048)
+        .expect("video-only fixture must parse");
+    assert_eq!(video_only.audio, None);
+    assert_eq!(video_only.duration_microseconds, 3_500_000);
+}
+
+#[test]
+fn ffprobe_parser_reduces_rates_falls_back_and_detects_vfr_exactly() {
+    let fallback = parse_ffprobe_json(&ffprobe_fixture("rate-fallback.json"), 4_096)
+        .expect("rate fallback fixture must parse");
+    assert_eq!(
+        fallback.average_frame_rate,
+        RationalRate {
+            numerator: 30_000,
+            denominator: 1_001,
+        }
+    );
+    assert_eq!(fallback.real_frame_rate, fallback.average_frame_rate);
+    assert!(!fallback.variable_frame_rate);
+
+    let vfr =
+        parse_ffprobe_json(&ffprobe_fixture("vfr.json"), 4_096).expect("VFR fixture must parse");
+    assert!(vfr.variable_frame_rate);
+
+    let boundary = parse_ffprobe_json(&ffprobe_fixture("nominal-boundary.json"), 4_096)
+        .expect("nominal boundary fixture must parse");
+    assert!(!boundary.variable_frame_rate);
+}
+
+#[test]
+fn ffprobe_parser_ceils_sub_microsecond_duration() {
+    let probe = parse_ffprobe_json(&ffprobe_fixture("duration-ceil.json"), 1)
+        .expect("duration fixture must parse");
+    assert_eq!(probe.duration_microseconds, 1_000_001);
+}
+
+#[test]
+fn ffprobe_parser_rejects_malformed_and_unsupported_metadata() {
+    assert!(parse_ffprobe_json(b"{", 1).is_err());
+    for fixture in [
+        "malformed.json",
+        "invalid-rate.json",
+        "missing-duration.json",
+        "missing-video.json",
+        "attached-picture-only.json",
+        "malformed-audio.json",
+        "unsafe-numeric.json",
+        "zero-size.json",
+        "zero-dimensions.json",
+    ] {
+        assert!(
+            parse_ffprobe_json(&ffprobe_fixture(fixture), 1_024).is_err(),
+            "fixture must be rejected: {fixture}"
+        );
+    }
+
+    let invalid_duration = br#"{"streams":[{"codec_type":"video","codec_name":"h264","width":1,"height":1,"avg_frame_rate":"1/1","r_frame_rate":"1/1","duration":"N/A","disposition":{"attached_pic":0}}],"format":{"duration":"1e3","size":"1"}}"#;
+    assert!(parse_ffprobe_json(invalid_duration, 1).is_err());
+    assert!(parse_ffprobe_json(&ffprobe_fixture("av.json"), 0).is_err());
+}
+
+const PROCESS_HELPER_MODE_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_MODE";
+const PROCESS_HELPER_MARKER_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_MARKER";
+const PROCESS_HELPER_READY_MARKER_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_READY_MARKER";
+const PROCESS_HELPER_SURVIVOR_MARKER_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_SURVIVOR_MARKER";
+const PROCESS_TREE_DESCENDANT_SURVIVAL_DELAY: Duration = Duration::from_secs(4);
+const PROCESS_TREE_PIPE_RELEASE_DEADLINE: Duration = Duration::from_secs(3);
+
+fn helper_process_args() -> Vec<OsString> {
+    [
+        "--exact",
+        "video::tests::supervised_process_helper",
+        "--nocapture",
+        "--test-threads=1",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect()
+}
+
+fn helper_process_spec(
+    timeout: Duration,
+    stdout_limit: usize,
+    stderr_tail_limit: usize,
+    operation: &'static str,
+) -> ProcessSpec {
+    ProcessSpec {
+        program: env::current_exe()
+            .expect("current test executable must be available")
+            .into_os_string(),
+        args: helper_process_args(),
+        operation,
+        timeout,
+        stdout_limit,
+        stderr_tail_limit,
+    }
+}
+
+fn helper_process_environment(
+    mode: &str,
+    marker: Option<&Path>,
+) -> Vec<(OsString, Option<OsString>)> {
+    vec![
+        (
+            OsString::from(PROCESS_HELPER_MODE_ENV),
+            Some(OsString::from(mode)),
+        ),
+        (
+            OsString::from(PROCESS_HELPER_MARKER_ENV),
+            marker.map(|path| path.as_os_str().to_owned()),
+        ),
+    ]
+}
+
+async fn run_helper_process(
+    mode: &str,
+    timeout: Duration,
+    stdout_limit: usize,
+    stderr_tail_limit: usize,
+    cancellation: ProcessCancellation,
+    operation: &'static str,
+    marker: Option<&Path>,
+) -> Result<SupervisedOutput, ProcessFailure> {
+    run_supervised_with_test_environment(
+        helper_process_spec(timeout, stdout_limit, stderr_tail_limit, operation),
+        cancellation,
+        helper_process_environment(mode, marker),
+    )
+    .await
+}
+
+fn process_tree_environment(
+    ready_marker: &Path,
+    survivor_marker: &Path,
+) -> Vec<(OsString, Option<OsString>)> {
+    let mut environment = helper_process_environment("process_tree_parent", None);
+    environment.extend([
+        (
+            OsString::from(PROCESS_HELPER_READY_MARKER_ENV),
+            Some(ready_marker.as_os_str().to_owned()),
+        ),
+        (
+            OsString::from(PROCESS_HELPER_SURVIVOR_MARKER_ENV),
+            Some(survivor_marker.as_os_str().to_owned()),
+        ),
+    ]);
+    environment
+}
+
+fn process_tree_parent() {
+    let ready_marker = env::var_os(PROCESS_HELPER_READY_MARKER_ENV)
+        .expect("process-tree ready marker must be configured");
+    let survivor_marker = env::var_os(PROCESS_HELPER_SURVIVOR_MARKER_ENV)
+        .expect("process-tree survivor marker must be configured");
+    let mut grandchild = Command::new(
+        env::current_exe().expect("current test executable must be available to the helper"),
+    );
+    grandchild
+        .args(helper_process_args())
+        .env(PROCESS_HELPER_MODE_ENV, "process_tree_grandchild")
+        .env(PROCESS_HELPER_READY_MARKER_ENV, ready_marker)
+        .env(PROCESS_HELPER_SURVIVOR_MARKER_ENV, survivor_marker)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let mut grandchild = grandchild
+        .spawn()
+        .expect("process-tree grandchild must spawn without a shell");
+
+    thread::sleep(Duration::from_secs(30));
+    let _ = grandchild.kill();
+    let _ = grandchild.wait();
+}
+
+fn process_tree_grandchild() {
+    print!("grandchild-inherited-stdout");
+    std::io::stdout()
+        .flush()
+        .expect("grandchild stdout must flush");
+    eprint!("grandchild-inherited-stderr");
+    std::io::stderr()
+        .flush()
+        .expect("grandchild stderr must flush");
+
+    let ready_marker = env::var_os(PROCESS_HELPER_READY_MARKER_ENV)
+        .expect("process-tree ready marker must be configured");
+    fs::write(ready_marker, b"ready").expect("process-tree ready marker must be writable");
+    thread::sleep(PROCESS_TREE_DESCENDANT_SURVIVAL_DELAY);
+    let survivor_marker = env::var_os(PROCESS_HELPER_SURVIVOR_MARKER_ENV)
+        .expect("process-tree survivor marker must be configured");
+    fs::write(survivor_marker, b"survived").expect("process-tree survivor marker must be writable");
+}
+
+#[test]
+fn supervised_process_helper() {
+    let Ok(mode) = env::var(PROCESS_HELPER_MODE_ENV) else {
+        return;
+    };
+    match mode.as_str() {
+        "success" => {
+            print!("supervised-capture");
+            std::io::stdout().flush().expect("stdout must flush");
+        }
+        "nonzero" => std::process::exit(23),
+        "stdout_limit" => {
+            std::io::stdout()
+                .write_all(&vec![b'o'; 128 * 1024])
+                .expect("stdout must accept helper bytes");
+            std::io::stdout().flush().expect("stdout must flush");
+            thread::sleep(Duration::from_secs(2));
+        }
+        "stderr_tail" => {
+            std::io::stderr()
+                .write_all(&vec![b'e'; 128 * 1024])
+                .expect("stderr must accept helper bytes");
+            std::io::stderr().flush().expect("stderr must flush");
+        }
+        "wait" => {
+            thread::sleep(Duration::from_secs(2));
+            if let Ok(marker) = env::var(PROCESS_HELPER_MARKER_ENV) {
+                fs::write(marker, b"survived").expect("helper marker must be writable");
+            }
+        }
+        "process_tree_parent" => process_tree_parent(),
+        "process_tree_grandchild" => process_tree_grandchild(),
+        other => panic!("unknown process helper mode: {other}"),
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn supervisor_captures_bounds_terminates_cancels_and_reaps_without_shell() {
+    let success = run_helper_process(
+        "success",
+        Duration::from_secs(5),
+        64 * 1024,
+        64 * 1024,
+        ProcessCancellation::new(),
+        "helper_success",
+        None,
+    )
+    .await
+    .expect("successful helper must settle");
+    assert!(success.status.success());
+    assert!(
+        String::from_utf8_lossy(&success.stdout).contains("supervised-capture"),
+        "helper stdout must be captured"
+    );
+    assert!(!success.stderr_truncated);
+
+    let nonzero = run_helper_process(
+        "nonzero",
+        Duration::from_secs(5),
+        64 * 1024,
+        64 * 1024,
+        ProcessCancellation::new(),
+        "helper_nonzero",
+        None,
+    )
+    .await
+    .expect_err("nonzero helper must fail");
+    match nonzero {
+        ProcessFailure::NonZero {
+            operation,
+            exit_code,
+            ..
+        } => {
+            assert_eq!(operation, "helper_nonzero");
+            assert_eq!(exit_code, Some(23));
+        }
+        other => panic!("unexpected nonzero result: {other:?}"),
+    }
+
+    let output_limit = run_helper_process(
+        "stdout_limit",
+        Duration::from_secs(5),
+        1_024,
+        4_096,
+        ProcessCancellation::new(),
+        "helper_output_limit",
+        None,
+    )
+    .await
+    .expect_err("oversized stdout must fail");
+    assert!(matches!(
+        output_limit,
+        ProcessFailure::StdoutLimit {
+            operation: "helper_output_limit",
+            limit: 1_024
+        }
+    ));
+
+    let stderr = run_helper_process(
+        "stderr_tail",
+        Duration::from_secs(5),
+        64 * 1024,
+        4_096,
+        ProcessCancellation::new(),
+        "helper_stderr",
+        None,
+    )
+    .await
+    .expect("large stderr must be drained");
+    assert!(stderr.stderr_truncated);
+    assert_eq!(stderr.stderr_tail.len(), 4_096);
+
+    let directory = tempdir().expect("marker directory must be created");
+    let timeout_marker = directory.path().join("timeout-survivor");
+    let timed_out = run_helper_process(
+        "wait",
+        Duration::from_millis(100),
+        64 * 1024,
+        4_096,
+        ProcessCancellation::new(),
+        "helper_timeout",
+        Some(&timeout_marker),
+    )
+    .await
+    .expect_err("slow helper must time out");
+    assert!(matches!(
+        timed_out,
+        ProcessFailure::Timeout {
+            operation: "helper_timeout"
+        }
+    ));
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(!timeout_marker.exists(), "timed-out child must be reaped");
+
+    let cancel_marker = directory.path().join("cancel-survivor");
+    let cancellation = ProcessCancellation::new();
+    let trigger = cancellation.clone();
+    let run = run_supervised_with_test_environment(
+        helper_process_spec(Duration::from_secs(5), 64 * 1024, 4_096, "helper_cancel"),
+        cancellation,
+        helper_process_environment("wait", Some(&cancel_marker)),
+    );
+    let cancel = async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        trigger.cancel();
+        trigger.cancel();
+    };
+    let (cancelled, ()) = tokio::join!(run, cancel);
+    assert!(matches!(
+        cancelled.expect_err("cancelled helper must fail"),
+        ProcessFailure::Cancelled {
+            operation: "helper_cancel"
+        }
+    ));
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(!cancel_marker.exists(), "cancelled child must be reaped");
+
+    for index in 0..2 {
+        let marker = directory.path().join(format!("repeat-survivor-{index}"));
+        let result = run_helper_process(
+            "wait",
+            Duration::from_millis(75),
+            64 * 1024,
+            4_096,
+            ProcessCancellation::new(),
+            "helper_repeat",
+            Some(&marker),
+        )
+        .await;
+        assert!(matches!(result, Err(ProcessFailure::Timeout { .. })));
+        assert!(!marker.exists(), "settled child must not survive return");
+    }
+}
+
+#[cfg(any(unix, windows))]
+async fn wait_for_process_tree_ready(marker: &Path) -> bool {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if marker.exists() {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[cfg(any(unix, windows))]
+async fn assert_process_tree_descendant_was_terminated(survivor_marker: &Path) {
+    tokio::time::sleep(PROCESS_TREE_DESCENDANT_SURVIVAL_DELAY + Duration::from_millis(250)).await;
+    assert!(
+        !survivor_marker.exists(),
+        "descendant survived process-tree termination"
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test(flavor = "current_thread")]
+async fn supervisor_timeout_terminates_grandchild_and_releases_inherited_pipes() {
+    let directory = tempdir().expect("process-tree marker directory must be created");
+    let ready_marker = directory.path().join("timeout-grandchild-ready");
+    let survivor_marker = directory.path().join("timeout-grandchild-survived");
+    let run = run_supervised_with_test_environment(
+        helper_process_spec(
+            Duration::from_millis(1_500),
+            64 * 1024,
+            4_096,
+            "helper_tree_timeout",
+        ),
+        ProcessCancellation::new(),
+        process_tree_environment(&ready_marker, &survivor_marker),
+    );
+
+    let result = tokio::time::timeout(PROCESS_TREE_PIPE_RELEASE_DEADLINE, run)
+        .await
+        .expect("timeout termination must close grandchild-inherited stdout and stderr pipes")
+        .expect_err("process tree must time out");
+    assert!(matches!(
+        result,
+        ProcessFailure::Timeout {
+            operation: "helper_tree_timeout"
+        }
+    ));
+    assert!(
+        ready_marker.exists(),
+        "grandchild must start before timeout termination"
+    );
+    assert_process_tree_descendant_was_terminated(&survivor_marker).await;
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test(flavor = "current_thread")]
+async fn supervisor_cancellation_terminates_grandchild_and_releases_inherited_pipes() {
+    let directory = tempdir().expect("process-tree marker directory must be created");
+    let ready_marker = directory.path().join("cancel-grandchild-ready");
+    let survivor_marker = directory.path().join("cancel-grandchild-survived");
+    let cancellation = ProcessCancellation::new();
+    let trigger = cancellation.clone();
+    let run = run_supervised_with_test_environment(
+        helper_process_spec(
+            Duration::from_secs(15),
+            64 * 1024,
+            4_096,
+            "helper_tree_cancel",
+        ),
+        cancellation,
+        process_tree_environment(&ready_marker, &survivor_marker),
+    );
+    let cancel_after_grandchild_starts = async {
+        let ready = wait_for_process_tree_ready(&ready_marker).await;
+        trigger.cancel();
+        ready
+    };
+
+    let (result, ready) = tokio::time::timeout(PROCESS_TREE_PIPE_RELEASE_DEADLINE, async {
+        tokio::join!(run, cancel_after_grandchild_starts)
+    })
+    .await
+    .expect("cancellation must close grandchild-inherited stdout and stderr pipes");
+    assert!(ready, "grandchild must start before cancellation");
+    assert!(matches!(
+        result.expect_err("process tree must be cancelled"),
+        ProcessFailure::Cancelled {
+            operation: "helper_tree_cancel"
+        }
+    ));
+    assert_process_tree_descendant_was_terminated(&survivor_marker).await;
+}
+
+#[test]
+fn tool_checks_normalize_banners_and_classify_safe_failures() {
+    let ffmpeg = parse_tool_banner(
+        VideoTool::Ffmpeg,
+        b"  ffmpeg version 8.1.2 Copyright ignored\r\nbuild configuration secret\n",
+    );
+    assert!(ffmpeg.available);
+    assert_eq!(
+        ffmpeg.version.as_deref(),
+        Some("ffmpeg version 8.1.2 Copyright ignored")
+    );
+    assert_eq!(ffmpeg.problem, None);
+
+    let wrong = parse_tool_banner(VideoTool::Ffprobe, b"ffmpeg version 8.1.2\n");
+    assert_eq!(wrong.problem, Some(VideoToolProblem::InvalidVersion));
+
+    let missing = tool_info_from_result(
+        VideoTool::Ffprobe,
+        Err(ProcessFailure::Spawn {
+            operation: "check_ffprobe",
+            kind: std::io::ErrorKind::NotFound,
+        }),
+    );
+    assert_eq!(missing.problem, Some(VideoToolProblem::NotFound));
+
+    let failed = tool_info_from_result(
+        VideoTool::Ffprobe,
+        Err(ProcessFailure::NonZero {
+            operation: "check_ffprobe",
+            exit_code: Some(1),
+            stderr_tail: b"must never escape".to_vec(),
+            stderr_truncated: false,
+        }),
+    );
+    assert_eq!(failed.problem, Some(VideoToolProblem::Failed));
+
+    let timed_out = tool_info_from_result(
+        VideoTool::Ffprobe,
+        Err(ProcessFailure::Timeout {
+            operation: "check_ffprobe",
+        }),
+    );
+    assert_eq!(timed_out.problem, Some(VideoToolProblem::TimedOut));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn probe_authorizes_owner_source_before_spawning_and_redacts_failures() {
+    let directory = tempdir().expect("temporary directory must be created");
+    let source = directory.path().join("private-source.mp4");
+    fs::write(&source, b"not media").expect("source fixture must be writable");
+    let grants = VideoPathGrants::default();
+    let missing_program = OsString::from("__supa_video_missing_ffprobe_executable__");
+
+    let denied = probe_media_with_program(
+        "main",
+        &grants,
+        &source,
+        missing_program.clone(),
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect_err("ungranted source must fail before process spawn");
+    assert_eq!(denied.code, VideoErrorCode::PathNotGranted);
+
+    grants
+        .grant_existing_file("main", GrantCategory::Source, &source)
+        .expect("source grant must succeed");
+    let unavailable = probe_media_with_program(
+        "main",
+        &grants,
+        &source,
+        missing_program,
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect_err("missing granted ffprobe must be typed");
+    assert_eq!(unavailable.code, VideoErrorCode::ToolUnavailable);
+    let serialized = serde_json::to_string(&unavailable).expect("error must serialize");
+    assert!(!serialized.contains("private-source"));
+    assert!(!serialized.contains("missing_ffprobe_executable"));
+    assert!(!serialized.contains("not media"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn local_ffmpeg_status_and_canonical_probe_match_fixture() {
+    let status =
+        video_ffmpeg_status_with_programs(OsString::from("ffmpeg"), OsString::from("ffprobe"))
+            .await;
+    assert!(status.ready, "system FFmpeg tools must be available");
+    assert!(status.ffmpeg.available);
+    assert!(status.ffprobe.available);
+
+    let source =
+        workspace_root().join("apps/desktop/src-tauri/fixtures/video-phase1/single-clip.mp4");
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("integration", GrantCategory::Source, &source)
+        .expect("canonical source must be granted");
+    let probe = probe_media_with_program(
+        "integration",
+        &grants,
+        &source,
+        OsString::from("ffprobe"),
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("canonical source must probe");
+
+    assert_eq!(probe.duration_microseconds, 2_000_000);
+    assert_eq!(probe.width, 320);
+    assert_eq!(probe.height, 180);
+    assert_eq!(probe.video_codec_name, "h264");
+    assert_eq!(probe.file_size_bytes, 129_211);
+    assert_eq!(
+        probe.average_frame_rate,
+        RationalRate {
+            numerator: 30,
+            denominator: 1,
+        }
+    );
+    assert_eq!(probe.real_frame_rate, probe.average_frame_rate);
+    assert!(!probe.variable_frame_rate);
+    let audio = probe.audio.expect("canonical fixture must contain audio");
+    assert_eq!(audio.codec_name, "aac");
+    assert_eq!(audio.channels, 1);
+    assert_eq!(audio.sample_rate, 48_000);
 }
