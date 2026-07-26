@@ -1,6 +1,6 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phase 1 is in progress
+- **Status:** Active implementation; Phase 1 is complete and Phase 2 is next
 - **Research baseline:** 24 July 2026
 - **Implementation audit:** 25 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
@@ -69,7 +69,7 @@ The bootstrap creates root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yam
 
 ## Implementation checkpoint - re-audited and verified 25 July 2026
 
-Phase 1 is complete and the hard completion gate passes. Steps 1 through 18 are implemented and verified; Step 16 was completed ahead of Steps 13 through 15 and remains covered by the unchanged eight real-FFmpeg integrations. Phase 2 is now unblocked.
+Phase 1 is complete and the hard completion gate passes at HEAD `1228855703f62c83739131f56088ee59896537b6`. Steps 1 through 18 are implemented and verified; targeted Windows Step 18 proof was rerun after the playback, source-recovery, and draft-guard changes. Phase 2 is now unblocked.
 
 | Implementation item | State | Audit evidence |
 |---|---|---|
@@ -85,7 +85,7 @@ Phase 1 is complete and the hard completion gate passes. Steps 1 through 18 are 
 | React editing workflow | Complete | The workbench includes the opener, active project bar, controlled proxy monitor, one-track thumbnail timeline, frame playhead, numeric/range trim controls, persisted Apply/Undo/Redo, frame shortcuts, native overwrite dialog, output facts, and controlled final-preview playback. |
 | Integration and accessibility coverage | Complete | The full mocked create/import/play/trim/undo/redo/export/reopen workflow passes. Axe Core 4.12.1 reports zero applicable WCAG A/AA/2.2-tagged violations in opener, ready editor, blocking error, running export, and collision dialog states. |
 | Gates and documentation | Complete | Empty-test allowances and duplicate `dist` render discovery are removed, the obsolete CI warning is removed, `DESIGN.md` records the production contract, and every local TypeScript/Rust/Tauri/FFmpeg gate passes. |
-| Real Windows runtime and visual proof | Complete | The production executable completed native create/open/prepare/play, exact `[5, 50)` trim, Undo/Redo, collision cancel/replace, export/reopen, controlled final preview, exact 1.5-second ffprobe proof, real long-render cancellation with zero process/partial/output residue, recovery states, 320px/200% reflow, and accessibility review. |
+| Real Windows runtime and visual proof | Complete | The production executable completed native create/open/prepare/play, exact `[5, 50)` trim, Undo/Redo, export/reopen, controlled final preview, exact 1.5-second ffprobe proof, missing-source and relink-required recovery, source regrant, and unsaved-draft discard guarding on current HEAD. Earlier unchanged proof covers collision cancel/replace, real long-render cancellation with zero process/partial/output residue, 320px/200% reflow, and accessibility review. |
 
 ### Next implementation item
 
@@ -94,13 +94,13 @@ Begin Phase 2 planning from the completed Phase 1 baseline.
 ### Latest verification evidence
 
 - The local worktree passes frozen install; root build, check, test, lint, and format; Rust formatting; all-target/all-feature Clippy with warnings denied; default and `tauri-ipc-test` suites; all eight unchanged real-FFmpeg integrations; asset-protocol feature inspection; `git diff --check`; and `pnpm --dir apps/desktop tauri build --no-bundle --ci`.
-- The source contains 123 unique passing TypeScript tests: 39 contract/time/project-I/O/derived-media/render-event tests, 5 project/history tests, 9 render-compiler tests, and 70 desktop IPC/controller/component/integration/accessibility tests. Test scripts now scope source tests and no longer permit empty suites.
-- The Rust crate passes 62 default-feature tests (60 portable unit tests plus 2 security-configuration tests). With `tauri-ipc-test`, 68 tests pass (66 portable unit/IPC/lifecycle tests plus 2 configuration tests).
+- The source contains 159 unique passing TypeScript tests: 40 contract/time/project-I/O/derived-media/render-event tests, 5 project/history tests, 9 render-compiler tests, and 105 desktop IPC/controller/component/integration/accessibility tests.
+- The Rust crate passes 63 default-feature tests (61 portable unit tests plus 2 security-configuration tests). With `tauri-ipc-test`, 69 tests pass (67 portable unit/IPC/lifecycle tests plus 2 configuration tests).
 - All eight explicit system-FFmpeg integrations pass with FFmpeg/FFprobe 8.1.2. They cover source probing over IPC, preparation/reuse/repair, display geometry, HDR tone mapping, AV/video-only export, collision preservation, and cancellation/process/partial cleanup.
-- The process-tree timeout and cancellation proofs each passed 20 consecutive targeted repetitions before feature work and another 20 after the full local gate. The complete `tauri-ipc-test` suite passed 10 consecutive Windows repetitions in both runs.
+- The process-tree timeout and cancellation proofs each passed 20 consecutive targeted repetitions before feature work and another 20 after the full Phase 1 gate. The complete `tauri-ipc-test` suite passed 10 consecutive Windows repetitions in both runs.
 - The locked Cargo feature tree includes `tauri/protocol-asset` and `http-range` in the default production graph. The no-bundle release build produced `apps/desktop/src-tauri/target/release/supa-video-desktop.exe`.
-- The final completion commit and exact-SHA GitHub Actions run are recorded in `apps/desktop/evidence/phase-1/verification.md`.
-- Sanitized runtime proof under `apps/desktop/evidence/phase-1/` records the real workflow, ffprobe facts, hashes, process/partial cleanup, recovery states, responsive/accessibility captures, and final 24/24 rubric score.
+- Exact-SHA GitHub Actions run [`30189534426`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30189534426) passed TypeScript/Linux Rust/Windows MSVC and Tauri assembly for HEAD `1228855703f62c83739131f56088ee59896537b6`.
+- Sanitized runtime proof under `apps/desktop/evidence/phase-1/` now includes current-HEAD create/import/play, draft discard, `[5, 50)` Apply/Undo/Redo, export/reopen, ffprobe/hash facts, missing-source/relink/source-regrant recovery, plus the earlier unchanged cancellation, responsive, and accessibility evidence.
 
 ### Audit notes
 

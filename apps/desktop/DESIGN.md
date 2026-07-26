@@ -63,15 +63,15 @@ Draft trim and playhead are ephemeral. Apply Trim produces one `TrimClip` candid
 
 ## Support and verification matrix
 
-| Area                                       | Automated evidence                                                         | Manual/real evidence                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Persistence and stale operations           | Controller and IPC tests                                                   | Native picker/save/reopen path passed                                                         |
-| Playback and frame boundaries              | Program monitor tests                                                      | Real controlled-proxy/final-preview playback and frame navigation passed                      |
-| Trim, save, undo, redo                     | Controller, component, and full workflow tests                             | Real exact-frame Apply/Undo/Redo and keyboard path passed                                     |
-| Export, collision, cancel, terminal states | Controller, App, component, Rust, and FFmpeg integration tests             | Real collision, running, UI cancellation, process/partial cleanup, and verified output passed |
-| Accessibility semantics                    | Axe 4.12.1 zero applicable violations across five states                   | Real focus, 200% text, non-drag controls, dialog/picker return, and responsive review passed  |
-| Responsive composition                     | CSS breakpoint and semantic-order implementation                           | Desktop, 1280×800, 480×360, 320 CSS-pixel equivalent, and 200% captures passed                |
-| Security/media containment                 | Strict IPC contracts, cache-only component tests, Rust path/security tests | Real controlled proxy/final preview and redacted recovery states passed                       |
+| Area                                       | Automated evidence                                                         | Manual/real evidence                                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Persistence and stale operations           | Controller and IPC tests                                                   | Current-HEAD native create/save/reopen plus missing/relink/source-regrant recovery passed                    |
+| Playback and frame boundaries              | Program monitor tests                                                      | Current-HEAD controlled-proxy play/pause and prepared-media recovery passed                                  |
+| Trim, save, undo, redo                     | Controller, component, and full workflow tests                             | Current-HEAD exact `[5, 50)` Apply/Undo/Redo plus unsaved-draft discard guarding passed                      |
+| Export, collision, cancel, terminal states | Controller, App, component, Rust, and FFmpeg integration tests             | Current-HEAD verified export/reopen passed; earlier unchanged collision/cancel/process-cleanup proof remains |
+| Accessibility semantics                    | Axe 4.12.1 zero applicable violations across current rendered states       | Real focus, draft dialog, 200% text, non-drag controls, picker return, and responsive review passed          |
+| Responsive composition                     | CSS breakpoint and semantic-order implementation                           | Desktop, 1280×800, 480×360, 320 CSS-pixel equivalent, and 200% captures passed                               |
+| Security/media containment                 | Strict IPC contracts, cache-only component tests, Rust path/security tests | Current-HEAD controlled proxy, relink/source-regrant, and redacted recovery states passed                    |
 
 ## Production-contract checklist
 
@@ -90,4 +90,4 @@ Draft trim and playhead are ephemeral. Apply Trim produces one `TrimClip` candid
 
 ## Evidence status
 
-Steps 13 through 18 pass the local and real Windows gates recorded in `ROADMAP.md` and [`evidence/phase-1/verification.md`](./evidence/phase-1/verification.md). The evidence includes create/open/prepare/play, `[5, 50)` trim, Undo/Redo, export, collision cancel/replace, reopen, final preview, ffprobe, real long-render cancellation with zero process/partial/output residue, recovery states, 480px/320px/200% responsive captures, and accessibility review. Exact-SHA CI is recorded in the evidence after the final push.
+Steps 13 through 18 pass at HEAD `1228855703f62c83739131f56088ee59896537b6`. Targeted current-HEAD Windows evidence adds create/import/play, draft discard, exact `[5, 50)` Apply/Undo/Redo, verified export/reopen, ffprobe/hash proof, missing-source/relink/source-regrant recovery, and exact-SHA CI run `30189534426`; earlier unchanged evidence retains collision, cancellation, responsive, and accessibility proof.

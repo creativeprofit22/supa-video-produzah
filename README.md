@@ -1,6 +1,6 @@
 # Supa Video Producer
 
-Supa Video Producer is a standalone, offline-first Tauri desktop application under active Phase 1 development. The Phase 1 target is to trim one local video clip and export a verified H.264/AAC MP4.
+Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 1 is complete; Phase 2 is the next roadmap phase.
 
 ## Phase 1 prerequisites
 
@@ -34,11 +34,11 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-Phase 1 is complete. The desktop provides strict new/open/save persistence, controlled proxy playback, a thumbnail timeline, exact frame trim controls, save-before-activation Apply/Undo/Redo, keyboard frame navigation, native overwrite confirmation, cancellable verified export, and controlled final-preview playback.
+Phase 1 is complete at HEAD `1228855703f62c83739131f56088ee59896537b6`. The desktop provides strict new/open/save persistence, controlled proxy playback, a thumbnail timeline, exact frame trim controls, save-before-activation Apply/Undo/Redo, keyboard frame navigation, guarded unsaved drafts, missing/relink source recovery, native overwrite confirmation, cancellable verified export, and controlled final-preview playback.
 
-The final source has 123 unique passing TypeScript tests: 39 contracts, 5 project/history, 9 render compiler, and 70 desktop IPC/controller/component/integration/accessibility tests. The Rust crate passes 62 default tests and 68 `tauri-ipc-test` tests; all eight system-FFmpeg integrations pass.
+The current source has 159 unique passing TypeScript tests: 40 contracts, 5 project/history, 9 render compiler, and 105 desktop IPC/controller/component/integration/accessibility tests. The Rust crate passes 63 default tests and 69 `tauri-ipc-test` tests; all eight system-FFmpeg integrations pass.
 
-Real Windows evidence proves native create/open/prepare/play, `[5, 50)` trim, Undo/Redo, collision cancel/replace, export/reopen, exact 1.5-second ffprobe output, long-render cancellation with zero surviving FFmpeg/partials/output, the required recovery-state matrix, 480px/320px/200% reflow, and accessibility checks. Exact-SHA Linux and Windows CI evidence is recorded in [`apps/desktop/evidence/phase-1/verification.md`](./apps/desktop/evidence/phase-1/verification.md); see also [`ROADMAP.md`](./ROADMAP.md) and [`apps/desktop/DESIGN.md`](./apps/desktop/DESIGN.md).
+Real Windows evidence at current HEAD proves native create/import/play, unsaved-draft guarding, `[5, 50)` Apply/Undo/Redo, verified export/reopen, exact 1.5-second ffprobe output, missing-source/relink/source-regrant recovery, and current controlled playback. Earlier unchanged evidence proves collision cancel/replace, long-render cancellation with zero surviving FFmpeg/partials/output, 480px/320px/200% reflow, and accessibility checks. Exact-SHA CI run [`30189534426`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30189534426) passed; see [`apps/desktop/evidence/phase-1/verification.md`](./apps/desktop/evidence/phase-1/verification.md), [`ROADMAP.md`](./ROADMAP.md), and [`apps/desktop/DESIGN.md`](./apps/desktop/DESIGN.md).
 
 ## Project format
 
@@ -50,4 +50,4 @@ The Phase 1 architecture keeps arbitrary filesystem access and shell execution o
 
 ## Phase 1 target contract and limitations
 
-The implemented Phase 1 workflow supports one local asset, one clip, one track, exact frame trims, controlled proxy playback, and one verified MP4 export. Multiple clips, captions, transitions, stock media, cloud services, agents, native compositing, and bundled FFmpeg distribution are outside Phase 1. Phase 2 remains blocked until the Step 18 hard completion evidence is committed.
+The implemented Phase 1 workflow supports one local asset, one clip, one track, exact frame trims, controlled proxy playback, and one verified MP4 export. Multiple clips, captions, transitions, stock media, cloud services, agents, native compositing, and bundled FFmpeg distribution are outside Phase 1. Phase 2 is now unblocked and is the next roadmap phase.
