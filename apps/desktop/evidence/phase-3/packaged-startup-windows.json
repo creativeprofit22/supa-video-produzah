@@ -1,0 +1,142 @@
+﻿{
+  "schemaVersion": 1,
+  "measuredAtUtc": "2026-07-26T20:54:24.8856938Z",
+  "passed": true,
+  "coldCacheMethod": "Fresh WebView2 user-data folder and Microsoft Sysinternals RAMMap -Et standby-list purge before every run",
+  "executable": "E:\\Projects\\supa-video-produzah\\.gg\\startup-msi-layout-final\\PFiles\\Supa Video Producer\\supa-video-desktop.exe",
+  "iterations": 10,
+  "thresholds": {
+    "firstVisibleWindowP95Ms": 2500,
+    "readyStatusP95Ms": 15000,
+    "responsivenessProbeTimeoutMs": 500,
+    "requireLoadingStateEveryRun": true,
+    "requireProjectActionsEnabledWhileResolvingEveryRun": true
+  },
+  "system": {
+    "manufacturer": "Gigabyte Technology Co., Ltd.",
+    "model": "Z370 HD3",
+    "memoryGb": 24,
+    "processor": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
+    "processorCores": 6,
+    "processorLogicalProcessors": 12,
+    "applicationDisk": "TOSHIBA DT01ACA100",
+    "applicationDiskBus": "SATA",
+    "applicationDiskMediaType": "HDD",
+    "defenderAntivirusEnabled": true,
+    "defenderRealTimeProtectionEnabled": true,
+    "executableSha256": "2ffc08140898e5bcbc3394b18ac0b056c91464715293c3ecaaec6f5ffd25c430",
+    "ramMapSha256": "e970913798481432cd590991577089e68510b861dc669dcab24feb06aae0df52"
+  },
+  "summary": {
+    "firstVisibleWindowMedianMs": 879.8,
+    "firstVisibleWindowP95Ms": 1593.8,
+    "readyStatusMedianMs": 7326.4,
+    "readyStatusP95Ms": 12199.8,
+    "responsivenessFailures": 0,
+    "maxResponsivenessProbeMs": 26.4,
+    "loadingStateObservedEveryRun": true,
+    "projectActionsEnabledWhileResolvingEveryRun": true
+  },
+  "runs": [
+    {
+      "run": 1,
+      "firstVisibleWindowMs": 1593.8,
+      "readyStatusMs": 12199.8,
+      "responsivenessProbeCount": 144,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 26.4,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 2,
+      "firstVisibleWindowMs": 822.6,
+      "readyStatusMs": 7862.2,
+      "responsivenessProbeCount": 123,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 2.1,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 3,
+      "firstVisibleWindowMs": 834.9,
+      "readyStatusMs": 8733,
+      "responsivenessProbeCount": 132,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 5.5,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 4,
+      "firstVisibleWindowMs": 918.6,
+      "readyStatusMs": 8250.2,
+      "responsivenessProbeCount": 132,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 4.8,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 5,
+      "firstVisibleWindowMs": 956.2,
+      "readyStatusMs": 8331.6,
+      "responsivenessProbeCount": 134,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 2.5,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 6,
+      "firstVisibleWindowMs": 825.5,
+      "readyStatusMs": 6498.5,
+      "responsivenessProbeCount": 116,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 1.1,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 7,
+      "firstVisibleWindowMs": 905,
+      "readyStatusMs": 6504.1,
+      "responsivenessProbeCount": 105,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 19,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 8,
+      "firstVisibleWindowMs": 856.9,
+      "readyStatusMs": 6790.7,
+      "responsivenessProbeCount": 105,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 4.4,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 9,
+      "firstVisibleWindowMs": 829.8,
+      "readyStatusMs": 6393.8,
+      "responsivenessProbeCount": 116,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 14.8,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    },
+    {
+      "run": 10,
+      "firstVisibleWindowMs": 902.7,
+      "readyStatusMs": 6055.1,
+      "responsivenessProbeCount": 102,
+      "responsivenessFailures": 0,
+      "maxResponsivenessProbeMs": 0.7,
+      "loadingStateObserved": true,
+      "projectActionsEnabledWhileResolving": true
+    }
+  ]
+}

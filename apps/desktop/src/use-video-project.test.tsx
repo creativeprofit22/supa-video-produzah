@@ -147,8 +147,10 @@ function withCheckpointWarning(
 function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
   return {
     getVideoToolStatus: vi.fn(async () => ({
-      ffmpeg: { available: true, version: "ffmpeg" },
-      ffprobe: { available: true, version: "ffprobe" },
+      source: "bundled" as const,
+      toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+      ffmpeg: { available: true, version: "8.1.2" },
+      ffprobe: { available: true, version: "8.1.2" },
       ready: true,
     })),
     pickNewVideoProjectPath: vi.fn(async () => "C:\\Projects\\canonical.svpvideo"),

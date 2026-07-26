@@ -1,3 +1,4 @@
+import { VideoDomainError } from "@supa-video/contracts";
 import { Film } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -11,7 +12,6 @@ import { VideoWorkspace } from "./video/VideoWorkspace";
 function App() {
   const [readiness, setReadiness] = useState<ReadinessState>({ phase: "loading" });
   const readinessRequest = useRef(0);
-  const controller = useVideoProject();
 
   const checkReadiness = useCallback(async () => {
     const request = ++readinessRequest.current;
@@ -24,6 +24,13 @@ function App() {
     }
   }, []);
 
+  const controller = useVideoProject();
+  const toolUnavailableFailure = [
+    controller.projectOperation.phase === "error" ? controller.projectOperation.error : null,
+    controller.preparation.phase === "error" ? controller.preparation.error : null,
+    controller.render.phase === "failed" ? controller.render.error : null,
+  ].find((error) => error instanceof VideoDomainError && error.code === "tool_unavailable");
+
   useEffect(() => {
     void checkReadiness();
     return () => {
@@ -31,7 +38,10 @@ function App() {
     };
   }, [checkReadiness]);
 
-  const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
+  useEffect(() => {
+    if (toolUnavailableFailure !== undefined) void checkReadiness();
+  }, [checkReadiness, toolUnavailableFailure]);
+
   const projectPending = controller.projectOperation.phase === "pending";
   const projectError =
     controller.projectOperation.phase === "error" ? controller.projectOperation.error : null;
@@ -67,7 +77,8 @@ function App() {
         <VideoWorkspace
           controller={controller}
           project={controller.project}
-          toolsReady={toolsReady}
+          readiness={readiness}
+          onCheckTools={checkReadiness}
           onNewProject={requestNewProject}
           onOpenProject={requestOpenProject}
         />

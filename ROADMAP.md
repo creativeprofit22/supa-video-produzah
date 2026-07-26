@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1 and 2 are complete and Phase 3 is next
+- **Status:** Active implementation; Phases 1 and 2 plus the Phase 3 FFmpeg distribution baseline are complete
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 25 July 2026
+- **Implementation audit:** 26 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -235,9 +235,9 @@ Use OTIO as an interchange and semantic reference, not the internal executable r
 
 **Depends on:** Phase 1
 
-## Implementation checkpoint - verified 26 July 2026
+## Implementation checkpoint - re-audited and verified 26 July 2026
 
-Phase 2 is complete on baseline `a0a636995a453789b46640512aa9bccb4ed89c31`; Phase 3 is unblocked.
+Phase 2 is complete at HEAD `7ad26432e6ffa36e63f1fc85349345179c31fd72`, built on baseline `a0a636995a453789b46640512aa9bccb4ed89c31`; Phase 3 is unblocked.
 
 - Rust owns strict V2 state transitions, semantic inverses, monotonic commit/undo/redo revisions, hashes, journal durability, snapshots, recovery, locks, migration, and owner sessions.
 - TypeScript owns strict V2 IPC contracts, authority-free command builders, projection selectors, and the unchanged pure render-plan compiler.
@@ -245,8 +245,13 @@ Phase 2 is complete on baseline `a0a636995a453789b46640512aa9bccb4ed89c31`; Phas
 - Recovery validates snapshot state hashes, journal generation/record chains, deterministic replay output, and repaired valid prefixes. Torn tails recover with a report; verified-record loss reports degraded status.
 - V1 migration preserves the selected state and stable entity IDs while recording one irreversible history-reset boundary.
 - The production single-clip UI uses grouped native import, trim, monotonic undo/redo, V2 export, native relink, a degraded-recovery alert, and a hidden responsive inspector.
-- Release measurements are 2.9 ms p95 durable acknowledgment and 656 ms for a generated 10,000-record journal scan, below the 100 ms and 2 second gates.
-- Local verification passes 48 desktop tests, 44 contract tests, 7 project-helper tests, 10 render tests, 81 all-feature Rust tests, real FFmpeg probe/prepare/render/cancel, Clippy `-D warnings`, and Windows Tauri production assembly.
+- Current release measurements are 4.57 ms p95 durable acknowledgment and 706 ms for a generated 10,000-record journal scan, below the 100 ms and 2 second gates.
+- Local verification passes 122 TypeScript tests, 100 all-feature Rust tests, all eight explicit real-FFmpeg integrations, Clippy with warnings denied, and Windows Tauri production assembly.
+- Exact-SHA GitHub Actions run [`30211851450`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30211851450) passes TypeScript, Linux Rust performance/recovery, repeated Windows lock/recovery, and Windows Tauri assembly.
+
+### Phase 3 handoff
+
+The pinned FFmpeg/ffprobe distribution baseline is complete. Phase 3 can now use the stable toolchain ID and verified capability contract for content-addressed ingest, deterministic derived-media keys, and durable jobs.
 
 ### Storage portability
 
@@ -364,6 +369,20 @@ Runtime: decoders, GPU textures, file handles
 # Phase 3 — Durable media ingest, proxies, caches, and jobs
 
 **Depends on:** Phase 2
+
+## Implementation checkpoint - verified 26 July 2026
+
+The Windows x86_64 FFmpeg distribution baseline is complete on Phase 2 HEAD `7ad26432e6ffa36e63f1fc85349345179c31fd72`. Production now uses only Gyan FFmpeg 8.1.2 release essentials resources pinned by archive length/SHA-256, source commit, executable length/SHA-256, build flags, and required encoder/muxer/filter capabilities.
+
+Rust compiles the strict target-indexed manifest into the application, resolves exact contained regular resources, rejects symlink/reparse escapes and integrity/capability mismatches, and gives verified absolute paths to the existing no-shell supervisor. Status, probe, preparation, and render share the managed toolchain; webview paths and system `PATH` cannot redirect production execution.
+
+Bootstrap, adversarial validation, contract/IPC/UI accessibility coverage, all-feature Rust tests, all eight real bundled-FFmpeg integrations, Clippy, Tauri executable/MSI/NSIS assembly, MSI/NSIS payload inspection, installed hashes, and stripped-`PATH` runtime launch pass locally. See [`apps/desktop/evidence/phase-3/ffmpeg-distribution.md`](./apps/desktop/evidence/phase-3/ffmpeg-distribution.md). Public release remains mechanically blocked while GPL/source-offer and codec-patent review is `pending`.
+
+Still absent are `packages/video-media/`, a content-addressed object store, durable media-job records and restart recovery, priorities/retries, audio intermediates, keyframe indexes, waveform pyramids, cache budgets/eviction, and a job-center UI.
+
+### Next implementation item
+
+Build content-addressed ingest and deterministic derived-media keys using the stable toolchain ID, source fingerprints, and explicit proxy/color profiles before adding durable media jobs.
 
 ## Scope
 

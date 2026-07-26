@@ -4,6 +4,9 @@ dist/
 dist-ssr/
 target/
 .gg/target-*/
+.gg/plans/
+.gg/rammap/
+.gg/startup-msi-layout*/
 .gg/*.ps1
 .gg/*.cjs
 .gg/*.js
@@ -23,6 +26,8 @@ test-results/
 
 # Product-owned runtime artifacts
 video-phase1/
+apps/desktop/src-tauri/media-toolchain/bin/
+apps/desktop/src-tauri/media-toolchain/cache/
 *.svp-part-*.mp4
 *.temp-render.mp4
 *.svpvideo.autosave

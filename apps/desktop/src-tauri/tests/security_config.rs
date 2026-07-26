@@ -122,3 +122,65 @@ fn default_capability_is_local_main_window_close_guard_access_only() {
         .collect()
     );
 }
+
+#[test]
+fn windows_media_overlay_maps_only_pinned_resources_to_declared_destinations() {
+    let overlay: Value =
+        serde_json::from_str(include_str!("../tauri.media-tools.windows.conf.json"))
+            .expect("media-tool overlay must be valid JSON");
+    let resources = overlay["bundle"]["resources"]
+        .as_object()
+        .expect("media-tool resources must be an exact map");
+    assert_eq!(resources.len(), 7);
+    assert_eq!(
+        resources,
+        &serde_json::from_value(json!({
+            "media-toolchain/bin/x86_64-pc-windows-msvc/ffmpeg.exe": "media-tools/ffmpeg.exe",
+            "media-toolchain/bin/x86_64-pc-windows-msvc/ffprobe.exe": "media-tools/ffprobe.exe",
+            "media-toolchain/manifest.v1.json": "media-tools/manifest.v1.json",
+            "media-toolchain/THIRD_PARTY_NOTICES.md": "media-tools/THIRD_PARTY_NOTICES.md",
+            "media-toolchain/SOURCE_OFFER.md": "media-tools/SOURCE_OFFER.md",
+            "media-toolchain/licenses/GPL-3.0.txt": "media-tools/licenses/GPL-3.0.txt",
+            "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt"
+        }))
+        .expect("expected resource map must deserialize")
+    );
+    assert!(overlay["bundle"].get("externalBin").is_none());
+}
+
+fn production_command(source: &str, command_name: &str) -> String {
+    let marker = format!("pub async fn {command_name}");
+    let start = source
+        .find(&marker)
+        .unwrap_or_else(|| panic!("production command {command_name} must exist"));
+    let remaining = &source[start..];
+    let end = remaining
+        .find("\n}\n")
+        .map(|offset| offset + 3)
+        .expect("production command must have a bounded body");
+    remaining[..end].to_owned()
+}
+
+#[test]
+fn production_media_commands_use_managed_paths_and_expose_no_tool_path_parameter() {
+    let probe = include_str!("../src/video/probe.rs");
+    let derived = include_str!("../src/video/derived.rs");
+    let render = include_str!("../src/video/render.rs");
+    for (source, command_name) in [
+        (probe, "video_ffmpeg_status"),
+        (probe, "video_probe_media"),
+        (derived, "video_prepare_asset"),
+        (render, "video_start_render"),
+    ] {
+        let command = production_command(source, command_name);
+        assert!(
+            command.contains("MediaToolchain") || command.contains("toolchain"),
+            "{command_name} must consume managed media-tool state"
+        );
+        assert!(!command.contains("ffmpeg_program:"));
+        assert!(!command.contains("ffprobe_program:"));
+        assert!(!command.contains("OsString::from(\"ffmpeg\")"));
+        assert!(!command.contains("OsString::from(\"ffprobe\")"));
+        assert!(!command.contains("std::env"));
+    }
+}

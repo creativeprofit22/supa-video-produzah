@@ -112,6 +112,39 @@ impl VideoCommandError {
         )
     }
 
+    pub(crate) fn bundled_toolchain(
+        operation: &'static str,
+        category: &'static str,
+        timed_out: bool,
+        failed: bool,
+    ) -> Self {
+        let (code, message) = if timed_out {
+            (
+                VideoErrorCode::ProcessTimeout,
+                "Bundled media-tool verification timed out",
+            )
+        } else if failed {
+            (
+                VideoErrorCode::ProcessFailed,
+                "Bundled media-tool verification failed",
+            )
+        } else {
+            (
+                VideoErrorCode::ToolUnavailable,
+                "Bundled media tools are unavailable",
+            )
+        };
+        Self::new(
+            code,
+            message,
+            json!({
+                "operation": operation,
+                "executable": "bundled",
+                "category": category,
+            }),
+        )
+    }
+
     pub(crate) fn process_failed(
         operation: &'static str,
         executable: &'static str,

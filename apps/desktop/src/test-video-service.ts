@@ -90,8 +90,10 @@ export function createMockVideoService(
   const invoke = async (command: string, args?: unknown): Promise<unknown> => {
     if (command === "video_ffmpeg_status")
       return {
-        ffmpeg: { available: true, version: "ffmpeg version 7.1" },
-        ffprobe: { available: true, version: "ffprobe version 7.1" },
+        source: "bundled",
+        toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+        ffmpeg: { available: true, version: "8.1.2" },
+        ffprobe: { available: true, version: "8.1.2" },
         ready: true,
       };
     if (command === "video_pick_new_project_path") return path;

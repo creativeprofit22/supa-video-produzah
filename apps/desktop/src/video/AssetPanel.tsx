@@ -3,13 +3,14 @@ import type { MediaProbe, VideoSourceRecord } from "@supa-video/contracts";
 import { AlertCircle, CheckCircle2, Film, FolderOpen, RefreshCw } from "lucide-react";
 
 import { formatDuration, formatFileSize, formatFrameRate } from "./format-video";
+import type { ReadinessState } from "./VideoProjectOpener";
 
 interface AssetPanelProps {
   readonly probe: MediaProbe | null;
   readonly source: VideoSourceRecord | null;
   readonly preparation: PreparationState;
   readonly projectOperation: ProjectOperationState;
-  readonly toolsReady: boolean;
+  readonly readiness: ReadinessState;
   readonly onChooseSource: () => void;
   readonly onRetryPreparation: () => void;
   readonly onRelinkSource: () => void;
@@ -20,12 +21,13 @@ export function AssetPanel({
   source,
   preparation,
   projectOperation,
-  toolsReady,
+  readiness,
   onChooseSource,
   onRetryPreparation,
   onRelinkSource,
 }: AssetPanelProps) {
   const pending = projectOperation.phase === "pending" || preparation.phase === "pending";
+  const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
   const unresolved = source?.status === "missing" || source?.status === "relink_required";
   return (
     <section className="panel asset-panel" aria-labelledby="asset-title" aria-busy={pending}>

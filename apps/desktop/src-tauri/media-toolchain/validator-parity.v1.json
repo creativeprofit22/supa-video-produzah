@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "canonical_pending",
+      "expected": true,
+      "mutations": []
+    },
+    {
+      "name": "wrong_toolchain_id",
+      "expected": false,
+      "mutations": [{ "path": "/toolchainId", "value": "ffmpeg-other" }]
+    },
+    {
+      "name": "wrong_source_commit",
+      "expected": false,
+      "mutations": [
+        { "path": "/ffmpeg/sourceCommit", "value": "0000000000000000000000000000000000000000" }
+      ]
+    },
+    {
+      "name": "coordinated_other_source_identity",
+      "expected": false,
+      "mutations": [
+        { "path": "/ffmpeg/sourceCommit", "value": "0000000000000000000000000000000000000000" },
+        {
+          "path": "/ffmpeg/sourceUrl",
+          "value": "https://github.com/FFmpeg/FFmpeg/commit/0000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "mismatched_source_url",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/ffmpeg/sourceUrl",
+          "value": "https://github.com/FFmpeg/FFmpeg/commit/0000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "arbitrary_source_url",
+      "expected": false,
+      "mutations": [{ "path": "/ffmpeg/sourceUrl", "value": "https://example.com/source" }]
+    },
+    {
+      "name": "arbitrary_provider_url",
+      "expected": false,
+      "mutations": [{ "path": "/ffmpeg/providerUrl", "value": "https://example.com/builds/" }]
+    },
+    {
+      "name": "wrong_provider_build_date",
+      "expected": false,
+      "mutations": [{ "path": "/ffmpeg/providerBuildDate", "value": "2026-06-28" }]
+    },
+    {
+      "name": "wrong_archive_url",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/archive/url",
+          "value": "https://github.com/Other/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip"
+        }
+      ]
+    },
+    {
+      "name": "wrong_archive_filename",
+      "expected": false,
+      "mutations": [{ "path": "/archive/filename", "value": "ffmpeg-8.1.2-full_build.zip" }]
+    },
+    {
+      "name": "wrong_archive_byte_length",
+      "expected": false,
+      "mutations": [{ "path": "/archive/byteLength", "value": 109728041 }]
+    },
+    {
+      "name": "string_archive_byte_length",
+      "expected": false,
+      "mutations": [{ "path": "/archive/byteLength", "value": "109728040" }]
+    },
+    {
+      "name": "wrong_archive_sha256",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/archive/sha256",
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "extra_required_build_flag",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/ffmpeg/requiredBuildFlags",
+          "value": [
+            "--enable-gpl",
+            "--enable-version3",
+            "--enable-static",
+            "--enable-libx264",
+            "--enable-libx265",
+            "--enable-libzimg",
+            "--enable-bzlib"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wrong_ffmpeg_byte_length",
+      "expected": false,
+      "mutations": [
+        { "path": "/targets/x86_64-pc-windows-msvc/binaries/ffmpeg/byteLength", "value": 101897729 }
+      ]
+    },
+    {
+      "name": "string_ffmpeg_byte_length",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/targets/x86_64-pc-windows-msvc/binaries/ffmpeg/byteLength",
+          "value": "101897728"
+        }
+      ]
+    },
+    {
+      "name": "extra_required_encoder",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/encoders",
+          "value": ["libx264", "aac", "mjpeg", "libx265"]
+        }
+      ]
+    },
+    {
+      "name": "extra_required_muxer",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/muxers",
+          "value": ["mp4", "image2", "matroska"]
+        }
+      ]
+    },
+    {
+      "name": "extra_required_filter",
+      "expected": false,
+      "mutations": [
+        {
+          "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/filters",
+          "value": ["scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "crop"]
+        }
+      ]
+    },
+    {
+      "name": "pending_reviewed_by",
+      "expected": false,
+      "mutations": [{ "path": "/distributionReview/reviewedBy", "value": "Reviewer" }]
+    },
+    {
+      "name": "pending_reviewed_at",
+      "expected": false,
+      "mutations": [{ "path": "/distributionReview/reviewedAt", "value": "2026-07-26" }]
+    },
+    {
+      "name": "pending_reference",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/reference", "value": "https://compliance.example/reviews/1" }
+      ]
+    },
+    {
+      "name": "rejected_without_metadata",
+      "expected": true,
+      "mutations": [{ "path": "/distributionReview/status", "value": "rejected" }]
+    },
+    {
+      "name": "rejected_reviewed_by",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "rejected" },
+        { "path": "/distributionReview/reviewedBy", "value": "Reviewer" }
+      ]
+    },
+    {
+      "name": "rejected_reviewed_at",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "rejected" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" }
+      ]
+    },
+    {
+      "name": "rejected_reference",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "rejected" },
+        { "path": "/distributionReview/reference", "value": "https://compliance.example/reviews/1" }
+      ]
+    },
+    {
+      "name": "unknown_review_status",
+      "expected": false,
+      "mutations": [{ "path": "/distributionReview/status", "value": "waived" }]
+    },
+    {
+      "name": "approved_valid",
+      "expected": true,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_missing_reviewed_by",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_missing_reviewed_at",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_missing_reference",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" }
+      ]
+    },
+    {
+      "name": "approved_blank_reviewed_by",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "  " },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_invalid_reviewed_at",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-02-30" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_non_ascii_reviewed_at",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "٢٠٢٦-٠٧-٢٦" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/FFMPEG-2026-001"
+        }
+      ]
+    },
+    {
+      "name": "approved_invalid_reference",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" },
+        { "path": "/distributionReview/reference", "value": "http://compliance.example/reviews/1" }
+      ]
+    },
+    {
+      "name": "approved_fragment_reference",
+      "expected": false,
+      "mutations": [
+        { "path": "/distributionReview/status", "value": "approved" },
+        { "path": "/distributionReview/reviewedBy", "value": "Example Legal Reviewer" },
+        { "path": "/distributionReview/reviewedAt", "value": "2026-07-26" },
+        {
+          "path": "/distributionReview/reference",
+          "value": "https://compliance.example/reviews/1#mutable"
+        }
+      ]
+    }
+  ]
+}

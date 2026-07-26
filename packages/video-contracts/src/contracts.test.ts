@@ -219,19 +219,59 @@ describe("project contracts", () => {
 
   it("validates media-tool readiness and availability invariants", () => {
     const ready = {
-      ffmpeg: { available: true, version: "ffmpeg version 7.1" },
-      ffprobe: { available: true, version: "ffprobe version 7.1" },
+      source: "bundled",
+      toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+      ffmpeg: { available: true, version: "8.1.2" },
+      ffprobe: { available: true, version: "8.1.2" },
       ready: true,
     };
     expect(videoToolStatusSchema.parse(ready)).toEqual(ready);
 
     const blocked = {
-      ffmpeg: { available: false, problem: "not_found" },
+      source: "bundled",
+      toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+      ffmpeg: { available: false, problem: "integrity_failed" },
       ffprobe: { available: false, problem: "timed_out" },
       ready: false,
     };
     expect(videoToolStatusSchema.parse(blocked)).toEqual(blocked);
+
+    const ffprobeMissing = {
+      ...ready,
+      ffprobe: { available: false, problem: "not_found" },
+      ready: false,
+    };
+    const ffmpegIncompatible = {
+      ...ready,
+      ffmpeg: { available: false, problem: "incompatible_build" },
+      ready: false,
+    };
+    expect(videoToolStatusSchema.parse(ffprobeMissing)).toEqual(ffprobeMissing);
+    expect(videoToolStatusSchema.parse(ffmpegIncompatible)).toEqual(ffmpegIncompatible);
+    expect(() => videoToolStatusSchema.parse({ ...ffprobeMissing, ready: true })).toThrow(
+      "readiness",
+    );
+
+    for (const problem of [
+      "not_found",
+      "integrity_failed",
+      "incompatible_build",
+      "timed_out",
+      "failed",
+    ] as const) {
+      expect(
+        videoToolStatusSchema.parse({
+          ...blocked,
+          ffmpeg: { available: false, problem },
+          ffprobe: { available: false, problem },
+        }).ready,
+      ).toBe(false);
+    }
     expect(() => videoToolStatusSchema.parse({ ...ready, ready: false })).toThrow("readiness");
+    expect(() => videoToolStatusSchema.parse({ ...ready, source: "system" })).toThrow();
+    expect(() =>
+      videoToolStatusSchema.parse({ ...ready, toolchainId: "C:\\tools\\ffmpeg" }),
+    ).toThrow();
     expect(() =>
       videoToolStatusSchema.parse({
         ...blocked,

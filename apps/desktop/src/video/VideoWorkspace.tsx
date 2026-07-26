@@ -1,5 +1,5 @@
 import type { VideoProjectFileV1 } from "@supa-video/contracts";
-import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, Save } from "lucide-react";
+import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type useVideoProject } from "../use-video-project";
@@ -10,11 +10,13 @@ import { ProgramMonitor } from "./ProgramMonitor";
 import { ProjectInspector } from "./ProjectInspector";
 import { SingleClipTimeline } from "./SingleClipTimeline";
 import { TrimInspector } from "./TrimInspector";
+import type { ReadinessState } from "./VideoProjectOpener";
 
 interface VideoWorkspaceProps {
   readonly controller: ReturnType<typeof useVideoProject>;
   readonly project: Readonly<VideoProjectFileV1>;
-  readonly toolsReady: boolean;
+  readonly readiness: ReadinessState;
+  readonly onCheckTools: () => void;
   readonly onNewProject: () => void;
   readonly onOpenProject: () => void;
 }
@@ -30,7 +32,8 @@ function editableOwnsShortcut(target: EventTarget | null): boolean {
 export function VideoWorkspace({
   controller,
   project,
-  toolsReady,
+  readiness,
+  onCheckTools,
   onNewProject,
   onOpenProject,
 }: VideoWorkspaceProps) {
@@ -138,6 +141,44 @@ export function VideoWorkspace({
           </button>
         </div>
       </header>
+
+      {readiness.phase !== "loaded" || !readiness.value.ready ? (
+        <div
+          className={`workspace-alert workspace-tool-status ${readiness.phase === "loading" ? "neutral-status" : "inline-error"}`}
+          role={readiness.phase === "loading" ? "status" : "alert"}
+          aria-live={readiness.phase === "loading" ? "polite" : undefined}
+        >
+          {readiness.phase === "loading" ? (
+            <span className="spinner" aria-hidden />
+          ) : (
+            <AlertCircle size={18} aria-hidden />
+          )}
+          <div>
+            <strong>
+              {readiness.phase === "loading"
+                ? "Checking media tools"
+                : readiness.phase === "error"
+                  ? "Could not check media tools"
+                  : "Media tools unavailable"}
+            </strong>
+            <p>
+              {readiness.phase === "loading"
+                ? "Preview preparation and export are paused. Project actions remain available."
+                : "Repair or reinstall the application, then check again. Project actions remain available."}
+            </p>
+          </div>
+          {readiness.phase !== "loading" ? (
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              onClick={onCheckTools}
+            >
+              <RefreshCw size={16} aria-hidden />
+              Check again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <button
         className="sr-only"
@@ -262,7 +303,7 @@ export function VideoWorkspace({
             source={controller.source}
             preparation={controller.preparation}
             projectOperation={controller.projectOperation}
-            toolsReady={toolsReady}
+            readiness={readiness}
             onChooseSource={() => void controller.chooseSource()}
             onRetryPreparation={() => void controller.retryPreparation()}
             onRelinkSource={() => void controller.regrantSourceAccess()}
@@ -286,11 +327,10 @@ export function VideoWorkspace({
           ) : null}
           <ExportPanel
             render={controller.render}
+            readiness={readiness}
             destinationPending={controller.destinationPending}
             destinationError={controller.destinationError}
-            disabled={
-              !toolsReady || !controller.renderReady || controller.trimChanged || editPending
-            }
+            disabled={!controller.renderReady || controller.trimChanged || editPending}
             onExport={() => void controller.exportVideo()}
             onCancel={() => void controller.cancelRender()}
             onConfirmOverwrite={() => void controller.confirmOverwrite()}

@@ -360,6 +360,14 @@ pub enum VideoToolProblem {
     TimedOut,
     Failed,
     InvalidVersion,
+    IntegrityFailed,
+    IncompatibleBuild,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoToolSource {
+    Bundled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -375,6 +383,8 @@ pub struct VideoToolInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoToolStatus {
+    pub source: VideoToolSource,
+    pub toolchain_id: String,
     pub ffmpeg: VideoToolInfo,
     pub ffprobe: VideoToolInfo,
     pub ready: bool,

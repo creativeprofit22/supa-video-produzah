@@ -33,7 +33,8 @@ use super::{
     probe::{
         parse_ffprobe_json, parse_ffprobe_json_inspected, parse_tool_banner,
         probe_media_with_program, probe_trusted_media_with_program, tool_info_from_result,
-        video_ffmpeg_status_with_programs, InspectedMedia, VideoTool,
+        video_ffmpeg_status_with_programs, video_tool_status_from_inspection, InspectedMedia,
+        VideoTool,
     },
     process::{
         run_supervised, run_supervised_streaming_with_test_environment,
@@ -46,10 +47,13 @@ use super::{
         save_project_to_path, VideoSourceStatus, MAX_PROJECT_BYTES,
     },
     render::{
-        create_owned_partial, ensure_preview_directory, parse_and_validate_render_plan,
-        partial_render_path, promote_render_partial, render_execution_arguments, run_render_worker,
-        validate_render_output, RenderEventSink, RenderProgress, RenderWorkerRequest,
-        VideoRenderJobs,
+        create_owned_partial, ensure_preview_directory, map_render_preview_failure,
+        parse_and_validate_render_plan, partial_render_path, promote_render_partial,
+        render_execution_arguments, run_render_worker, validate_render_output, RenderEventSink,
+        RenderProgress, RenderWorkerRequest, VideoRenderJobs,
+    },
+    toolchain::{
+        MediaToolchain, MediaToolchainError, MediaToolchainInspection, MediaToolchainProblem,
     },
     types::{
         is_recognizable_absolute_path, parse_project_json, parse_project_value, MediaAudioShape,
@@ -2248,10 +2252,10 @@ fn derived_promotion_failures_are_repairable_and_cannot_write_outside_cache() {
 }
 
 fn derived_missing_programs() -> MediaPrograms {
-    MediaPrograms {
-        ffmpeg: OsString::from("missing-private-ffmpeg-secret"),
-        ffprobe: OsString::from("missing-private-ffprobe-secret"),
-    }
+    MediaPrograms::explicit(
+        OsString::from("missing-private-ffmpeg-secret"),
+        OsString::from("missing-private-ffprobe-secret"),
+    )
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -2873,6 +2877,23 @@ fn render_registry_bulk_cancellation_is_scoped_idempotent_and_worker_settled() {
 }
 
 #[test]
+fn render_preview_preserves_tool_unavailable_but_normalizes_ordinary_failures() {
+    let unavailable = MediaToolchainError::for_test(MediaToolchainProblem::IntegrityFailed)
+        .into_command_error("verify_render_preview");
+    let unavailable = map_render_preview_failure(unavailable);
+    assert_eq!(unavailable.code, VideoErrorCode::ToolUnavailable);
+    assert_eq!(unavailable.details["category"], "integrity_failed");
+
+    let ordinary = map_render_preview_failure(VideoCommandError::process_failed(
+        "verify_render_preview",
+        "ffprobe",
+        Some(1),
+    ));
+    assert_eq!(ordinary.code, VideoErrorCode::ProjectIo);
+    assert_eq!(ordinary.details["category"], "copy_or_verify");
+}
+
+#[test]
 fn render_output_validation_and_preview_directory_reject_unsafe_shapes() {
     let directory = tempdir().expect("render validation workspace must be created");
     let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
@@ -3085,8 +3106,7 @@ fn registered_system_render_worker(
         validated,
         overwrite,
         app_cache_dir,
-        ffmpeg_program: OsString::from("ffmpeg"),
-        ffprobe_program: OsString::from("ffprobe"),
+        programs: MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
         cancellation,
         identity,
         jobs: jobs.clone(),
@@ -3901,6 +3921,70 @@ fn tool_checks_normalize_banners_and_classify_safe_failures() {
     assert_eq!(timed_out.problem, Some(VideoToolProblem::TimedOut));
 }
 
+#[test]
+fn bundled_status_preserves_asymmetric_tool_failures_and_redacts_inspection_data() {
+    let toolchain = MediaToolchain::from_test_programs(
+        PathBuf::from("private-ffmpeg-path"),
+        PathBuf::from("private-ffprobe-path"),
+    );
+    let cases = [
+        (true, MediaToolchainProblem::NotFound, "not_found"),
+        (
+            true,
+            MediaToolchainProblem::IncompatibleBuild,
+            "incompatible_build",
+        ),
+        (false, MediaToolchainProblem::NotFound, "not_found"),
+        (
+            false,
+            MediaToolchainProblem::IncompatibleBuild,
+            "incompatible_build",
+        ),
+    ];
+
+    for (ffmpeg_failed, problem, expected_problem) in cases {
+        let healthy_ffmpeg = Ok("ffmpeg version private raw output".to_owned());
+        let healthy_ffprobe = Ok("ffprobe version private raw output".to_owned());
+        let inspection = if ffmpeg_failed {
+            MediaToolchainInspection {
+                ffmpeg_version: Err(MediaToolchainError::for_test(problem)),
+                ffprobe_version: healthy_ffprobe,
+            }
+        } else {
+            MediaToolchainInspection {
+                ffmpeg_version: healthy_ffmpeg,
+                ffprobe_version: Err(MediaToolchainError::for_test(problem)),
+            }
+        };
+        let status = video_tool_status_from_inspection(&toolchain, inspection);
+        let failed = serde_json::json!({ "available": false, "problem": expected_problem });
+        let healthy = serde_json::json!({ "available": true, "version": "8.1.2" });
+        let expected = if ffmpeg_failed {
+            serde_json::json!({
+                "source": "bundled",
+                "toolchainId": "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+                "ffmpeg": failed,
+                "ffprobe": healthy,
+                "ready": false
+            })
+        } else {
+            serde_json::json!({
+                "source": "bundled",
+                "toolchainId": "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+                "ffmpeg": healthy,
+                "ffprobe": failed,
+                "ready": false
+            })
+        };
+        let serialized = serde_json::to_value(status).expect("status must serialize");
+        assert_eq!(serialized, expected);
+        let encoded = serialized.to_string();
+        assert!(!encoded.contains("private"));
+        assert!(!encoded.contains("path"));
+        assert!(!encoded.contains("raw output"));
+    }
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn probe_authorizes_owner_source_before_spawning_and_redacts_failures() {
     let directory = tempdir().expect("temporary directory must be created");
@@ -4267,10 +4351,7 @@ async fn derived_local_ffmpeg_normalizes_rotated_and_anamorphic_sources() {
             },
             &grants,
             &cache_root,
-            MediaPrograms {
-                ffmpeg: OsString::from("ffmpeg"),
-                ffprobe: OsString::from("ffprobe"),
-            },
+            MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
         )
         .await
         .expect("display source must prepare");
@@ -4322,10 +4403,8 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
             denominator: 1,
         },
     };
-    let actual_programs = || MediaPrograms {
-        ffmpeg: OsString::from("ffmpeg"),
-        ffprobe: OsString::from("ffprobe"),
-    };
+    let actual_programs =
+        || MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
 
     let prepared = prepare_asset_core(request(), &grants, &cache_root, actual_programs())
         .await
@@ -4380,10 +4459,10 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         request(),
         &grants,
         &cache_root,
-        MediaPrograms {
-            ffmpeg: OsString::from("missing-ffmpeg-proves-cache-reuse"),
-            ffprobe: OsString::from("ffprobe"),
-        },
+        MediaPrograms::explicit(
+            OsString::from("missing-ffmpeg-proves-cache-reuse"),
+            OsString::from("ffprobe"),
+        ),
     )
     .await
     .expect("valid prepared pair must be reused without ffmpeg");

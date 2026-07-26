@@ -7,28 +7,38 @@ use tauri::{Runtime, State, WebviewWindow};
 use super::{
     error::VideoCommandError,
     grants::{GrantCategory, VideoPathGrants},
-    process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec, SupervisedOutput},
+    process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
+    toolchain::{
+        MediaToolchain, MediaToolchainInspection, MediaToolchainProblem, MediaToolchainState,
+    },
     types::{
         MediaAudioShape, MediaColorMetadata, MediaDisplayShape, MediaProbe, RationalRate,
-        VideoToolInfo, VideoToolProblem, VideoToolStatus, MAX_SAFE_INTEGER,
+        VideoToolInfo, VideoToolProblem, VideoToolSource, VideoToolStatus, MAX_SAFE_INTEGER,
     },
 };
 
+#[cfg(test)]
 const TOOL_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(test)]
 const TOOL_STDOUT_LIMIT: usize = 64 * 1024;
+#[cfg(test)]
 const TOOL_STDERR_TAIL_LIMIT: usize = 64 * 1024;
+#[cfg(test)]
 const MAX_VERSION_LINE_CHARS: usize = 256;
 const MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const MEDIA_PROBE_STDOUT_LIMIT: usize = 1024 * 1024;
 const MEDIA_PROBE_STDERR_TAIL_LIMIT: usize = 64 * 1024;
+const TOOL_STATUS_TIMEOUT: Duration = Duration::from_secs(6 * 60);
 const FFPROBE_ENTRIES: &str = "format=duration,size:stream=index,codec_type,codec_name,duration,width,height,pix_fmt,color_range,color_space,color_primaries,color_transfer,avg_frame_rate,r_frame_rate,sample_aspect_ratio,display_aspect_ratio,sample_rate,channels:stream_disposition=attached_pic:stream_tags=rotate:stream_side_data=rotation";
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VideoTool {
     Ffmpeg,
     Ffprobe,
 }
 
+#[cfg(test)]
 impl VideoTool {
     fn version_prefix(self) -> &'static str {
         match self {
@@ -46,10 +56,79 @@ impl VideoTool {
 }
 
 #[tauri::command]
-pub async fn video_ffmpeg_status() -> VideoToolStatus {
-    video_ffmpeg_status_with_programs(OsString::from("ffmpeg"), OsString::from("ffprobe")).await
+pub async fn video_ffmpeg_status(
+    toolchain: State<'_, MediaToolchainState>,
+) -> Result<VideoToolStatus, VideoCommandError> {
+    let inspection = tokio::time::timeout(TOOL_STATUS_TIMEOUT, toolchain.inspect())
+        .await
+        .unwrap_or_else(|_| failed_status_inspection(MediaToolchainProblem::TimedOut));
+    Ok(video_tool_status_from_inspection(&*toolchain, inspection))
 }
 
+fn failed_status_inspection(problem: MediaToolchainProblem) -> MediaToolchainInspection {
+    let error = super::toolchain::MediaToolchainError::for_status(problem);
+    MediaToolchainInspection {
+        ffmpeg_version: Err(error.clone()),
+        ffprobe_version: Err(error),
+    }
+}
+
+pub(crate) trait MediaToolchainIdentity {
+    fn toolchain_id(&self) -> &str;
+    fn short_version(&self) -> &str;
+}
+
+impl MediaToolchainIdentity for MediaToolchain {
+    fn toolchain_id(&self) -> &str {
+        self.toolchain_id()
+    }
+
+    fn short_version(&self) -> &str {
+        self.short_version()
+    }
+}
+
+impl MediaToolchainIdentity for MediaToolchainState {
+    fn toolchain_id(&self) -> &str {
+        self.toolchain_id()
+    }
+
+    fn short_version(&self) -> &str {
+        self.short_version()
+    }
+}
+
+pub(crate) fn video_tool_status_from_inspection(
+    toolchain: &impl MediaToolchainIdentity,
+    inspection: MediaToolchainInspection,
+) -> VideoToolStatus {
+    let ffmpeg = inspected_tool_info(inspection.ffmpeg_version, toolchain.short_version());
+    let ffprobe = inspected_tool_info(inspection.ffprobe_version, toolchain.short_version());
+    let ready = ffmpeg.available && ffprobe.available;
+    VideoToolStatus {
+        source: VideoToolSource::Bundled,
+        toolchain_id: toolchain.toolchain_id().to_owned(),
+        ffmpeg,
+        ffprobe,
+        ready,
+    }
+}
+
+fn inspected_tool_info(
+    inspection: Result<String, super::toolchain::MediaToolchainError>,
+    version: &str,
+) -> VideoToolInfo {
+    match inspection {
+        Ok(_sanitized_banner) => VideoToolInfo {
+            available: true,
+            version: Some(version.to_owned()),
+            problem: None,
+        },
+        Err(error) => unavailable_tool(tool_problem_from_toolchain(error.problem())),
+    }
+}
+
+#[cfg(test)]
 pub(crate) async fn video_ffmpeg_status_with_programs(
     ffmpeg_program: OsString,
     ffprobe_program: OsString,
@@ -60,12 +139,15 @@ pub(crate) async fn video_ffmpeg_status_with_programs(
     );
     let ready = ffmpeg.available && ffprobe.available;
     VideoToolStatus {
+        source: VideoToolSource::Bundled,
+        toolchain_id: "test-explicit-programs".to_owned(),
         ffmpeg,
         ffprobe,
         ready,
     }
 }
 
+#[cfg(test)]
 async fn check_tool(tool: VideoTool, program: OsString) -> VideoToolInfo {
     let spec = ProcessSpec {
         program,
@@ -78,9 +160,10 @@ async fn check_tool(tool: VideoTool, program: OsString) -> VideoToolInfo {
     tool_info_from_result(tool, run_supervised(spec, ProcessCancellation::new()).await)
 }
 
+#[cfg(test)]
 pub(crate) fn tool_info_from_result(
     tool: VideoTool,
-    result: Result<SupervisedOutput, ProcessFailure>,
+    result: Result<super::process::SupervisedOutput, ProcessFailure>,
 ) -> VideoToolInfo {
     match result {
         Ok(output) => {
@@ -97,6 +180,7 @@ pub(crate) fn tool_info_from_result(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse_tool_banner(tool: VideoTool, stdout: &[u8]) -> VideoToolInfo {
     let Some(first_line) = std::str::from_utf8(stdout)
         .ok()
@@ -126,20 +210,32 @@ fn unavailable_tool(problem: VideoToolProblem) -> VideoToolInfo {
     }
 }
 
+fn tool_problem_from_toolchain(problem: MediaToolchainProblem) -> VideoToolProblem {
+    match problem {
+        MediaToolchainProblem::NotFound => VideoToolProblem::NotFound,
+        MediaToolchainProblem::TimedOut => VideoToolProblem::TimedOut,
+        MediaToolchainProblem::IntegrityFailed => VideoToolProblem::IntegrityFailed,
+        MediaToolchainProblem::IncompatibleBuild => VideoToolProblem::IncompatibleBuild,
+        MediaToolchainProblem::Failed => VideoToolProblem::Failed,
+    }
+}
+
 #[tauri::command]
 pub async fn video_probe_media<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
+    toolchain: State<'_, MediaToolchainState>,
     path: String,
 ) -> Result<MediaProbe, VideoCommandError> {
-    probe_media_with_program(
-        window.label(),
-        &grants,
-        Path::new(&path),
-        OsString::from("ffprobe"),
-        ProcessCancellation::new(),
-    )
-    .await
+    let source = grants.authorize(window.label(), GrantCategory::Source, Path::new(&path))?;
+    let ffprobe = toolchain
+        .verified_ffprobe()
+        .await
+        .map_err(|error| error.into_command_error("probe_media"))?
+        .into_os_string();
+    probe_trusted_media_with_program(&source, ffprobe, ProcessCancellation::new(), "probe_media")
+        .await
+        .map(|inspected| inspected.probe)
 }
 
 pub(crate) async fn probe_media_with_program(

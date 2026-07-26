@@ -7,6 +7,7 @@ mod process;
 pub mod project;
 pub(crate) mod project_io;
 pub(crate) mod render;
+pub(crate) mod toolchain;
 mod types;
 
 pub use derived::video_prepare_asset;
@@ -23,7 +24,7 @@ pub use render::{video_cancel_render, video_start_render, VideoRenderJobs, VIDEO
 pub use types::{
     MediaProbe, PreparedVideoAsset, RenderExpectation, RenderPlanV1, VerifiedRenderOutput,
     VideoProjectFileV1, VideoRenderEvent, VideoRenderStarted, VideoToolInfo, VideoToolProblem,
-    VideoToolStatus, MAX_SAFE_INTEGER,
+    VideoToolSource, VideoToolStatus, MAX_SAFE_INTEGER,
 };
 
 #[cfg(test)]

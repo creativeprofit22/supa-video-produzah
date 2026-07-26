@@ -1,0 +1,17 @@
+MSI administrative extraction:
+PFiles/Supa Video Producer/media-tools/ffmpeg.exe 101897728
+PFiles/Supa Video Producer/media-tools/ffprobe.exe 101692928
+PFiles/Supa Video Producer/media-tools/manifest.v1.json 2362
+PFiles/Supa Video Producer/media-tools/SOURCE_OFFER.md 1287
+PFiles/Supa Video Producer/media-tools/THIRD_PARTY_NOTICES.md 2062
+PFiles/Supa Video Producer/media-tools/licenses/GPL-3.0.txt 35147
+PFiles/Supa Video Producer/media-tools/licenses/GYAN-FFMPEG-README.txt 41440
+
+NSIS custom-directory installation:
+media-tools/ffmpeg.exe 101897728
+media-tools/ffprobe.exe 101692928
+media-tools/manifest.v1.json 2362
+media-tools/SOURCE_OFFER.md 1287
+media-tools/THIRD_PARTY_NOTICES.md 2062
+media-tools/licenses/GPL-3.0.txt 35147
+media-tools/licenses/GYAN-FFMPEG-README.txt 41440

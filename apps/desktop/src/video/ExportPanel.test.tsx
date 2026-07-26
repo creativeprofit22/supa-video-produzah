@@ -13,6 +13,16 @@ const identity = {
 
 function baseProps() {
   return {
+    readiness: {
+      phase: "loaded" as const,
+      value: {
+        source: "bundled" as const,
+        toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+        ffmpeg: { available: true, version: "8.1.2" },
+        ffprobe: { available: true, version: "8.1.2" },
+        ready: true,
+      },
+    },
     destinationPending: false,
     destinationError: null,
     disabled: false,

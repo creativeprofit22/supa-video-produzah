@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { RenderState } from "../use-video-project";
 import { formatDuration, formatFileSize } from "./format-video";
+import type { ReadinessState } from "./VideoProjectOpener";
 
 const renderErrorMessages: Partial<Record<VideoErrorCode, string>> = {
   tool_unavailable: "FFmpeg or FFprobe is unavailable. Check the media tools, then try again.",
@@ -26,6 +27,7 @@ function safeRenderError(error: Error): string {
 
 interface ExportPanelProps {
   readonly render: RenderState;
+  readonly readiness: ReadinessState;
   readonly destinationPending: boolean;
   readonly destinationError: Error | null;
   readonly disabled: boolean;
@@ -36,6 +38,7 @@ interface ExportPanelProps {
 
 export function ExportPanel({
   render,
+  readiness,
   destinationPending,
   destinationError,
   disabled,
@@ -47,6 +50,7 @@ export function ExportPanel({
   const cancelDialogButtonRef = useRef<HTMLButtonElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const collision = render.phase === "failed" && render.canOverwrite;
+  const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -102,7 +106,7 @@ export function ExportPanel({
             ref={exportButtonRef}
             className="primary-button"
             type="button"
-            disabled={disabled || destinationPending || active}
+            disabled={!toolsReady || disabled || destinationPending || active}
             onClick={onExport}
           >
             {destinationPending || render.phase === "starting" ? (

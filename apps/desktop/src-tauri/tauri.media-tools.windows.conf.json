@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "media-toolchain/bin/x86_64-pc-windows-msvc/ffmpeg.exe": "media-tools/ffmpeg.exe",
+      "media-toolchain/bin/x86_64-pc-windows-msvc/ffprobe.exe": "media-tools/ffprobe.exe",
+      "media-toolchain/manifest.v1.json": "media-tools/manifest.v1.json",
+      "media-toolchain/THIRD_PARTY_NOTICES.md": "media-tools/THIRD_PARTY_NOTICES.md",
+      "media-toolchain/SOURCE_OFFER.md": "media-tools/SOURCE_OFFER.md",
+      "media-toolchain/licenses/GPL-3.0.txt": "media-tools/licenses/GPL-3.0.txt",
+      "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt"
+    }
+  }
+}

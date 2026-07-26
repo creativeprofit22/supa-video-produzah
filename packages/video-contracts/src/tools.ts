@@ -5,6 +5,8 @@ export const videoToolProblemSchema = z.enum([
   "timed_out",
   "failed",
   "invalid_version",
+  "integrity_failed",
+  "incompatible_build",
 ]);
 
 export type VideoToolProblem = z.infer<typeof videoToolProblemSchema>;
@@ -33,8 +35,18 @@ export const videoToolInfoSchema = z
 
 export type VideoToolInfo = z.infer<typeof videoToolInfoSchema>;
 
+export const videoToolSourceSchema = z.literal("bundled");
+
+export type VideoToolSource = z.infer<typeof videoToolSourceSchema>;
+
 export const videoToolStatusSchema = z
   .object({
+    source: videoToolSourceSchema,
+    toolchainId: z
+      .string()
+      .min(8)
+      .max(128)
+      .regex(/^[a-z0-9][a-z0-9._-]*$/),
     ffmpeg: videoToolInfoSchema,
     ffprobe: videoToolInfoSchema,
     ready: z.boolean(),

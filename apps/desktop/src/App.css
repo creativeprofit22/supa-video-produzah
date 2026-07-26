@@ -198,6 +198,24 @@ video {
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+.toolchain-identity {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+.toolchain-identity > span {
+  color: var(--quiet);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.toolchain-identity code {
+  color: var(--muted);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 
 .primary-button,
 .secondary-button,
@@ -375,6 +393,19 @@ video {
 }
 .workspace-alert {
   margin: 0;
+}
+.workspace-tool-status {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.workspace-tool-status > div {
+  min-width: min(220px, 100%);
+  flex: 1 1 360px;
+}
+.workspace-tool-status .compact-button {
+  flex: 0 0 auto;
+  margin-block-start: 0;
+  margin-inline-start: auto;
 }
 .sr-only {
   position: absolute;

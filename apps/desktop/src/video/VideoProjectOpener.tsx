@@ -18,12 +18,42 @@ interface VideoProjectOpenerProps {
 type VideoToolName = "FFmpeg" | "FFprobe";
 
 const videoToolProblemLabels: Record<VideoToolProblem, (toolName: VideoToolName) => string> = {
-  not_found: (toolName) => `${toolName} was not found. Install ${toolName}, then check again.`,
-  timed_out: (toolName) => `${toolName} check timed out. Check again.`,
-  failed: (toolName) => `${toolName} could not run. Repair or reinstall it, then check again.`,
+  not_found: (toolName) =>
+    `${toolName} is missing from the application. Repair or reinstall the application, then check again.`,
+  timed_out: (toolName) => `${toolName} verification timed out. Check again.`,
+  failed: (toolName) =>
+    `${toolName} could not be verified. Repair or reinstall the application, then check again.`,
   invalid_version: (toolName) =>
-    `${toolName} was not recognized. Replace it with a compatible ${toolName} binary, then check again.`,
+    `${toolName} was not recognized. Repair or reinstall the application, then check again.`,
+  integrity_failed: (toolName) =>
+    `${toolName} is damaged. Repair or reinstall the application, then check again.`,
+  incompatible_build: (toolName) =>
+    `${toolName} is incompatible with this application. Repair or reinstall the application, then check again.`,
 };
+
+function unavailableToolHeading(status: VideoToolStatus): string {
+  const unavailableTools = [
+    ["FFmpeg", status.ffmpeg] as const,
+    ["FFprobe", status.ffprobe] as const,
+  ].filter(([, tool]) => !tool.available);
+  if (unavailableTools.length === 1) {
+    const [toolName, tool] = unavailableTools[0]!;
+    if (tool.problem === "integrity_failed") return `${toolName} is damaged`;
+    if (tool.problem === "incompatible_build" || tool.problem === "invalid_version")
+      return `${toolName} is incompatible`;
+    if (tool.problem === "not_found") return `${toolName} is missing`;
+    if (tool.problem === "timed_out") return `${toolName} check timed out`;
+    return `Could not verify ${toolName}`;
+  }
+
+  const problems = [status.ffmpeg.problem, status.ffprobe.problem];
+  if (problems.includes("integrity_failed")) return "Bundled media tools are damaged";
+  if (problems.includes("incompatible_build") || problems.includes("invalid_version"))
+    return "Bundled media tools are incompatible";
+  if (problems.includes("not_found")) return "Bundled media tools are missing";
+  if (problems.includes("timed_out")) return "Media tool check timed out";
+  return "Could not verify bundled media tools";
+}
 
 export function getVideoToolProblemLabel(
   toolName: VideoToolName,
@@ -125,8 +155,8 @@ export function VideoProjectOpener({
             <span className="spinner" aria-hidden />
             <div>
               <p className="state-kicker">Media tools</p>
-              <h2 id="tool-title">Checking FFmpeg and FFprobe</h2>
-              <p>Project files remain available while the local tools are checked.</p>
+              <h2 id="tool-title">Checking bundled media tools</h2>
+              <p>Project files remain available while FFmpeg and FFprobe are verified.</p>
             </div>
           </div>
         ) : null}
@@ -136,8 +166,8 @@ export function VideoProjectOpener({
               <AlertCircle className="state-icon is-error" size={22} aria-hidden />
               <div>
                 <p className="state-kicker">Media tools</p>
-                <h2 id="tool-title">Could not check the media tools</h2>
-                <p>Check again before preparing or exporting video.</p>
+                <h2 id="tool-title">Could not check the bundled media tools</h2>
+                <p>Check again. If this continues, repair or reinstall the application.</p>
               </div>
             </div>
             <button className="secondary-button" type="button" onClick={onCheckTools}>
@@ -157,12 +187,12 @@ export function VideoProjectOpener({
               <div>
                 <p className="state-kicker">Media tools</p>
                 <h2 id="tool-title">
-                  {toolsReady ? "Ready for video work" : "FFmpeg setup required"}
+                  {toolsReady ? "Ready for video work" : unavailableToolHeading(readiness.value)}
                 </h2>
                 <p>
                   {toolsReady
-                    ? "FFmpeg and FFprobe are available."
-                    : "Projects can open, but preview preparation and export stay unavailable."}
+                    ? "The packaged FFmpeg and FFprobe build passed integrity and capability checks."
+                    : "Projects can still open. Repair or reinstall the application to restore preview preparation and export."}
                 </p>
               </div>
             </div>
@@ -170,6 +200,12 @@ export function VideoProjectOpener({
               <VideoToolResult name="FFmpeg" tool={readiness.value.ffmpeg} />
               <VideoToolResult name="FFprobe" tool={readiness.value.ffprobe} />
             </dl>
+            {toolsReady ? (
+              <p className="toolchain-identity">
+                <span>Bundled toolchain</span>
+                <code>{readiness.value.toolchainId}</code>
+              </p>
+            ) : null}
             {!toolsReady ? (
               <button className="secondary-button" type="button" onClick={onCheckTools}>
                 <RefreshCw size={16} aria-hidden />

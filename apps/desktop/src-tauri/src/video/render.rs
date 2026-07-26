@@ -13,7 +13,7 @@ use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 use tempfile::{Builder as TempFileBuilder, TempPath};
 
 use super::{
-    derived::duration_within_one_frame,
+    derived::{duration_within_one_frame, MediaPrograms},
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
     probe::{probe_trusted_media_with_program, InspectedMedia},
@@ -21,6 +21,7 @@ use super::{
         run_supervised_streaming, ProcessCancellation, ProcessFailure, ProcessSpec,
         StdoutRecordObserver,
     },
+    toolchain::MediaToolchainState,
     types::{
         RenderPlanV1, VerifiedRenderOutput, VideoRenderEvent, VideoRenderStarted, MAX_SAFE_INTEGER,
     },
@@ -295,6 +296,7 @@ pub async fn video_start_render<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
     jobs: State<'_, VideoRenderJobs>,
+    toolchain: State<'_, MediaToolchainState>,
     plan: Value,
     overwrite: bool,
 ) -> Result<VideoRenderStarted, VideoCommandError> {
@@ -307,6 +309,11 @@ pub async fn video_start_render<R: Runtime>(
     if !overwrite && validated.output_path.exists() {
         return Err(VideoCommandError::output_exists("start_render"));
     }
+    toolchain
+        .verified_programs()
+        .await
+        .map_err(|error| error.into_command_error("start_render"))?;
+    let programs = MediaPrograms::bundled(toolchain.inner().clone());
     let (identity, cancellation) = jobs.register(window.label(), &validated)?;
     let response = VideoRenderStarted {
         job_id: identity.job_id.clone(),
@@ -324,8 +331,7 @@ pub async fn video_start_render<R: Runtime>(
         validated,
         overwrite,
         app_cache_dir,
-        ffmpeg_program: OsString::from("ffmpeg"),
-        ffprobe_program: OsString::from("ffprobe"),
+        programs,
         cancellation,
         identity,
         jobs: jobs.inner().clone(),
@@ -594,8 +600,7 @@ pub(crate) struct RenderWorkerRequest {
     pub(crate) validated: ValidatedRenderPlan,
     pub(crate) overwrite: bool,
     pub(crate) app_cache_dir: PathBuf,
-    pub(crate) ffmpeg_program: OsString,
-    pub(crate) ffprobe_program: OsString,
+    pub(crate) programs: MediaPrograms,
     pub(crate) cancellation: ProcessCancellation,
     pub(crate) identity: RenderEventIdentity,
     pub(crate) jobs: VideoRenderJobs,
@@ -650,7 +655,7 @@ async fn execute_render_worker(
         }
     });
     let process = ProcessSpec {
-        program: request.ffmpeg_program.clone(),
+        program: request.programs.verified_ffmpeg("render_video").await?,
         args: arguments.into_iter().map(OsString::from).collect(),
         operation: "render_video",
         timeout: RENDER_TIMEOUT,
@@ -663,7 +668,7 @@ async fn execute_render_worker(
     sync_regular_file(&partial_path, "render_output")?;
     let inspected = probe_trusted_media_with_program(
         &partial_path,
-        request.ffprobe_program.clone(),
+        request.programs.verified_ffprobe("verify_render").await?,
         request.cancellation.clone(),
         "verify_render",
     )
@@ -677,13 +682,10 @@ async fn execute_render_worker(
         &request.identity.job_id,
         &request.validated.output_path,
         &request.validated,
-        request.ffprobe_program.clone(),
+        &request.programs,
     )
     .await;
-    let (preview_path, preview_probe) = preview_result.map_err(|error| {
-        let _ = error;
-        VideoCommandError::preview_preparation_failed("copy_or_verify")
-    })?;
+    let (preview_path, preview_probe) = preview_result.map_err(map_render_preview_failure)?;
     Ok(VerifiedRenderOutput {
         output_path: request.validated.output_path.to_string_lossy().into_owned(),
         preview_path: preview_path.to_string_lossy().into_owned(),
@@ -777,12 +779,20 @@ pub(crate) fn promote_render_partial(
     Ok(())
 }
 
+pub(crate) fn map_render_preview_failure(error: VideoCommandError) -> VideoCommandError {
+    if error.code == VideoErrorCode::ToolUnavailable {
+        error
+    } else {
+        VideoCommandError::preview_preparation_failed("copy_or_verify")
+    }
+}
+
 async fn prepare_render_preview(
     app_cache_dir: &Path,
     job_id: &str,
     output_path: &Path,
     validated: &ValidatedRenderPlan,
-    ffprobe_program: OsString,
+    programs: &MediaPrograms,
 ) -> Result<(PathBuf, InspectedMedia), VideoCommandError> {
     let preview_directory = ensure_preview_directory(app_cache_dir, job_id)?;
     let preview_path = preview_directory.join("preview.mp4");
@@ -800,7 +810,7 @@ async fn prepare_render_preview(
     let temporary_path = temporary.into_temp_path();
     let inspected = probe_trusted_media_with_program(
         &temporary_path,
-        ffprobe_program,
+        programs.verified_ffprobe("verify_render_preview").await?,
         ProcessCancellation::new(),
         "verify_render_preview",
     )

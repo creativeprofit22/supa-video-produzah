@@ -8,9 +8,14 @@
     "build": "pnpm run build:workspace-dependencies && pnpm run build:frontend",
     "build:workspace-dependencies": "pnpm --filter \"@supa-video/desktop...\" --filter \"!@supa-video/desktop\" build",
     "build:frontend": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
-    "check": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false",
-    "test": "vitest run",
+    "check": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false && tsc -p tsconfig.browser.json --pretty false",
+    "test": "vitest run --exclude \"browser-tests/**\"",
+    "test:browser": "playwright test",
     "preview": "vite preview",
+    "media:bootstrap:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1",
+    "media:verify:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1 -VerifyOnly",
+    "media:test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/tests/bootstrap-ffmpeg-windows.Tests.ps1",
+    "startup:benchmark:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/benchmark-packaged-startup-windows.ps1",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -26,6 +31,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.0",
     "@tauri-apps/cli": "2.11.4",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.17",

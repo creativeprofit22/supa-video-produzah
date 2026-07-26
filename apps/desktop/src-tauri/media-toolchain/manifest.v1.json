@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "toolchainId": "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+  "ffmpeg": {
+    "version": "8.1.2-essentials_build-www.gyan.dev",
+    "shortVersion": "8.1.2",
+    "releaseTag": "n8.1.2",
+    "sourceCommit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
+    "sourceUrl": "https://github.com/FFmpeg/FFmpeg/commit/38b88335f99e76ed89ff3c93f877fdefce736c13",
+    "provider": "Gyan Doshi (gyan.dev)",
+    "providerUrl": "https://www.gyan.dev/ffmpeg/builds/",
+    "providerBuildDate": "2026-06-27",
+    "variant": "release essentials",
+    "declaredLicenseClass": "GPL-3.0-or-later",
+    "architecture": "x86_64",
+    "requiredBuildFlags": [
+      "--enable-gpl",
+      "--enable-version3",
+      "--enable-static",
+      "--enable-libx264",
+      "--enable-libx265",
+      "--enable-libzimg"
+    ]
+  },
+  "archive": {
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip",
+    "filename": "ffmpeg-8.1.2-essentials_build.zip",
+    "byteLength": 109728040,
+    "sha256": "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
+  },
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "architecture": "x86_64",
+      "resourceRoot": "media-tools",
+      "binaries": {
+        "ffmpeg": {
+          "filename": "ffmpeg.exe",
+          "resourcePath": "media-tools/ffmpeg.exe",
+          "byteLength": 101897728,
+          "sha256": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e"
+        },
+        "ffprobe": {
+          "filename": "ffprobe.exe",
+          "resourcePath": "media-tools/ffprobe.exe",
+          "byteLength": 101692928,
+          "sha256": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+        }
+      },
+      "requiredCapabilities": {
+        "encoders": ["libx264", "aac", "mjpeg"],
+        "muxers": ["mp4", "image2"],
+        "filters": ["scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap"]
+      }
+    }
+  },
+  "compliance": {
+    "thirdPartyNoticesPath": "media-tools/THIRD_PARTY_NOTICES.md",
+    "licensePaths": ["media-tools/licenses/GPL-3.0.txt"],
+    "providerNoticePath": "media-tools/licenses/GYAN-FFMPEG-README.txt",
+    "sourceOfferPath": "media-tools/SOURCE_OFFER.md"
+  },
+  "distributionReview": {
+    "status": "pending",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "reference": null
+  }
+}

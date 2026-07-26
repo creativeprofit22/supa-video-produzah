@@ -3,6 +3,7 @@ use std::{
     fs::{self, Metadata, OpenOptions},
     io,
     path::{Component, Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -16,6 +17,7 @@ use super::{
     grants::{GrantCategory, VideoPathGrants},
     probe::{probe_trusted_media_with_program, InspectedMedia},
     process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
+    toolchain::MediaToolchainState,
     types::{
         is_contract_uuid, MediaColorMetadata, MediaDisplayShape, MediaProbe, PreparedVideoAsset,
         RationalRate, MAX_SAFE_INTEGER,
@@ -227,8 +229,62 @@ pub(crate) struct PrepareAssetCoreRequest<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaPrograms {
-    pub(crate) ffmpeg: OsString,
-    pub(crate) ffprobe: OsString,
+    source: MediaProgramSource,
+}
+
+#[derive(Debug, Clone)]
+enum MediaProgramSource {
+    Bundled(Arc<MediaToolchainState>),
+    #[cfg(test)]
+    Explicit {
+        ffmpeg: OsString,
+        ffprobe: OsString,
+    },
+}
+
+impl MediaPrograms {
+    pub(crate) fn bundled(toolchain: MediaToolchainState) -> Self {
+        Self {
+            source: MediaProgramSource::Bundled(Arc::new(toolchain)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn explicit(ffmpeg: OsString, ffprobe: OsString) -> Self {
+        Self {
+            source: MediaProgramSource::Explicit { ffmpeg, ffprobe },
+        }
+    }
+
+    pub(crate) async fn verified_ffmpeg(
+        &self,
+        operation: &'static str,
+    ) -> Result<OsString, VideoCommandError> {
+        match &self.source {
+            MediaProgramSource::Bundled(toolchain) => toolchain
+                .verified_ffmpeg()
+                .await
+                .map(PathBuf::into_os_string)
+                .map_err(|error| error.into_command_error(operation)),
+            #[cfg(test)]
+            MediaProgramSource::Explicit { ffmpeg, .. } => Ok(ffmpeg.clone()),
+        }
+    }
+
+    pub(crate) async fn verified_ffprobe(
+        &self,
+        operation: &'static str,
+    ) -> Result<OsString, VideoCommandError> {
+        match &self.source {
+            MediaProgramSource::Bundled(toolchain) => toolchain
+                .verified_ffprobe()
+                .await
+                .map(PathBuf::into_os_string)
+                .map_err(|error| error.into_command_error(operation)),
+            #[cfg(test)]
+            MediaProgramSource::Explicit { ffprobe, .. } => Ok(ffprobe.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -243,6 +299,7 @@ struct ProxyValidationExpectation<'a> {
 pub async fn video_prepare_asset<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
+    toolchain: State<'_, MediaToolchainState>,
     project_id: String,
     asset_id: String,
     path: String,
@@ -253,6 +310,7 @@ pub async fn video_prepare_asset<R: Runtime>(
         .path()
         .app_cache_dir()
         .map_err(|_| VideoCommandError::project_io("prepare_asset", "app_cache"))?;
+    let programs = MediaPrograms::bundled(toolchain.inner().clone());
     prepare_asset_core(
         PrepareAssetCoreRequest {
             owner_label: window.label(),
@@ -263,10 +321,7 @@ pub async fn video_prepare_asset<R: Runtime>(
         },
         &grants,
         &cache_root,
-        MediaPrograms {
-            ffmpeg: OsString::from("ffmpeg"),
-            ffprobe: OsString::from("ffprobe"),
-        },
+        programs,
     )
     .await
 }
@@ -288,11 +343,12 @@ pub(crate) async fn prepare_asset_core(
     let source_metadata = fs::metadata(&source)
         .map_err(|_| VideoCommandError::invalid_media("prepare_asset", "source_metadata"))?;
     let cancellation = ProcessCancellation::new();
+    let source_probe_operation = "prepare_source_probe";
     let source_inspected = probe_trusted_media_with_program(
         &source,
-        programs.ffprobe.clone(),
+        programs.verified_ffprobe(source_probe_operation).await?,
         cancellation.clone(),
-        "prepare_source_probe",
+        source_probe_operation,
     )
     .await?;
     let dimensions = fit_proxy_dimensions_for_display(
@@ -325,7 +381,7 @@ pub(crate) async fn prepare_asset_core(
     if let Some(proxy_probe) = cached_proxy_probe(
         &paths.proxy_path,
         proxy_expectation,
-        programs.ffprobe.clone(),
+        &programs,
         cancellation.clone(),
     )
     .await?
@@ -347,8 +403,8 @@ pub(crate) async fn prepare_asset_core(
         source_audio_stream_index,
     )
     .map_err(map_model_error)?;
-    run_derived_ffmpeg(
-        programs.ffmpeg.clone(),
+    run_derived_ffmpeg_with_programs(
+        &programs,
         proxy_args,
         "prepare_proxy",
         PROXY_TIMEOUT,
@@ -358,7 +414,7 @@ pub(crate) async fn prepare_asset_core(
     validate_proxy_path(
         &temporary.proxy,
         proxy_expectation,
-        programs.ffprobe.clone(),
+        &programs,
         cancellation.clone(),
         "validate_proxy_temp",
     )
@@ -371,8 +427,8 @@ pub(crate) async fn prepare_asset_core(
         source_video_stream_index,
     )
     .map_err(map_model_error)?;
-    run_derived_ffmpeg(
-        programs.ffmpeg,
+    run_derived_ffmpeg_with_programs(
+        &programs,
         thumbnail_args,
         "prepare_thumbnail",
         THUMBNAIL_TIMEOUT,
@@ -390,7 +446,7 @@ pub(crate) async fn prepare_asset_core(
     let proxy_probe = validate_proxy_path(
         &paths.proxy_path,
         proxy_expectation,
-        programs.ffprobe,
+        &programs,
         cancellation,
         "validate_proxy_final",
     )
@@ -403,6 +459,17 @@ pub(crate) async fn prepare_asset_core(
     }
     cleanup_stale_owned_artifacts(&directory, &paths).map_err(map_cache_error)?;
     prepared_asset(&paths, proxy_probe)
+}
+
+async fn run_derived_ffmpeg_with_programs(
+    programs: &MediaPrograms,
+    args: Vec<OsString>,
+    operation: &'static str,
+    timeout: Duration,
+    cancellation: ProcessCancellation,
+) -> Result<(), VideoCommandError> {
+    let program = programs.verified_ffmpeg(operation).await?;
+    run_derived_ffmpeg(program, args, operation, timeout, cancellation).await
 }
 
 pub(crate) async fn run_derived_ffmpeg(
@@ -429,13 +496,13 @@ pub(crate) async fn run_derived_ffmpeg(
 async fn cached_proxy_probe(
     path: &Path,
     expectation: ProxyValidationExpectation<'_>,
-    ffprobe_program: OsString,
+    programs: &MediaPrograms,
     cancellation: ProcessCancellation,
 ) -> Result<Option<MediaProbe>, VideoCommandError> {
     match validate_proxy_path(
         path,
         expectation,
-        ffprobe_program,
+        programs,
         cancellation,
         "validate_proxy_cache",
     )
@@ -457,7 +524,7 @@ async fn cached_proxy_probe(
 async fn validate_proxy_path(
     path: &Path,
     expectation: ProxyValidationExpectation<'_>,
-    ffprobe_program: OsString,
+    programs: &MediaPrograms,
     cancellation: ProcessCancellation,
     operation: &'static str,
 ) -> Result<MediaProbe, VideoCommandError> {
@@ -465,6 +532,7 @@ async fn validate_proxy_path(
     if !file.is_regular_file || file.byte_len == 0 {
         return Err(VideoCommandError::invalid_media(operation, "file"));
     }
+    let ffprobe_program = programs.verified_ffprobe(operation).await?;
     let inspected =
         probe_trusted_media_with_program(path, ffprobe_program, cancellation, operation).await?;
     validate_proxy_artifact(

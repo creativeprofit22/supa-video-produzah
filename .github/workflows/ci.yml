@@ -48,6 +48,12 @@ jobs:
       - name: Test TypeScript packages
         run: pnpm test
 
+      - name: Install Chromium for desktop browser tests
+        run: pnpm --dir apps/desktop exec playwright install --with-deps chromium
+
+      - name: Test desktop responsive and accessibility behavior in Chromium
+        run: pnpm --dir apps/desktop test:browser
+
       - name: Lint
         run: pnpm lint
 
@@ -137,8 +143,38 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target
 
+      - name: Cache pinned FFmpeg archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-cache/ffmpeg-8.1.2-essentials_build.zip
+          key: ffmpeg-windows-x86_64-db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec
+
       - name: Install locked JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Fetch cached FFmpeg archive when absent
+        shell: pwsh
+        run: |
+          $cacheDirectory = Join-Path $env:RUNNER_TEMP "ffmpeg-cache"
+          $archive = Join-Path $cacheDirectory "ffmpeg-8.1.2-essentials_build.zip"
+          New-Item -ItemType Directory -Force -Path $cacheDirectory | Out-Null
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+            $partial = "$archive.partial"
+            Invoke-WebRequest `
+              -Uri "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip" `
+              -OutFile $partial `
+              -MaximumRedirection 5 `
+              -TimeoutSec 600
+            Move-Item -LiteralPath $partial -Destination $archive
+          }
+          "FFMPEG_ARCHIVE=$archive" >> $env:GITHUB_ENV
+
+      - name: Bootstrap and verify pinned bundled media tools
+        shell: pwsh
+        run: |
+          pnpm --dir apps/desktop media:test:windows
+          pnpm --dir apps/desktop media:bootstrap:windows -ArchivePath $env:FFMPEG_ARCHIVE
+          pnpm --dir apps/desktop media:verify:windows
 
       - name: Build desktop frontend
         run: pnpm --dir apps/desktop build
@@ -159,8 +195,10 @@ jobs:
               video::project::tests::recovery_repairs_a_torn_tail_to_the_exact_snapshot_hash -- --exact
           }
 
-      - name: Assemble Windows production executable
-        run: pnpm --dir apps/desktop tauri build --no-bundle --ci
+      - name: Assemble Windows production executable with bundled media overlay
+        run: >-
+          pnpm --dir apps/desktop tauri build --no-bundle --ci
+          --config src-tauri/tauri.media-tools.windows.conf.json
 
       - name: Verify Windows production executable
         shell: pwsh
@@ -170,17 +208,110 @@ jobs:
             throw "Tauri did not produce $executable"
           }
 
+      - name: Benchmark packaged cold start and media readiness
+        shell: pwsh
+        run: |
+          $ramMapRoot = Join-Path $env:RUNNER_TEMP "rammap"
+          $ramMapArchive = Join-Path $ramMapRoot "RAMMap.zip"
+          New-Item -ItemType Directory -Force -Path $ramMapRoot | Out-Null
+          Invoke-WebRequest `
+            -Uri "https://download.sysinternals.com/files/RAMMap.zip" `
+            -OutFile $ramMapArchive `
+            -TimeoutSec 120
+          Expand-Archive -LiteralPath $ramMapArchive -DestinationPath $ramMapRoot -Force
+          ./scripts/benchmark-packaged-startup-windows.ps1 `
+            -ExecutablePath "apps/desktop/src-tauri/target/release/supa-video-desktop.exe" `
+            -RamMapPath (Join-Path $ramMapRoot "RAMMap64.exe") `
+            -Iterations 10 `
+            -OutputPath "apps/desktop/src-tauri/target/release/startup-benchmark.json"
+
+      - name: Archive packaged startup benchmark
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supa-video-producer-startup-${{ github.run_id }}
+          path: apps/desktop/src-tauri/target/release/startup-benchmark.json
+          if-no-files-found: error
+
+      - name: Exercise packaged media production IPC with stripped PATH
+        shell: pwsh
+        run: |
+          $cargo = (Get-Command cargo.exe -ErrorAction Stop).Source
+          $originalPath = $env:PATH
+          $env:SVP_MEDIA_RESOURCE_ROOT = (
+            Resolve-Path "apps/desktop/src-tauri/target/release"
+          ).Path
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          try {
+            if (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) {
+              throw "The packaged media IPC gate must not resolve FFmpeg from PATH"
+            }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_media_renamed_or_replaced_executable_fails_before_spawn `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged media rename/replacement fail-closed proof failed"
+            }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_media_ipc_status_probe_prepare_and_render_complete `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged status/probe/prepare/render IPC integration failed"
+            }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_media_ipc_render_cancel_cleans_partial `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged render cancellation IPC integration failed"
+            }
+          }
+          finally {
+            $env:PATH = $originalPath
+            Remove-Item Env:SVP_MEDIA_RESOURCE_ROOT -ErrorAction SilentlyContinue
+          }
+
   windows-release:
     name: Signed Windows installers and clean-runner smoke
     if: github.event_name == 'release' && github.event.action == 'published'
     needs: [typescript, rust, windows]
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 75
     environment: release
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enforce approved FFmpeg distribution review
+        shell: pwsh
+        run: |
+          $manifestPath = "apps/desktop/src-tauri/media-toolchain/manifest.v1.json"
+          . "./scripts/bootstrap-ffmpeg-windows.ps1" -LoadFunctionsOnly
+          $manifest = Read-StrictManifest $manifestPath
+          if ($manifest.distributionReview.status -cne "approved") {
+            throw "Public release is blocked: FFmpeg distribution review is not approved"
+          }
 
       - name: Install pnpm 10.34.5
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -205,8 +336,38 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target
 
+      - name: Cache pinned FFmpeg archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-cache/ffmpeg-8.1.2-essentials_build.zip
+          key: ffmpeg-windows-x86_64-db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec
+
       - name: Install locked JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Fetch cached FFmpeg archive when absent
+        shell: pwsh
+        run: |
+          $cacheDirectory = Join-Path $env:RUNNER_TEMP "ffmpeg-cache"
+          $archive = Join-Path $cacheDirectory "ffmpeg-8.1.2-essentials_build.zip"
+          New-Item -ItemType Directory -Force -Path $cacheDirectory | Out-Null
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+            $partial = "$archive.partial"
+            Invoke-WebRequest `
+              -Uri "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip" `
+              -OutFile $partial `
+              -MaximumRedirection 5 `
+              -TimeoutSec 600
+            Move-Item -LiteralPath $partial -Destination $archive
+          }
+          "FFMPEG_ARCHIVE=$archive" >> $env:GITHUB_ENV
+
+      - name: Bootstrap and verify pinned bundled media tools
+        shell: pwsh
+        run: |
+          pnpm --dir apps/desktop media:test:windows
+          pnpm --dir apps/desktop media:bootstrap:windows -ArchivePath $env:FFMPEG_ARCHIVE
+          pnpm --dir apps/desktop media:verify:windows
 
       - name: Import protected Windows signing certificate
         shell: pwsh
@@ -257,15 +418,24 @@ jobs:
 
           $thumbprint = $signingCertificates[0].Thumbprint
           $releaseConfigPath = Join-Path $env:RUNNER_TEMP "tauri.release.conf.json"
+          $tauriRoot = (Resolve-Path "apps/desktop/src-tauri").Path
+          $mediaOverlay = Get-Content `
+            -LiteralPath "apps/desktop/src-tauri/tauri.media-tools.windows.conf.json" `
+            -Raw | ConvertFrom-Json
+          $releaseResources = @{}
+          foreach ($resource in $mediaOverlay.bundle.resources.PSObject.Properties) {
+            $releaseResources[(Join-Path $tauriRoot $resource.Name)] = $resource.Value
+          }
           @{
             bundle = @{
+              resources = $releaseResources
               windows = @{
                 certificateThumbprint = $thumbprint
                 digestAlgorithm = "sha256"
                 timestampUrl = $env:WINDOWS_TIMESTAMP_URL
               }
             }
-          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $releaseConfigPath -Encoding utf8
+          } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $releaseConfigPath -Encoding utf8
 
           "WINDOWS_CERTIFICATE_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
           "TAURI_RELEASE_CONFIG=$releaseConfigPath" >> $env:GITHUB_ENV
@@ -301,65 +471,47 @@ jobs:
           }
           $checksums | Set-Content "$target/bundle/SHA256SUMS.txt" -Encoding ascii
 
-      - name: Install FFmpeg 8.1.2 for release smoke
-        shell: pwsh
-        run: choco install ffmpeg --version=8.1.2 --yes --no-progress
-
-      - name: Smoke system FFmpeg tool status and media probe
+      - name: Verify MSI contains the complete bundled media payload
         shell: pwsh
         run: |
-          Get-Command ffmpeg -ErrorAction Stop
-          Get-Command ffprobe -ErrorAction Stop
-          cargo test `
-            --locked `
-            --all-features `
-            --manifest-path apps/desktop/src-tauri/Cargo.toml `
-            video::tests::local_ffmpeg_status_and_canonical_probe_match_fixture `
-            -- `
-            --ignored `
-            --exact `
-            --nocapture
+          $msi = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
+          $layout = Join-Path $env:RUNNER_TEMP "supa-video-msi-layout"
+          $extract = Start-Process `
+            -FilePath msiexec.exe `
+            -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=`"$layout`"" `
+            -Wait `
+            -PassThru
+          if ($extract.ExitCode -ne 0) {
+            throw "MSI administrative extraction exited with code $($extract.ExitCode)"
+          }
+          $requiredNames = @(
+            "ffmpeg.exe",
+            "ffprobe.exe",
+            "manifest.v1.json",
+            "THIRD_PARTY_NOTICES.md",
+            "SOURCE_OFFER.md",
+            "GPL-3.0.txt",
+            "GYAN-FFMPEG-README.txt"
+          )
+          foreach ($name in $requiredNames) {
+            $matches = @(Get-ChildItem -LiteralPath $layout -Recurse -File -Filter $name)
+            if ($matches.Count -ne 1) {
+              throw "MSI payload must contain exactly one $name; found $($matches.Count)"
+            }
+          }
+          $manifest = Get-Content `
+            -LiteralPath "apps/desktop/src-tauri/media-toolchain/manifest.v1.json" `
+            -Raw | ConvertFrom-Json
+          foreach ($toolName in @("ffmpeg", "ffprobe")) {
+            $tool = Get-ChildItem -LiteralPath $layout -Recurse -File -Filter "$toolName.exe"
+            $actual = (Get-FileHash -LiteralPath $tool.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expected = $manifest.targets.'x86_64-pc-windows-msvc'.binaries.$toolName.sha256
+            if ($actual -cne $expected) {
+              throw "MSI $toolName.exe hash does not match the compiled manifest"
+            }
+          }
 
-      - name: Smoke derived FFmpeg preparation, cache reuse, and repair
-        shell: pwsh
-        run: |
-          cargo test `
-            --locked `
-            --all-features `
-            --manifest-path apps/desktop/src-tauri/Cargo.toml `
-            video::tests::derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts `
-            -- `
-            --ignored `
-            --exact `
-            --nocapture
-
-      - name: Smoke real FFmpeg render worker valid exports
-        shell: pwsh
-        run: |
-          cargo test `
-            --locked `
-            --all-features `
-            --manifest-path apps/desktop/src-tauri/Cargo.toml `
-            video::tests::render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events `
-            -- `
-            --ignored `
-            --exact `
-            --nocapture
-
-      - name: Smoke real FFmpeg render worker cancellation
-        shell: pwsh
-        run: |
-          cargo test `
-            --locked `
-            --all-features `
-            --manifest-path apps/desktop/src-tauri/Cargo.toml `
-            video::tests::render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partial_once `
-            -- `
-            --ignored `
-            --exact `
-            --nocapture
-
-      - name: Install and launch packaged GUI executable
+      - name: Install, verify bundled media tools, and launch with stripped PATH
         shell: pwsh
         run: |
           $installer = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
@@ -368,7 +520,8 @@ jobs:
             throw "NSIS installer exited with code $($install.ExitCode)"
           }
 
-          $installedExecutable = Join-Path $env:LOCALAPPDATA "Supa Video Producer/supa-video-desktop.exe"
+          $installRoot = Join-Path $env:LOCALAPPDATA "Supa Video Producer"
+          $installedExecutable = Join-Path $installRoot "supa-video-desktop.exe"
           if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
             throw "NSIS did not install $installedExecutable"
           }
@@ -388,13 +541,90 @@ jobs:
             throw "Installed release executable is not a Windows GUI binary; subsystem=$subsystem"
           }
 
-          $application = Start-Process -FilePath $installedExecutable -PassThru
-          Start-Sleep -Seconds 10
-          $application.Refresh()
-          if ($application.HasExited) {
-            throw "Installed application exited during launch smoke with code $($application.ExitCode)"
+          $manifestPath = "apps/desktop/src-tauri/media-toolchain/manifest.v1.json"
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $mediaRoot = Join-Path $installRoot "media-tools"
+          $requiredResources = @(
+            "ffmpeg.exe",
+            "ffprobe.exe",
+            "manifest.v1.json",
+            "THIRD_PARTY_NOTICES.md",
+            "SOURCE_OFFER.md",
+            "licenses/GPL-3.0.txt",
+            "licenses/GYAN-FFMPEG-README.txt"
+          )
+          foreach ($relativePath in $requiredResources) {
+            $resource = Join-Path $mediaRoot $relativePath
+            if (-not (Test-Path -LiteralPath $resource -PathType Leaf)) {
+              throw "NSIS installation is missing bundled resource $relativePath"
+            }
           }
-          Stop-Process -Id $application.Id -Force
+
+          $hashReport = @()
+          foreach ($toolName in @("ffmpeg", "ffprobe")) {
+            $path = Join-Path $mediaRoot "$toolName.exe"
+            $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expected = $manifest.targets.'x86_64-pc-windows-msvc'.binaries.$toolName.sha256
+            if ($actual -cne $expected) {
+              throw "Installed $toolName.exe hash does not match the compiled manifest"
+            }
+            $hashReport += "$actual  media-tools/$toolName.exe"
+          }
+          foreach ($relativePath in $requiredResources | Where-Object { $_ -notlike "*.exe" }) {
+            $path = Join-Path $mediaRoot $relativePath
+            $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            $hashReport += "$hash  media-tools/$relativePath"
+          }
+          $hashReportPath = "apps/desktop/src-tauri/target/release/bundle/INSTALLED_MEDIA_TOOLS_SHA256.txt"
+          $hashReport | Set-Content -LiteralPath $hashReportPath -Encoding ascii
+
+          $originalPath = $env:PATH
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          try {
+            $ffmpeg = Join-Path $mediaRoot "ffmpeg.exe"
+            $ffprobe = Join-Path $mediaRoot "ffprobe.exe"
+            $ffmpegVersion = (& $ffmpeg -hide_banner -version 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0 -or -not $ffmpegVersion.Contains("ffmpeg version $($manifest.ffmpeg.version)")) {
+              throw "Installed FFmpeg version probe failed with stripped PATH"
+            }
+            $ffprobeVersion = (& $ffprobe -hide_banner -version 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0 -or -not $ffprobeVersion.Contains("ffprobe version $($manifest.ffmpeg.version)")) {
+              throw "Installed FFprobe version probe failed with stripped PATH"
+            }
+            $buildConfiguration = (& $ffmpeg -hide_banner -buildconf 2>&1) -join "`n"
+            foreach ($flag in $manifest.ffmpeg.requiredBuildFlags) {
+              if (-not $buildConfiguration.Contains($flag)) {
+                throw "Installed FFmpeg is missing build flag $flag"
+              }
+            }
+            foreach ($probe in @(
+              @{ Arguments = @("-hide_banner", "-encoders"); Required = $manifest.targets.'x86_64-pc-windows-msvc'.requiredCapabilities.encoders },
+              @{ Arguments = @("-hide_banner", "-muxers"); Required = $manifest.targets.'x86_64-pc-windows-msvc'.requiredCapabilities.muxers },
+              @{ Arguments = @("-hide_banner", "-filters"); Required = $manifest.targets.'x86_64-pc-windows-msvc'.requiredCapabilities.filters }
+            )) {
+              $arguments = @($probe.Arguments)
+              $output = (& $ffmpeg $arguments 2>&1) -join "`n"
+              if ($LASTEXITCODE -ne 0) {
+                throw "Installed FFmpeg capability probe failed"
+              }
+              foreach ($capability in $probe.Required) {
+                if ($output -notmatch "(?m)^\s*[A-Z\.]{1,8}\s+$([regex]::Escape($capability))\s") {
+                  throw "Installed FFmpeg is missing capability $capability"
+                }
+              }
+            }
+
+            $application = Start-Process -FilePath $installedExecutable -PassThru
+            Start-Sleep -Seconds 10
+            $application.Refresh()
+            if ($application.HasExited) {
+              throw "Installed application exited during stripped-PATH launch with code $($application.ExitCode)"
+            }
+            Stop-Process -Id $application.Id -Force
+          }
+          finally {
+            $env:PATH = $originalPath
+          }
 
       - name: Archive verified Windows release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -405,6 +635,12 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
             apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             apps/desktop/src-tauri/target/release/bundle/SHA256SUMS.txt
+            apps/desktop/src-tauri/target/release/bundle/INSTALLED_MEDIA_TOOLS_SHA256.txt
+            apps/desktop/src-tauri/media-toolchain/manifest.v1.json
+            apps/desktop/src-tauri/media-toolchain/THIRD_PARTY_NOTICES.md
+            apps/desktop/src-tauri/media-toolchain/SOURCE_OFFER.md
+            apps/desktop/src-tauri/media-toolchain/licenses/GPL-3.0.txt
+            apps/desktop/src-tauri/media-toolchain/licenses/GYAN-FFMPEG-README.txt
           if-no-files-found: error
           retention-days: 30
 

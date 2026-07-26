@@ -38,14 +38,56 @@ describe("App Phase 2 canonical workspace", () => {
       }),
     );
     render(<App />);
-    expect(screen.getByRole("heading", { name: "Checking FFmpeg and FFprobe" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Checking bundled media tools" })).toBeTruthy();
     expect(screen.getByText("Phase 2 · Canonical history")).toBeTruthy();
     resolve({
-      ffmpeg: { available: true, version: "ffmpeg" },
-      ffprobe: { available: true, version: "ffprobe" },
+      source: "bundled",
+      toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+      ffmpeg: { available: true, version: "8.1.2" },
+      ffprobe: { available: true, version: "8.1.2" },
       ready: true,
     });
     expect(await screen.findByRole("heading", { name: "Ready for video work" })).toBeTruthy();
+  });
+
+  it("recovers workspace media actions after repair and a repeated tool check", async () => {
+    const service = createMockVideoService();
+    let repaired = false;
+    invokeMock.mockImplementation((command, args) => {
+      if (command === "video_ffmpeg_status") {
+        if (repaired) return service.invoke(command, args);
+        return Promise.resolve({
+          source: "bundled",
+          toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+          ffmpeg: { available: false, problem: "not_found" },
+          ffprobe: { available: false, problem: "not_found" },
+          ready: false,
+        });
+      }
+      return service.invoke(command, args);
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Bundled media tools are missing" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+
+    await screen.findByText("Media tools unavailable");
+    const chooseVideo = screen.getByRole("button", { name: "Choose video" }) as HTMLButtonElement;
+    expect(chooseVideo.disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Export MP4" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    repaired = true;
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(chooseVideo.disabled).toBe(false));
+    expect(screen.queryByText("Media tools unavailable")).toBeNull();
+
+    fireEvent.click(chooseVideo);
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+    expect((screen.getByRole("button", { name: "Export MP4" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 
   it("creates and imports through the canonical service", async () => {

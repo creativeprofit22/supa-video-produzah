@@ -81,6 +81,16 @@ describe("Phase 2 accessibility defect scanning", () => {
 
   it("reports zero violations for running export and overwrite dialog", async () => {
     const base = {
+      readiness: {
+        phase: "loaded" as const,
+        value: {
+          source: "bundled" as const,
+          toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+          ffmpeg: { available: true, version: "8.1.2" },
+          ffprobe: { available: true, version: "8.1.2" },
+          ready: true,
+        },
+      },
       destinationPending: false,
       destinationError: null,
       disabled: false,

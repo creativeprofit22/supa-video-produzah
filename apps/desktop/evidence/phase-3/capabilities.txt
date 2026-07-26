@@ -1,0 +1,28 @@
+Toolchain: ffmpeg-8.1.2-gyan-essentials-windows-x86_64
+Version: 8.1.2-essentials_build-www.gyan.dev
+
+Required build flags verified:
+--enable-gpl
+--enable-version3
+--enable-static
+--enable-libx264
+--enable-libx265
+--enable-libzimg
+
+Required encoders verified:
+libx264
+aac
+mjpeg
+
+Required muxers verified:
+mp4
+image2
+
+Required filters verified:
+scale
+fps
+pad
+tile
+setsar
+zscale
+tonemap
