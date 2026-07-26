@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "id": "88c79450-b092-4915-8cc4-6164dc9f6b93",
+  "name": "phase1",
+  "createdAt": "2026-07-25T21:57:51.727Z",
+  "updatedAt": "2026-07-25T22:07:00.194Z",
+  "currentRevisionId": "28e8131f-f9de-4368-ba9d-bdddfaaa754e",
+  "revisions": [
+    {
+      "id": "445ac718-951a-4aca-80e9-fbeb4ea91900",
+      "parentRevisionId": null,
+      "sequenceNumber": 0,
+      "committedAt": "2026-07-25T21:57:51.727Z",
+      "commandSummary": "Created project",
+      "state": {
+        "asset": null,
+        "sequence": null
+      }
+    },
+    {
+      "id": "3e28cee8-1301-4e3d-a4d0-0e53e2aa1612",
+      "parentRevisionId": "445ac718-951a-4aca-80e9-fbeb4ea91900",
+      "sequenceNumber": 1,
+      "committedAt": "2026-07-25T22:00:30.592Z",
+      "commandSummary": "Imported asset",
+      "state": {
+        "asset": {
+          "id": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+          "displayName": "single-clip.mp4",
+          "locator": {
+            "absolutePath": "\\\\?\\C:\\svp-phase1-evidence\\single-clip.mp4"
+          },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "realFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 1,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 129211
+          }
+        },
+        "sequence": null
+      }
+    },
+    {
+      "id": "4423650a-708a-49ac-b797-f6c1ee338612",
+      "parentRevisionId": "3e28cee8-1301-4e3d-a4d0-0e53e2aa1612",
+      "sequenceNumber": 2,
+      "committedAt": "2026-07-25T22:00:31.534Z",
+      "commandSummary": "Created sequence",
+      "state": {
+        "asset": {
+          "id": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+          "displayName": "single-clip.mp4",
+          "locator": {
+            "absolutePath": "\\\\?\\C:\\svp-phase1-evidence\\single-clip.mp4"
+          },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "realFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 1,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 129211
+          }
+        },
+        "sequence": {
+          "id": "8ca74115-ce31-4321-9bf3-a077c2a3bcc1",
+          "rate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "width": 320,
+          "height": 180,
+          "audioSampleRate": 48000,
+          "videoTracks": [
+            {
+              "id": "9e2eaf3f-9073-4f6a-a6d0-ee17a0ce148f",
+              "clips": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0ac9f134-179b-4b56-a60e-4ef4419aa211",
+      "parentRevisionId": "4423650a-708a-49ac-b797-f6c1ee338612",
+      "sequenceNumber": 3,
+      "committedAt": "2026-07-25T22:00:31.535Z",
+      "commandSummary": "Inserted clip",
+      "state": {
+        "asset": {
+          "id": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+          "displayName": "single-clip.mp4",
+          "locator": {
+            "absolutePath": "\\\\?\\C:\\svp-phase1-evidence\\single-clip.mp4"
+          },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "realFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 1,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 129211
+          }
+        },
+        "sequence": {
+          "id": "8ca74115-ce31-4321-9bf3-a077c2a3bcc1",
+          "rate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "width": 320,
+          "height": 180,
+          "audioSampleRate": 48000,
+          "videoTracks": [
+            {
+              "id": "9e2eaf3f-9073-4f6a-a6d0-ee17a0ce148f",
+              "clips": [
+                {
+                  "id": "71dfcaa0-b18b-4172-90fc-0bc82973bb20",
+                  "assetId": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+                  "timelineStart": {
+                    "value": 0,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceIn": {
+                    "value": 0,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceOut": {
+                    "value": 60,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "28e8131f-f9de-4368-ba9d-bdddfaaa754e",
+      "parentRevisionId": "0ac9f134-179b-4b56-a60e-4ef4419aa211",
+      "sequenceNumber": 4,
+      "committedAt": "2026-07-25T22:07:00.194Z",
+      "commandSummary": "Applied trim",
+      "state": {
+        "asset": {
+          "id": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+          "displayName": "single-clip.mp4",
+          "locator": {
+            "absolutePath": "\\\\?\\C:\\svp-phase1-evidence\\single-clip.mp4"
+          },
+          "probe": {
+            "durationMicroseconds": 2000000,
+            "averageFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "realFrameRate": {
+              "numerator": 30,
+              "denominator": 1
+            },
+            "variableFrameRate": false,
+            "width": 320,
+            "height": 180,
+            "videoCodecName": "h264",
+            "audio": {
+              "codecName": "aac",
+              "channels": 1,
+              "sampleRate": 48000
+            },
+            "fileSizeBytes": 129211
+          }
+        },
+        "sequence": {
+          "id": "8ca74115-ce31-4321-9bf3-a077c2a3bcc1",
+          "rate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "width": 320,
+          "height": 180,
+          "audioSampleRate": 48000,
+          "videoTracks": [
+            {
+              "id": "9e2eaf3f-9073-4f6a-a6d0-ee17a0ce148f",
+              "clips": [
+                {
+                  "id": "71dfcaa0-b18b-4172-90fc-0bc82973bb20",
+                  "assetId": "0fdee25d-88b7-478e-b33a-3546bfa00411",
+                  "timelineStart": {
+                    "value": 0,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceIn": {
+                    "value": 5,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  },
+                  "sourceOut": {
+                    "value": 50,
+                    "rateNumerator": 30,
+                    "rateDenominator": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

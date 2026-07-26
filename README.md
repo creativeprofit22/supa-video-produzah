@@ -34,9 +34,11 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-The native project boundary, FFmpeg/FFprobe status and media probing, controlled proxy/thumbnail preparation, cancellable render jobs, and verified native MP4 export are implemented. The desktop shell connects source selection, preparation, render progress, cancellation, collision handling, and export results to React; native project commands are registered but are not exposed through a new/open/save workflow yet.
+Phase 1 is complete. The desktop provides strict new/open/save persistence, controlled proxy playback, a thumbnail timeline, exact frame trim controls, save-before-activation Apply/Undo/Redo, keyboard frame navigation, native overwrite confirmation, cancellable verified export, and controlled final-preview playback.
 
-Prepared-proxy playback, project new/open/save wiring, timeline trimming, undo/redo controls, reopen, and the complete end-to-end Phase 1 UI gate remain pending. The setup commands run the current checkpoint, not the complete Phase 1 workflow. See [`ROADMAP.md`](./ROADMAP.md) for live completion status and verification evidence.
+The final source has 123 unique passing TypeScript tests: 39 contracts, 5 project/history, 9 render compiler, and 70 desktop IPC/controller/component/integration/accessibility tests. The Rust crate passes 62 default tests and 68 `tauri-ipc-test` tests; all eight system-FFmpeg integrations pass.
+
+Real Windows evidence proves native create/open/prepare/play, `[5, 50)` trim, Undo/Redo, collision cancel/replace, export/reopen, exact 1.5-second ffprobe output, long-render cancellation with zero surviving FFmpeg/partials/output, the required recovery-state matrix, 480px/320px/200% reflow, and accessibility checks. Exact-SHA Linux and Windows CI evidence is recorded in [`apps/desktop/evidence/phase-1/verification.md`](./apps/desktop/evidence/phase-1/verification.md); see also [`ROADMAP.md`](./ROADMAP.md) and [`apps/desktop/DESIGN.md`](./apps/desktop/DESIGN.md).
 
 ## Project format
 
@@ -48,4 +50,4 @@ The Phase 1 architecture keeps arbitrary filesystem access and shell execution o
 
 ## Phase 1 target contract and limitations
 
-The completed Phase 1 workflow will support one local asset, one clip, one track, exact frame trims, controlled proxy playback, and one verified MP4 export. Multiple clips, captions, transitions, stock media, cloud services, agents, native compositing, and bundled FFmpeg distribution are outside Phase 1.
+The implemented Phase 1 workflow supports one local asset, one clip, one track, exact frame trims, controlled proxy playback, and one verified MP4 export. Multiple clips, captions, transitions, stock media, cloud services, agents, native compositing, and bundled FFmpeg distribution are outside Phase 1. Phase 2 remains blocked until the Step 18 hard completion evidence is committed.

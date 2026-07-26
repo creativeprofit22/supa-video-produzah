@@ -1,6 +1,6 @@
 import { VideoDomainError } from "@supa-video/contracts";
-import type { RenderPlanV1 } from "@supa-video/contracts";
-import { invoke } from "@tauri-apps/api/core";
+import type { RenderPlanV1, VideoProjectFileV1 } from "@supa-video/contracts";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,21 +9,27 @@ import {
   cancelVideoRender,
   getVideoToolStatus,
   listenVideoRenderEvents,
+  openVideoProject,
+  pickNewVideoProjectPath,
   pickVideoExportPath,
   pickVideoSource,
   prepareVideoAsset,
   probeVideoSource,
+  saveVideoProject,
   startVideoRender,
+  tauriVideoBackend,
   VideoIpcResponseError,
 } from "./video-ipc";
 
 vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: vi.fn((path: string) => `asset:${path}`),
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
+const convertFileSrcMock = vi.mocked(convertFileSrc);
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
 
@@ -43,6 +49,31 @@ const mediaProbe = {
   videoCodecName: "h264",
   audio: { codecName: "aac", channels: 2, sampleRate: 48_000 },
   fileSizeBytes: 12_000_000,
+} as const;
+
+const projectDocument: VideoProjectFileV1 = {
+  schemaVersion: 1,
+  id: "00000000-0000-4000-8000-000000000010",
+  name: "IPC fixture",
+  createdAt: "2026-07-25T12:00:00.000Z",
+  updatedAt: "2026-07-25T12:00:00.000Z",
+  currentRevisionId: "00000000-0000-4000-8000-000000000011",
+  revisions: [
+    {
+      id: "00000000-0000-4000-8000-000000000011",
+      parentRevisionId: null,
+      sequenceNumber: 0,
+      committedAt: "2026-07-25T12:00:00.000Z",
+      commandSummary: "Created project",
+      state: { asset: null, sequence: null },
+    },
+  ],
+};
+
+const openedProject = {
+  path: "C:\\Projects\\fixture.svpvideo",
+  document: projectDocument,
+  sources: [],
 } as const;
 
 const prepareRequest = {
@@ -101,6 +132,7 @@ function dispatchRenderEvent(payload: unknown): void {
 
 describe("video IPC adapter", () => {
   beforeEach(() => {
+    convertFileSrcMock.mockClear();
     invokeMock.mockReset();
     listenMock.mockReset();
   });
@@ -128,6 +160,89 @@ describe("video IPC adapter", () => {
 
     await expect(pickVideoSource()).resolves.toBeNull();
     expect(invokeMock).toHaveBeenCalledWith("video_pick_source", undefined);
+  });
+
+  it("picks a new project destination with the exact default-name argument", async () => {
+    invokeMock.mockResolvedValueOnce("C:\\Projects\\New project.svpvideo");
+
+    await expect(pickNewVideoProjectPath("New project.svpvideo")).resolves.toBe(
+      "C:\\Projects\\New project.svpvideo",
+    );
+    expect(invokeMock).toHaveBeenCalledWith("video_pick_new_project_path", {
+      defaultName: "New project.svpvideo",
+    });
+  });
+
+  it("keeps new/open picker cancellation as no data", async () => {
+    invokeMock.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+
+    await expect(pickNewVideoProjectPath("Untitled.svpvideo")).resolves.toBeNull();
+    await expect(openVideoProject()).resolves.toBeNull();
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "video_open_project", undefined);
+  });
+
+  it("validates open and save payloads with exact command arguments", async () => {
+    invokeMock.mockResolvedValueOnce(openedProject).mockResolvedValueOnce(null);
+
+    await expect(openVideoProject()).resolves.toEqual(openedProject);
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "video_open_project", undefined);
+
+    await expect(saveVideoProject(openedProject.path, projectDocument)).resolves.toBeUndefined();
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "video_save_project", {
+      path: openedProject.path,
+      document: projectDocument,
+    });
+  });
+
+  it("rejects malformed native project data without leaking its payload", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        ...openedProject,
+        privateDiagnostic: "C:\\Users\\private\\clip.mp4",
+      })
+      .mockResolvedValueOnce("relative/project.svpvideo");
+
+    const openError = await openVideoProject().catch((reason: unknown) => reason);
+    expect(openError).toBeInstanceOf(VideoIpcResponseError);
+    expect(String(openError)).not.toContain("private");
+    await expect(pickNewVideoProjectPath("Untitled.svpvideo")).rejects.toBeInstanceOf(
+      VideoIpcResponseError,
+    );
+  });
+
+  it("normalizes project backend errors and validates empty save responses", async () => {
+    invokeMock
+      .mockRejectedValueOnce({
+        code: "project_io",
+        message: "The project could not be opened",
+        details: { operation: "open_project", rawOutput: "private" },
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await expect(openVideoProject()).rejects.toMatchObject({ code: "project_io" });
+    await expect(saveVideoProject(openedProject.path, projectDocument)).rejects.toBeInstanceOf(
+      VideoIpcResponseError,
+    );
+  });
+
+  it("exposes every native operation and cache URL conversion through the default backend", () => {
+    expect(tauriVideoBackend).toMatchObject({
+      getVideoToolStatus,
+      pickNewVideoProjectPath,
+      openVideoProject,
+      saveVideoProject,
+      pickVideoSource,
+      probeVideoSource,
+      prepareVideoAsset,
+      pickVideoExportPath,
+      startVideoRender,
+      cancelVideoRender,
+      listenVideoRenderEvents,
+      convertFileSrc,
+    });
+    expect(tauriVideoBackend.convertFileSrc("C:\\Cache\\proxy.mp4")).toBe(
+      "asset:C:\\Cache\\proxy.mp4",
+    );
   });
 
   it("validates a media probe and passes only the selected path", async () => {

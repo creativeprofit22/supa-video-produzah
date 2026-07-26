@@ -4,6 +4,7 @@ dist/
 dist-ssr/
 target/
 .gg/target-*/
+.gg/*.ps1
 *.tsbuildinfo
 
 # Local state, logs, and environment

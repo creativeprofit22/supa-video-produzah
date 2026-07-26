@@ -9,7 +9,7 @@
     "build:workspace-dependencies": "pnpm --filter \"@supa-video/desktop...\" --filter \"!@supa-video/desktop\" build",
     "build:frontend": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
     "check": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -31,6 +31,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.4",
+    "axe-core": "4.12.1",
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
     "vite": "8.1.5",

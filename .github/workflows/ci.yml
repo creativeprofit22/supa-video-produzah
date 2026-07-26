@@ -45,9 +45,6 @@ jobs:
       - name: Check TypeScript
         run: pnpm check
 
-      - name: Report desktop UI test coverage
-        run: echo "::warning file=apps/desktop/package.json,line=10::Desktop UI tests are not present yet; --passWithNoTests is temporary and this job does not claim UI test coverage."
-
       - name: Test TypeScript packages
         run: pnpm test
 

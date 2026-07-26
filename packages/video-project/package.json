@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test": "vitest run src --passWithNoTests"
+    "test": "vitest run src"
   },
   "dependencies": {
     "@supa-video/contracts": "workspace:*"

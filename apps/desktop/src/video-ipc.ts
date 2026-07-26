@@ -1,35 +1,35 @@
 import {
+  absoluteNativePathSchema,
   mediaProbeSchema,
+  openedVideoProjectSchema,
   prepareVideoAssetRequestSchema,
   preparedVideoAssetSchema,
   renderPlanV1Schema,
   VideoDomainError,
   videoErrorCodes,
+  videoProjectFileV1Schema,
   videoRenderEventSchema,
   videoRenderStartedSchema,
   videoToolStatusSchema,
 } from "@supa-video/contracts";
 import type {
   MediaProbe,
+  OpenedVideoProject,
   PreparedVideoAsset,
   PrepareVideoAssetRequest,
   RenderPlanV1,
   VideoErrorCode,
+  VideoProjectFileV1,
   VideoRenderEvent,
   VideoRenderStarted,
   VideoToolStatus,
 } from "@supa-video/contracts";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { z } from "zod";
 
-const selectedPathSchema = z
-  .string()
-  .min(1)
-  .max(32_768)
-  .refine((path) => !path.includes("\0"))
-  .nullable();
+const selectedPathSchema = absoluteNativePathSchema.nullable();
 const emptyCommandResponseSchema = z.null();
 const videoErrorCodeSet = new Set<string>(videoErrorCodes);
 const VIDEO_RENDER_EVENT = "video:render-event";
@@ -90,6 +90,29 @@ export async function getVideoToolStatus(): Promise<VideoToolStatus> {
 export async function pickVideoSource(): Promise<string | null> {
   const response = await invokeVideoCommand("video_pick_source");
   return parseResponse(selectedPathSchema.safeParse(response));
+}
+
+export async function pickNewVideoProjectPath(defaultName: string): Promise<string | null> {
+  const response = await invokeVideoCommand("video_pick_new_project_path", { defaultName });
+  return parseResponse(selectedPathSchema.safeParse(response));
+}
+
+export async function openVideoProject(): Promise<OpenedVideoProject | null> {
+  const response = await invokeVideoCommand("video_open_project");
+  return parseResponse(openedVideoProjectSchema.nullable().safeParse(response));
+}
+
+export async function saveVideoProject(
+  path: string,
+  document: Readonly<VideoProjectFileV1>,
+): Promise<void> {
+  const validatedPath = absoluteNativePathSchema.parse(path);
+  const validatedDocument = videoProjectFileV1Schema.parse(document);
+  const response = await invokeVideoCommand("video_save_project", {
+    path: validatedPath,
+    document: validatedDocument,
+  });
+  parseResponse(emptyCommandResponseSchema.safeParse(response));
 }
 
 export async function pickVideoExportPath(defaultName: string): Promise<string | null> {
@@ -161,3 +184,33 @@ export async function listenVideoRenderEvents(
     unlisten();
   };
 }
+
+export interface VideoBackend {
+  readonly getVideoToolStatus: typeof getVideoToolStatus;
+  readonly pickNewVideoProjectPath: typeof pickNewVideoProjectPath;
+  readonly openVideoProject: typeof openVideoProject;
+  readonly saveVideoProject: typeof saveVideoProject;
+  readonly pickVideoSource: typeof pickVideoSource;
+  readonly probeVideoSource: typeof probeVideoSource;
+  readonly prepareVideoAsset: typeof prepareVideoAsset;
+  readonly pickVideoExportPath: typeof pickVideoExportPath;
+  readonly startVideoRender: typeof startVideoRender;
+  readonly cancelVideoRender: typeof cancelVideoRender;
+  readonly listenVideoRenderEvents: typeof listenVideoRenderEvents;
+  readonly convertFileSrc: typeof convertFileSrc;
+}
+
+export const tauriVideoBackend: VideoBackend = {
+  getVideoToolStatus,
+  pickNewVideoProjectPath,
+  openVideoProject,
+  saveVideoProject,
+  pickVideoSource,
+  probeVideoSource,
+  prepareVideoAsset,
+  pickVideoExportPath,
+  startVideoRender,
+  cancelVideoRender,
+  listenVideoRenderEvents,
+  convertFileSrc,
+};

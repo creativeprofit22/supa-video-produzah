@@ -3,6 +3,7 @@ export * from "./derived-media.js";
 export * from "./errors.js";
 export * from "./migrations.js";
 export * from "./project.js";
+export * from "./project-io.js";
 export * from "./render-plan.js";
 export * from "./time.js";
 export * from "./tools.js";

@@ -63,7 +63,10 @@ pub fn run() {
 
 #[cfg(all(test, feature = "tauri-ipc-test"))]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use serde_json::{json, Value};
     use tauri::{
@@ -103,6 +106,7 @@ mod tests {
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::project_io::video_save_project,
             ])
             .on_window_event(clean_up_video_state_on_destroyed)
             .build(mock_context(noop_assets()))
@@ -159,6 +163,45 @@ mod tests {
         assert_eq!(error["code"], "invalid_path");
         assert_eq!(error["details"]["operation"], "prepare_asset");
         assert_eq!(error["details"]["category"], "project_id");
+    }
+
+    #[test]
+    fn video_project_commands_are_reachable_over_mock_ipc() {
+        let app = mock_video_app();
+        let webview = WebviewWindowBuilder::new(&app, "project-owner", Default::default())
+            .build()
+            .expect("test webview must build");
+
+        let malformed_error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_save_project",
+                json!({ "path": "ungranted.svpvideo", "document": {} }),
+            ),
+        )
+        .expect_err("malformed project input must return a typed command error");
+        assert_eq!(malformed_error["code"], "invalid_project");
+
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/video-phase1/single-clip.svpvideo");
+        let document: Value = serde_json::from_slice(
+            &fs::read(fixture_path).expect("canonical project fixture must be readable"),
+        )
+        .expect("canonical project fixture must parse");
+        let ungranted_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("ungranted.svpvideo")
+            .to_string_lossy()
+            .into_owned();
+        let ungranted_error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_save_project",
+                json!({ "path": ungranted_path, "document": document }),
+            ),
+        )
+        .expect_err("ungranted save input must return a typed command error");
+        assert_eq!(ungranted_error["code"], "path_not_granted");
+        assert_eq!(ungranted_error["details"]["operation"], "authorize_path");
     }
 
     #[test]

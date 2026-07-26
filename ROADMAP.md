@@ -67,47 +67,48 @@ The bootstrap creates root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yam
 **Depends on:** A clean checkout of this repository, Node 22, pnpm 10, the Rust/Tauri prerequisites, and local FFmpeg availability during development  
 **Goal:** Bootstrap the product and prove the thinnest complete path from local media to an edited exported file through its own UI
 
-## Implementation checkpoint — re-audited and verified 25 July 2026
+## Implementation checkpoint - re-audited and verified 25 July 2026
 
-Phase 1 remains the active phase. Phase 2 is blocked until the Phase 1 hard completion gate passes. Steps 1–10 are complete in the tracked baseline; Steps 11–12 are implemented and verified in the current worktree. The earliest incomplete dependency is Step 13 project new/open/save controller wiring.
+Phase 1 is complete and the hard completion gate passes. Steps 1 through 18 are implemented and verified; Step 16 was completed ahead of Steps 13 through 15 and remains covered by the unchanged eight real-FFmpeg integrations. Phase 2 is now unblocked.
 
 | Implementation item | State | Audit evidence |
 |---|---|---|
-| Workspace and desktop scaffold | Complete | The root pnpm workspace, Tauri v2/React 19 shell, strict TypeScript, lint, formatting, and package boundaries build successfully. The desktop package builds all transitive workspace dependencies before its frontend, so standalone frontend and Tauri builds work from a frozen installation. |
-| Browser-safe contracts and rational time | Complete | Strict V1 project/command/render schemas, explicit rational-time rounding, migrations, strict render-event/output DTOs, and contract tests are present. |
-| Project command engine and history | Complete | `ImportAsset`, `CreateSequence`, `InsertClip`, and `TrimClip`, immutable revisions, stale-base checks, undo/redo, and branch truncation are implemented. |
+| Workspace and desktop scaffold | Complete | The root pnpm workspace, Tauri v2/React 19 shell, strict TypeScript, lint, formatting, and package boundaries build successfully. The desktop package builds all transitive workspace dependencies before its frontend. |
+| Browser-safe contracts and rational time | Complete | Strict V1 project, opened-project/source-status, command, render, and event schemas reject unknown or mismatched native data. Rational-time rounding and strict migrations remain covered. |
+| Project command engine and history | Complete | `ImportAsset`, `CreateSequence`, `InsertClip`, and `TrimClip`, immutable revisions, stale-base checks, bounded undo/redo, and branch truncation are implemented. |
 | Deterministic render-plan compiler | Complete | Immutable revisions compile to validated FFmpeg argv arrays for AV and video-only inputs without filesystem or process access. |
-| Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, fixture provenance, and the supporting `.gitignore` exception are tracked; the committed bytes still match the recorded probe data and SHA-256. |
-| Rust project boundary | Complete | Strict mirrored V1 DTOs share a 23-document parity corpus with TypeScript; owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and unit tested. |
-| Native FFmpeg discovery, process supervision, and media probe | Complete | System `ffmpeg`/`ffprobe` checks, bounded no-shell execution through Unix process groups or Windows Job Objects, strict ffprobe parsing, owner-granted source probing, typed redacted errors, production registration, and focused IPC/frontend coverage are implemented. |
-| Controlled proxy and thumbnail preparation | Complete | `video_prepare_asset` authorizes the owner-granted source first, fingerprints source identity/profile/rate, writes only beneath the validated app cache, maps the selected streams, produces and proves a controlled H.264/AAC CFR proxy plus JPEG tile, reuses valid cache pairs, repairs corruption, and cleans owned stale artifacts. |
-| Render jobs and export pipeline | Complete in current worktree | Strict Rust-side plan validation, owner-scoped jobs/events, bounded streaming progress, collision handling, idempotent cancellation, post-render probing, atomic promotion, validated preview copies, and partial/process cleanup are implemented. Portable and real-FFmpeg AV, video-only, collision, and cancellation coverage passes. |
-| Tauri runtime registration, lifecycle, and security | Complete in current worktree | Render state/commands and window/app cleanup remain production-registered. Production and development CSP maps are explicit, the asset protocol is compiled and limited to `$APPCACHE/video-phase1/**/*`, only capability `default` is selected, and local window `main` receives only event listen/unlisten permissions. Exact configuration tests, feature-tree inspection, lifecycle/IPC suites, and production assembly pass. |
-| React editing workflow | Partial | Validated IPC adapters and `useVideoProject` now cover source selection, probing, controlled preparation, immutable render-plan capture, owner-event filtering, monotonic progress, cancellation, collision confirmation, and export terminal states. Project new/open/save, prepared-media playback, timeline, trim inspector, undo/redo integration, and reopen remain incomplete. |
-| Runtime and visual completion evidence | Partial | Native IPC suites, all eight explicit local-FFmpeg integrations, and a local no-bundle production Tauri build pass. The real create/open/prepare/trim/export/cancel/reopen UI flow and required responsive/accessibility captures remain unverified. |
+| Deterministic fixture bundle | Complete | `single-clip.mp4`, `single-clip.svpvideo`, provenance, probe facts, and SHA-256 evidence remain tracked. |
+| Rust project boundary | Complete | Strict mirrored V1 DTOs, owner-window grants, native picker commands, bounded open, contained locator resolution, and crash-safe atomic save are implemented and tested through production-shaped IPC. |
+| Native FFmpeg discovery, supervision, probe, and controlled preparation | Complete | Bounded no-shell execution through Unix process groups or Windows Job Objects, validated probing, cache-contained proxy/thumbnail generation, reuse/repair, redacted errors, and lifecycle cleanup pass portable and real-FFmpeg tests. |
+| Render jobs, export, runtime registration, and security | Complete | Steps 11 and 12 are committed on `main`/`origin/main`: strict render validation, owner jobs/events, cancellation, collision handling, verified outputs/previews, explicit CSP/capability policy, and cache-only asset protocol are production-registered. |
+| Persistence controller | Complete | Strict frontend adapters and an injected backend implement stale-safe New/Open/Save, source status, history reconstruction, and save-before-activation transactions. Cancellation and failed save preserve the prior canonical project. |
+| React editing workflow | Complete | The workbench includes the opener, active project bar, controlled proxy monitor, one-track thumbnail timeline, frame playhead, numeric/range trim controls, persisted Apply/Undo/Redo, frame shortcuts, native overwrite dialog, output facts, and controlled final-preview playback. |
+| Integration and accessibility coverage | Complete | The full mocked create/import/play/trim/undo/redo/export/reopen workflow passes. Axe Core 4.12.1 reports zero applicable WCAG A/AA/2.2-tagged violations in opener, ready editor, blocking error, running export, and collision dialog states. |
+| Gates and documentation | Complete | Empty-test allowances and duplicate `dist` render discovery are removed, the obsolete CI warning is removed, `DESIGN.md` records the production contract, and every local TypeScript/Rust/Tauri/FFmpeg gate passes. |
+| Real Windows runtime and visual proof | Complete | The production executable completed native create/open/prepare/play, exact `[5, 50)` trim, Undo/Redo, collision cancel/replace, export/reopen, controlled final preview, exact 1.5-second ffprobe proof, real long-render cancellation with zero process/partial/output residue, recovery states, 320px/200% reflow, and accessibility review. |
 
 ### Next implementation item
 
-Complete **Phase 1 implementation Step 13** from `.gg/plans/video-phase-01-single-clip.md`: connect the already-registered native new/open/save project commands through the frontend adapter and `useVideoProject` controller flow while preserving the Step 12 runtime boundary. Do not expand into Steps 14–15 playback/editing UI or Phase 2.
+Begin Phase 2 planning from the completed Phase 1 baseline.
 
 ### Latest verification evidence
 
-- Against the current worktree, `pnpm install --frozen-lockfile`, root `pnpm build`, `check`, `test`, `lint`, and `format:check`; Rust formatting; all-target/all-feature Clippy with warnings denied; default and `tauri-ipc-test` portable suites; all eight explicit local-FFmpeg integrations; `git diff --check`; and `pnpm --dir apps/desktop tauri build --no-bundle --ci` pass. The Windows executable was produced at `apps/desktop/src-tauri/target/release/supa-video-desktop.exe`.
-- The source contains 85 unique passing TypeScript tests: 31 contracts/time/derived-media/render-event tests, 5 project/history tests, 9 render-compiler tests, and 40 desktop IPC/hook/React tests.
-- The Rust crate passes 62 default-feature tests (60 portable unit tests plus 2 exact security-configuration tests). With `tauri-ipc-test`, 67 tests pass (65 portable unit/IPC/lifecycle tests plus the 2 configuration tests); eight explicit local-FFmpeg integrations cover source probing over IPC, derived preparation/reuse/repair, display geometry, HDR tone mapping, valid AV/video-only exports, no-overwrite collision preservation, and cancellation/process/partial cleanup.
-- The render worker integrations prove ordered owner events, monotonic progress, H.264/yuv420p output, optional AAC/48 kHz audio, exact dimensions/rate, duration within one output frame, final-output preservation, validated preview copies, and cancellation without surviving processes or owned partials.
-- Security regression tests prove the exact production/development CSP directives, active sole cache allow pattern, explicit capability selection, local main-window targeting, and exact event listen/unlisten permission set. The locked feature tree confirms `tauri/protocol-asset` and `http-range` in default production builds.
-- The last recorded remote clean-checkout evidence remains GitHub Actions run `30164505514` for commit `38f3c0e`; the current mixed worktree has not been verified by CI.
+- The local worktree passes frozen install; root build, check, test, lint, and format; Rust formatting; all-target/all-feature Clippy with warnings denied; default and `tauri-ipc-test` suites; all eight unchanged real-FFmpeg integrations; asset-protocol feature inspection; `git diff --check`; and `pnpm --dir apps/desktop tauri build --no-bundle --ci`.
+- The source contains 123 unique passing TypeScript tests: 39 contract/time/project-I/O/derived-media/render-event tests, 5 project/history tests, 9 render-compiler tests, and 70 desktop IPC/controller/component/integration/accessibility tests. Test scripts now scope source tests and no longer permit empty suites.
+- The Rust crate passes 62 default-feature tests (60 portable unit tests plus 2 security-configuration tests). With `tauri-ipc-test`, 68 tests pass (66 portable unit/IPC/lifecycle tests plus 2 configuration tests).
+- All eight explicit system-FFmpeg integrations pass with FFmpeg/FFprobe 8.1.2. They cover source probing over IPC, preparation/reuse/repair, display geometry, HDR tone mapping, AV/video-only export, collision preservation, and cancellation/process/partial cleanup.
+- The process-tree timeout and cancellation proofs each passed 20 consecutive targeted repetitions before feature work and another 20 after the full local gate. The complete `tauri-ipc-test` suite passed 10 consecutive Windows repetitions in both runs.
+- The locked Cargo feature tree includes `tauri/protocol-asset` and `http-range` in the default production graph. The no-bundle release build produced `apps/desktop/src-tauri/target/release/supa-video-desktop.exe`.
+- The final completion commit and exact-SHA GitHub Actions run are recorded in `apps/desktop/evidence/phase-1/verification.md`.
+- Sanitized runtime proof under `apps/desktop/evidence/phase-1/` records the real workflow, ffprobe facts, hashes, process/partial cleanup, recovery states, responsive/accessibility captures, and final 24/24 rubric score.
 
 ### Audit notes
 
-- The mixed worktree contains completed Step 11 render/export work, completed Step 12 runtime security, and partial later UI work; roadmap status distinguishes this local verification from the tracked baseline and remote CI evidence.
-- Step 12 is complete: production and development CSPs are explicit, the asset protocol is cache-contained and compiled into the default executable, capability auto-discovery is disabled, and the local main window has only event subscription permissions.
-- Step 13 is the earliest incomplete dependency: render adapters/listeners/controller behavior exists, but no frontend adapter or controller flow calls the already-registered native new/open/save project commands.
-- Steps 14–15 are only partial: the shell has source/preparation/export surfaces and 40 desktop tests, but no proxy monitor, timeline, playhead, trim controls, undo/redo UI, complete keyboard path, or full accessibility/responsive evidence.
-- The desktop and render package scripts still include `--passWithNoTests`; the CI warning claiming desktop UI tests are absent is stale, and the render package command reports 18 executions after a build because it discovers 9 compiled tests under `dist/`.
-- `README.md` now records implemented preparation, rendering, and runtime security while retaining the incomplete project persistence, proxy playback, trimming, reopen, and end-to-end UI limitations.
-- Phase completion is determined only by the hard completion gate below, not by completed foundation rows or passing isolated export integrations.
+- Steps 11 and 12 are committed baseline work, not uncommitted worktree-only changes.
+- Step 16 was completed early and has been rerun unchanged after Steps 13 through 15.
+- The master `.gg/plans/video-phase-01-single-clip.md` is historical planning context; implementation has progressed beyond its initial-state wording.
+- Axe/jsdom evidence is paired with real Windows picker/WebView/media/dialog/reflow/focus/cancellation proof; the raw PowerShell UIA walker exposed only the WebView document root, so no unsupported child-tree claim is made.
+- The Phase 1 hard completion gate passes.
 
 ## Scope
 

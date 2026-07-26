@@ -1,6 +1,7 @@
 import {
   createRationalTime,
   microsecondsToSourceFrames,
+  openedVideoProjectSchema,
   VideoDomainError,
   type MediaProbe,
   type PreparedVideoAsset,
@@ -8,25 +9,49 @@ import {
   type RenderPlanV1,
   type VerifiedRenderOutput,
   type VideoProjectFileV1,
+  type VideoSourceRecord,
 } from "@supa-video/contracts";
-import { createProject, currentRevision, executeCommand } from "@supa-video/project";
+import {
+  canRedo as historyCanRedo,
+  commit,
+  createHistory,
+  createProject,
+  currentRevision,
+  executeCommand,
+  redo as redoHistory,
+  undo as undoHistory,
+  type ProjectHistory,
+} from "@supa-video/project";
 import { compileSingleClipRenderPlan } from "@supa-video/render";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  cancelVideoRender,
-  listenVideoRenderEvents,
-  pickVideoExportPath,
-  prepareVideoAsset,
-  startVideoRender,
-  type VideoRenderNotification,
-} from "./video-ipc";
+import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
 
 export type PreparationState =
   | { readonly phase: "idle" }
   | { readonly phase: "pending" }
   | { readonly phase: "error"; readonly error: Error }
   | { readonly phase: "success"; readonly value: PreparedVideoAsset };
+
+export type ProjectOperation = "new" | "open" | "import";
+export type ProjectOperationState =
+  | { readonly phase: "idle" }
+  | { readonly phase: "pending"; readonly operation: ProjectOperation }
+  | { readonly phase: "error"; readonly operation: ProjectOperation; readonly error: Error };
+
+export interface TrimDraft {
+  readonly inFrame: number;
+  readonly outFrame: number;
+}
+
+export type EditOperationState =
+  | { readonly phase: "idle" }
+  | { readonly phase: "saving"; readonly operation: "trim" | "undo" | "redo" }
+  | {
+      readonly phase: "error";
+      readonly operation: "trim" | "undo" | "redo";
+      readonly error: Error;
+    };
 
 interface RenderIdentity {
   readonly jobId: string;
@@ -65,22 +90,41 @@ export type RenderState =
   | ({ readonly phase: "cancelled" } & RenderIdentity & Pick<PendingRenderIdentity, "outputPath">);
 
 interface VideoProjectControllerState {
-  readonly project: Readonly<VideoProjectFileV1>;
+  readonly projectPath: string | null;
+  readonly history: Readonly<ProjectHistory> | null;
+  readonly source: VideoSourceRecord | null;
   readonly sourcePath: string | null;
   readonly preparedAsset: PreparedVideoAsset | null;
   readonly preparation: PreparationState;
+  readonly projectOperation: ProjectOperationState;
 }
+
+const initialControllerState: VideoProjectControllerState = {
+  projectPath: null,
+  history: null,
+  source: null,
+  sourcePath: null,
+  preparedAsset: null,
+  preparation: { phase: "idle" },
+  projectOperation: { phase: "idle" },
+};
 
 function newId(): string {
   return globalThis.crypto.randomUUID();
 }
 
-function createEmptyProject(): Readonly<VideoProjectFileV1> {
+function projectNameFromPath(path: string): string {
+  const fileName = path.split(/[\\/]/).at(-1)?.trim() ?? "";
+  const name = fileName.replace(/\.svpvideo$/i, "").trim();
+  return (name.length === 0 ? "Untitled project" : name).slice(0, 512);
+}
+
+function createEmptyProject(name = "Untitled project"): Readonly<VideoProjectFileV1> {
   const createdAt = new Date().toISOString();
   return createProject({
     projectId: newId(),
     initialRevisionId: newId(),
-    name: "Untitled project",
+    name,
     createdAt,
   });
 }
@@ -106,14 +150,18 @@ function importSource(
   readonly project: Readonly<VideoProjectFileV1>;
   readonly request: PrepareVideoAssetRequest;
 } {
-  const currentState = currentRevision(currentProject).state;
-  const project = currentState.asset === null ? currentProject : createEmptyProject();
+  if (currentRevision(currentProject).state.asset !== null) {
+    throw new VideoDomainError(
+      "phase1_limit",
+      "Phase 1 projects can contain exactly one source video",
+    );
+  }
   const assetId = newId();
   const importedAt = new Date().toISOString();
-  const withAsset = executeCommand(project, {
+  const withAsset = executeCommand(currentProject, {
     type: "ImportAsset",
     commandId: newId(),
-    baseRevisionId: project.currentRevisionId,
+    baseRevisionId: currentProject.currentRevisionId,
     issuedAt: importedAt,
     asset: {
       id: assetId,
@@ -122,15 +170,11 @@ function importSource(
       probe,
     },
   });
-  const importedState = currentRevision(withAsset).state;
-  if (importedState.asset === null) {
-    throw new Error("The imported project state is incomplete");
-  }
   return {
     project: withAsset,
     request: {
       projectId: withAsset.id,
-      assetId: importedState.asset.id,
+      assetId,
       path,
       sequenceRate: probe.averageFrameRate,
     },
@@ -181,23 +225,24 @@ function createPreparedSequence(
   });
 }
 
-function requestMatchesState(
-  state: VideoProjectControllerState,
-  request: PrepareVideoAssetRequest,
-): boolean {
-  const projectState = currentRevision(state.project).state;
-  return (
-    state.project.id === request.projectId &&
-    state.sourcePath === request.path &&
-    projectState.asset?.id === request.assetId &&
-    projectState.asset.probe.averageFrameRate.numerator === request.sequenceRate.numerator &&
-    projectState.asset.probe.averageFrameRate.denominator === request.sequenceRate.denominator
-  );
+function preparationRequestForOpenedProject(
+  project: Readonly<VideoProjectFileV1>,
+  source: VideoSourceRecord,
+): PrepareVideoAssetRequest | null {
+  const asset = currentRevision(project).state.asset;
+  if (asset === null || source.status !== "resolved") {
+    return null;
+  }
+  return {
+    projectId: project.id,
+    assetId: asset.id,
+    path: source.resolvedPath,
+    sequenceRate: asset.probe.averageFrameRate,
+  };
 }
 
 function hasSingleClipRevision(project: Readonly<VideoProjectFileV1>): boolean {
-  const revision = currentRevision(project);
-  const { asset, sequence } = revision.state;
+  const { asset, sequence } = currentRevision(project).state;
   return (
     asset !== null &&
     sequence !== null &&
@@ -205,6 +250,34 @@ function hasSingleClipRevision(project: Readonly<VideoProjectFileV1>): boolean {
     sequence.videoTracks[0]?.clips.length === 1 &&
     sequence.videoTracks[0].clips[0]?.assetId === asset.id
   );
+}
+
+function trimDraftForProject(project: Readonly<VideoProjectFileV1>): TrimDraft | null {
+  const clip = currentRevision(project).state.sequence?.videoTracks[0]?.clips[0];
+  return clip === undefined
+    ? null
+    : { inFrame: clip.sourceIn.value, outFrame: clip.sourceOut.value };
+}
+
+function sourceDurationFrames(project: Readonly<VideoProjectFileV1>): number | null {
+  const asset = currentRevision(project).state.asset;
+  if (asset === null) {
+    return null;
+  }
+  return microsecondsToSourceFrames(asset.probe.durationMicroseconds, asset.probe.averageFrameRate)
+    .value;
+}
+
+function editBaseline(history: ProjectHistory): number {
+  const baseline = history.document.revisions.findIndex((revision) => {
+    const { asset, sequence } = revision.state;
+    return (
+      asset !== null &&
+      sequence?.videoTracks[0]?.clips.length === 1 &&
+      sequence.videoTracks[0].clips[0]?.assetId === asset.id
+    );
+  });
+  return baseline < 0 ? history.cursor : baseline;
 }
 
 function eventMatchesIdentity(event: VideoRenderNotification, identity: RenderIdentity): boolean {
@@ -216,22 +289,21 @@ function eventMatchesIdentity(event: VideoRenderNotification, identity: RenderId
 }
 
 function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error("The video export failed unexpectedly");
+  return error instanceof Error ? error : new Error("The desktop operation failed unexpectedly");
 }
 
-export function useVideoProject() {
-  const [state, setState] = useState<VideoProjectControllerState>(() => ({
-    project: createEmptyProject(),
-    sourcePath: null,
-    preparedAsset: null,
-    preparation: { phase: "idle" },
-  }));
+export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
+  const [state, setState] = useState<VideoProjectControllerState>(initialControllerState);
   const [render, setRender] = useState<RenderState>({ phase: "idle" });
   const [destinationPending, setDestinationPending] = useState(false);
   const [destinationError, setDestinationError] = useState<Error | null>(null);
+  const [trimDraft, setTrimDraft] = useState<TrimDraft | null>(null);
+  const [editOperation, setEditOperation] = useState<EditOperationState>({ phase: "idle" });
   const stateRef = useRef(state);
   const renderRef = useRef(render);
   const renderListenerRef = useRef<(() => void) | null>(null);
+  const projectOperationRef = useRef(0);
+  const editOperationRef = useRef(0);
   const renderOperationRef = useRef(0);
   const destinationOperationRef = useRef(0);
   const destinationPendingRef = useRef(false);
@@ -241,6 +313,13 @@ export function useVideoProject() {
     stateRef.current = nextState;
     setState(nextState);
   }, []);
+
+  const patchState = useCallback(
+    (patch: Partial<VideoProjectControllerState>) => {
+      replaceState({ ...stateRef.current, ...patch });
+    },
+    [replaceState],
+  );
 
   const replaceRender = useCallback((nextState: RenderState) => {
     renderRef.current = nextState;
@@ -263,17 +342,40 @@ export function useVideoProject() {
     replaceRender({ phase: "idle" });
   }, [disposeRenderListener, replaceRender]);
 
+  const cancelRenderForProjectSwitch = useCallback(() => {
+    const activeRender = renderRef.current;
+    if (activeRender.phase === "running") {
+      void backend.cancelVideoRender(activeRender.jobId).catch(() => undefined);
+    }
+    resetRender();
+  }, [backend, resetRender]);
+
+  const activateProject = useCallback(
+    (nextState: VideoProjectControllerState) => {
+      cancelRenderForProjectSwitch();
+      editOperationRef.current += 1;
+      setEditOperation({ phase: "idle" });
+      setTrimDraft(
+        nextState.history === null ? null : trimDraftForProject(nextState.history.document),
+      );
+      replaceState(nextState);
+    },
+    [cancelRenderForProjectSwitch, replaceState],
+  );
+
   useEffect(
     () => () => {
+      projectOperationRef.current += 1;
+      editOperationRef.current += 1;
       renderOperationRef.current += 1;
       destinationOperationRef.current += 1;
       disposeRenderListener();
       const activeRender = renderRef.current;
       if (activeRender.phase === "running") {
-        void cancelVideoRender(activeRender.jobId).catch(() => undefined);
+        void backend.cancelVideoRender(activeRender.jobId).catch(() => undefined);
       }
     },
-    [disposeRenderListener],
+    [backend, disposeRenderListener],
   );
 
   const handleRenderEvent = useCallback(
@@ -320,6 +422,7 @@ export function useVideoProject() {
 
       disposeRenderListener();
       if (event.type === "completed") {
+        overwritePlanRef.current = null;
         replaceRender({
           phase: "completed",
           jobId: event.jobId,
@@ -355,6 +458,7 @@ export function useVideoProject() {
           canOverwrite,
         });
       } else if (event.type === "cancelled") {
+        overwritePlanRef.current = null;
         replaceRender({
           phase: "cancelled",
           jobId: event.jobId,
@@ -381,7 +485,7 @@ export function useVideoProject() {
       });
 
       try {
-        const unlisten = await listenVideoRenderEvents((event) => {
+        const unlisten = await backend.listenVideoRenderEvents((event) => {
           handleRenderEvent(operation, plan, event);
         });
         if (operation !== renderOperationRef.current) {
@@ -390,10 +494,10 @@ export function useVideoProject() {
         }
         renderListenerRef.current = unlisten;
 
-        const started = await startVideoRender(plan, overwrite);
+        const started = await backend.startVideoRender(plan, overwrite);
         if (operation !== renderOperationRef.current) {
           unlisten();
-          void cancelVideoRender(started.jobId).catch(() => undefined);
+          void backend.cancelVideoRender(started.jobId).catch(() => undefined);
           return;
         }
         if (started.planId !== plan.planId || started.revisionId !== plan.revisionId) {
@@ -433,55 +537,349 @@ export function useVideoProject() {
         });
       }
     },
-    [disposeRenderListener, handleRenderEvent, replaceRender],
+    [backend, disposeRenderListener, handleRenderEvent, replaceRender],
   );
 
-  const prepareImportedSource = useCallback(
-    async (path: string, probe: MediaProbe): Promise<void> => {
-      const activeRender = renderRef.current;
-      if (activeRender.phase === "running") {
-        void cancelVideoRender(activeRender.jobId).catch(() => undefined);
-      }
-      resetRender();
-      const imported = importSource(stateRef.current.project, path, probe);
-      replaceState({
-        project: imported.project,
-        sourcePath: path,
-        preparedAsset: null,
-        preparation: { phase: "pending" },
-      });
+  const prepareOpenedSource = useCallback(
+    async (operation: number, request: PrepareVideoAssetRequest): Promise<void> => {
+      patchState({ preparation: { phase: "pending" }, preparedAsset: null });
       try {
-        const preparedAsset = await prepareVideoAsset(imported.request);
-        if (requestMatchesState(stateRef.current, imported.request)) {
-          const project = createPreparedSequence(stateRef.current.project, preparedAsset);
-          replaceState({
-            ...stateRef.current,
-            project,
-            preparedAsset,
-            preparation: { phase: "success", value: preparedAsset },
-          });
+        const preparedAsset = await backend.prepareVideoAsset(request);
+        if (operation !== projectOperationRef.current) {
+          return;
         }
+        const activeProject = stateRef.current.history?.document;
+        const source = stateRef.current.source;
+        if (
+          activeProject?.id !== request.projectId ||
+          source?.status !== "resolved" ||
+          source.assetId !== request.assetId ||
+          source.resolvedPath !== request.path
+        ) {
+          return;
+        }
+        patchState({
+          preparedAsset,
+          preparation: { phase: "success", value: preparedAsset },
+        });
       } catch (error) {
-        if (requestMatchesState(stateRef.current, imported.request)) {
-          replaceState({
-            ...stateRef.current,
+        if (operation === projectOperationRef.current) {
+          patchState({
             preparedAsset: null,
             preparation: { phase: "error", error: asError(error) },
           });
         }
       }
     },
-    [replaceState, resetRender],
+    [backend, patchState],
   );
 
-  const exportVideo = useCallback(async (): Promise<void> => {
+  const newProject = useCallback(async (): Promise<void> => {
+    const operation = ++projectOperationRef.current;
+    const previousState = stateRef.current;
+    patchState({ projectOperation: { phase: "pending", operation: "new" } });
+    try {
+      const path = await backend.pickNewVideoProjectPath("Untitled.svpvideo");
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      if (path === null) {
+        replaceState({ ...previousState, projectOperation: { phase: "idle" } });
+        return;
+      }
+      const project = createEmptyProject(projectNameFromPath(path));
+      await backend.saveVideoProject(path, project);
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      activateProject({
+        projectPath: path,
+        history: createHistory(project),
+        source: null,
+        sourcePath: null,
+        preparedAsset: null,
+        preparation: { phase: "idle" },
+        projectOperation: { phase: "idle" },
+      });
+    } catch (error) {
+      if (operation === projectOperationRef.current) {
+        replaceState({
+          ...previousState,
+          projectOperation: { phase: "error", operation: "new", error: asError(error) },
+        });
+      }
+    }
+  }, [activateProject, backend, patchState, replaceState]);
+
+  const openProject = useCallback(async (): Promise<void> => {
+    const operation = ++projectOperationRef.current;
+    const previousState = stateRef.current;
+    patchState({ projectOperation: { phase: "pending", operation: "open" } });
+    try {
+      const nativeResult = await backend.openVideoProject();
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      if (nativeResult === null) {
+        replaceState({ ...previousState, projectOperation: { phase: "idle" } });
+        return;
+      }
+      const opened = openedVideoProjectSchema.parse(nativeResult);
+      const source = opened.sources[0] ?? null;
+      const sourcePath = source?.status === "resolved" ? source.resolvedPath : null;
+      activateProject({
+        projectPath: opened.path,
+        history: createHistory(opened.document),
+        source,
+        sourcePath,
+        preparedAsset: null,
+        preparation: { phase: "idle" },
+        projectOperation: { phase: "idle" },
+      });
+      const request =
+        source === null ? null : preparationRequestForOpenedProject(opened.document, source);
+      if (request !== null) {
+        await prepareOpenedSource(operation, request);
+      }
+    } catch (error) {
+      if (operation === projectOperationRef.current) {
+        replaceState({
+          ...previousState,
+          projectOperation: { phase: "error", operation: "open", error: asError(error) },
+        });
+      }
+    }
+  }, [activateProject, backend, patchState, prepareOpenedSource, replaceState]);
+
+  const persistImportedSource = useCallback(
+    async (
+      operation: number,
+      previousState: VideoProjectControllerState,
+      path: string,
+      probe: MediaProbe,
+    ): Promise<void> => {
+      const projectPath = previousState.projectPath;
+      const project = previousState.history?.document;
+      if (projectPath === null || project === undefined) {
+        if (operation === projectOperationRef.current) {
+          replaceState({
+            ...previousState,
+            projectOperation: {
+              phase: "error",
+              operation: "import",
+              error: new Error("Create or open a project before choosing a source video"),
+            },
+          });
+        }
+        return;
+      }
+
+      try {
+        const imported = importSource(project, path, probe);
+        const preparedAsset = await backend.prepareVideoAsset(imported.request);
+        if (operation !== projectOperationRef.current) {
+          return;
+        }
+        const finalProject = createPreparedSequence(imported.project, preparedAsset);
+        await backend.saveVideoProject(projectPath, finalProject);
+        if (operation !== projectOperationRef.current) {
+          return;
+        }
+        activateProject({
+          projectPath,
+          history: createHistory(finalProject),
+          source: {
+            assetId: imported.request.assetId,
+            status: "resolved",
+            resolvedPath: path,
+          },
+          sourcePath: path,
+          preparedAsset,
+          preparation: { phase: "success", value: preparedAsset },
+          projectOperation: { phase: "idle" },
+        });
+      } catch (error) {
+        if (operation === projectOperationRef.current) {
+          replaceState({
+            ...previousState,
+            preparation: { phase: "error", error: asError(error) },
+            projectOperation: { phase: "error", operation: "import", error: asError(error) },
+          });
+        }
+      }
+    },
+    [activateProject, backend, replaceState],
+  );
+
+  const prepareImportedSource = useCallback(
+    async (path: string, probe: MediaProbe): Promise<void> => {
+      const operation = ++projectOperationRef.current;
+      const previousState = stateRef.current;
+      patchState({
+        projectOperation: { phase: "pending", operation: "import" },
+        preparation: { phase: "pending" },
+      });
+      await persistImportedSource(operation, previousState, path, probe);
+    },
+    [patchState, persistImportedSource],
+  );
+
+  const chooseSource = useCallback(async (): Promise<void> => {
+    const operation = ++projectOperationRef.current;
+    const previousState = stateRef.current;
+    patchState({ projectOperation: { phase: "pending", operation: "import" } });
+    try {
+      const path = await backend.pickVideoSource();
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      if (path === null) {
+        replaceState({ ...previousState, projectOperation: { phase: "idle" } });
+        return;
+      }
+      const probe = await backend.probeVideoSource(path);
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      patchState({ preparation: { phase: "pending" } });
+      await persistImportedSource(operation, previousState, path, probe);
+    } catch (error) {
+      if (operation === projectOperationRef.current) {
+        replaceState({
+          ...previousState,
+          projectOperation: { phase: "error", operation: "import", error: asError(error) },
+        });
+      }
+    }
+  }, [backend, patchState, persistImportedSource, replaceState]);
+
+  const retryPreparation = useCallback(async (): Promise<void> => {
+    const project = stateRef.current.history?.document;
+    const source = stateRef.current.source;
+    if (project === undefined || source === null) {
+      return;
+    }
+    const request = preparationRequestForOpenedProject(project, source);
+    if (request === null) {
+      return;
+    }
+    const operation = ++projectOperationRef.current;
+    await prepareOpenedSource(operation, request);
+  }, [prepareOpenedSource]);
+
+  const updateTrimDraft = useCallback((patch: Partial<TrimDraft>) => {
+    setTrimDraft((current) => (current === null ? null : { ...current, ...patch }));
+    setEditOperation({ phase: "idle" });
+  }, []);
+
+  const persistEdit = useCallback(
+    async (
+      operationName: "trim" | "undo" | "redo",
+      baseHistory: Readonly<ProjectHistory>,
+      candidate: Readonly<ProjectHistory>,
+    ): Promise<void> => {
+      const path = stateRef.current.projectPath;
+      if (path === null) {
+        return;
+      }
+      const operation = ++editOperationRef.current;
+      setEditOperation({ phase: "saving", operation: operationName });
+      try {
+        await backend.saveVideoProject(path, candidate.document);
+        if (
+          operation !== editOperationRef.current ||
+          stateRef.current.history !== baseHistory ||
+          stateRef.current.projectPath !== path
+        ) {
+          return;
+        }
+        cancelRenderForProjectSwitch();
+        replaceState({ ...stateRef.current, history: candidate });
+        setTrimDraft(trimDraftForProject(candidate.document));
+        setEditOperation({ phase: "idle" });
+      } catch (error) {
+        if (operation === editOperationRef.current) {
+          setEditOperation({
+            phase: "error",
+            operation: operationName,
+            error: asError(error),
+          });
+        }
+      }
+    },
+    [backend, cancelRenderForProjectSwitch, replaceState],
+  );
+
+  const applyTrim = useCallback(async (): Promise<void> => {
+    const history = stateRef.current.history;
+    const draft = trimDraft;
+    if (history === null || draft === null || editOperation.phase === "saving") {
+      return;
+    }
+    const revision = currentRevision(history.document);
+    const sequence = revision.state.sequence;
+    const track = sequence?.videoTracks[0];
+    const clip = track?.clips[0];
+    const duration = sourceDurationFrames(history.document);
     if (
+      sequence === null ||
+      sequence === undefined ||
+      track === undefined ||
+      clip === undefined ||
+      duration === null ||
+      !Number.isSafeInteger(draft.inFrame) ||
+      !Number.isSafeInteger(draft.outFrame) ||
+      draft.inFrame < 0 ||
+      draft.inFrame >= draft.outFrame ||
+      draft.outFrame > duration ||
+      (draft.inFrame === clip.sourceIn.value && draft.outFrame === clip.sourceOut.value)
+    ) {
+      return;
+    }
+    const candidate = commit(history, {
+      type: "TrimClip",
+      commandId: newId(),
+      baseRevisionId: history.document.currentRevisionId,
+      issuedAt: new Date().toISOString(),
+      sequenceId: sequence.id,
+      trackId: track.id,
+      clipId: clip.id,
+      sourceIn: createRationalTime(draft.inFrame, sequence.rate),
+      sourceOut: createRationalTime(draft.outFrame, sequence.rate),
+    });
+    await persistEdit("trim", history, candidate);
+  }, [editOperation.phase, persistEdit, trimDraft]);
+
+  const undoEdit = useCallback(async (): Promise<void> => {
+    const history = stateRef.current.history;
+    if (
+      history === null ||
+      editOperation.phase === "saving" ||
+      history.cursor <= editBaseline(history)
+    ) {
+      return;
+    }
+    await persistEdit("undo", history, undoHistory(history));
+  }, [editOperation.phase, persistEdit]);
+
+  const redoEdit = useCallback(async (): Promise<void> => {
+    const history = stateRef.current.history;
+    if (history === null || editOperation.phase === "saving" || !historyCanRedo(history)) {
+      return;
+    }
+    await persistEdit("redo", history, redoHistory(history));
+  }, [editOperation.phase, persistEdit]);
+
+  const exportVideo = useCallback(async (): Promise<void> => {
+    const project = stateRef.current.history?.document;
+    if (
+      project === undefined ||
       destinationPendingRef.current ||
       renderRef.current.phase === "starting" ||
       renderRef.current.phase === "running" ||
       stateRef.current.preparedAsset === null ||
       stateRef.current.sourcePath === null ||
-      !hasSingleClipRevision(stateRef.current.project)
+      !hasSingleClipRevision(project)
     ) {
       return;
     }
@@ -491,18 +889,22 @@ export function useVideoProject() {
     setDestinationPending(true);
     setDestinationError(null);
     try {
-      const outputPath = await pickVideoExportPath(exportDisplayName(stateRef.current.project));
+      const outputPath = await backend.pickVideoExportPath(exportDisplayName(project));
       if (destinationOperation !== destinationOperationRef.current || outputPath === null) {
         return;
       }
-      const revision = currentRevision(stateRef.current.project);
+      const activeProject = stateRef.current.history?.document;
       const sourcePath = stateRef.current.sourcePath;
-      if (sourcePath === null || !hasSingleClipRevision(stateRef.current.project)) {
+      if (
+        activeProject === undefined ||
+        sourcePath === null ||
+        !hasSingleClipRevision(activeProject)
+      ) {
         throw new Error("The project changed before export could start");
       }
       const plan = compileSingleClipRenderPlan({
         planId: newId(),
-        revision,
+        revision: currentRevision(activeProject),
         inputPath: sourcePath,
         outputPath,
       });
@@ -517,7 +919,7 @@ export function useVideoProject() {
         setDestinationPending(false);
       }
     }
-  }, [startRenderPlan]);
+  }, [backend, startRenderPlan]);
 
   const confirmOverwrite = useCallback(async (): Promise<void> => {
     const plan = overwritePlanRef.current;
@@ -538,7 +940,7 @@ export function useVideoProject() {
       cancellationError: null,
     });
     try {
-      await cancelVideoRender(activeRender.jobId);
+      await backend.cancelVideoRender(activeRender.jobId);
     } catch (error) {
       if (
         renderRef.current.phase === "running" &&
@@ -553,18 +955,55 @@ export function useVideoProject() {
         });
       }
     }
-  }, [replaceRender]);
+  }, [backend, replaceRender]);
 
+  const project = state.history?.document ?? null;
+  const committedTrim = project === null ? null : trimDraftForProject(project);
+  const sourceFrameCount = project === null ? null : sourceDurationFrames(project);
+  const trimValid =
+    trimDraft !== null &&
+    committedTrim !== null &&
+    sourceFrameCount !== null &&
+    Number.isSafeInteger(trimDraft.inFrame) &&
+    Number.isSafeInteger(trimDraft.outFrame) &&
+    trimDraft.inFrame >= 0 &&
+    trimDraft.inFrame < trimDraft.outFrame &&
+    trimDraft.outFrame <= sourceFrameCount;
+  const trimChanged =
+    trimValid &&
+    committedTrim !== null &&
+    (trimDraft.inFrame !== committedTrim.inFrame || trimDraft.outFrame !== committedTrim.outFrame);
   return {
-    project: state.project,
+    projectPath: state.projectPath,
+    history: state.history,
+    project,
+    source: state.source,
     sourcePath: state.sourcePath,
     preparedAsset: state.preparedAsset,
     preparation: state.preparation,
+    projectOperation: state.projectOperation,
     render,
     destinationPending,
     destinationError,
-    renderReady: state.preparedAsset !== null && hasSingleClipRevision(state.project),
+    trimDraft,
+    committedTrim,
+    sourceFrameCount,
+    trimValid,
+    trimChanged,
+    editOperation,
+    canUndo: state.history !== null && state.history.cursor > editBaseline(state.history),
+    canRedo: state.history !== null && historyCanRedo(state.history),
+    renderReady: project !== null && state.preparedAsset !== null && hasSingleClipRevision(project),
+    newProject,
+    openProject,
+    chooseSource,
     prepareImportedSource,
+    retryPreparation,
+    updateTrimDraft,
+    applyTrim,
+    undoEdit,
+    redoEdit,
+    convertCachePath: backend.convertFileSrc,
     exportVideo,
     confirmOverwrite,
     cancelRender,

@@ -3431,7 +3431,6 @@ fn process_tree_parent() {
     grandchild
         .args(helper_process_args())
         .env(PROCESS_HELPER_MODE_ENV, "process_tree_grandchild")
-        .env(PROCESS_HELPER_READY_MARKER_ENV, ready_marker)
         .env(PROCESS_HELPER_SURVIVOR_MARKER_ENV, survivor_marker)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
@@ -3439,6 +3438,8 @@ fn process_tree_parent() {
     let mut grandchild = grandchild
         .spawn()
         .expect("process-tree grandchild must spawn without a shell");
+    fs::write(ready_marker, b"ready")
+        .expect("process-tree ready marker must be writable after grandchild spawn");
 
     thread::sleep(Duration::from_secs(30));
     let _ = grandchild.kill();
@@ -3455,9 +3456,6 @@ fn process_tree_grandchild() {
         .flush()
         .expect("grandchild stderr must flush");
 
-    let ready_marker = env::var_os(PROCESS_HELPER_READY_MARKER_ENV)
-        .expect("process-tree ready marker must be configured");
-    fs::write(ready_marker, b"ready").expect("process-tree ready marker must be writable");
     thread::sleep(PROCESS_TREE_DESCENDANT_SURVIVAL_DELAY);
     let survivor_marker = env::var_os(PROCESS_HELPER_SURVIVOR_MARKER_ENV)
         .expect("process-tree survivor marker must be configured");
