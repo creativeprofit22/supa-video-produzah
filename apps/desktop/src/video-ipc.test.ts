@@ -15,6 +15,7 @@ import {
   pickVideoSource,
   prepareVideoAsset,
   probeVideoSource,
+  regrantVideoProjectSource,
   saveVideoProject,
   startVideoRender,
   tauriVideoBackend,
@@ -194,6 +195,36 @@ describe("video IPC adapter", () => {
     });
   });
 
+  it("validates exact source regrant arguments and resolved-or-cancelled responses", async () => {
+    const request = {
+      projectPath: openedProject.path,
+      assetId: "00000000-0000-4000-8000-000000000002",
+    } as const;
+    const resolved = {
+      assetId: request.assetId,
+      status: "resolved",
+      resolvedPath: prepareRequest.path,
+    } as const;
+    invokeMock.mockResolvedValueOnce(resolved).mockResolvedValueOnce(null);
+
+    await expect(regrantVideoProjectSource(request)).resolves.toEqual(resolved);
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "video_regrant_project_source", request);
+    await expect(regrantVideoProjectSource(request)).resolves.toBeNull();
+  });
+
+  it("rejects unresolved or malformed source regrant responses", async () => {
+    const request = {
+      projectPath: openedProject.path,
+      assetId: "00000000-0000-4000-8000-000000000002",
+    } as const;
+    invokeMock.mockResolvedValueOnce({
+      assetId: request.assetId,
+      status: "relink_required",
+      resolvedPath: null,
+    });
+
+    await expect(regrantVideoProjectSource(request)).rejects.toBeInstanceOf(VideoIpcResponseError);
+  });
   it("rejects malformed native project data without leaking its payload", async () => {
     invokeMock
       .mockResolvedValueOnce({
@@ -230,6 +261,7 @@ describe("video IPC adapter", () => {
       getVideoToolStatus,
       pickNewVideoProjectPath,
       openVideoProject,
+      regrantVideoProjectSource,
       saveVideoProject,
       pickVideoSource,
       probeVideoSource,

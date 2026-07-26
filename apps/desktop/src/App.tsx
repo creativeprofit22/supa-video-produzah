@@ -2,6 +2,7 @@ import { Film } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./App.css";
+import { useDraftDiscardGuard } from "./use-draft-discard-guard";
 import { useVideoProject } from "./use-video-project";
 import { getVideoToolStatus } from "./video-ipc";
 import { type ReadinessState, VideoProjectOpener } from "./video/VideoProjectOpener";
@@ -34,7 +35,11 @@ function App() {
   const projectPending = controller.projectOperation.phase === "pending";
   const projectError =
     controller.projectOperation.phase === "error" ? controller.projectOperation.error : null;
-
+  const { requestNewProject, requestOpenProject, discardDialog } = useDraftDiscardGuard({
+    trimChanged: controller.trimChanged,
+    onNewProject: controller.newProject,
+    onOpenProject: controller.openProject,
+  });
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -55,16 +60,19 @@ function App() {
           projectPending={projectPending}
           projectError={projectError}
           onCheckTools={() => void checkReadiness()}
-          onNewProject={() => void controller.newProject()}
-          onOpenProject={() => void controller.openProject()}
+          onNewProject={requestNewProject}
+          onOpenProject={requestOpenProject}
         />
       ) : (
         <VideoWorkspace
           controller={controller}
           project={controller.project}
           toolsReady={toolsReady}
+          onNewProject={requestNewProject}
+          onOpenProject={requestOpenProject}
         />
       )}
+      {discardDialog}
     </div>
   );
 }

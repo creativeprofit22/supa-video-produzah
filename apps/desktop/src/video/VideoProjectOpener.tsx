@@ -1,4 +1,4 @@
-import type { VideoToolStatus } from "@supa-video/contracts";
+import type { VideoToolInfo, VideoToolProblem, VideoToolStatus } from "@supa-video/contracts";
 import { AlertCircle, CheckCircle2, FilePlus2, FolderOpen, RefreshCw } from "lucide-react";
 
 export type ReadinessState =
@@ -15,6 +15,47 @@ interface VideoProjectOpenerProps {
   readonly onOpenProject: () => void;
 }
 
+type VideoToolName = "FFmpeg" | "FFprobe";
+
+const videoToolProblemLabels: Record<VideoToolProblem, (toolName: VideoToolName) => string> = {
+  not_found: (toolName) => `${toolName} was not found. Install ${toolName}, then check again.`,
+  timed_out: (toolName) => `${toolName} check timed out. Check again.`,
+  failed: (toolName) => `${toolName} could not run. Repair or reinstall it, then check again.`,
+  invalid_version: (toolName) =>
+    `${toolName} was not recognized. Replace it with a compatible ${toolName} binary, then check again.`,
+};
+
+export function getVideoToolProblemLabel(
+  toolName: VideoToolName,
+  problem: VideoToolProblem,
+): string {
+  return videoToolProblemLabels[problem](toolName);
+}
+
+function VideoToolResult({
+  name,
+  tool,
+}: {
+  readonly name: VideoToolName;
+  readonly tool: VideoToolInfo;
+}) {
+  let detail = "Unavailable. Check the installation, then check again.";
+  if (tool.available && tool.version !== undefined) {
+    detail = tool.version;
+  } else if (tool.problem !== undefined) {
+    detail = getVideoToolProblemLabel(name, tool.problem);
+  }
+
+  return (
+    <div>
+      <dt>{name}</dt>
+      <dd>
+        <span>{tool.available ? "Available" : "Unavailable"}</span>
+        <span className="tool-detail">{detail}</span>
+      </dd>
+    </div>
+  );
+}
 export function VideoProjectOpener({
   readiness,
   projectPending,
@@ -126,14 +167,8 @@ export function VideoProjectOpener({
               </div>
             </div>
             <dl className="tool-results">
-              <div>
-                <dt>FFmpeg</dt>
-                <dd>{readiness.value.ffmpeg.available ? "Available" : "Needs attention"}</dd>
-              </div>
-              <div>
-                <dt>FFprobe</dt>
-                <dd>{readiness.value.ffprobe.available ? "Available" : "Needs attention"}</dd>
-              </div>
+              <VideoToolResult name="FFmpeg" tool={readiness.value.ffmpeg} />
+              <VideoToolResult name="FFprobe" tool={readiness.value.ffprobe} />
             </dl>
             {!toolsReady ? (
               <button className="secondary-button" type="button" onClick={onCheckTools}>

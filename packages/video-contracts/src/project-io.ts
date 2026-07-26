@@ -22,14 +22,17 @@ export const absoluteNativePathSchema = nativePathSchema.refine(
 export const videoSourceStatusSchema = z.enum(["resolved", "missing", "relink_required"]);
 export type VideoSourceStatus = z.infer<typeof videoSourceStatusSchema>;
 
+export const resolvedVideoSourceRecordSchema = z
+  .object({
+    assetId: projectUuidSchema,
+    status: z.literal("resolved"),
+    resolvedPath: absoluteNativePathSchema,
+  })
+  .strict();
+export type ResolvedVideoSourceRecord = z.infer<typeof resolvedVideoSourceRecordSchema>;
+
 export const videoSourceRecordSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      assetId: projectUuidSchema,
-      status: z.literal("resolved"),
-      resolvedPath: absoluteNativePathSchema,
-    })
-    .strict(),
+  resolvedVideoSourceRecordSchema,
   z
     .object({
       assetId: projectUuidSchema,
@@ -95,3 +98,15 @@ export const openedVideoProjectSchema = z
     }
   });
 export type OpenedVideoProject = z.infer<typeof openedVideoProjectSchema>;
+
+export const regrantVideoProjectSourceRequestSchema = z
+  .object({
+    projectPath: absoluteNativePathSchema,
+    assetId: projectUuidSchema,
+  })
+  .strict();
+export type RegrantVideoProjectSourceRequest = z.infer<
+  typeof regrantVideoProjectSourceRequestSchema
+>;
+
+export const regrantVideoProjectSourceResultSchema = resolvedVideoSourceRecordSchema.nullable();

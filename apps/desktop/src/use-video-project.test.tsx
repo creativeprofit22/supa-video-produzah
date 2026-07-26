@@ -146,6 +146,11 @@ function makeBackend(): VideoBackend {
     })),
     pickNewVideoProjectPath: vi.fn(async () => projectPath),
     openVideoProject: vi.fn(async () => null),
+    regrantVideoProjectSource: vi.fn(async (request) => ({
+      assetId: request.assetId,
+      status: "resolved" as const,
+      resolvedPath: sourcePath,
+    })),
     saveVideoProject: vi.fn(async () => undefined),
     pickVideoSource: vi.fn(async () => sourcePath),
     probeVideoSource: vi.fn(async () => sourceProbe),
@@ -295,6 +300,62 @@ describe("useVideoProject persistence controller", () => {
     },
   );
 
+  it("regrants an opened external source without changing canonical history, then prepares it", async () => {
+    const document = buildClipProject();
+    vi.mocked(backend.openVideoProject).mockResolvedValueOnce(
+      openedProject(document, "relink_required"),
+    );
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(async () => result.current.openProject());
+    const canonicalHistory = result.current.history;
+
+    await act(async () => result.current.regrantSourceAccess());
+
+    expect(backend.regrantVideoProjectSource).toHaveBeenCalledWith({
+      projectPath,
+      assetId: currentRevision(document).state.asset?.id,
+    });
+    expect(result.current.history).toBe(canonicalHistory);
+    expect(result.current.source).toEqual({
+      assetId: currentRevision(document).state.asset?.id,
+      status: "resolved",
+      resolvedPath: sourcePath,
+    });
+    expect(result.current.sourcePath).toBe(sourcePath);
+    expect(result.current.preparation).toEqual({ phase: "success", value: preparedAsset });
+  });
+
+  it("keeps relink state and canonical history on source regrant cancellation or rejection", async () => {
+    const document = buildClipProject();
+    vi.mocked(backend.openVideoProject).mockResolvedValue(
+      openedProject(document, "relink_required"),
+    );
+    vi.mocked(backend.regrantVideoProjectSource)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(
+        new VideoDomainError("invalid_path", "The selected source did not match"),
+      );
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(async () => result.current.openProject());
+    const canonicalHistory = result.current.history;
+
+    await act(async () => result.current.regrantSourceAccess());
+    expect(result.current.history).toBe(canonicalHistory);
+    expect(result.current.source?.status).toBe("relink_required");
+    expect(result.current.projectOperation).toEqual({ phase: "idle" });
+    expect(backend.prepareVideoAsset).not.toHaveBeenCalled();
+
+    await act(async () => result.current.regrantSourceAccess());
+    expect(result.current.history).toBe(canonicalHistory);
+    expect(result.current.source?.status).toBe("relink_required");
+    expect(result.current.sourcePath).toBeNull();
+    expect(result.current.projectOperation).toMatchObject({
+      phase: "error",
+      operation: "regrant",
+    });
+    expect(backend.prepareVideoAsset).not.toHaveBeenCalled();
+  });
+
   it("preserves the exact active history when open data or import saving fails", async () => {
     const { result } = renderHook(() => useVideoProject(backend));
     await createActiveProject(result);
@@ -412,6 +473,7 @@ describe("useVideoProject persistence controller", () => {
 
     act(() => result.current.updateTrimDraft({ inFrame: 100, outFrame: 100 }));
     expect(result.current.trimValid).toBe(false);
+    expect(result.current.trimChanged).toBe(true);
     await act(async () => result.current.applyTrim());
     expect(backend.saveVideoProject).not.toHaveBeenCalled();
 

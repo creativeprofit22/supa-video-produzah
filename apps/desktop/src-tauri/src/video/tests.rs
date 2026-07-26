@@ -42,8 +42,8 @@ use super::{
     },
     project_io::{
         atomic_save_with, dialog_path, ensure_canonical_source_containment, open_project_from_path,
-        read_project_bounded, sanitize_default_name, save_project_to_path, VideoSourceStatus,
-        MAX_PROJECT_BYTES,
+        read_project_bounded, regrant_project_source_from_path, sanitize_default_name,
+        save_project_to_path, VideoSourceStatus, MAX_PROJECT_BYTES,
     },
     render::{
         create_owned_partial, ensure_preview_directory, parse_and_validate_render_plan,
@@ -319,6 +319,69 @@ fn absent_and_ungranted_fallback_media_report_safe_statuses() {
     let resolved = open_project_from_path("granted", &fallback_project, &grants)
         .expect("granted fallback project must open");
     assert_eq!(resolved.sources[0].status, VideoSourceStatus::Resolved);
+}
+
+#[test]
+fn source_regrant_accepts_only_the_current_assets_exact_absolute_fallback() {
+    let directory = tempdir().expect("temporary directory must be created");
+    let project_path = directory.path().join("external.svpvideo");
+    let expected_source = directory.path().join("expected.mp4");
+    let wrong_source = directory.path().join("wrong.mp4");
+    fs::write(&expected_source, b"expected video").expect("expected source must be written");
+    fs::write(&wrong_source, b"wrong video").expect("wrong source must be written");
+
+    let mut value = canonical_value();
+    value["revisions"][0]["state"]["asset"]["locator"] = serde_json::json!({
+        "absolutePath": expected_source.to_string_lossy()
+    });
+    write_project(&project_path, &value);
+    let document = parse_project_value(value).expect("regrant fixture must validate");
+    let asset_id = document.revisions[0]
+        .state
+        .asset
+        .as_ref()
+        .expect("fixture asset must exist")
+        .id
+        .clone();
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("main", GrantCategory::Project, &project_path)
+        .expect("opened project grant must exist");
+
+    let mismatch =
+        regrant_project_source_from_path("main", &project_path, &asset_id, &wrong_source, &grants)
+            .expect_err("a different selected source must be rejected");
+    assert_eq!(mismatch.code, VideoErrorCode::InvalidPath);
+    assert_eq!(mismatch.details["operation"], "regrant_project_source");
+    assert_eq!(mismatch.details["category"], "source_mismatch");
+    assert_eq!(
+        grants
+            .authorize("main", GrantCategory::Source, &wrong_source)
+            .expect_err("mismatched source must not receive a grant")
+            .code,
+        VideoErrorCode::PathNotGranted
+    );
+
+    let resolved = regrant_project_source_from_path(
+        "main",
+        &project_path,
+        &asset_id,
+        &expected_source,
+        &grants,
+    )
+    .expect("the exact source fallback must be regranted");
+    assert_eq!(resolved.asset_id, asset_id);
+    assert_eq!(resolved.status, VideoSourceStatus::Resolved);
+    assert_eq!(
+        resolved.resolved_path.as_deref(),
+        expected_source
+            .canonicalize()
+            .expect("expected source must canonicalize")
+            .to_str()
+    );
+    grants
+        .authorize("main", GrantCategory::Source, &expected_source)
+        .expect("the exact source must be granted");
 }
 
 #[test]

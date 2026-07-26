@@ -4,6 +4,8 @@ import {
   openedVideoProjectSchema,
   prepareVideoAssetRequestSchema,
   preparedVideoAssetSchema,
+  regrantVideoProjectSourceRequestSchema,
+  regrantVideoProjectSourceResultSchema,
   renderPlanV1Schema,
   VideoDomainError,
   videoErrorCodes,
@@ -17,7 +19,9 @@ import type {
   OpenedVideoProject,
   PreparedVideoAsset,
   PrepareVideoAssetRequest,
+  RegrantVideoProjectSourceRequest,
   RenderPlanV1,
+  ResolvedVideoSourceRecord,
   VideoErrorCode,
   VideoProjectFileV1,
   VideoRenderEvent,
@@ -100,6 +104,14 @@ export async function pickNewVideoProjectPath(defaultName: string): Promise<stri
 export async function openVideoProject(): Promise<OpenedVideoProject | null> {
   const response = await invokeVideoCommand("video_open_project");
   return parseResponse(openedVideoProjectSchema.nullable().safeParse(response));
+}
+
+export async function regrantVideoProjectSource(
+  request: RegrantVideoProjectSourceRequest,
+): Promise<ResolvedVideoSourceRecord | null> {
+  const args = regrantVideoProjectSourceRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_regrant_project_source", args);
+  return parseResponse(regrantVideoProjectSourceResultSchema.safeParse(response));
 }
 
 export async function saveVideoProject(
@@ -189,6 +201,7 @@ export interface VideoBackend {
   readonly getVideoToolStatus: typeof getVideoToolStatus;
   readonly pickNewVideoProjectPath: typeof pickNewVideoProjectPath;
   readonly openVideoProject: typeof openVideoProject;
+  readonly regrantVideoProjectSource: typeof regrantVideoProjectSource;
   readonly saveVideoProject: typeof saveVideoProject;
   readonly pickVideoSource: typeof pickVideoSource;
   readonly probeVideoSource: typeof probeVideoSource;
@@ -204,6 +217,7 @@ export const tauriVideoBackend: VideoBackend = {
   getVideoToolStatus,
   pickNewVideoProjectPath,
   openVideoProject,
+  regrantVideoProjectSource,
   saveVideoProject,
   pickVideoSource,
   probeVideoSource,

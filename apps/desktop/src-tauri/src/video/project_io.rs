@@ -51,6 +51,12 @@ struct SourceResolution {
     relative_source_grant: Option<PathBuf>,
 }
 
+#[derive(Debug)]
+struct SourceRegrantTarget {
+    asset_id: ProjectUuid,
+    expected_source_path: PathBuf,
+}
+
 pub(crate) fn open_project_from_path(
     owner_label: &str,
     selected_path: &Path,
@@ -256,6 +262,103 @@ fn resolve_absolute_fallback(
     }
 }
 
+fn source_regrant_target(
+    owner_label: &str,
+    requested_project_path: &Path,
+    requested_asset_id: &ProjectUuid,
+    grants: &VideoPathGrants,
+) -> Result<SourceRegrantTarget, VideoCommandError> {
+    let project_path =
+        grants.authorize(owner_label, GrantCategory::Project, requested_project_path)?;
+    require_extension(
+        &project_path,
+        "svpvideo",
+        "regrant_project_source",
+        "project",
+    )?;
+    let document = parse_project_json(&read_project_bounded(&project_path)?)?;
+    let current_revision = document
+        .revisions
+        .iter()
+        .find(|revision| revision.id == document.current_revision_id)
+        .ok_or_else(|| VideoCommandError::invalid_project(["current revision is missing"]))?;
+    let asset = current_revision
+        .state
+        .asset
+        .as_ref()
+        .filter(|asset| &asset.id == requested_asset_id)
+        .ok_or_else(|| VideoCommandError::invalid_path("regrant_project_source", "asset"))?;
+    let absolute_path = asset
+        .locator
+        .absolute_path
+        .as_deref()
+        .filter(|path| is_recognizable_absolute_path(path))
+        .ok_or_else(|| {
+            VideoCommandError::invalid_path("regrant_project_source", "absolute_locator")
+        })?;
+    let expected_source_path = normalize_existing_file(
+        Path::new(absolute_path),
+        "regrant_project_source",
+        GrantCategory::Source,
+    )?;
+    if !has_source_extension(&expected_source_path) {
+        return Err(VideoCommandError::invalid_path(
+            "regrant_project_source",
+            "source",
+        ));
+    }
+    Ok(SourceRegrantTarget {
+        asset_id: asset.id.clone(),
+        expected_source_path,
+    })
+}
+
+fn grant_regrant_selection(
+    owner_label: &str,
+    target: SourceRegrantTarget,
+    selected_source_path: &Path,
+    grants: &VideoPathGrants,
+) -> Result<VideoSourceRecord, VideoCommandError> {
+    let selected_source_path = normalize_existing_file(
+        selected_source_path,
+        "regrant_project_source",
+        GrantCategory::Source,
+    )?;
+    if selected_source_path != target.expected_source_path {
+        return Err(VideoCommandError::invalid_path(
+            "regrant_project_source",
+            "source_mismatch",
+        ));
+    }
+    let resolved_path =
+        grants.grant_existing_file(owner_label, GrantCategory::Source, &selected_source_path)?;
+    Ok(VideoSourceRecord {
+        asset_id: target.asset_id,
+        status: VideoSourceStatus::Resolved,
+        resolved_path: Some(path_to_string(
+            &resolved_path,
+            "regrant_project_source",
+            "source",
+        )?),
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn regrant_project_source_from_path(
+    owner_label: &str,
+    requested_project_path: &Path,
+    requested_asset_id: &ProjectUuid,
+    selected_source_path: &Path,
+    grants: &VideoPathGrants,
+) -> Result<VideoSourceRecord, VideoCommandError> {
+    let target = source_regrant_target(
+        owner_label,
+        requested_project_path,
+        requested_asset_id,
+        grants,
+    )?;
+    grant_regrant_selection(owner_label, target, selected_source_path, grants)
+}
 pub(crate) fn require_extension(
     path: &Path,
     extension: &str,
@@ -347,6 +450,31 @@ pub async fn video_open_project<R: Runtime>(
         return Ok(None);
     };
     open_project_from_path(window.label(), &path, &grants).map(Some)
+}
+
+#[tauri::command]
+pub async fn video_regrant_project_source<R: Runtime>(
+    window: WebviewWindow<R>,
+    grants: State<'_, VideoPathGrants>,
+    project_path: String,
+    asset_id: ProjectUuid,
+) -> Result<Option<VideoSourceRecord>, VideoCommandError> {
+    let target =
+        source_regrant_target(window.label(), Path::new(&project_path), &asset_id, &grants)?;
+    let selection = window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Restore source access")
+        .add_filter(
+            "Video",
+            &["mp4", "mov", "mkv", "webm", "avi", "m4v", "mpeg", "mpg"],
+        )
+        .blocking_pick_file();
+    let Some(path) = dialog_path(selection, "regrant_project_source", "source")? else {
+        return Ok(None);
+    };
+    grant_regrant_selection(window.label(), target, &path, &grants).map(Some)
 }
 
 #[tauri::command]

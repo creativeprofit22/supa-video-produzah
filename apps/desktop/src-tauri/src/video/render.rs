@@ -267,7 +267,7 @@ impl VideoRenderJobs {
         self.inner.lock().map_or(0, |inner| inner.settled.len())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "tauri-ipc-test"))]
     pub(crate) fn cancellation_requested(&self, job_id: &str) -> bool {
         self.inner
             .lock()

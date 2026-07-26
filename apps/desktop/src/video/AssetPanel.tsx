@@ -12,6 +12,7 @@ interface AssetPanelProps {
   readonly toolsReady: boolean;
   readonly onChooseSource: () => void;
   readonly onRetryPreparation: () => void;
+  readonly onRegrantSourceAccess: () => void;
   readonly onReopenProject: () => void;
 }
 
@@ -23,6 +24,7 @@ export function AssetPanel({
   toolsReady,
   onChooseSource,
   onRetryPreparation,
+  onRegrantSourceAccess,
   onReopenProject,
 }: AssetPanelProps) {
   const pending = projectOperation.phase === "pending" || preparation.phase === "pending";
@@ -110,17 +112,34 @@ export function AssetPanel({
             </strong>
             <p>
               {source.status === "missing"
-                ? "Restore the file at its project-relative location, then open the project again."
-                : "Choose this project again after granting access to its original source."}
+                ? "Restore the file at its saved location, then open the project again."
+                : "Choose the original source file to restore access without changing the saved locator."}
             </p>
-            <button
-              className="secondary-button compact-button"
-              type="button"
-              onClick={onReopenProject}
-            >
-              <FolderOpen size={16} aria-hidden />
-              Open project again
-            </button>
+            {source.status === "missing" ? (
+              <button
+                className="secondary-button compact-button"
+                type="button"
+                disabled={pending}
+                onClick={onReopenProject}
+              >
+                <FolderOpen size={16} aria-hidden />
+                Open project again
+              </button>
+            ) : (
+              <button
+                className="secondary-button compact-button"
+                type="button"
+                disabled={pending}
+                onClick={onRegrantSourceAccess}
+              >
+                {pending ? (
+                  <span className="button-spinner" aria-hidden />
+                ) : (
+                  <FolderOpen size={16} aria-hidden />
+                )}
+                Restore source access
+              </button>
+            )}
           </div>
         </div>
       ) : null}

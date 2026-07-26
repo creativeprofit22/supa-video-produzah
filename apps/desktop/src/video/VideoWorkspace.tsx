@@ -15,6 +15,8 @@ interface VideoWorkspaceProps {
   readonly controller: ReturnType<typeof useVideoProject>;
   readonly project: Readonly<VideoProjectFileV1>;
   readonly toolsReady: boolean;
+  readonly onNewProject: () => void;
+  readonly onOpenProject: () => void;
 }
 
 function editableOwnsShortcut(target: EventTarget | null): boolean {
@@ -25,10 +27,17 @@ function editableOwnsShortcut(target: EventTarget | null): boolean {
   );
 }
 
-export function VideoWorkspace({ controller, project, toolsReady }: VideoWorkspaceProps) {
+export function VideoWorkspace({
+  controller,
+  project,
+  toolsReady,
+  onNewProject,
+  onOpenProject,
+}: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const revision = currentRevision(project);
   const asset = revision.state.asset;
+  const sourceHasAudio = asset !== null && asset.probe.audio !== null;
   const sequence = revision.state.sequence;
   const clip = sequence?.videoTracks[0]?.clips[0];
   const draft = controller.trimDraft;
@@ -85,13 +94,17 @@ export function VideoWorkspace({ controller, project, toolsReady }: VideoWorkspa
         <div className="project-actions">
           <span className="save-state" role="status">
             <Save size={15} aria-hidden />
-            {editPending || projectPending ? "Saving" : "Saved"}
+            {editPending || projectPending
+              ? "Saving"
+              : controller.trimChanged
+                ? "Unsaved trim"
+                : "Saved"}
           </span>
           <button
             className="secondary-button compact-button"
             type="button"
-            disabled={projectPending}
-            onClick={() => void controller.newProject()}
+            disabled={projectPending || editPending}
+            onClick={onNewProject}
           >
             <FilePlus2 size={16} aria-hidden />
             New
@@ -99,8 +112,8 @@ export function VideoWorkspace({ controller, project, toolsReady }: VideoWorkspa
           <button
             className="secondary-button compact-button"
             type="button"
-            disabled={projectPending}
-            onClick={() => void controller.openProject()}
+            disabled={projectPending || editPending}
+            onClick={onOpenProject}
           >
             <FolderOpen size={16} aria-hidden />
             Open
@@ -124,6 +137,7 @@ export function VideoWorkspace({ controller, project, toolsReady }: VideoWorkspa
             <ProgramMonitor
               proxyPath={controller.preparedAsset?.proxyPath ?? null}
               finalPreviewPath={finalPreviewPath}
+              hasAudio={sourceHasAudio}
               convertCachePath={controller.convertCachePath}
               rate={sequence.rate}
               trimIn={draft.inFrame}
@@ -172,7 +186,8 @@ export function VideoWorkspace({ controller, project, toolsReady }: VideoWorkspa
             toolsReady={toolsReady}
             onChooseSource={() => void controller.chooseSource()}
             onRetryPreparation={() => void controller.retryPreparation()}
-            onReopenProject={() => void controller.openProject()}
+            onRegrantSourceAccess={() => void controller.regrantSourceAccess()}
+            onReopenProject={onOpenProject}
           />
           {draft !== null ? (
             <TrimInspector

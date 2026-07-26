@@ -33,7 +33,7 @@ export type PreparationState =
   | { readonly phase: "error"; readonly error: Error }
   | { readonly phase: "success"; readonly value: PreparedVideoAsset };
 
-export type ProjectOperation = "new" | "open" | "import";
+export type ProjectOperation = "new" | "open" | "import" | "regrant";
 export type ProjectOperationState =
   | { readonly phase: "idle" }
   | { readonly phase: "pending"; readonly operation: ProjectOperation }
@@ -753,6 +753,68 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     }
   }, [backend, patchState, persistImportedSource, replaceState]);
 
+  const regrantSourceAccess = useCallback(async (): Promise<void> => {
+    const initialState = stateRef.current;
+    const initialProject = initialState.history?.document;
+    const initialSource = initialState.source;
+    if (
+      initialState.projectPath === null ||
+      initialProject === undefined ||
+      initialSource?.status !== "relink_required" ||
+      currentRevision(initialProject).state.asset?.id !== initialSource.assetId
+    ) {
+      return;
+    }
+
+    const operation = ++projectOperationRef.current;
+    patchState({ projectOperation: { phase: "pending", operation: "regrant" } });
+    try {
+      const resolvedSource = await backend.regrantVideoProjectSource({
+        projectPath: initialState.projectPath,
+        assetId: initialSource.assetId,
+      });
+      if (operation !== projectOperationRef.current) {
+        return;
+      }
+      if (resolvedSource === null) {
+        patchState({ projectOperation: { phase: "idle" } });
+        return;
+      }
+
+      const activeState = stateRef.current;
+      const activeProject = activeState.history?.document;
+      const activeSource = activeState.source;
+      if (
+        activeState.projectPath !== initialState.projectPath ||
+        activeProject === undefined ||
+        activeSource?.status !== "relink_required" ||
+        activeSource.assetId !== resolvedSource.assetId ||
+        currentRevision(activeProject).state.asset?.id !== resolvedSource.assetId
+      ) {
+        throw new Error("The active project source changed before access was restored");
+      }
+      const request = preparationRequestForOpenedProject(activeProject, resolvedSource);
+      if (request === null) {
+        throw new Error("The restored source could not be prepared");
+      }
+
+      patchState({
+        source: resolvedSource,
+        sourcePath: resolvedSource.resolvedPath,
+        preparedAsset: null,
+        preparation: { phase: "idle" },
+        projectOperation: { phase: "idle" },
+      });
+      await prepareOpenedSource(operation, request);
+    } catch (error) {
+      if (operation === projectOperationRef.current) {
+        patchState({
+          projectOperation: { phase: "error", operation: "regrant", error: asError(error) },
+        });
+      }
+    }
+  }, [backend, patchState, prepareOpenedSource]);
+
   const retryPreparation = useCallback(async (): Promise<void> => {
     const project = stateRef.current.history?.document;
     const source = stateRef.current.source;
@@ -970,7 +1032,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimDraft.inFrame < trimDraft.outFrame &&
     trimDraft.outFrame <= sourceFrameCount;
   const trimChanged =
-    trimValid &&
+    trimDraft !== null &&
     committedTrim !== null &&
     (trimDraft.inFrame !== committedTrim.inFrame || trimDraft.outFrame !== committedTrim.outFrame);
   return {
@@ -998,6 +1060,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     openProject,
     chooseSource,
     prepareImportedSource,
+    regrantSourceAccess,
     retryPreparation,
     updateTrimDraft,
     applyTrim,

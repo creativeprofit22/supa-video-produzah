@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { openedVideoProjectSchema, videoSourceRecordSchema } from "./project-io.js";
+import {
+  openedVideoProjectSchema,
+  regrantVideoProjectSourceRequestSchema,
+  regrantVideoProjectSourceResultSchema,
+  videoSourceRecordSchema,
+} from "./project-io.js";
 import type { VideoProjectFileV1 } from "./project.js";
 
 const ids = {
@@ -160,5 +165,22 @@ describe("opened video project contracts", () => {
         document: makeDocument(false),
       }),
     ).toThrow("empty current revision");
+  });
+  it("validates strict source regrant requests and resolved-or-cancelled results", () => {
+    const request = {
+      projectPath: "C:\\Projects\\fixture.svpvideo",
+      assetId: ids.asset,
+    };
+    expect(regrantVideoProjectSourceRequestSchema.parse(request)).toEqual(request);
+    expect(() =>
+      regrantVideoProjectSourceRequestSchema.parse({ ...request, extra: true }),
+    ).toThrow();
+    expect(regrantVideoProjectSourceResultSchema.parse(makeOpened("resolved").sources[0])).toEqual(
+      makeOpened("resolved").sources[0],
+    );
+    expect(regrantVideoProjectSourceResultSchema.parse(null)).toBeNull();
+    expect(() =>
+      regrantVideoProjectSourceResultSchema.parse(makeOpened("relink_required").sources[0]),
+    ).toThrow();
   });
 });

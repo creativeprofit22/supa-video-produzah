@@ -87,7 +87,7 @@ fn generated_context_enforces_exact_runtime_security_policy() {
 }
 
 #[test]
-fn default_capability_is_local_main_window_event_access_only() {
+fn default_capability_is_local_main_window_close_guard_access_only() {
     let capability: Value = serde_json::from_str(include_str!("../capabilities/default.json"))
         .expect("default capability must be valid JSON");
 
@@ -96,7 +96,11 @@ fn default_capability_is_local_main_window_event_access_only() {
     assert_eq!(capability["windows"], json!(["main"]));
     assert_eq!(
         capability["permissions"],
-        json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        json!([
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "core:window:allow-destroy"
+        ])
     );
     assert!(capability.get("remote").is_none());
     assert_eq!(

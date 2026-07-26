@@ -14,8 +14,8 @@ pub use grants::{GrantCategory, VideoPathGrants};
 pub use probe::{video_ffmpeg_status, video_probe_media};
 pub use project_io::{
     video_open_project, video_pick_export_path, video_pick_new_project_path, video_pick_source,
-    video_save_project, OpenedVideoProject, VideoSourceRecord, VideoSourceStatus,
-    MAX_PROJECT_BYTES,
+    video_regrant_project_source, video_save_project, OpenedVideoProject, VideoSourceRecord,
+    VideoSourceStatus, MAX_PROJECT_BYTES,
 };
 pub use render::{video_cancel_render, video_start_render, VideoRenderJobs, VIDEO_RENDER_EVENT};
 pub use types::{

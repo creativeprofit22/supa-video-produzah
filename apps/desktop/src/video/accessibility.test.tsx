@@ -14,6 +14,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    destroy: vi.fn(async () => undefined),
+    onCloseRequested: vi.fn(async () => vi.fn()),
+  }),
+}));
 
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
@@ -84,6 +90,22 @@ describe("automated accessibility defect scanning", () => {
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Prepared proxy" });
+    await expectNoAxeViolations(container);
+  });
+
+  it("reports zero applicable violations in the unsaved-trim discard dialog", async () => {
+    configureReadyEditor();
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
+      target: { value: "5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    await screen.findByRole("dialog", { name: "Discard unsaved trim?" });
     await expectNoAxeViolations(container);
   });
 

@@ -21,6 +21,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::render::video_cancel_render,
             video::project_io::video_pick_new_project_path,
             video::project_io::video_open_project,
+            video::project_io::video_regrant_project_source,
             video::project_io::video_pick_export_path,
             video::project_io::video_save_project,
         ])
@@ -106,6 +107,7 @@ mod tests {
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::project_io::video_regrant_project_source,
                 video::project_io::video_save_project,
             ])
             .on_window_event(clean_up_video_state_on_destroyed)
@@ -202,6 +204,20 @@ mod tests {
         .expect_err("ungranted save input must return a typed command error");
         assert_eq!(ungranted_error["code"], "path_not_granted");
         assert_eq!(ungranted_error["details"]["operation"], "authorize_path");
+
+        let regrant_error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_regrant_project_source",
+                json!({
+                    "projectPath": ungranted_path,
+                    "assetId": "22222222-2222-4222-8222-222222222222"
+                }),
+            ),
+        )
+        .expect_err("registered regrant input must enforce the owner project grant");
+        assert_eq!(regrant_error["code"], "path_not_granted");
+        assert_eq!(regrant_error["details"]["operation"], "authorize_path");
     }
 
     #[test]
