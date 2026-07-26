@@ -12,6 +12,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
         .plugin(tauri_plugin_dialog::init())
         .manage(video::VideoPathGrants::default())
         .manage(video::VideoRenderJobs::default())
+        .manage(video::VideoProjectService::default())
         .invoke_handler(tauri::generate_handler![
             video::probe::video_ffmpeg_status,
             video::probe::video_probe_media,
@@ -20,10 +21,16 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::render::video_start_render,
             video::render::video_cancel_render,
             video::project_io::video_pick_new_project_path,
-            video::project_io::video_open_project,
+            video::project::ipc::video_create_project,
+            video::project::ipc::video_open_project,
+            video::project::ipc::video_execute_project_group,
+            video::project::ipc::video_undo_project,
+            video::project::ipc::video_redo_project,
+            video::project::ipc::video_project_inspector,
+            video::project::ipc::video_relink_project_asset,
+            video::project::ipc::video_close_project,
             video::project_io::video_regrant_project_source,
             video::project_io::video_pick_export_path,
-            video::project_io::video_save_project,
         ])
         .on_window_event(clean_up_video_state_on_destroyed)
 }
@@ -34,6 +41,9 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
 ))]
 fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if matches!(event, WindowEvent::Destroyed) {
+        let _ = window
+            .state::<video::VideoProjectService>()
+            .close_owner(window.label());
         let _ = window
             .state::<video::VideoRenderJobs>()
             .cancel_owner(window.label());
@@ -49,6 +59,7 @@ fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &Win
 ))]
 fn clean_up_video_state_on_exit<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
     if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+        let _ = app.state::<video::VideoProjectService>().close_all();
         let _ = app.state::<video::VideoRenderJobs>().cancel_all();
     }
 }
@@ -101,12 +112,20 @@ mod tests {
         mock_builder()
             .manage(video::VideoPathGrants::default())
             .manage(video::VideoRenderJobs::default())
+            .manage(video::VideoProjectService::default())
             .invoke_handler(tauri::generate_handler![
                 video::probe::video_ffmpeg_status,
                 video::probe::video_probe_media,
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::project::ipc::video_create_project,
+                video::project::ipc::video_execute_project_group,
+                video::project::ipc::video_undo_project,
+                video::project::ipc::video_redo_project,
+                video::project::ipc::video_project_inspector,
+                video::project::ipc::video_relink_project_asset,
+                video::project::ipc::video_close_project,
                 video::project_io::video_regrant_project_source,
                 video::project_io::video_save_project,
             ])
@@ -218,6 +237,91 @@ mod tests {
         .expect_err("registered regrant input must enforce the owner project grant");
         assert_eq!(regrant_error["code"], "path_not_granted");
         assert_eq!(regrant_error["details"]["operation"], "authorize_path");
+
+        let service_error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_execute_project_group",
+                json!({
+                    "request": {
+                        "groupId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "projectId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                        "baseRevision": 0,
+                        "commands": [{
+                            "type": "RemoveMarker",
+                            "commandId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                            "sequenceId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                            "markerId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+                        }]
+                    }
+                }),
+            ),
+        )
+        .expect_err("registered canonical engine must reject an unknown owner session");
+        assert_eq!(service_error["code"], "invalid_project");
+        assert_eq!(service_error["details"]["operation"], "project_service");
+    }
+
+    #[test]
+    fn project_ipc_worker_preserves_window_owner_isolation() {
+        let app = mock_video_app();
+        let owner_webview = WebviewWindowBuilder::new(&app, "project-owner-a", Default::default())
+            .build()
+            .expect("owner test webview must build");
+        let other_webview = WebviewWindowBuilder::new(&app, "project-owner-b", Default::default())
+            .build()
+            .expect("other owner test webview must build");
+        let workspace = tempfile::tempdir().expect("owner test workspace must exist");
+        let project_path = workspace.path().join("owner-isolation.svpvideo");
+        app.state::<video::VideoPathGrants>()
+            .grant_destination(
+                "project-owner-a",
+                video::GrantCategory::Project,
+                &project_path,
+            )
+            .expect("owner project destination must be granted");
+
+        let created = get_ipc_response(
+            &owner_webview,
+            invoke_request(
+                "video_create_project",
+                json!({
+                    "path": project_path.to_string_lossy(),
+                    "name": "Owner isolation"
+                }),
+            ),
+        )
+        .expect("owner must create its project")
+        .deserialize::<Value>()
+        .expect("created project response must be JSON");
+        let project_id = created["projectId"]
+            .as_str()
+            .expect("created project must have an ID");
+
+        let other_owner_error = get_ipc_response(
+            &other_webview,
+            invoke_request(
+                "video_project_inspector",
+                json!({ "projectId": project_id }),
+            ),
+        )
+        .expect_err("another window must not inspect the owner's project");
+        assert_eq!(other_owner_error["code"], "invalid_project");
+        assert_eq!(other_owner_error["details"]["category"], "unknown_session");
+
+        get_ipc_response(
+            &owner_webview,
+            invoke_request(
+                "video_project_inspector",
+                json!({ "projectId": project_id }),
+            ),
+        )
+        .expect("the owning window must inspect its project");
+        get_ipc_response(
+            &owner_webview,
+            invoke_request("video_close_project", json!({ "projectId": project_id })),
+        )
+        .expect("the owning window must close its project");
     }
 
     #[test]

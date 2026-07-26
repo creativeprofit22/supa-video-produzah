@@ -1,8 +1,8 @@
 # Supa Video Producer
 
-Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 1 is complete; Phase 2 is the next roadmap phase.
+Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 2 adds a Rust-owned canonical project engine with durable command history and exact crash recovery.
 
-## Phase 1 prerequisites
+## Prerequisites
 
 - Windows with Microsoft C++ Build Tools and the WebView2 Evergreen Runtime
 - Node.js 22.12 or newer
@@ -10,7 +10,7 @@ Supa Video Producer is a standalone, offline-first Tauri desktop application. Ph
 - Rust 1.87 or newer with the MSVC toolchain
 - `ffmpeg` and `ffprobe` available on `PATH`
 
-FFmpeg binaries are not bundled in Phase 1 and must be available on `PATH`.
+FFmpeg binaries are not bundled yet and must be available on `PATH`.
 
 ## Setup
 
@@ -34,20 +34,24 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-Phase 1 is complete at HEAD `1228855703f62c83739131f56088ee59896537b6`. The desktop provides strict new/open/save persistence, controlled proxy playback, a thumbnail timeline, exact frame trim controls, save-before-activation Apply/Undo/Redo, keyboard frame navigation, guarded unsaved drafts, missing/relink source recovery, native overwrite confirmation, cancellable verified export, and controlled final-preview playback.
+Phase 2 is implemented on top of baseline `a0a636995a453789b46640512aa9bccb4ed89c31`. Rust now owns V2 command execution, semantic inverses, monotonic revisions, idempotency, advisory project locks, append-and-sync NDJSON history, periodic atomic snapshots, V1 migration, replay, torn-tail repair, and recovery reports. React consumes validated projections and retains only ephemeral playback, draft, preparation, and render state.
 
-The current source has 159 unique passing TypeScript tests: 40 contracts, 5 project/history, 9 render compiler, and 105 desktop IPC/controller/component/integration/accessibility tests. The Rust crate passes 63 default tests and 69 `tauri-ipc-test` tests; all eight system-FFmpeg integrations pass.
+The production UI keeps the Phase 1 single-clip workflow while importing asset/sequence/clip as one command group, applying trim through the native service, using durable undo/redo, exporting from a V2 renderable revision, relinking through a native picker/probe transaction, and exposing a hidden in-flow Project Inspector with `Ctrl/Cmd+Alt+D`.
 
-Real Windows evidence at current HEAD proves native create/import/play, unsaved-draft guarding, `[5, 50)` Apply/Undo/Redo, verified export/reopen, exact 1.5-second ffprobe output, missing-source/relink/source-regrant recovery, and current controlled playback. Earlier unchanged evidence proves collision cancel/replace, long-render cancellation with zero surviving FFmpeg/partials/output, 480px/320px/200% reflow, and accessibility checks. Exact-SHA CI run [`30189534426`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30189534426) passed; see [`apps/desktop/evidence/phase-1/verification.md`](./apps/desktop/evidence/phase-1/verification.md), [`ROADMAP.md`](./ROADMAP.md), and [`apps/desktop/DESIGN.md`](./apps/desktop/DESIGN.md).
+Local gates pass 48 desktop tests, 44 contract tests, 7 project-helper tests, 10 render-compiler tests, 81 all-feature Rust tests, four explicit real-FFmpeg integrations, Clippy with warnings denied, and the Windows Tauri production build. Release measurements on this machine are 2.9 ms p95 durable command acknowledgment and 656 ms to scan a generated 10,000-record journal. See [`apps/desktop/evidence/phase-2/verification.md`](./apps/desktop/evidence/phase-2/verification.md).
 
-## Project format
+## Project format and portability
 
-Projects use the `.svpvideo` extension. A file is strict, versioned JSON containing one asset, one sequence, one video track, immutable revisions, rational frame times, and safe source locators. Proxy, thumbnail, decoder, and render-cache paths are never persisted.
+A project consists of the user-selected `.svpvideo` V2 snapshot **and its sibling `.svpvideo.data/` directory**. Move or back up both together.
+
+The sidecar contains the session lock, append-only `journal.ndjson`, and previous snapshot. Snapshot reads are capped at 16 MiB, journal reads at 64 MiB, records and command-group requests at 1 MiB, and command groups at 100 commands. Phase 2 retains the complete journal hash chain and does not compact it.
+
+V1 projects migrate on first native open. The selected V1 state and stable media/timeline IDs are preserved, while legacy undo branches reset at one explicit irreversible migration boundary. Proxy, thumbnail, decoder, GPU, file-handle, render-job, playhead, selection, and viewport data are never persisted.
 
 ## Security boundary
 
-The Phase 1 architecture keeps arbitrary filesystem access and shell execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, and output paths, and FFmpeg receives validated argument arrays without a shell. The asset protocol is active only for product-owned derived media beneath `$APPCACHE/video-phase1/**/*`; source files and final exports are excluded. Production uses an explicit local-only CSP, and the main-window capability grants only event listen/unlisten access.
+The architecture keeps arbitrary filesystem access, canonical project mutation, and shell execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, and output paths, and FFmpeg receives validated argument arrays without a shell. The asset protocol is active only for product-owned derived media beneath `$APPCACHE/video-phase1/**/*`; source files and final exports are excluded. Production uses an explicit local-only CSP, and the main-window capability grants only event listen/unlisten access.
 
-## Phase 1 target contract and limitations
+## Current UI contract and limitations
 
-The implemented Phase 1 workflow supports one local asset, one clip, one track, exact frame trims, controlled proxy playback, and one verified MP4 export. Multiple clips, captions, transitions, stock media, cloud services, agents, native compositing, and bundled FFmpeg distribution are outside Phase 1. Phase 2 is now unblocked and is the next roadmap phase.
+The V2 domain supports ordered assets, sequences, typed video/audio/caption tracks, clips, markers, fixed-point transforms/gain, and nested-sequence references. The production UI intentionally remains the proven one-local-clip workflow. Professional multitrack interaction, transitions, stock media, cloud services, agents, native compositing, journal compaction, and bundled FFmpeg distribution remain later phases.

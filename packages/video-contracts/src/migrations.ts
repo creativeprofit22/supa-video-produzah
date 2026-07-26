@@ -1,4 +1,5 @@
 import { VideoDomainError } from "./errors.js";
+import { videoProjectSnapshotV2Schema } from "./project-v2.js";
 import { type VideoProjectFile, videoProjectFileV1Schema } from "./project.js";
 
 export function parseVideoProjectFile(input: unknown): VideoProjectFile {
@@ -21,7 +22,7 @@ export function parseVideoProjectFile(input: unknown): VideoProjectFile {
       { schemaVersion },
     );
   }
-  if (schemaVersion !== 1) {
+  if (schemaVersion > 2) {
     throw new VideoDomainError(
       "unsupported_schema",
       `Project schema ${String(schemaVersion)} is not supported by this version`,
@@ -29,11 +30,14 @@ export function parseVideoProjectFile(input: unknown): VideoProjectFile {
     );
   }
 
-  const result = videoProjectFileV1Schema.safeParse(input);
+  const schema = schemaVersion === 1 ? videoProjectFileV1Schema : videoProjectSnapshotV2Schema;
+  const result = schema.safeParse(input);
   if (!result.success) {
-    throw new VideoDomainError("invalid_project", "Project file failed strict V1 validation", {
-      issues: result.error.issues,
-    });
+    throw new VideoDomainError(
+      "invalid_project",
+      `Project file failed strict V${String(schemaVersion)} validation`,
+      { issues: result.error.issues },
+    );
   }
   return result.data;
 }

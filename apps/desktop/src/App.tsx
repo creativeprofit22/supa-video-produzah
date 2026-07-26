@@ -50,7 +50,7 @@ function App() {
             </span>
             <span>Supa Video Producer</span>
           </a>
-          <span className="phase-label">Phase 1 · Single clip</span>
+          <span className="phase-label">Phase 2 · Canonical history</span>
         </div>
       </header>
 

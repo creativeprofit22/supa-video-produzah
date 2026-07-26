@@ -96,7 +96,7 @@ describe("project contracts", () => {
 
   it("fails malformed, unknown, and future documents actionably", () => {
     expect(() => parseVideoProjectFile({})).toThrowError(VideoDomainError);
-    expect(() => parseVideoProjectFile({ schemaVersion: 2 })).toThrow("schema 2");
+    expect(() => parseVideoProjectFile({ schemaVersion: 2 })).toThrow("strict V2");
     for (const schemaVersion of ["1", 1.5, 0, -1, null]) {
       try {
         parseVideoProjectFile({ schemaVersion });

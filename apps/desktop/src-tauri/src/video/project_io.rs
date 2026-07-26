@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
@@ -21,7 +21,7 @@ use super::{
 
 pub const MAX_PROJECT_BYTES: u64 = 2 * 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VideoSourceStatus {
     Resolved,
@@ -29,8 +29,8 @@ pub enum VideoSourceStatus {
     RelinkRequired,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VideoSourceRecord {
     pub asset_id: ProjectUuid,
     pub status: VideoSourceStatus,
@@ -108,6 +108,30 @@ pub(crate) fn read_project_bounded(path: &Path) -> Result<Vec<u8>, VideoCommandE
         ));
     }
     Ok(bytes)
+}
+
+pub(crate) fn resolve_project_asset_sources(
+    owner_label: &str,
+    project_path: &Path,
+    assets: &[super::types::VideoAsset],
+    grants: &VideoPathGrants,
+) -> Result<(Vec<VideoSourceRecord>, Vec<PathBuf>), VideoCommandError> {
+    let mut records = Vec::with_capacity(assets.len());
+    let mut relative_grants = Vec::new();
+    for asset in assets {
+        let resolution = resolve_source_locator(
+            owner_label,
+            project_path,
+            asset.id.clone(),
+            &asset.locator,
+            grants,
+        )?;
+        records.push(resolution.record);
+        if let Some(path) = resolution.relative_source_grant {
+            relative_grants.push(path);
+        }
+    }
+    Ok((records, relative_grants))
 }
 
 fn resolve_current_source(
@@ -434,7 +458,6 @@ pub async fn video_pick_source<R: Runtime>(
     path_to_string(&normalized, "pick_source", "source").map(Some)
 }
 
-#[tauri::command]
 pub async fn video_open_project<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,

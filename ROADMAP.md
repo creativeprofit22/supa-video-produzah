@@ -1,6 +1,6 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phase 1 is complete and Phase 2 is next
+- **Status:** Active implementation; Phases 1 and 2 are complete and Phase 3 is next
 - **Research baseline:** 24 July 2026
 - **Implementation audit:** 25 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
@@ -235,6 +235,23 @@ Use OTIO as an interchange and semantic reference, not the internal executable r
 
 **Depends on:** Phase 1
 
+## Implementation checkpoint - verified 26 July 2026
+
+Phase 2 is complete on baseline `a0a636995a453789b46640512aa9bccb4ed89c31`; Phase 3 is unblocked.
+
+- Rust owns strict V2 state transitions, semantic inverses, monotonic commit/undo/redo revisions, hashes, journal durability, snapshots, recovery, locks, migration, and owner sessions.
+- TypeScript owns strict V2 IPC contracts, authority-free command builders, projection selectors, and the unchanged pure render-plan compiler.
+- Acknowledgment follows journal append, flush, and `sync_all`; snapshots checkpoint every 25 operations and on clean close.
+- Recovery validates snapshot state hashes, journal generation/record chains, deterministic replay output, and repaired valid prefixes. Torn tails recover with a report; verified-record loss reports degraded status.
+- V1 migration preserves the selected state and stable entity IDs while recording one irreversible history-reset boundary.
+- The production single-clip UI uses grouped native import, trim, monotonic undo/redo, V2 export, native relink, a degraded-recovery alert, and a hidden responsive inspector.
+- Release measurements are 2.9 ms p95 durable acknowledgment and 656 ms for a generated 10,000-record journal scan, below the 100 ms and 2 second gates.
+- Local verification passes 48 desktop tests, 44 contract tests, 7 project-helper tests, 10 render tests, 81 all-feature Rust tests, real FFmpeg probe/prepare/render/cancel, Clippy `-D warnings`, and Windows Tauri production assembly.
+
+### Storage portability
+
+A portable project is the `.svpvideo` snapshot plus its sibling `.svpvideo.data/` directory. The sidecar journal is authoritative persistent data, not cache. Phase 2 deliberately keeps the complete hash chain; compaction requires a future anchored rotation protocol.
+
 ## Scope
 
 - Move authoritative project mutation behind a Rust-owned or process-isolated project service
@@ -295,7 +312,7 @@ Use OTIO as an interchange and semantic reference, not the internal executable r
 
 ## Hard completion gate
 
-Every supported command must be deterministic, schema-validated, revision-checked, undoable or explicitly irreversible, crash-recoverable, and produce the same project hash after replay from the same base snapshot.
+**Passed.** Every supported command is deterministic, schema-validated, revision-checked, undoable or explicitly irreversible, crash-recoverable, and produces the same project hash after replay from the same base snapshot.
 
 ## Proven References
 

@@ -147,6 +147,19 @@ impl VideoPathGrants {
         project_path: PathBuf,
         relative_source_path: Option<PathBuf>,
     ) -> Result<(), VideoCommandError> {
+        self.grant_opened_project_sources(
+            owner_label,
+            project_path,
+            relative_source_path.into_iter().collect(),
+        )
+    }
+
+    pub(crate) fn grant_opened_project_sources(
+        &self,
+        owner_label: &str,
+        project_path: PathBuf,
+        relative_source_paths: Vec<PathBuf>,
+    ) -> Result<(), VideoCommandError> {
         let mut owners = self
             .owners
             .lock()
@@ -158,7 +171,7 @@ impl VideoPathGrants {
                 "category_collision",
             ));
         }
-        if let Some(source_path) = &relative_source_path {
+        for source_path in &relative_source_paths {
             if source_path == &project_path
                 || grants.collides_with_other_category(GrantCategory::Source, source_path)
             {
@@ -169,9 +182,7 @@ impl VideoPathGrants {
             }
         }
         grants.projects.insert(project_path);
-        if let Some(source_path) = relative_source_path {
-            grants.sources.insert(source_path);
-        }
+        grants.sources.extend(relative_source_paths);
         Ok(())
     }
 

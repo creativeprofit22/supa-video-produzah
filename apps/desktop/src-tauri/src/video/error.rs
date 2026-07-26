@@ -6,6 +6,11 @@ use thiserror::Error;
 #[serde(rename_all = "snake_case")]
 pub enum VideoErrorCode {
     InvalidProject,
+    InvalidCommand,
+    StaleRevision,
+    DuplicateConflict,
+    ProjectInUse,
+    StorageLimit,
     UnsupportedSchema,
     Phase1Limit,
     InvalidPath,
@@ -36,6 +41,19 @@ impl VideoCommandError {
             message: message.into(),
             details,
         }
+    }
+
+    pub(crate) fn project_error(
+        code: VideoErrorCode,
+        message: impl Into<String>,
+        operation: &'static str,
+        category: &'static str,
+    ) -> Self {
+        Self::new(
+            code,
+            message,
+            json!({ "operation": operation, "category": category }),
+        )
     }
 
     pub(crate) fn invalid_project(issues: impl Serialize) -> Self {

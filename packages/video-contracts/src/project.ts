@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { VideoProjectSnapshotV2 } from "./project-v2.js";
 import {
   compareRationalTimes,
   rationalRateSchema,
@@ -225,4 +226,4 @@ export const videoProjectFileV1Schema = z
   });
 
 export type VideoProjectFileV1 = z.infer<typeof videoProjectFileV1Schema>;
-export type VideoProjectFile = VideoProjectFileV1;
+export type VideoProjectFile = VideoProjectFileV1 | VideoProjectSnapshotV2;

@@ -1,0 +1,709 @@
+{
+  "cases": [
+    { "name": "minimal-v2", "path": "valid-minimal.svpvideo", "expected": "valid" },
+    { "name": "relative-source", "path": "valid-relative-source.svpvideo", "expected": "valid" },
+    { "name": "mixed-rate-source", "path": "valid-mixed-rate.svpvideo", "expected": "valid" },
+    {
+      "name": "all-text-format-boundaries",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "valid",
+      "rehashState": true,
+      "mutations": [
+        { "pointer": "/name", "repeatString": { "value": "p", "count": 512 } },
+        {
+          "pointer": "/state/assets/0/displayName",
+          "repeatString": { "value": "a", "count": 512 }
+        },
+        {
+          "pointer": "/state/assets/0/probe/videoCodecName",
+          "repeatString": { "value": "v", "count": 512 }
+        },
+        { "pointer": "/state/sequences/0/name", "repeatString": { "value": "s", "count": 512 } },
+        {
+          "pointer": "/state/sequences/0/tracks/0/name",
+          "repeatString": { "value": "t", "count": 512 }
+        },
+        {
+          "pointer": "/state/sequences/0/markers/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+            "label": "marker"
+          }
+        },
+        {
+          "pointer": "/state/sequences/0/markers/0/label",
+          "repeatString": { "value": "m", "count": 512 }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "name": "captions",
+            "kind": "caption",
+            "captions": [
+              {
+                "id": "20000000-0000-4000-8000-000000000003",
+                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "text": "caption",
+                "language": "en"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/1/name",
+          "repeatString": { "value": "c", "count": 512 }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/1/captions/0/text",
+          "repeatString": { "value": "x", "count": 16384 }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/1/captions/0/language",
+          "repeatString": { "value": "a", "count": 64 }
+        }
+      ]
+    },
+    {
+      "name": "datetime-offset-without-seconds",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid",
+      "mutations": [
+        { "pointer": "/createdAt", "value": "2026-07-26T12:00+01:00" },
+        { "pointer": "/updatedAt", "value": "2026-07-26T12:00+01:00" },
+        { "pointer": "/revision/committedAt", "value": "2026-07-26T12:00+01:00" }
+      ]
+    },
+    {
+      "name": "revision-zero-with-valid-parent-id",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid",
+      "mutations": [
+        { "pointer": "/revision/parentId", "value": "20000000-0000-4000-8000-000000000010" }
+      ]
+    },
+    {
+      "name": "history-entry-boundaries",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        },
+        {
+          "pointer": "/history/undoStack/0/summary",
+          "repeatString": { "value": "h", "count": 512 }
+        },
+        {
+          "pointer": "/history/undoStack/0/forwardCommands",
+          "repeatArray": {
+            "count": 100,
+            "value": {
+              "type": "RemoveAsset",
+              "commandId": "20000000-0000-4000-8000-000000000021",
+              "assetId": "20000000-0000-4000-8000-000000000022"
+            }
+          }
+        },
+        {
+          "pointer": "/history/undoStack/0/inverseCommands",
+          "repeatArray": {
+            "count": 100,
+            "value": {
+              "type": "RemoveAsset",
+              "commandId": "20000000-0000-4000-8000-000000000023",
+              "assetId": "20000000-0000-4000-8000-000000000022"
+            }
+          }
+        },
+        {
+          "pointer": "/history/undoStack/0/affectedRanges",
+          "repeatArray": {
+            "count": 10000,
+            "value": {
+              "sequenceId": "20000000-0000-4000-8000-000000000024",
+              "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+              "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 }
+            }
+          }
+        },
+        {
+          "pointer": "/history/undoStack/0/cacheInvalidations",
+          "value": ["timeline", "preview", "audio_mix", "captions", "render_plan", "asset_source"]
+        }
+      ]
+    },
+    {
+      "name": "history-stack-boundary",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "repeatArray": {
+            "count": 10000,
+            "value": {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "project-name-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [{ "pointer": "/name", "repeatString": { "value": "p", "count": 513 } }]
+    },
+    {
+      "name": "sequence-name-600-character-regression",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        { "pointer": "/state/sequences/0/name", "repeatString": { "value": "s", "count": 600 } }
+      ]
+    },
+    {
+      "name": "track-name-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/0/name",
+          "repeatString": { "value": "t", "count": 513 }
+        }
+      ]
+    },
+    {
+      "name": "marker-label-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/markers/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+            "label": "marker"
+          }
+        },
+        {
+          "pointer": "/state/sequences/0/markers/0/label",
+          "repeatString": { "value": "m", "count": 513 }
+        }
+      ]
+    },
+    {
+      "name": "caption-text-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "name": "captions",
+            "kind": "caption",
+            "captions": [
+              {
+                "id": "20000000-0000-4000-8000-000000000003",
+                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "text": "caption",
+                "language": "en"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/1/captions/0/text",
+          "repeatString": { "value": "x", "count": 16385 }
+        }
+      ]
+    },
+    {
+      "name": "caption-language-too-short",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "name": "captions",
+            "kind": "caption",
+            "captions": [
+              {
+                "id": "20000000-0000-4000-8000-000000000003",
+                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "text": "caption",
+                "language": "a"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "caption-language-malformed",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "name": "captions",
+            "kind": "caption",
+            "captions": [
+              {
+                "id": "20000000-0000-4000-8000-000000000003",
+                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "text": "caption",
+                "language": "en_US"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "caption-language-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/-",
+          "value": {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "name": "captions",
+            "kind": "caption",
+            "captions": [
+              {
+                "id": "20000000-0000-4000-8000-000000000003",
+                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "text": "caption",
+                "language": "en"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/1/captions/0/language",
+          "repeatString": { "value": "a", "count": 65 }
+        }
+      ]
+    },
+    {
+      "name": "asset-display-name-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        { "pointer": "/state/assets/0/displayName", "repeatString": { "value": "a", "count": 513 } }
+      ]
+    },
+    {
+      "name": "video-codec-name-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/assets/0/probe/videoCodecName",
+          "repeatString": { "value": "v", "count": 513 }
+        }
+      ]
+    },
+    {
+      "name": "source-path-over-limit",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/assets/0/locator/relativePath",
+          "repeatString": { "value": "a", "count": 32769 }
+        }
+      ]
+    },
+    {
+      "name": "unreduced-clip-time-rate",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateNumerator", "value": 2 },
+        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateDenominator", "value": 2 },
+        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateNumerator", "value": 2 },
+        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateDenominator", "value": 2 }
+      ]
+    },
+    {
+      "name": "invalid-created-datetime-format",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [{ "pointer": "/createdAt", "value": "2026-07-26t12:00:00z" }]
+    },
+    {
+      "name": "invalid-committed-datetime-format",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [{ "pointer": "/revision/committedAt", "value": "2026-07-26 12:00:00Z" }]
+    },
+    {
+      "name": "updated-before-created",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        { "pointer": "/createdAt", "value": "2026-07-26T12:00:01Z" },
+        { "pointer": "/updatedAt", "value": "2026-07-26T12:00:00Z" }
+      ]
+    },
+    {
+      "name": "uppercase-revision-sha256",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        { "pointer": "/revision/stateHash", "repeatString": { "value": "A", "count": 64 } }
+      ]
+    },
+    {
+      "name": "uppercase-last-record-sha256",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [{ "pointer": "/lastRecordHash", "repeatString": { "value": "A", "count": 64 } }]
+    },
+    {
+      "name": "invalid-revision-parent-id",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [{ "pointer": "/revision/parentId", "value": "not-a-uuid" }]
+    },
+    {
+      "name": "history-summary-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        },
+        {
+          "pointer": "/history/undoStack/0/summary",
+          "repeatString": { "value": "h", "count": 513 }
+        }
+      ]
+    },
+    {
+      "name": "history-forward-command-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        },
+        {
+          "pointer": "/history/undoStack/0/forwardCommands",
+          "repeatArray": {
+            "count": 101,
+            "value": {
+              "type": "RemoveAsset",
+              "commandId": "20000000-0000-4000-8000-000000000021",
+              "assetId": "20000000-0000-4000-8000-000000000022"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-empty-inverse-command-group",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "history-affected-range-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        },
+        {
+          "pointer": "/history/undoStack/0/affectedRanges",
+          "repeatArray": {
+            "count": 10001,
+            "value": {
+              "sequenceId": "20000000-0000-4000-8000-000000000024",
+              "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+              "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-cache-invalidation-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": [
+                "timeline",
+                "timeline",
+                "timeline",
+                "timeline",
+                "timeline",
+                "timeline",
+                "timeline"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "history-stack-over-limit",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "repeatArray": {
+            "count": 10001,
+            "value": {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-command-unsafe-index",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack",
+          "value": [
+            {
+              "groupId": "20000000-0000-4000-8000-000000000020",
+              "summary": "history",
+              "forwardCommands": [
+                {
+                  "type": "AddMarker",
+                  "commandId": "20000000-0000-4000-8000-000000000021",
+                  "sequenceId": "20000000-0000-4000-8000-000000000024",
+                  "index": 9007199254740992,
+                  "marker": {
+                    "id": "20000000-0000-4000-8000-000000000025",
+                    "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                    "label": "marker"
+                  }
+                }
+              ],
+              "inverseCommands": [
+                {
+                  "type": "RemoveAsset",
+                  "commandId": "20000000-0000-4000-8000-000000000023",
+                  "assetId": "20000000-0000-4000-8000-000000000022"
+                }
+              ],
+              "affectedRanges": [],
+              "cacheInvalidations": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nested-sequence-cycle",
+      "path": "invalid-nested-cycle.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "unknown-field",
+      "path": "invalid-unknown-field.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "future-schema",
+      "path": "unsupported-future.svpvideo",
+      "expected": "unsupported_schema"
+    }
+  ]
+}

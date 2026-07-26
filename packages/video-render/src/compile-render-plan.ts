@@ -1,19 +1,28 @@
 import {
   type ProjectRevision,
+  type ProjectRevisionDescriptorV2,
   type RationalRate,
   type RationalTime,
   type RenderPlanV1,
+  type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
   microsecondsToSourceFrames,
+  projectRevisionDescriptorV2Schema,
   projectRevisionSchema,
   rationalTimeToMicroseconds,
   renderPlanV1Schema,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
+
+export interface RenderableRevisionV2 {
+  readonly revision: Readonly<ProjectRevisionDescriptorV2>;
+  readonly state: Readonly<VideoProjectStateV2>;
+}
 
 export interface CompileSingleClipRenderPlanInput {
   readonly planId: string;
-  readonly revision: Readonly<ProjectRevision>;
+  readonly revision: Readonly<ProjectRevision> | Readonly<RenderableRevisionV2>;
   readonly inputPath: string;
   readonly outputPath: string;
 }
@@ -62,8 +71,91 @@ function toBoundarySeconds(time: RationalTime): string {
   }
 }
 
+function adaptV2Revision(input: unknown): ProjectRevision | null {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("revision" in input) ||
+    !("state" in input)
+  ) {
+    return null;
+  }
+  const descriptor = projectRevisionDescriptorV2Schema.safeParse(
+    (input as { revision?: unknown }).revision,
+  );
+  const state = videoProjectStateV2Schema.safeParse((input as { state?: unknown }).state);
+  if (!descriptor.success || !state.success) {
+    invalidRenderPlan("Renderable V2 revision failed strict validation");
+  }
+  const sequence = state.data.sequences.find(
+    (candidate) => candidate.id === state.data.activeSequenceId,
+  );
+  const tracks = sequence?.tracks.filter((track) => track.kind === "video") ?? [];
+  const track = tracks[0];
+  const clip = track?.clips[0];
+  if (
+    sequence === undefined ||
+    tracks.length !== 1 ||
+    track === undefined ||
+    clip === undefined ||
+    track.clips.length !== 1
+  ) {
+    invalidRenderPlan("A V2 render requires one active sequence, video track, and clip");
+  }
+  if (clip.source.kind !== "asset") {
+    invalidRenderPlan("Nested sequences are not renderable by the single-clip compiler");
+  }
+  const assetId = clip.source.assetId;
+  const asset = state.data.assets.find((candidate) => candidate.id === assetId);
+  if (asset === undefined) invalidRenderPlan("The render clip asset is missing");
+  const transform = clip.transform;
+  if (
+    transform.positionXPermille !== 0 ||
+    transform.positionYPermille !== 0 ||
+    transform.scaleXPermille !== 1_000 ||
+    transform.scaleYPermille !== 1_000 ||
+    transform.rotationMilliDegrees !== 0 ||
+    transform.opacityPermille !== 1_000 ||
+    clip.gainMilliDecibels !== 0
+  ) {
+    invalidRenderPlan("The Phase 2 single-clip exporter requires default transform and gain");
+  }
+  return projectRevisionSchema.parse({
+    id: descriptor.data.id,
+    parentRevisionId: descriptor.data.parentId,
+    sequenceNumber: descriptor.data.number,
+    committedAt: descriptor.data.committedAt,
+    commandSummary: "Canonical render revision",
+    state: {
+      asset,
+      sequence: {
+        id: sequence.id,
+        rate: sequence.rate,
+        width: sequence.width,
+        height: sequence.height,
+        audioSampleRate: 48_000,
+        videoTracks: [
+          {
+            id: track.id,
+            clips: [
+              {
+                id: clip.id,
+                assetId,
+                timelineStart: clip.timelineStart,
+                sourceIn: clip.sourceIn,
+                sourceOut: clip.sourceOut,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+}
+
 function validateRevision(input: unknown): ProjectRevision {
-  const result = projectRevisionSchema.safeParse(input);
+  const adapted = adaptV2Revision(input);
+  const result = projectRevisionSchema.safeParse(adapted ?? input);
   if (!result.success) {
     invalidRenderPlan("Revision failed strict render validation", {
       issues: result.error.issues,

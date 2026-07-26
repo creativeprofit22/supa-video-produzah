@@ -5,6 +5,10 @@ dist-ssr/
 target/
 .gg/target-*/
 .gg/*.ps1
+.gg/*.cjs
+.gg/*.js
+.gg/*.png
+.gg/edge-profile/
 *.tsbuildinfo
 
 # Local state, logs, and environment
@@ -22,6 +26,10 @@ video-phase1/
 *.svp-part-*.mp4
 *.temp-render.mp4
 *.svpvideo.autosave
+*.svpvideo.data/
+journal.ndjson
+project.lock
+recovery-report.json
 
 # User media is never committed; retain the deterministic fixture only
 *.mp4
@@ -32,6 +40,7 @@ video-phase1/
 screenshots/
 !apps/desktop/evidence/
 !apps/desktop/evidence/**
+apps/desktop/evidence/phase-2/browser-runtime.png
 
 # IDE and OS
 .vscode/*

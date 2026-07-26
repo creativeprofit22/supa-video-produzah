@@ -1,0 +1,20 @@
+{
+  "cases": [
+    { "name": "minimal", "path": "../project-v1/valid-minimal.svpvideo", "expected": "migrated" },
+    {
+      "name": "imported-relative",
+      "path": "../project-v1/valid-padded-nonblank.svpvideo",
+      "expected": "migrated"
+    },
+    {
+      "name": "malformed",
+      "path": "../project-v1/invalid-state.svpvideo",
+      "expected": "invalid_project"
+    },
+    {
+      "name": "future",
+      "path": "../project-v1/unsupported-future.svpvideo",
+      "expected": "unsupported_schema"
+    }
+  ]
+}

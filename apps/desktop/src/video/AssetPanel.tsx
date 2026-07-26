@@ -12,8 +12,7 @@ interface AssetPanelProps {
   readonly toolsReady: boolean;
   readonly onChooseSource: () => void;
   readonly onRetryPreparation: () => void;
-  readonly onRegrantSourceAccess: () => void;
-  readonly onReopenProject: () => void;
+  readonly onRelinkSource: () => void;
 }
 
 export function AssetPanel({
@@ -24,8 +23,7 @@ export function AssetPanel({
   toolsReady,
   onChooseSource,
   onRetryPreparation,
-  onRegrantSourceAccess,
-  onReopenProject,
+  onRelinkSource,
 }: AssetPanelProps) {
   const pending = projectOperation.phase === "pending" || preparation.phase === "pending";
   const unresolved = source?.status === "missing" || source?.status === "relink_required";
@@ -112,34 +110,22 @@ export function AssetPanel({
             </strong>
             <p>
               {source.status === "missing"
-                ? "Restore the file at its saved location, then open the project again."
+                ? "Choose the source file at its new location to continue working."
                 : "Choose the original source file to restore access without changing the saved locator."}
             </p>
-            {source.status === "missing" ? (
-              <button
-                className="secondary-button compact-button"
-                type="button"
-                disabled={pending}
-                onClick={onReopenProject}
-              >
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              disabled={pending}
+              onClick={onRelinkSource}
+            >
+              {pending ? (
+                <span className="button-spinner" aria-hidden />
+              ) : (
                 <FolderOpen size={16} aria-hidden />
-                Open project again
-              </button>
-            ) : (
-              <button
-                className="secondary-button compact-button"
-                type="button"
-                disabled={pending}
-                onClick={onRegrantSourceAccess}
-              >
-                {pending ? (
-                  <span className="button-spinner" aria-hidden />
-                ) : (
-                  <FolderOpen size={16} aria-hidden />
-                )}
-                Restore source access
-              </button>
-            )}
+              )}
+              {source.status === "missing" ? "Choose replacement" : "Restore source access"}
+            </button>
           </div>
         </div>
       ) : null}

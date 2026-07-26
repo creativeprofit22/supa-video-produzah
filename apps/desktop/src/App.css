@@ -18,6 +18,7 @@
   --accent-hover: #e1fa84;
   --accent-ink: #171a0b;
   --danger: #ff9a8c;
+  --warning: #f2c66d;
   --success: #c4e56a;
   --focus: #e9ff9a;
   --gutter: clamp(16px, 3vw, 40px);
@@ -375,6 +376,81 @@ video {
 .workspace-alert {
   margin: 0;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.project-inspector {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.project-inspector-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.project-inspector-heading h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 620;
+}
+.project-inspector-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+.project-inspector-facts > div {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-deep);
+}
+.project-inspector-facts dt {
+  color: var(--quiet);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.project-inspector-facts dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.project-recovery-report {
+  display: grid;
+  gap: 12px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--border);
+}
+.project-recovery-report h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 620;
+}
+.project-recovery-message {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.project-recovery-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 
 .workbench-grid {
   display: grid;
@@ -695,6 +771,7 @@ video {
 }
 
 .neutral-status,
+.inline-warning,
 .inline-error {
   display: flex;
   align-items: flex-start;
@@ -704,12 +781,16 @@ video {
   color: var(--text);
   background: var(--surface-raised);
 }
+.inline-warning {
+  border-inline-start: 3px solid var(--warning);
+}
 .inline-error {
   border-inline-start: 3px solid var(--danger);
   background: #22201c;
 }
 .neutral-status > svg,
 .neutral-status > .spinner,
+.inline-warning > svg,
 .inline-error > svg {
   flex: 0 0 auto;
   margin-block-start: 1px;
@@ -717,14 +798,19 @@ video {
 .neutral-status > svg {
   color: var(--success);
 }
+.inline-warning > svg {
+  color: var(--warning);
+}
 .inline-error > svg {
   color: var(--danger);
 }
 .neutral-status strong,
+.inline-warning strong,
 .inline-error strong {
   font-size: 0.86rem;
 }
 .neutral-status p,
+.inline-warning p,
 .inline-error p {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
@@ -943,6 +1029,9 @@ video {
   .workbench-grid {
     grid-template-columns: 1fr;
   }
+  .project-inspector-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .monitor-column {
     order: 1;
   }
@@ -1004,6 +1093,15 @@ video {
   .segmented-control button {
     flex: 1;
   }
+  .project-inspector-heading {
+    flex-direction: column;
+  }
+  .project-inspector-heading .secondary-button {
+    width: 100%;
+  }
+  .project-inspector-facts {
+    grid-template-columns: 1fr;
+  }
   .timeline-ranges,
   .trim-fields,
   .output-report dl,
@@ -1051,7 +1149,11 @@ video {
   .opener-panel,
   .tool-panel,
   .panel,
+  .project-inspector,
+  .project-inspector-facts,
+  .project-recovery-report,
   .neutral-status,
+  .inline-warning,
   .inline-error,
   .monitor-buffering-status,
   .render-progress,

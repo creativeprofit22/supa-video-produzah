@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
+import { createMockVideoService } from "../test-video-service";
 import { ExportPanel } from "./ExportPanel";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -20,97 +21,57 @@ vi.mock("@tauri-apps/api/window", () => ({
     onCloseRequested: vi.fn(async () => vi.fn()),
   }),
 }));
-
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
-const ready = {
-  ffmpeg: { available: true, version: "ffmpeg version 7.1" },
-  ffprobe: { available: true, version: "ffprobe version 7.1" },
-  ready: true,
-} as const;
-const probe = {
-  durationMicroseconds: 4_000_000,
-  averageFrameRate: { numerator: 25, denominator: 1 },
-  realFrameRate: { numerator: 25, denominator: 1 },
-  variableFrameRate: false,
-  width: 720,
-  height: 576,
-  videoCodecName: "h264",
-  audio: { codecName: "aac", channels: 2, sampleRate: 48_000 },
-  fileSizeBytes: 12_000_000,
-} as const;
-
-async function expectNoAxeViolations(container: HTMLElement): Promise<void> {
+async function expectNoAxeViolations(container: HTMLElement) {
   const results = await axe.run(container, {
     runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag22aa"] },
   });
   expect(results.violations, results.violations.map(({ id }) => id).join(", ")).toEqual([]);
 }
-
-function configureReadyEditor(): void {
-  invokeMock.mockImplementation(async (command) => {
-    if (command === "video_ffmpeg_status") return ready;
-    if (command === "video_pick_new_project_path") return "C:\\Neutral\\project.svpvideo";
-    if (command === "video_save_project") return null;
-    if (command === "video_pick_source") return "C:\\Neutral\\clip.mp4";
-    if (command === "video_probe_media") return probe;
-    if (command === "video_prepare_asset") {
-      return {
-        proxyPath: "C:\\Neutral\\Cache\\proxy.mp4",
-        thumbnailPath: "C:\\Neutral\\Cache\\thumb.jpg",
-        proxyProbe: { ...probe, width: 540, height: 720, fileSizeBytes: 4_000_000 },
-      };
-    }
-    if (command === "video_open_project") return null;
-    throw new Error(`Unexpected command: ${command}`);
-  });
-}
-
 afterEach(cleanup);
 
-describe("automated accessibility defect scanning", () => {
+describe("Phase 2 accessibility defect scanning", () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    listenMock.mockReset();
-    listenMock.mockResolvedValue(vi.fn());
+    listenMock.mockReset().mockResolvedValue(vi.fn());
   });
 
-  it("reports zero applicable violations in the project opener", async () => {
-    invokeMock.mockResolvedValueOnce(ready);
+  it("reports zero violations in the opener", async () => {
+    invokeMock.mockImplementation(createMockVideoService().invoke);
     const { container } = render(<App />);
     await screen.findByRole("heading", { name: "Ready for video work" });
     await expectNoAxeViolations(container);
   });
 
-  it("reports zero applicable violations in the ready editor", async () => {
-    configureReadyEditor();
-    const { container } = render(<App />);
-    await screen.findByRole("heading", { name: "Ready for video work" });
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
-    await screen.findByRole("heading", { name: "Project media" });
-    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
-    await expectNoAxeViolations(container);
-  });
-
-  it("reports zero applicable violations in the unsaved-trim discard dialog", async () => {
-    configureReadyEditor();
+  it("reports zero violations in the ready editor and inspector", async () => {
+    invokeMock.mockImplementation(createMockVideoService().invoke);
     const { container } = render(<App />);
     await screen.findByRole("heading", { name: "Ready for video work" });
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Prepared proxy" });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
-      target: { value: "5" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
-    await screen.findByRole("dialog", { name: "Discard unsaved trim?" });
+    fireEvent.click(screen.getByRole("button", { name: "Toggle project inspector" }));
+    await screen.findByRole("heading", { name: "Project inspector" });
     await expectNoAxeViolations(container);
   });
 
-  it("reports zero applicable violations for a blocking project error", async () => {
-    invokeMock.mockResolvedValueOnce(ready).mockResolvedValueOnce({ privateDiagnostic: "private" });
+  it("reports zero violations for a pending snapshot checkpoint warning", async () => {
+    invokeMock.mockImplementation(
+      createMockVideoService({ checkpointWarningRevisions: [1] }).invoke,
+    );
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByText("Revision 1 is saved. Checkpoint pending.");
+    await expectNoAxeViolations(container);
+  });
+
+  it("reports zero violations for degraded recovery", async () => {
+    invokeMock.mockImplementation(createMockVideoService({ recoveryStatus: "degraded" }).invoke);
     const { container } = render(<App />);
     await screen.findByRole("heading", { name: "Ready for video work" });
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
@@ -118,8 +79,8 @@ describe("automated accessibility defect scanning", () => {
     await expectNoAxeViolations(container);
   });
 
-  it("reports zero applicable violations for running export and open overwrite dialog states", async () => {
-    const baseProps = {
+  it("reports zero violations for running export and overwrite dialog", async () => {
+    const base = {
       destinationPending: false,
       destinationError: null,
       disabled: false,
@@ -136,7 +97,7 @@ describe("automated accessibility defect scanning", () => {
     const { container, rerender } = render(
       <main>
         <ExportPanel
-          {...baseProps}
+          {...base}
           render={{
             phase: "running",
             ...identity,
@@ -148,11 +109,10 @@ describe("automated accessibility defect scanning", () => {
       </main>,
     );
     await expectNoAxeViolations(container);
-
     rerender(
       <main>
         <ExportPanel
-          {...baseProps}
+          {...base}
           render={{
             phase: "failed",
             ...identity,

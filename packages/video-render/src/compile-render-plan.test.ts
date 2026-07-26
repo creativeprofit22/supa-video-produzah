@@ -115,6 +115,71 @@ function malformedRevision(transform: (revision: ProjectRevision) => void): Proj
 }
 
 describe("compileSingleClipRenderPlan", () => {
+  it("adapts a V2 renderable revision without changing FFmpeg argv", () => {
+    const legacy = makeRevision();
+    const asset = legacy.state.asset!;
+    const sequence = legacy.state.sequence!;
+    const clip = sequence.videoTracks[0].clips[0]!;
+    const v2 = {
+      revision: {
+        number: 0,
+        id: legacy.id,
+        parentId: null,
+        committedAt: legacy.committedAt,
+        operationId: "00000000-0000-4000-8000-000000000007",
+        stateHash: "a".repeat(64),
+      },
+      state: {
+        assets: [asset],
+        sequences: [
+          {
+            id: sequence.id,
+            name: "Sequence 1",
+            rate: sequence.rate,
+            width: sequence.width,
+            height: sequence.height,
+            audioSampleRate: sequence.audioSampleRate,
+            markers: [],
+            tracks: [
+              {
+                id: sequence.videoTracks[0].id,
+                name: "Video 1",
+                kind: "video" as const,
+                clips: [
+                  {
+                    id: clip.id,
+                    source: { kind: "asset" as const, assetId: clip.assetId },
+                    timelineStart: clip.timelineStart,
+                    sourceIn: clip.sourceIn,
+                    sourceOut: clip.sourceOut,
+                    transform: {
+                      positionXPermille: 0,
+                      positionYPermille: 0,
+                      scaleXPermille: 1_000,
+                      scaleYPermille: 1_000,
+                      rotationMilliDegrees: 0,
+                      opacityPermille: 1_000,
+                    },
+                    gainMilliDecibels: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeSequenceId: sequence.id,
+      },
+    };
+    const v2Plan = compileSingleClipRenderPlan({
+      planId: ids.plan,
+      revision: v2,
+      inputPath,
+      outputPath,
+    });
+    expect(v2Plan.argv).toEqual(compile().argv);
+    expect(v2Plan.expected).toEqual(compile().expected);
+  });
+
   it("compiles exact deterministic AV argv and expected metadata", () => {
     const plan = compile();
 

@@ -1,29 +1,31 @@
 import {
   absoluteNativePathSchema,
+  commandGroupRequestSchema,
+  commandResultSchema,
   mediaProbeSchema,
-  openedVideoProjectSchema,
+  openedProjectV2Schema,
   prepareVideoAssetRequestSchema,
   preparedVideoAssetSchema,
-  regrantVideoProjectSourceRequestSchema,
-  regrantVideoProjectSourceResultSchema,
+  projectInspectorSchema,
+  projectProjectionSchema,
   renderPlanV1Schema,
   VideoDomainError,
   videoErrorCodes,
-  videoProjectFileV1Schema,
   videoRenderEventSchema,
   videoRenderStartedSchema,
   videoToolStatusSchema,
 } from "@supa-video/contracts";
 import type {
+  CommandGroupRequest,
+  CommandResult,
   MediaProbe,
-  OpenedVideoProject,
+  OpenedProjectV2,
+  ProjectInspector,
+  ProjectProjection,
   PreparedVideoAsset,
   PrepareVideoAssetRequest,
-  RegrantVideoProjectSourceRequest,
   RenderPlanV1,
-  ResolvedVideoSourceRecord,
   VideoErrorCode,
-  VideoProjectFileV1,
   VideoRenderEvent,
   VideoRenderStarted,
   VideoToolStatus,
@@ -101,30 +103,69 @@ export async function pickNewVideoProjectPath(defaultName: string): Promise<stri
   return parseResponse(selectedPathSchema.safeParse(response));
 }
 
-export async function openVideoProject(): Promise<OpenedVideoProject | null> {
-  const response = await invokeVideoCommand("video_open_project");
-  return parseResponse(openedVideoProjectSchema.nullable().safeParse(response));
-}
-
-export async function regrantVideoProjectSource(
-  request: RegrantVideoProjectSourceRequest,
-): Promise<ResolvedVideoSourceRecord | null> {
-  const args = regrantVideoProjectSourceRequestSchema.parse(request);
-  const response = await invokeVideoCommand("video_regrant_project_source", args);
-  return parseResponse(regrantVideoProjectSourceResultSchema.safeParse(response));
-}
-
-export async function saveVideoProject(
-  path: string,
-  document: Readonly<VideoProjectFileV1>,
-): Promise<void> {
-  const validatedPath = absoluteNativePathSchema.parse(path);
-  const validatedDocument = videoProjectFileV1Schema.parse(document);
-  const response = await invokeVideoCommand("video_save_project", {
-    path: validatedPath,
-    document: validatedDocument,
+export async function createVideoProject(path: string, name: string): Promise<ProjectProjection> {
+  const response = await invokeVideoCommand("video_create_project", {
+    path: absoluteNativePathSchema.parse(path),
+    name,
   });
+  return parseResponse(projectProjectionSchema.safeParse(response));
+}
+
+export async function openVideoProject(): Promise<OpenedProjectV2 | null> {
+  const response = await invokeVideoCommand("video_open_project");
+  return parseResponse(openedProjectV2Schema.nullable().safeParse(response));
+}
+
+export async function executeVideoProjectGroup(
+  request: CommandGroupRequest,
+): Promise<CommandResult> {
+  const validated = commandGroupRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_execute_project_group", { request: validated });
+  return parseResponse(commandResultSchema.safeParse(response));
+}
+
+async function invokeHistoryOperation(
+  command: "video_undo_project" | "video_redo_project",
+  projectId: string,
+  baseRevision: number,
+  operationId: string,
+): Promise<CommandResult> {
+  const response = await invokeVideoCommand(command, { projectId, baseRevision, operationId });
+  return parseResponse(commandResultSchema.safeParse(response));
+}
+
+export function undoVideoProject(
+  projectId: string,
+  baseRevision: number,
+  operationId: string,
+): Promise<CommandResult> {
+  return invokeHistoryOperation("video_undo_project", projectId, baseRevision, operationId);
+}
+
+export function redoVideoProject(
+  projectId: string,
+  baseRevision: number,
+  operationId: string,
+): Promise<CommandResult> {
+  return invokeHistoryOperation("video_redo_project", projectId, baseRevision, operationId);
+}
+
+export async function getVideoProjectInspector(projectId: string): Promise<ProjectInspector> {
+  const response = await invokeVideoCommand("video_project_inspector", { projectId });
+  return parseResponse(projectInspectorSchema.safeParse(response));
+}
+
+export async function closeVideoProject(projectId: string): Promise<void> {
+  const response = await invokeVideoCommand("video_close_project", { projectId });
   parseResponse(emptyCommandResponseSchema.safeParse(response));
+}
+
+export async function relinkVideoProjectAsset(
+  projectId: string,
+  assetId: string,
+): Promise<CommandResult | null> {
+  const response = await invokeVideoCommand("video_relink_project_asset", { projectId, assetId });
+  return parseResponse(commandResultSchema.nullable().safeParse(response));
 }
 
 export async function pickVideoExportPath(defaultName: string): Promise<string | null> {
@@ -200,9 +241,14 @@ export async function listenVideoRenderEvents(
 export interface VideoBackend {
   readonly getVideoToolStatus: typeof getVideoToolStatus;
   readonly pickNewVideoProjectPath: typeof pickNewVideoProjectPath;
+  readonly createVideoProject: typeof createVideoProject;
   readonly openVideoProject: typeof openVideoProject;
-  readonly regrantVideoProjectSource: typeof regrantVideoProjectSource;
-  readonly saveVideoProject: typeof saveVideoProject;
+  readonly executeVideoProjectGroup: typeof executeVideoProjectGroup;
+  readonly undoVideoProject: typeof undoVideoProject;
+  readonly redoVideoProject: typeof redoVideoProject;
+  readonly getVideoProjectInspector: typeof getVideoProjectInspector;
+  readonly closeVideoProject: typeof closeVideoProject;
+  readonly relinkVideoProjectAsset: typeof relinkVideoProjectAsset;
   readonly pickVideoSource: typeof pickVideoSource;
   readonly probeVideoSource: typeof probeVideoSource;
   readonly prepareVideoAsset: typeof prepareVideoAsset;
@@ -216,9 +262,14 @@ export interface VideoBackend {
 export const tauriVideoBackend: VideoBackend = {
   getVideoToolStatus,
   pickNewVideoProjectPath,
+  createVideoProject,
   openVideoProject,
-  regrantVideoProjectSource,
-  saveVideoProject,
+  executeVideoProjectGroup,
+  undoVideoProject,
+  redoVideoProject,
+  getVideoProjectInspector,
+  closeVideoProject,
+  relinkVideoProjectAsset,
   pickVideoSource,
   probeVideoSource,
   prepareVideoAsset,

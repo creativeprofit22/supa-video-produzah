@@ -1,13 +1,13 @@
 import type { VideoProjectFileV1 } from "@supa-video/contracts";
-import { currentRevision } from "@supa-video/project";
-import { AlertCircle, FilePlus2, FolderOpen, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type useVideoProject } from "../use-video-project";
 import { AssetPanel } from "./AssetPanel";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { ProgramMonitor } from "./ProgramMonitor";
+import { ProjectInspector } from "./ProjectInspector";
 import { SingleClipTimeline } from "./SingleClipTimeline";
 import { TrimInspector } from "./TrimInspector";
 
@@ -35,7 +35,9 @@ export function VideoWorkspace({
   onOpenProject,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
-  const revision = currentRevision(project);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const inspectorReturnFocus = useRef<HTMLElement | null>(null);
+  const revision = project.revisions[0]!;
   const asset = revision.state.asset;
   const sourceHasAudio = asset !== null && asset.probe.audio !== null;
   const sequence = revision.state.sequence;
@@ -54,23 +56,39 @@ export function VideoWorkspace({
     }
   }, [draft, playhead]);
 
-  useEffect(() => {
-    const handleHistoryShortcut = (event: KeyboardEvent) => {
-      if (
-        editableOwnsShortcut(event.target) ||
-        (!event.ctrlKey && !event.metaKey) ||
-        event.altKey
-      ) {
+  const handleWorkspaceShortcut = useCallback(
+    (
+      event: Pick<
+        KeyboardEvent,
+        "target" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "code" | "preventDefault"
+      >,
+    ) => {
+      if (editableOwnsShortcut(event.target) || (!event.ctrlKey && !event.metaKey)) return;
+      if (event.altKey && event.code === "KeyD") {
+        event.preventDefault();
+        inspectorReturnFocus.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setInspectorOpen((open) => !open);
         return;
       }
-      if (event.key.toLowerCase() !== "z") return;
+      if (event.altKey || event.code !== "KeyZ") return;
       event.preventDefault();
       if (event.shiftKey) void controller.redoEdit();
       else void controller.undoEdit();
-    };
-    window.addEventListener("keydown", handleHistoryShortcut);
-    return () => window.removeEventListener("keydown", handleHistoryShortcut);
-  }, [controller]);
+    },
+    [controller],
+  );
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => handleWorkspaceShortcut(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [handleWorkspaceShortcut]);
+
+  const closeInspector = useCallback(() => {
+    setInspectorOpen(false);
+    queueMicrotask(() => inspectorReturnFocus.current?.focus());
+  }, []);
 
   const sourceStatus = useMemo(() => {
     if (controller.source === null) return "No source";
@@ -80,7 +98,7 @@ export function VideoWorkspace({
   }, [controller.source]);
 
   return (
-    <main className="video-workspace shared-rail" id="workspace">
+    <main className="video-workspace shared-rail" id="workspace" tabIndex={-1}>
       <header className="project-bar">
         <div className="project-identity">
           <p className="state-kicker">Active project</p>
@@ -88,7 +106,7 @@ export function VideoWorkspace({
           <p className="project-status">
             <span>{sourceStatus}</span>
             <span aria-hidden>•</span>
-            <span>{revision.id.slice(0, 8)} revision</span>
+            <span>Revision {controller.projection?.revision.number ?? 0}</span>
           </p>
         </div>
         <div className="project-actions">
@@ -120,6 +138,67 @@ export function VideoWorkspace({
           </button>
         </div>
       </header>
+
+      <button
+        className="sr-only"
+        type="button"
+        aria-keyshortcuts="Control+Alt+D Meta+Alt+D"
+        onClick={(event) => {
+          inspectorReturnFocus.current = event.currentTarget;
+          setInspectorOpen((open) => !open);
+        }}
+      >
+        Toggle project inspector
+      </button>
+
+      {inspectorOpen && controller.projection !== null ? (
+        <ProjectInspector
+          projection={controller.projection}
+          recovery={controller.recovery}
+          onClose={closeInspector}
+        />
+      ) : null}
+
+      {controller.checkpointWarning !== null ? (
+        <div className="workspace-alert inline-warning" role="status">
+          <AlertTriangle size={18} aria-hidden />
+          <div>
+            <strong>
+              Revision {controller.checkpointWarning.revision} is saved. Checkpoint pending.
+            </strong>
+            <p>
+              Your edit is durable in the project journal, but snapshot checkpointing is pending. A
+              later healthy checkpoint or clean reopen will clear this warning.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {controller.recovery?.legacyHistoryReset ? (
+        <div className="workspace-alert inline-error" role="alert">
+          <AlertCircle size={18} aria-hidden />
+          <div>
+            <strong>Legacy undo history was permanently reset</strong>
+            <p>
+              This cannot be undone. Your current project content was migrated to the Phase 2
+              format.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {controller.projection?.recoveryStatus === "degraded" ? (
+        <div className="workspace-alert inline-error" role="alert">
+          <AlertCircle size={18} aria-hidden />
+          <div>
+            <strong>Project recovered with possible lost edits</strong>
+            <p>
+              Recovery stopped at revision {controller.projection.revision.number}, the last
+              verified journal record.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {controller.projectOperation.phase === "error" ? (
         <div className="workspace-alert inline-error" role="alert">
@@ -186,8 +265,7 @@ export function VideoWorkspace({
             toolsReady={toolsReady}
             onChooseSource={() => void controller.chooseSource()}
             onRetryPreparation={() => void controller.retryPreparation()}
-            onRegrantSourceAccess={() => void controller.regrantSourceAccess()}
-            onReopenProject={onOpenProject}
+            onRelinkSource={() => void controller.regrantSourceAccess()}
           />
           {draft !== null ? (
             <TrimInspector
