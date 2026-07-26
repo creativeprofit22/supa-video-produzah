@@ -10,7 +10,8 @@ The real release executable completed create, source selection, controlled prepa
 
 - Date: 25 July 2026
 - Baseline commit before the completion change: `595fa8fef0f577e5a78ecd8b69673224ff580549`
-- Final commit SHA and CI run: recorded below after push
+- Final completion commit: `4146ac0480b92fe0c9a0201d50b36d0384b640b6`
+- Exact-SHA CI: GitHub Actions run [`30186188065`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30186188065), Linux/TypeScript and Windows jobs all green
 - OS: Windows, MSVC/Tauri production executable
 - Node: `v22.20.0`
 - pnpm: `10.34.5`
@@ -155,4 +156,10 @@ The prior radial page glow was removed and the canvas remains flat. The expanded
 
 ## Final exact-SHA CI
 
-To be recorded after the completion commit is pushed. Phase 1 is complete only when the Linux and Windows jobs for that exact SHA are green.
+GitHub Actions run [`30186188065`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30186188065) completed successfully for exact SHA `4146ac0480b92fe0c9a0201d50b36d0384b640b6`. Green jobs:
+
+- TypeScript contracts and desktop bundle
+- Rust native project I/O on Linux
+- Windows MSVC supervisor and Tauri production build
+
+The exact-SHA CI requirement passes.
