@@ -38,6 +38,9 @@ importers:
       '@supa-video/contracts':
         specifier: workspace:*
         version: link:../../packages/video-contracts
+      '@supa-video/media':
+        specifier: workspace:*
+        version: link:../../packages/video-media
       '@supa-video/project':
         specifier: workspace:*
         version: link:../../packages/video-project
@@ -99,6 +102,25 @@ importers:
 
   packages/video-contracts:
     dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@22.20.1)(jsdom@29.1.1)(vite@8.1.5(@types/node@22.20.1))
+
+  packages/video-media:
+    dependencies:
+      '@supa-video/contracts':
+        specifier: workspace:*
+        version: link:../video-contracts
       zod:
         specifier: 4.4.3
         version: 4.4.3

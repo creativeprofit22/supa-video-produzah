@@ -8,19 +8,25 @@ use std::{
 };
 
 use fs4::TryLockError;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{Manager, Runtime, State, WebviewWindow};
 use tempfile::{Builder as TempFileBuilder, TempPath};
 
 use super::{
     error::{VideoCommandError, VideoErrorCode},
-    grants::{GrantCategory, VideoPathGrants},
-    probe::{probe_trusted_media_with_program, InspectedMedia},
+    grants::VideoPathGrants,
+    media_store::{acquire_artifact, ingest_source, ArtifactStoreKind},
+    probe::{
+        probe_thumbnail_artifact_with_program, probe_trusted_media_with_program, InspectedMedia,
+        ThumbnailArtifactProbe,
+    },
     process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
+    project::service::VideoProjectService,
     toolchain::MediaToolchainState,
     types::{
-        is_contract_uuid, MediaColorMetadata, MediaDisplayShape, MediaProbe, PreparedVideoAsset,
-        RationalRate, MAX_SAFE_INTEGER,
+        is_contract_uuid, MediaColorMetadata, MediaContentIdentityV1, MediaDisplayShape,
+        MediaProbe, PreparedVideoAsset, RationalRate, MAX_SAFE_INTEGER,
     },
 };
 
@@ -64,6 +70,7 @@ pub(crate) enum ArtifactValidationError {
     ProbeSizeMismatch,
     VideoCodec,
     Dimensions,
+    FrameCount,
     PixelFormat,
     ColorMetadata,
     FrameRate,
@@ -218,13 +225,50 @@ pub(crate) const PREVIEW_PROFILE: DerivedProfile = DerivedProfile {
     thumbnail_quality: 2,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DerivedArtifactKind {
+    Proxy,
+    ThumbnailTile,
+}
+
+impl DerivedArtifactKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Proxy => "proxy",
+            Self::ThumbnailTile => "thumbnail_tile",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProfileIdentityV1 {
+    pub schema_version: u64,
+    pub profile_id: String,
+    pub profile_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DerivedMediaIdentityV1 {
+    pub schema_version: u64,
+    pub artifact_kind: DerivedArtifactKind,
+    pub key: String,
+    pub source_identity: MediaContentIdentityV1,
+    pub toolchain_id: String,
+    pub profile_identity: MediaProfileIdentityV1,
+    pub recipe_digest: String,
+}
+
 #[derive(Debug)]
 pub(crate) struct PrepareAssetCoreRequest<'a> {
     pub(crate) owner_label: &'a str,
     pub(crate) project_id: &'a str,
     pub(crate) asset_id: &'a str,
     pub(crate) source_path: &'a Path,
-    pub(crate) sequence_rate: RationalRate,
+    pub(crate) sequence_rate: Option<RationalRate>,
+    pub(crate) expected_content_identity: Option<MediaContentIdentityV1>,
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +297,14 @@ impl MediaPrograms {
     pub(crate) fn explicit(ffmpeg: OsString, ffprobe: OsString) -> Self {
         Self {
             source: MediaProgramSource::Explicit { ffmpeg, ffprobe },
+        }
+    }
+
+    pub(crate) fn toolchain_id(&self) -> &str {
+        match &self.source {
+            MediaProgramSource::Bundled(toolchain) => toolchain.toolchain_id(),
+            #[cfg(test)]
+            MediaProgramSource::Explicit { .. } => "test-explicit-programs",
         }
     }
 
@@ -296,15 +348,23 @@ struct ProxyValidationExpectation<'a> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn video_prepare_asset<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
+    projects: State<'_, VideoProjectService>,
     toolchain: State<'_, MediaToolchainState>,
     project_id: String,
     asset_id: String,
     path: String,
-    sequence_rate: RationalRate,
+    sequence_rate: Option<RationalRate>,
 ) -> Result<PreparedVideoAsset, VideoCommandError> {
+    validated_uuid_segment(&project_id)
+        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "project_id"))?;
+    validated_uuid_segment(&asset_id)
+        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "asset_id"))?;
+    let expected_content_identity =
+        projects.asset_content_identity(window.label(), &project_id, &asset_id)?;
     let cache_root = window
         .app_handle()
         .path()
@@ -318,6 +378,7 @@ pub async fn video_prepare_asset<R: Runtime>(
             asset_id: &asset_id,
             source_path: Path::new(&path),
             sequence_rate,
+            expected_content_identity,
         },
         &grants,
         &cache_root,
@@ -332,25 +393,43 @@ pub(crate) async fn prepare_asset_core(
     cache_root: &Path,
     programs: MediaPrograms,
 ) -> Result<PreparedVideoAsset, VideoCommandError> {
-    let input =
-        ValidatedDerivedInput::new(request.project_id, request.asset_id, request.sequence_rate)
-            .map_err(map_model_error)?;
-    let source = grants.authorize(
-        request.owner_label,
-        GrantCategory::Source,
-        request.source_path,
-    )?;
-    let source_metadata = fs::metadata(&source)
-        .map_err(|_| VideoCommandError::invalid_media("prepare_asset", "source_metadata"))?;
+    validated_uuid_segment(request.project_id)
+        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "project_id"))?;
+    validated_uuid_segment(request.asset_id)
+        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "asset_id"))?;
+    let requested_rate = request
+        .sequence_rate
+        .map(|rate| validated_sequence_rate(rate).ok_or(DerivedModelError::SequenceRate))
+        .transpose()
+        .map_err(map_model_error)?;
+
+    let ingested =
+        ingest_source(request.owner_label, grants, request.source_path, cache_root).await?;
     let cancellation = ProcessCancellation::new();
     let source_probe_operation = "prepare_source_probe";
     let source_inspected = probe_trusted_media_with_program(
-        &source,
+        &ingested.object_path,
         programs.verified_ffprobe(source_probe_operation).await?,
         cancellation.clone(),
         source_probe_operation,
     )
     .await?;
+    if request
+        .expected_content_identity
+        .as_ref()
+        .is_some_and(|expected| expected != &ingested.identity)
+    {
+        return Err(VideoCommandError::invalid_media(
+            "prepare_asset",
+            "source_identity_mismatch",
+        ));
+    }
+
+    let sequence_rate =
+        requested_rate.unwrap_or_else(|| source_inspected.probe.average_frame_rate.clone());
+    let input =
+        ValidatedDerivedInput::new(request.project_id, request.asset_id, sequence_rate.clone())
+            .map_err(map_model_error)?;
     let dimensions = fit_proxy_dimensions_for_display(
         source_inspected.probe.width,
         source_inspected.probe.height,
@@ -361,41 +440,9 @@ pub(crate) async fn prepare_asset_core(
     let source_video_stream_index = source_inspected.video_stream_index;
     let source_audio_stream_index = source_inspected.audio_stream_index;
     let source_probe = source_inspected.probe;
-    let identity = source_identity(&source, &source_metadata)?;
-    let fingerprint =
-        source_fingerprint(&identity, &input.sequence_rate).map_err(map_model_error)?;
-    let directory = ensure_profile_cache_directory(cache_root, &input).map_err(map_cache_error)?;
-    let paths =
-        artifact_paths_in_validated_cache(&directory, &fingerprint).map_err(map_model_error)?;
-    let _cache_lock = acquire_profile_cache_lock(&directory)
-        .await
-        .map_err(map_cache_error)?;
     let source_has_audio = source_probe.audio.is_some();
-    let proxy_expectation = ProxyValidationExpectation {
-        dimensions,
-        sequence_rate: &input.sequence_rate,
-        source_duration_microseconds: source_probe.duration_microseconds,
-        source_has_audio,
-    };
-
-    if let Some(proxy_probe) = cached_proxy_probe(
-        &paths.proxy_path,
-        proxy_expectation,
-        &programs,
-        cancellation.clone(),
-    )
-    .await?
-    {
-        if thumbnail_file_is_valid(&paths.thumbnail_path, &paths.thumbnail_path) {
-            cleanup_stale_owned_artifacts(&directory, &paths).map_err(map_cache_error)?;
-            return prepared_asset(&paths, proxy_probe);
-        }
-    }
-
-    let temporary = create_temp_artifacts(&directory).map_err(map_cache_error)?;
-    let proxy_args = proxy_ffmpeg_args(
-        &source,
-        &temporary.proxy,
+    let profile_identity = derive_profile_identity(&PREVIEW_PROFILE).map_err(map_model_error)?;
+    let (proxy_recipe_argv, proxy_validation_policy) = proxy_recipe(
         dimensions,
         &input.sequence_rate,
         source_is_hdr,
@@ -403,62 +450,172 @@ pub(crate) async fn prepare_asset_core(
         source_audio_stream_index,
     )
     .map_err(map_model_error)?;
-    run_derived_ffmpeg_with_programs(
-        &programs,
-        proxy_args,
-        "prepare_proxy",
-        PROXY_TIMEOUT,
-        cancellation.clone(),
+    let proxy_recipe_digest = derive_recipe_digest(
+        DerivedArtifactKind::Proxy,
+        &proxy_recipe_argv,
+        &proxy_validation_policy,
     )
-    .await?;
-    validate_proxy_path(
-        &temporary.proxy,
-        proxy_expectation,
-        &programs,
-        cancellation.clone(),
-        "validate_proxy_temp",
+    .map_err(map_model_error)?;
+    let proxy_identity = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &ingested.identity,
+        programs.toolchain_id(),
+        &profile_identity,
+        &proxy_recipe_digest,
     )
-    .await?;
-
-    let thumbnail_args = thumbnail_ffmpeg_args(
-        &source,
-        &temporary.thumbnail,
+    .map_err(map_model_error)?;
+    let (thumbnail_recipe_argv, thumbnail_validation_policy) = thumbnail_recipe(
         source_probe.duration_microseconds,
         source_video_stream_index,
     )
     .map_err(map_model_error)?;
-    run_derived_ffmpeg_with_programs(
-        &programs,
-        thumbnail_args,
-        "prepare_thumbnail",
-        THUMBNAIL_TIMEOUT,
-        cancellation.clone(),
+    let thumbnail_recipe_digest = derive_recipe_digest(
+        DerivedArtifactKind::ThumbnailTile,
+        &thumbnail_recipe_argv,
+        &thumbnail_validation_policy,
     )
-    .await?;
-    if !thumbnail_file_is_valid(&temporary.thumbnail, &temporary.thumbnail) {
-        return Err(VideoCommandError::invalid_media(
-            "prepare_asset",
-            "thumbnail_temp_validation",
-        ));
-    }
+    .map_err(map_model_error)?;
+    let thumbnail_identity = derive_media_identity(
+        DerivedArtifactKind::ThumbnailTile,
+        &ingested.identity,
+        programs.toolchain_id(),
+        &profile_identity,
+        &thumbnail_recipe_digest,
+    )
+    .map_err(map_model_error)?;
 
-    promote_prevalidated_pair(&directory, &paths, temporary).map_err(map_cache_error)?;
-    let proxy_probe = validate_proxy_path(
-        &paths.proxy_path,
+    let proxy_expectation = ProxyValidationExpectation {
+        dimensions,
+        sequence_rate: &input.sequence_rate,
+        source_duration_microseconds: source_probe.duration_microseconds,
+        source_has_audio,
+    };
+    let proxy_lease =
+        acquire_artifact(cache_root, ArtifactStoreKind::Proxy, &proxy_identity.key).await?;
+    let proxy_probe = if let Some(probe) = cached_proxy_probe(
+        proxy_lease.path(),
         proxy_expectation,
         &programs,
-        cancellation,
-        "validate_proxy_final",
+        cancellation.clone(),
+    )
+    .await?
+    {
+        probe
+    } else {
+        let temporary = proxy_lease.temporary()?;
+        let proxy_args = proxy_ffmpeg_args(
+            &ingested.object_path,
+            temporary.path(),
+            dimensions,
+            &input.sequence_rate,
+            source_is_hdr,
+            source_video_stream_index,
+            source_audio_stream_index,
+        )
+        .map_err(map_model_error)?;
+        run_derived_ffmpeg_with_programs(
+            &programs,
+            proxy_args,
+            "prepare_proxy",
+            PROXY_TIMEOUT,
+            cancellation.clone(),
+        )
+        .await?;
+        validate_proxy_path(
+            temporary.path(),
+            proxy_expectation,
+            &programs,
+            cancellation.clone(),
+            "validate_proxy_temp",
+        )
+        .await?;
+        temporary
+            .as_file()
+            .sync_all()
+            .map_err(|_| VideoCommandError::project_io("prepare_asset", "proxy_sync"))?;
+        proxy_lease.promote(temporary)?;
+        match validate_proxy_path(
+            proxy_lease.path(),
+            proxy_expectation,
+            &programs,
+            cancellation.clone(),
+            "validate_proxy_final",
+        )
+        .await
+        {
+            Ok(probe) => probe,
+            Err(error) => {
+                let _ = proxy_lease.remove_exact();
+                return Err(error);
+            }
+        }
+    };
+    let proxy_path = response_path(proxy_lease.path())?;
+    drop(proxy_lease);
+
+    let thumbnail_lease = acquire_artifact(
+        cache_root,
+        ArtifactStoreKind::ThumbnailTile,
+        &thumbnail_identity.key,
     )
     .await?;
-    if !thumbnail_file_is_valid(&paths.thumbnail_path, &paths.thumbnail_path) {
-        return Err(VideoCommandError::invalid_media(
-            "prepare_asset",
-            "thumbnail_final_validation",
-        ));
+    if !cached_thumbnail_is_valid(thumbnail_lease.path(), &programs, cancellation.clone()).await? {
+        let temporary = thumbnail_lease.temporary()?;
+        let thumbnail_args = thumbnail_ffmpeg_args(
+            &ingested.object_path,
+            temporary.path(),
+            source_probe.duration_microseconds,
+            source_video_stream_index,
+        )
+        .map_err(map_model_error)?;
+        run_derived_ffmpeg_with_programs(
+            &programs,
+            thumbnail_args,
+            "prepare_thumbnail",
+            THUMBNAIL_TIMEOUT,
+            cancellation.clone(),
+        )
+        .await?;
+        validate_thumbnail_path(
+            temporary.path(),
+            temporary.path(),
+            &programs,
+            cancellation.clone(),
+            "validate_thumbnail_temp",
+        )
+        .await?;
+        temporary
+            .as_file()
+            .sync_all()
+            .map_err(|_| VideoCommandError::project_io("prepare_asset", "thumbnail_sync"))?;
+        thumbnail_lease.promote(temporary)?;
+        if let Err(error) = validate_thumbnail_path(
+            thumbnail_lease.path(),
+            thumbnail_lease.path(),
+            &programs,
+            cancellation,
+            "validate_thumbnail_final",
+        )
+        .await
+        {
+            let _ = thumbnail_lease.remove_exact();
+            return Err(error);
+        }
     }
-    cleanup_stale_owned_artifacts(&directory, &paths).map_err(map_cache_error)?;
-    prepared_asset(&paths, proxy_probe)
+    let thumbnail_path = response_path(thumbnail_lease.path())?;
+
+    Ok(PreparedVideoAsset {
+        source_fingerprint: ingested.fingerprint,
+        source_identity: ingested.identity,
+        source_probe,
+        sequence_rate: input.sequence_rate,
+        profile_identity,
+        proxy_identity,
+        proxy_path,
+        proxy_probe,
+        thumbnail_identity,
+        thumbnail_path,
+    })
 }
 
 async fn run_derived_ffmpeg_with_programs(
@@ -547,6 +704,55 @@ async fn validate_proxy_path(
     Ok(inspected.probe)
 }
 
+async fn cached_thumbnail_is_valid(
+    path: &Path,
+    programs: &MediaPrograms,
+    cancellation: ProcessCancellation,
+) -> Result<bool, VideoCommandError> {
+    match validate_thumbnail_path(
+        path,
+        path,
+        programs,
+        cancellation,
+        "validate_thumbnail_cache",
+    )
+    .await
+    {
+        Ok(()) => Ok(true),
+        Err(error)
+            if matches!(
+                error.code,
+                VideoErrorCode::InvalidMedia | VideoErrorCode::ProcessFailed
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn validate_thumbnail_path(
+    actual_path: &Path,
+    expected_path: &Path,
+    programs: &MediaPrograms,
+    cancellation: ProcessCancellation,
+    operation: &'static str,
+) -> Result<(), VideoCommandError> {
+    let file = artifact_file_facts(actual_path);
+    validate_thumbnail_file_shape(actual_path, expected_path, file)
+        .map_err(|_| VideoCommandError::invalid_media(operation, "file"))?;
+    let ffprobe_program = programs.verified_ffprobe(operation).await?;
+    let inspected = probe_thumbnail_artifact_with_program(
+        actual_path,
+        ffprobe_program,
+        cancellation,
+        operation,
+    )
+    .await?;
+    validate_thumbnail_artifact(actual_path, expected_path, file, &inspected)
+        .map_err(|_| VideoCommandError::invalid_media(operation, "profile"))
+}
+
 fn source_identity<'a>(
     canonical_path: &'a Path,
     metadata: &Metadata,
@@ -598,30 +804,10 @@ fn artifact_file_facts(path: &Path) -> ArtifactFileFacts {
     }
 }
 
-fn thumbnail_file_is_valid(actual_path: &Path, expected_path: &Path) -> bool {
-    validate_thumbnail_artifact(actual_path, expected_path, artifact_file_facts(actual_path))
-        .is_ok()
-}
-
-fn prepared_asset(
-    paths: &DerivedArtifactPaths,
-    proxy_probe: MediaProbe,
-) -> Result<PreparedVideoAsset, VideoCommandError> {
-    let proxy_path = paths
-        .proxy_path
-        .to_str()
-        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "cache_encoding"))?
-        .to_owned();
-    let thumbnail_path = paths
-        .thumbnail_path
-        .to_str()
-        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "cache_encoding"))?
-        .to_owned();
-    Ok(PreparedVideoAsset {
-        proxy_path,
-        thumbnail_path,
-        proxy_probe,
-    })
+fn response_path(path: &Path) -> Result<String, VideoCommandError> {
+    path.to_str()
+        .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "cache_encoding"))
+        .map(str::to_owned)
 }
 
 fn map_model_error(error: DerivedModelError) -> VideoCommandError {
@@ -1301,6 +1487,34 @@ pub(crate) fn validate_thumbnail_artifact(
     actual_path: &Path,
     expected_path: &Path,
     file: ArtifactFileFacts,
+    inspected: &ThumbnailArtifactProbe,
+) -> Result<(), ArtifactValidationError> {
+    validate_thumbnail_file_shape(actual_path, expected_path, file)?;
+    if inspected.file_size_bytes != file.byte_len {
+        return Err(ArtifactValidationError::ProbeSizeMismatch);
+    }
+    if inspected.video_codec_name != PREVIEW_PROFILE.thumbnail_encoder {
+        return Err(ArtifactValidationError::VideoCodec);
+    }
+    if inspected.decoded_frame_count != 1 {
+        return Err(ArtifactValidationError::FrameCount);
+    }
+    let expected_width = PREVIEW_PROFILE
+        .thumbnail_count
+        .checked_mul(PREVIEW_PROFILE.thumbnail_cell_width)
+        .ok_or(ArtifactValidationError::Dimensions)?;
+    if inspected.width != expected_width
+        || inspected.height != PREVIEW_PROFILE.thumbnail_cell_height
+    {
+        return Err(ArtifactValidationError::Dimensions);
+    }
+    Ok(())
+}
+
+fn validate_thumbnail_file_shape(
+    actual_path: &Path,
+    expected_path: &Path,
+    file: ArtifactFileFacts,
 ) -> Result<(), ArtifactValidationError> {
     if actual_path != expected_path {
         return Err(ArtifactValidationError::Path);
@@ -1631,4 +1845,314 @@ fn hash_field(hasher: &mut Sha256, value: &[u8]) {
     let length = u64::try_from(value.len()).expect("path and profile fields fit in u64");
     hasher.update(length.to_le_bytes());
     hasher.update(value);
+}
+
+#[derive(Default)]
+struct IdentityEncoder {
+    bytes: Vec<u8>,
+}
+
+impl IdentityEncoder {
+    fn string(&mut self, value: &str) -> Result<(), DerivedModelError> {
+        self.byte_slice(value.as_bytes())
+    }
+
+    fn byte_slice(&mut self, value: &[u8]) -> Result<(), DerivedModelError> {
+        let length = u32::try_from(value.len()).map_err(|_| DerivedModelError::Fingerprint)?;
+        self.bytes.extend_from_slice(&length.to_le_bytes());
+        self.bytes.extend_from_slice(value);
+        Ok(())
+    }
+
+    fn safe_integer(&mut self, value: u64) -> Result<(), DerivedModelError> {
+        if value > MAX_SAFE_INTEGER {
+            return Err(DerivedModelError::Fingerprint);
+        }
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
+    fn digest(self) -> String {
+        let digest = Sha256::digest(self.bytes);
+        hex_sha256(&digest)
+    }
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut output, "{byte:02x}").expect("hexadecimal String writes cannot fail");
+    }
+    output
+}
+
+fn decode_sha256(value: &str) -> Result<[u8; 32], DerivedModelError> {
+    if !is_sha256_hex(value) {
+        return Err(DerivedModelError::Fingerprint);
+    }
+    let mut bytes = [0_u8; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| DerivedModelError::Fingerprint)?;
+    }
+    Ok(bytes)
+}
+
+fn profile_string_field(
+    encoder: &mut IdentityEncoder,
+    name: &str,
+    value: &str,
+) -> Result<(), DerivedModelError> {
+    encoder.string(name)?;
+    encoder.string(value)
+}
+
+fn profile_integer_field(
+    encoder: &mut IdentityEncoder,
+    name: &str,
+    value: u64,
+) -> Result<(), DerivedModelError> {
+    encoder.string(name)?;
+    encoder.safe_integer(value)
+}
+
+pub(crate) fn derive_profile_identity(
+    profile: &DerivedProfile,
+) -> Result<MediaProfileIdentityV1, DerivedModelError> {
+    let mut encoder = IdentityEncoder::default();
+    encoder.string("supa-video/media-profile/v1")?;
+    profile_string_field(&mut encoder, "profileId", profile.directory_name)?;
+    profile_integer_field(&mut encoder, "proxyMaxWidth", profile.proxy_max_width)?;
+    profile_integer_field(&mut encoder, "proxyMaxHeight", profile.proxy_max_height)?;
+    profile_string_field(&mut encoder, "scaleFlags", profile.scale_flags)?;
+    profile_string_field(
+        &mut encoder,
+        "proxyVideoEncoder",
+        profile.proxy_video_encoder,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyVideoEncoderColorRange",
+        profile.proxy_video_encoder_color_range,
+    )?;
+    profile_string_field(&mut encoder, "proxyPreset", profile.proxy_preset)?;
+    profile_integer_field(&mut encoder, "proxyCrf", u64::from(profile.proxy_crf))?;
+    profile_string_field(&mut encoder, "proxyPixelFormat", profile.proxy_pixel_format)?;
+    profile_string_field(
+        &mut encoder,
+        "proxySampleAspectRatio",
+        profile.proxy_sample_aspect_ratio,
+    )?;
+    profile_string_field(&mut encoder, "proxyColorRange", profile.proxy_color_range)?;
+    profile_string_field(&mut encoder, "proxyColorSpace", profile.proxy_color_space)?;
+    profile_string_field(
+        &mut encoder,
+        "proxyColorPrimaries",
+        profile.proxy_color_primaries,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyColorTransfer",
+        profile.proxy_color_transfer,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyHdrLinearTransfer",
+        profile.proxy_hdr_linear_transfer,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyHdrNominalPeakLuminance",
+        profile.proxy_hdr_nominal_peak_luminance,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyHdrIntermediatePixelFormat",
+        profile.proxy_hdr_intermediate_pixel_format,
+    )?;
+    profile_string_field(&mut encoder, "proxyHdrTonemap", profile.proxy_hdr_tonemap)?;
+    profile_string_field(
+        &mut encoder,
+        "proxyHdrTonemapDesaturation",
+        profile.proxy_hdr_tonemap_desaturation,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyHdrSignalPeak",
+        profile.proxy_hdr_signal_peak,
+    )?;
+    profile_string_field(&mut encoder, "proxyHdrDither", profile.proxy_hdr_dither)?;
+    profile_string_field(&mut encoder, "proxyMovflags", profile.proxy_movflags)?;
+    profile_string_field(
+        &mut encoder,
+        "proxyAudioEncoder",
+        profile.proxy_audio_encoder,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "proxyAudioBitrate",
+        profile.proxy_audio_bitrate,
+    )?;
+    profile_integer_field(
+        &mut encoder,
+        "proxyAudioSampleRate",
+        profile.proxy_audio_sample_rate,
+    )?;
+    profile_integer_field(&mut encoder, "thumbnailCount", profile.thumbnail_count)?;
+    profile_integer_field(
+        &mut encoder,
+        "thumbnailCellWidth",
+        profile.thumbnail_cell_width,
+    )?;
+    profile_integer_field(
+        &mut encoder,
+        "thumbnailCellHeight",
+        profile.thumbnail_cell_height,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "thumbnailPadColor",
+        profile.thumbnail_pad_color,
+    )?;
+    profile_string_field(
+        &mut encoder,
+        "thumbnailTileLayout",
+        profile.thumbnail_tile_layout,
+    )?;
+    profile_string_field(&mut encoder, "thumbnailEncoder", profile.thumbnail_encoder)?;
+    profile_integer_field(
+        &mut encoder,
+        "thumbnailQuality",
+        u64::from(profile.thumbnail_quality),
+    )?;
+    Ok(MediaProfileIdentityV1 {
+        schema_version: 1,
+        profile_id: profile.directory_name.to_owned(),
+        profile_digest: encoder.digest(),
+    })
+}
+
+pub(crate) fn derive_recipe_digest(
+    artifact_kind: DerivedArtifactKind,
+    argv: &[String],
+    validation_policy: &[String],
+) -> Result<String, DerivedModelError> {
+    let mut encoder = IdentityEncoder::default();
+    encoder.string("supa-video/derived-recipe/v1")?;
+    encoder.string(artifact_kind.as_str())?;
+    encoder.safe_integer(u64::try_from(argv.len()).map_err(|_| DerivedModelError::Fingerprint)?)?;
+    for token in argv {
+        encoder.string(token)?;
+    }
+    encoder.safe_integer(
+        u64::try_from(validation_policy.len()).map_err(|_| DerivedModelError::Fingerprint)?,
+    )?;
+    for rule in validation_policy {
+        encoder.string(rule)?;
+    }
+    Ok(encoder.digest())
+}
+
+pub(crate) fn derive_media_identity(
+    artifact_kind: DerivedArtifactKind,
+    source_identity: &MediaContentIdentityV1,
+    toolchain_id: &str,
+    profile_identity: &MediaProfileIdentityV1,
+    recipe_digest: &str,
+) -> Result<DerivedMediaIdentityV1, DerivedModelError> {
+    if source_identity.schema_version != 1
+        || source_identity.byte_length == 0
+        || source_identity.byte_length > MAX_SAFE_INTEGER
+        || toolchain_id.trim().is_empty()
+        || profile_identity.schema_version != 1
+        || profile_identity.profile_id.trim().is_empty()
+    {
+        return Err(DerivedModelError::Fingerprint);
+    }
+    let mut encoder = IdentityEncoder::default();
+    encoder.string("supa-video/derived-media/v1")?;
+    encoder.string(artifact_kind.as_str())?;
+    encoder.byte_slice(&decode_sha256(&source_identity.digest)?)?;
+    encoder.safe_integer(source_identity.byte_length)?;
+    encoder.string(toolchain_id)?;
+    encoder.string(&profile_identity.profile_id)?;
+    encoder.byte_slice(&decode_sha256(&profile_identity.profile_digest)?)?;
+    encoder.byte_slice(&decode_sha256(recipe_digest)?)?;
+    let key = encoder.digest();
+    Ok(DerivedMediaIdentityV1 {
+        schema_version: 1,
+        artifact_kind,
+        key,
+        source_identity: source_identity.clone(),
+        toolchain_id: toolchain_id.to_owned(),
+        profile_identity: profile_identity.clone(),
+        recipe_digest: recipe_digest.to_owned(),
+    })
+}
+
+fn os_args_to_recipe(args: Vec<OsString>) -> Result<Vec<String>, DerivedModelError> {
+    args.into_iter()
+        .map(|argument| {
+            argument
+                .into_string()
+                .map_err(|_| DerivedModelError::Fingerprint)
+        })
+        .collect()
+}
+
+pub(crate) fn proxy_recipe(
+    dimensions: OutputDimensions,
+    sequence_rate: &RationalRate,
+    source_is_hdr: bool,
+    source_video_stream_index: u64,
+    source_audio_stream_index: Option<u64>,
+) -> Result<(Vec<String>, Vec<String>), DerivedModelError> {
+    let argv = os_args_to_recipe(proxy_ffmpeg_args(
+        Path::new("{source}"),
+        Path::new("{destination}"),
+        dimensions,
+        sequence_rate,
+        source_is_hdr,
+        source_video_stream_index,
+        source_audio_stream_index,
+    )?)?;
+    let validation = [
+        "regular_nonzero",
+        "probe_size_exact",
+        "h264_yuv420p",
+        "display_dimensions_exact",
+        "bt709_sdr_tags",
+        "constant_frame_rate_exact",
+        "audio_presence_and_rate",
+        "duration_within_one_frame",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    Ok((argv, validation))
+}
+
+pub(crate) fn thumbnail_recipe(
+    duration_microseconds: u64,
+    source_video_stream_index: u64,
+) -> Result<(Vec<String>, Vec<String>), DerivedModelError> {
+    let argv = os_args_to_recipe(thumbnail_ffmpeg_args(
+        Path::new("{source}"),
+        Path::new("{destination}"),
+        duration_microseconds,
+        source_video_stream_index,
+    )?)?;
+    let validation = [
+        "regular_nonzero",
+        "jpeg_extension",
+        "probe_size_exact",
+        "mjpeg_stream",
+        "single_decoded_frame",
+        "single_tile_exact_geometry",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    Ok((argv, validation))
 }

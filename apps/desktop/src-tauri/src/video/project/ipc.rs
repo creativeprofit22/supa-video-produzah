@@ -1,9 +1,6 @@
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use tauri::{Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{
@@ -16,10 +13,12 @@ use super::{
 use crate::video::{
     error::VideoCommandError,
     grants::{GrantCategory, VideoPathGrants},
-    probe::probe_media_with_program,
+    media_store::{ingest_source, IngestedSource},
+    probe::probe_trusted_media_with_program,
     process::ProcessCancellation,
     project_io::{dialog_path, require_extension},
-    types::{AssetLocator, MediaProbe},
+    toolchain::MediaToolchainState,
+    types::{AssetLocator, MediaContentIdentityV1, MediaProbe},
 };
 
 async fn run_project_worker<T, F>(operation: &'static str, task: F) -> Result<T, VideoCommandError>
@@ -82,6 +81,7 @@ pub async fn video_open_project<R: Runtime>(
 struct NativeImport {
     canonical_path: PathBuf,
     probe: MediaProbe,
+    content_identity: MediaContentIdentityV1,
 }
 
 fn collect_import_targets(
@@ -135,6 +135,12 @@ fn execute_project_group_with_native_imports(
                 "probe_mismatch",
             ));
         }
+        if asset.content_identity.as_ref() != Some(&native_import.content_identity) {
+            return Err(VideoCommandError::invalid_media(
+                "import_project_asset",
+                "content_identity_mismatch",
+            ));
+        }
         let absolute_path = native_import
             .canonical_path
             .to_str()
@@ -145,6 +151,7 @@ fn execute_project_group_with_native_imports(
             absolute_path: Some(absolute_path),
         };
         asset.probe = native_import.probe;
+        asset.content_identity = Some(native_import.content_identity);
     }
     if native_imports.next().is_some() {
         return Err(VideoCommandError::invalid_media(
@@ -158,6 +165,7 @@ fn execute_project_group_with_native_imports(
 #[tauri::command]
 pub async fn video_execute_project_group<R: Runtime>(
     window: WebviewWindow<R>,
+    toolchain: State<'_, MediaToolchainState>,
     request: CommandGroupRequest,
 ) -> Result<CommandResult, VideoCommandError> {
     let app = window.app_handle().clone();
@@ -178,22 +186,49 @@ pub async fn video_execute_project_group<R: Runtime>(
         let grants = app.state::<VideoPathGrants>();
         collect_import_targets(&owner, &request, &grants)?
     };
-    let mut native_imports = Vec::with_capacity(import_targets.len());
-    for canonical_path in import_targets {
-        let probe = {
-            let grants = app.state::<VideoPathGrants>();
-            probe_media_with_program(
-                &owner,
-                &grants,
-                &canonical_path,
-                OsString::from("ffprobe"),
-                ProcessCancellation::new(),
-            )
-            .await?
-        };
+    let mut ingested_sources: Vec<(PathBuf, IngestedSource)> =
+        Vec::with_capacity(import_targets.len());
+    if !import_targets.is_empty() {
+        let cache_root = app
+            .path()
+            .app_cache_dir()
+            .map_err(|_| VideoCommandError::project_io("import_project_asset", "app_cache"))?;
+        for canonical_path in import_targets {
+            let ingested = {
+                let grants = app.state::<VideoPathGrants>();
+                ingest_source(&owner, &grants, &canonical_path, &cache_root).await?
+            };
+            ingested_sources.push((canonical_path, ingested));
+        }
+    }
+    let ffprobe = if ingested_sources.is_empty() {
+        None
+    } else {
+        Some(
+            toolchain
+                .verified_ffprobe()
+                .await
+                .map_err(|error| error.into_command_error("import_project_asset"))?
+                .into_os_string(),
+        )
+    };
+    let mut native_imports = Vec::with_capacity(ingested_sources.len());
+    for (canonical_path, ingested) in ingested_sources {
+        let probe = probe_trusted_media_with_program(
+            &ingested.object_path,
+            ffprobe
+                .as_ref()
+                .expect("non-empty imports must resolve managed FFprobe")
+                .clone(),
+            ProcessCancellation::new(),
+            "import_project_asset",
+        )
+        .await?
+        .probe;
         native_imports.push(NativeImport {
             canonical_path,
             probe,
+            content_identity: ingested.identity,
         });
     }
     run_project_worker("execute_project_group", move || {
@@ -244,9 +279,73 @@ pub async fn video_redo_project<R: Runtime>(
     .await
 }
 
+pub(crate) async fn relink_project_asset_from_path<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    toolchain: MediaToolchainState,
+    project_id: String,
+    asset_id: String,
+    path: PathBuf,
+) -> Result<CommandResult, VideoCommandError> {
+    let grant_app = app.clone();
+    let grant_owner = owner.clone();
+    let normalized = run_project_worker("relink_project_asset", move || {
+        grant_app.state::<VideoPathGrants>().grant_existing_file(
+            &grant_owner,
+            GrantCategory::Source,
+            &path,
+        )
+    })
+    .await?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| VideoCommandError::project_io("relink_project_asset", "app_cache"))?;
+    let ingested = {
+        let grants = app.state::<VideoPathGrants>();
+        ingest_source(&owner, &grants, &normalized, &cache_root).await?
+    };
+    let ffprobe = toolchain
+        .verified_ffprobe()
+        .await
+        .map_err(|error| error.into_command_error("relink_project_asset"))?
+        .into_os_string();
+    let probe = probe_trusted_media_with_program(
+        &ingested.object_path,
+        ffprobe,
+        ProcessCancellation::new(),
+        "relink_project_asset",
+    )
+    .await?
+    .probe;
+    let absolute_path = normalized
+        .to_str()
+        .ok_or_else(|| VideoCommandError::invalid_path("relink_project_asset", "source"))?
+        .to_owned();
+
+    run_project_worker("relink_project_asset", move || {
+        let service = app.state::<VideoProjectService>();
+        let grants = app.state::<VideoPathGrants>();
+        service.relink(
+            &owner,
+            &project_id,
+            &asset_id,
+            AssetLocator {
+                relative_path: None,
+                absolute_path: Some(absolute_path),
+            },
+            probe,
+            Some(ingested.identity),
+            &grants,
+        )
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn video_relink_project_asset<R: Runtime>(
     window: WebviewWindow<R>,
+    toolchain: State<'_, MediaToolchainState>,
     project_id: String,
     asset_id: String,
 ) -> Result<Option<CommandResult>, VideoCommandError> {
@@ -267,53 +366,16 @@ pub async fn video_relink_project_asset<R: Runtime>(
     let Some(path) = dialog_path(selection, "relink_project_asset", "source")? else {
         return Ok(None);
     };
-
-    let app = window.app_handle().clone();
-    let owner = window.label().to_owned();
-    let grant_app = app.clone();
-    let grant_owner = owner.clone();
-    let normalized = run_project_worker("relink_project_asset", move || {
-        grant_app.state::<VideoPathGrants>().grant_existing_file(
-            &grant_owner,
-            GrantCategory::Source,
-            &path,
-        )
-    })
-    .await?;
-    let probe = {
-        let grants = app.state::<VideoPathGrants>();
-        probe_media_with_program(
-            &owner,
-            &grants,
-            &normalized,
-            OsString::from("ffprobe"),
-            ProcessCancellation::new(),
-        )
-        .await?
-    };
-    let absolute_path = normalized
-        .to_str()
-        .ok_or_else(|| VideoCommandError::invalid_path("relink_project_asset", "source"))?
-        .to_owned();
-
-    run_project_worker("relink_project_asset", move || {
-        let service = app.state::<VideoProjectService>();
-        let grants = app.state::<VideoPathGrants>();
-        service
-            .relink(
-                &owner,
-                &project_id,
-                &asset_id,
-                AssetLocator {
-                    relative_path: None,
-                    absolute_path: Some(absolute_path),
-                },
-                probe,
-                &grants,
-            )
-            .map(Some)
-    })
+    relink_project_asset_from_path(
+        window.app_handle().clone(),
+        window.label().to_owned(),
+        toolchain.inner().clone(),
+        project_id,
+        asset_id,
+        path,
+    )
     .await
+    .map(Some)
 }
 
 #[tauri::command]
@@ -367,7 +429,7 @@ mod tests {
         project::{
             journal::journal_path, service::VideoProjectService, types::CommandGroupRequest,
         },
-        types::{MediaProbe, RationalRate},
+        types::{MediaContentAlgorithm, MediaContentIdentityV1, MediaProbe, RationalRate},
         GrantCategory, VideoErrorCode, VideoPathGrants,
     };
 
@@ -441,11 +503,21 @@ mod tests {
         }
     }
 
+    fn import_identity() -> MediaContentIdentityV1 {
+        MediaContentIdentityV1 {
+            schema_version: 1,
+            algorithm: MediaContentAlgorithm::Sha256,
+            digest: "ab".repeat(32),
+            byte_length: 10,
+        }
+    }
+
     fn import_group(
         project_id: &str,
         source_path: &str,
         probe: &MediaProbe,
     ) -> CommandGroupRequest {
+        let content_identity = import_identity();
         serde_json::from_value(json!({
             "groupId": "81000000-0000-4000-8000-000000000001",
             "projectId": project_id,
@@ -458,7 +530,8 @@ mod tests {
                         "id": "81000000-0000-4000-8000-000000000003",
                         "displayName": "source.mp4",
                         "locator": { "absolutePath": source_path },
-                        "probe": probe
+                        "probe": probe,
+                        "contentIdentity": content_identity
                     }
                 },
                 {
@@ -556,6 +629,7 @@ mod tests {
             .map(|canonical_path| NativeImport {
                 canonical_path,
                 probe: probe.clone(),
+                content_identity: import_identity(),
             })
             .collect();
         let mut tampered_request = canonical_request.clone();
@@ -593,12 +667,47 @@ mod tests {
             "a rejected import must not append a journal record"
         );
 
+        let mut identity_tampered_request = canonical_request.clone();
+        let crate::video::project::types::ProjectCommand::ImportAsset { asset, .. } =
+            &mut identity_tampered_request.commands[0]
+        else {
+            unreachable!("first command must import the asset");
+        };
+        asset
+            .content_identity
+            .as_mut()
+            .expect("import identity must be present")
+            .digest = "cd".repeat(32);
+        let identity_error = execute_project_group_with_native_imports(
+            &service,
+            owner,
+            identity_tampered_request,
+            &grants,
+            vec![NativeImport {
+                canonical_path: canonical_source.clone(),
+                probe: probe.clone(),
+                content_identity: import_identity(),
+            }],
+        )
+        .expect_err("caller content identity tampering must be rejected");
+        assert_eq!(identity_error.code, VideoErrorCode::InvalidMedia);
+        assert_eq!(
+            identity_error.details["category"],
+            "content_identity_mismatch"
+        );
+        assert_eq!(
+            fs::read(&journal).expect("journal must remain readable"),
+            journal_before,
+            "identity rejection must not append a journal record"
+        );
+
         let native_imports = collect_import_targets(owner, &canonical_request, &grants)
             .expect("canonical import target must remain accepted")
             .into_iter()
             .map(|canonical_path| NativeImport {
                 canonical_path,
                 probe: probe.clone(),
+                content_identity: import_identity(),
             })
             .collect();
         let result = execute_project_group_with_native_imports(
@@ -615,6 +724,10 @@ mod tests {
         assert_eq!(result.projection.state.assets.len(), 1);
         assert_eq!(result.projection.state.sequences.len(), 1);
         assert_eq!(result.projection.state.assets[0].probe, probe);
+        assert_eq!(
+            result.projection.state.assets[0].content_identity,
+            Some(import_identity())
+        );
         assert_eq!(
             result.projection.state.assets[0]
                 .locator

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "fingerprintInput": {
+    "canonicalPath": "/media/café.mp4",
+    "byteLength": 123456,
+    "modifiedUnixSeconds": 1720000000,
+    "modifiedNanoseconds": 123456789
+  },
+  "sourceFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "3f93442f2ca6148106623062a8f44483bac6fd0de29fa903dca3da1dd895ee39",
+    "byteLength": 123456,
+    "modifiedUnixSeconds": 1720000000,
+    "modifiedNanoseconds": 123456789
+  },
+  "sourceIdentity": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "byteLength": 123456
+  },
+  "profile": {
+    "profileId": "preview-v1",
+    "proxyMaxWidth": 1280,
+    "proxyMaxHeight": 720,
+    "scaleFlags": "lanczos",
+    "proxyVideoEncoder": "libx264",
+    "proxyVideoEncoderColorRange": "limited",
+    "proxyPreset": "medium",
+    "proxyCrf": 23,
+    "proxyPixelFormat": "yuv420p",
+    "proxySampleAspectRatio": "1",
+    "proxyColorRange": "tv",
+    "proxyColorSpace": "bt709",
+    "proxyColorPrimaries": "bt709",
+    "proxyColorTransfer": "bt709",
+    "proxyHdrLinearTransfer": "linear",
+    "proxyHdrNominalPeakLuminance": "100",
+    "proxyHdrIntermediatePixelFormat": "gbrpf32le",
+    "proxyHdrTonemap": "hable",
+    "proxyHdrTonemapDesaturation": "2",
+    "proxyHdrSignalPeak": "10",
+    "proxyHdrDither": "error_diffusion",
+    "proxyMovflags": "+faststart",
+    "proxyAudioEncoder": "aac",
+    "proxyAudioBitrate": "192k",
+    "proxyAudioSampleRate": 48000,
+    "thumbnailCount": 10,
+    "thumbnailCellWidth": 160,
+    "thumbnailCellHeight": 90,
+    "thumbnailPadColor": "black",
+    "thumbnailTileLayout": "10x1",
+    "thumbnailEncoder": "mjpeg",
+    "thumbnailQuality": 2
+  },
+  "profileIdentity": {
+    "schemaVersion": 1,
+    "profileId": "preview-v1",
+    "profileDigest": "b055cc1bf33f212debe685eeb7b19a1e0d0a31843e5780ac97b4c97eee0f97c4"
+  },
+  "recipeInput": {
+    "artifactKind": "proxy",
+    "argv": ["-i", "{source}", "-map", "0:v:0", "-c:v", "libx264", "{destination}"],
+    "validationPolicy": ["regular_nonzero", "probe_size_exact", "h264_yuv420p"]
+  },
+  "recipeDigest": "7a27f8436627ebc489d09fedeb040190de32b4443efc42ecfdb86e3334864bb9",
+  "toolchainId": "ffmpeg-test-v1",
+  "derivedIdentity": {
+    "schemaVersion": 1,
+    "artifactKind": "proxy",
+    "key": "e27c60d494f85cb45da098ea8c803f3cf24b2dc9fdd56ad7569e4c02033c1cc5",
+    "sourceIdentity": {
+      "schemaVersion": 1,
+      "algorithm": "sha256",
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "byteLength": 123456
+    },
+    "toolchainId": "ffmpeg-test-v1",
+    "profileIdentity": {
+      "schemaVersion": 1,
+      "profileId": "preview-v1",
+      "profileDigest": "b055cc1bf33f212debe685eeb7b19a1e0d0a31843e5780ac97b4c97eee0f97c4"
+    },
+    "recipeDigest": "7a27f8436627ebc489d09fedeb040190de32b4443efc42ecfdb86e3334864bb9"
+  }
+}

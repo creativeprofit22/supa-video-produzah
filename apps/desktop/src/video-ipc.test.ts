@@ -61,6 +61,33 @@ const request: CommandGroupRequest = {
   baseRevision: 0,
   commands: [{ type: "RemoveMarker", commandId: id(5), sequenceId: id(6), markerId: id(7) }],
 };
+const legacyImportRequest: CommandGroupRequest = {
+  groupId: id(40),
+  projectId: id(1),
+  baseRevision: 0,
+  commands: [
+    {
+      type: "ImportAsset",
+      commandId: id(41),
+      asset: {
+        id: id(42),
+        displayName: "legacy.mp4",
+        locator: { absolutePath: "C:\\Media\\legacy.mp4" },
+        probe: {
+          durationMicroseconds: 1_000_000,
+          averageFrameRate: { numerator: 30, denominator: 1 },
+          realFrameRate: { numerator: 30, denominator: 1 },
+          variableFrameRate: false,
+          width: 640,
+          height: 360,
+          videoCodecName: "h264",
+          audio: null,
+          fileSizeBytes: 1_000,
+        },
+      },
+    },
+  ],
+};
 const nextProjection: ProjectProjection = {
   ...projection,
   revision: {
@@ -162,6 +189,13 @@ describe("strict V2 video IPC adapter", () => {
     invokeMock.mockResolvedValueOnce(null);
     await expect(relinkVideoProjectAsset(id(1), id(11))).resolves.toBeNull();
     await expect(closeVideoProject(id(1))).resolves.toBeUndefined();
+  });
+
+  it("rejects a live import without content identity before IPC", async () => {
+    await expect(executeVideoProjectGroup(legacyImportRequest)).rejects.toThrow(
+      "Live asset imports require a content identity",
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("rejects malformed native authority data without exposing it", async () => {

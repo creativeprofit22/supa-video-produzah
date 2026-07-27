@@ -47,7 +47,7 @@
       "capabilities": ["default"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCACHE/video-phase1/**/*"]
+        "scope": ["$APPCACHE/supa-video-media-v1/derived/**/*"]
       }
     }
   },

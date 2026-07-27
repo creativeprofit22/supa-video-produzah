@@ -5,9 +5,70 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::error::VideoCommandError;
+use super::{
+    derived::{DerivedMediaIdentityV1, MediaProfileIdentityV1},
+    error::VideoCommandError,
+    media_store::SourceFingerprintV1,
+};
 
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+fn deserialize_schema_version_one<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = u64::deserialize(deserializer)?;
+    if version != 1 {
+        return Err(de::Error::custom("expected schema version 1"));
+    }
+    Ok(version)
+}
+
+fn deserialize_sha256_digest<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let digest = String::deserialize(deserializer)?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(de::Error::custom("expected a lowercase SHA-256 digest"));
+    }
+    Ok(digest)
+}
+
+fn deserialize_positive_safe_integer<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    if !(1..=MAX_SAFE_INTEGER).contains(&value) {
+        return Err(de::Error::custom(
+            "expected a positive JavaScript-safe integer",
+        ));
+    }
+    Ok(value)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaContentAlgorithm {
+    Sha256,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaContentIdentityV1 {
+    #[serde(deserialize_with = "deserialize_schema_version_one")]
+    pub schema_version: u64,
+    pub algorithm: MediaContentAlgorithm,
+    #[serde(deserialize_with = "deserialize_sha256_digest")]
+    pub digest: String,
+    #[serde(deserialize_with = "deserialize_positive_safe_integer")]
+    pub byte_length: u64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
@@ -61,7 +122,9 @@ pub(crate) fn is_contract_uuid(text: &str) -> bool {
         )
 }
 
-fn deserialize_optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(crate) fn deserialize_optional_non_null<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
@@ -219,9 +282,16 @@ pub struct MediaProbe {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedVideoAsset {
+    pub source_fingerprint: SourceFingerprintV1,
+    pub source_identity: MediaContentIdentityV1,
+    pub source_probe: MediaProbe,
+    pub sequence_rate: RationalRate,
+    pub profile_identity: MediaProfileIdentityV1,
+    pub proxy_identity: DerivedMediaIdentityV1,
     pub proxy_path: String,
-    pub thumbnail_path: String,
     pub proxy_probe: MediaProbe,
+    pub thumbnail_identity: DerivedMediaIdentityV1,
+    pub thumbnail_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -397,6 +467,12 @@ pub struct VideoAsset {
     pub display_name: String,
     pub locator: AssetLocator,
     pub probe: MediaProbe,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content_identity: Option<MediaContentIdentityV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

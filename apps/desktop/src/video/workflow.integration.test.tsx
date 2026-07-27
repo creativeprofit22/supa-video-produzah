@@ -98,7 +98,7 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
   });
 
-  it.each(["video_probe_media", "video_prepare_asset", "video_start_render"])(
+  it.each(["video_prepare_asset", "video_start_render"] as const)(
     "refreshes and disables media actions after %s reports tool_unavailable",
     async (failedCommand) => {
       const service = createMockVideoService();

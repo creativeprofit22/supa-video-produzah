@@ -18,23 +18,30 @@ use tempfile::{tempdir, NamedTempFile};
 use super::{
     derived::{
         acquire_profile_cache_lock_with, artifact_paths, artifact_paths_in_validated_cache,
-        cache_pair_is_valid_with, create_temp_artifacts, duration_within_one_frame,
+        cache_pair_is_valid_with, create_temp_artifacts, derive_media_identity,
+        derive_profile_identity, derive_recipe_digest, duration_within_one_frame,
         ensure_profile_cache_directory, fit_proxy_dimensions, fit_proxy_dimensions_for_display,
         map_cache_error, one_frame_tolerance_microseconds, prepare_asset_core,
-        promote_validated_pair, promote_validated_pair_with, proxy_ffmpeg_args, run_derived_ffmpeg,
-        source_fingerprint, source_fingerprint_with_profile, thumbnail_ffmpeg_args,
-        unix_time_parts, validate_proxy_artifact, validate_thumbnail_artifact, ArtifactFileFacts,
-        ArtifactValidationError, CacheLifecycleError, DerivedArtifactPaths, DerivedModelError,
+        promote_validated_pair, promote_validated_pair_with, proxy_ffmpeg_args, proxy_recipe,
+        run_derived_ffmpeg, source_fingerprint, source_fingerprint_with_profile,
+        thumbnail_ffmpeg_args, thumbnail_recipe, unix_time_parts, validate_proxy_artifact,
+        validate_thumbnail_artifact, ArtifactFileFacts, ArtifactValidationError,
+        CacheLifecycleError, DerivedArtifactKind, DerivedArtifactPaths, DerivedModelError,
         MediaPrograms, OutputDimensions, PrepareAssetCoreRequest, SourceIdentity,
         ValidatedDerivedInput, PREVIEW_PROFILE,
     },
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
+    media_store::{
+        ensure_direct_directory_for_test, ingest_blocking_for_test, ingest_with_failpoint_for_test,
+        lock_file_for_test, source_fingerprint_bytes_for_test, source_fingerprint_for_test,
+        IngestFailpoint, MEDIA_STORE_NAMESPACE,
+    },
     probe::{
-        parse_ffprobe_json, parse_ffprobe_json_inspected, parse_tool_banner,
-        probe_media_with_program, probe_trusted_media_with_program, tool_info_from_result,
-        video_ffmpeg_status_with_programs, video_tool_status_from_inspection, InspectedMedia,
-        VideoTool,
+        parse_ffprobe_json, parse_ffprobe_json_inspected, parse_thumbnail_artifact_json,
+        parse_tool_banner, probe_media_with_program, probe_trusted_media_with_program,
+        tool_info_from_result, video_ffmpeg_status_with_programs,
+        video_tool_status_from_inspection, InspectedMedia, ThumbnailArtifactProbe, VideoTool,
     },
     process::{
         run_supervised, run_supervised_streaming_with_test_environment,
@@ -57,8 +64,8 @@ use super::{
     },
     types::{
         is_recognizable_absolute_path, parse_project_json, parse_project_value, MediaAudioShape,
-        MediaColorMetadata, MediaDisplayShape, MediaProbe, RationalRate, VideoProjectFileV1,
-        VideoRenderEvent, VideoToolProblem,
+        MediaColorMetadata, MediaContentAlgorithm, MediaContentIdentityV1, MediaDisplayShape,
+        MediaProbe, RationalRate, VideoProjectFileV1, VideoRenderEvent, VideoToolProblem,
     },
 };
 
@@ -1177,11 +1184,48 @@ fn derived_valid_file_facts() -> ArtifactFileFacts {
     }
 }
 
+fn derived_valid_thumbnail_probe() -> ThumbnailArtifactProbe {
+    ThumbnailArtifactProbe {
+        file_size_bytes: 4_096,
+        video_codec_name: "mjpeg".to_owned(),
+        width: PREVIEW_PROFILE.thumbnail_count * PREVIEW_PROFILE.thumbnail_cell_width,
+        height: PREVIEW_PROFILE.thumbnail_cell_height,
+        decoded_frame_count: 1,
+    }
+}
+
 fn derived_expected_dimensions() -> OutputDimensions {
     OutputDimensions {
         width: 1_280,
         height: 720,
     }
+}
+
+#[test]
+fn thumbnail_probe_parser_requires_one_decoded_video_frame_with_bounded_shape_and_size() {
+    let valid = br#"{
+        "streams": [{
+            "codec_type": "video",
+            "codec_name": "mjpeg",
+            "width": 1600,
+            "height": 90,
+            "nb_read_frames": "1"
+        }]
+    }"#;
+    assert_eq!(
+        parse_thumbnail_artifact_json(valid, 4_096),
+        Ok(derived_valid_thumbnail_probe())
+    );
+
+    for invalid in [
+        br#"{"streams": []}"#.as_slice(),
+        br#"{"streams": [{"codec_type":"audio","codec_name":"mjpeg","width":1600,"height":90,"nb_read_frames":"1"}]}"#.as_slice(),
+        br#"{"streams": [{"codec_type":"video","codec_name":"mjpeg","width":0,"height":90,"nb_read_frames":"1"}]}"#.as_slice(),
+        br#"{"streams": [{"codec_type":"video","codec_name":"mjpeg","width":1600,"height":90}]}"#.as_slice(),
+    ] {
+        assert!(parse_thumbnail_artifact_json(invalid, 4_096).is_err());
+    }
+    assert!(parse_thumbnail_artifact_json(valid, 0).is_err());
 }
 
 #[test]
@@ -1654,7 +1698,7 @@ fn derived_proxy_validator_rejects_rate_vfr_audio_and_duration_mismatches() {
 }
 
 #[test]
-fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
+fn derived_proxy_and_thumbnail_artifact_validators_reject_invalid_shapes() {
     let valid = derived_valid_inspected(true);
     assert_eq!(
         validate_proxy_artifact(
@@ -1700,8 +1744,14 @@ fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
     );
 
     let expected = Path::new("cache/thumbnail-fingerprint.jpg");
+    let valid_thumbnail = derived_valid_thumbnail_probe();
     assert_eq!(
-        validate_thumbnail_artifact(expected, expected, derived_valid_file_facts()),
+        validate_thumbnail_artifact(
+            expected,
+            expected,
+            derived_valid_file_facts(),
+            &valid_thumbnail,
+        ),
         Ok(())
     );
     assert_eq!(
@@ -1709,6 +1759,7 @@ fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
             Path::new("cache/other.jpg"),
             expected,
             derived_valid_file_facts(),
+            &valid_thumbnail,
         ),
         Err(ArtifactValidationError::Path)
     );
@@ -1717,6 +1768,7 @@ fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
             Path::new("cache/thumbnail-fingerprint.png"),
             Path::new("cache/thumbnail-fingerprint.png"),
             derived_valid_file_facts(),
+            &valid_thumbnail,
         ),
         Err(ArtifactValidationError::FileExtension)
     );
@@ -1728,6 +1780,7 @@ fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
                 is_regular_file: true,
                 byte_len: 0,
             },
+            &valid_thumbnail,
         ),
         Err(ArtifactValidationError::EmptyFile)
     );
@@ -1739,9 +1792,59 @@ fn derived_artifact_validators_reject_nonfiles_empty_files_and_wrong_paths() {
                 is_regular_file: false,
                 byte_len: 4_096,
             },
+            &valid_thumbnail,
         ),
         Err(ArtifactValidationError::NotRegularFile)
     );
+
+    let mut wrong_probe_size = valid_thumbnail.clone();
+    wrong_probe_size.file_size_bytes -= 1;
+    assert_eq!(
+        validate_thumbnail_artifact(
+            expected,
+            expected,
+            derived_valid_file_facts(),
+            &wrong_probe_size,
+        ),
+        Err(ArtifactValidationError::ProbeSizeMismatch)
+    );
+    let mut wrong_codec = valid_thumbnail.clone();
+    wrong_codec.video_codec_name = "png".to_owned();
+    assert_eq!(
+        validate_thumbnail_artifact(expected, expected, derived_valid_file_facts(), &wrong_codec,),
+        Err(ArtifactValidationError::VideoCodec)
+    );
+    let mut multiple_frames = valid_thumbnail.clone();
+    multiple_frames.decoded_frame_count = 2;
+    assert_eq!(
+        validate_thumbnail_artifact(
+            expected,
+            expected,
+            derived_valid_file_facts(),
+            &multiple_frames,
+        ),
+        Err(ArtifactValidationError::FrameCount)
+    );
+    for wrong_dimensions in [
+        ThumbnailArtifactProbe {
+            width: valid_thumbnail.width - 1,
+            ..valid_thumbnail.clone()
+        },
+        ThumbnailArtifactProbe {
+            height: valid_thumbnail.height + 1,
+            ..valid_thumbnail.clone()
+        },
+    ] {
+        assert_eq!(
+            validate_thumbnail_artifact(
+                expected,
+                expected,
+                derived_valid_file_facts(),
+                &wrong_dimensions,
+            ),
+            Err(ArtifactValidationError::Dimensions)
+        );
+    }
 }
 
 fn derived_cache_input() -> ValidatedDerivedInput {
@@ -2270,7 +2373,8 @@ async fn derived_prepare_rejects_ungranted_source_before_tools_or_cache() {
             project_id: DERIVED_PROJECT_ID,
             asset_id: DERIVED_ASSET_ID,
             source_path: &source,
-            sequence_rate: derived_rate(),
+            sequence_rate: Some(derived_rate()),
+            expected_content_identity: None,
         },
         &VideoPathGrants::default(),
         &cache_root,
@@ -2297,7 +2401,8 @@ async fn derived_prepare_rejects_malformed_ids_and_rates_before_cache_writes() {
             project_id: "../escape",
             asset_id: DERIVED_ASSET_ID,
             source_path: &source,
-            sequence_rate: derived_rate(),
+            sequence_rate: Some(derived_rate()),
+            expected_content_identity: None,
         },
         &grants,
         &invalid_id_cache,
@@ -2316,10 +2421,11 @@ async fn derived_prepare_rejects_malformed_ids_and_rates_before_cache_writes() {
             project_id: DERIVED_PROJECT_ID,
             asset_id: DERIVED_ASSET_ID,
             source_path: &source,
-            sequence_rate: RationalRate {
+            sequence_rate: Some(RationalRate {
                 numerator: 60,
                 denominator: 2,
-            },
+            }),
+            expected_content_identity: None,
         },
         &grants,
         &invalid_rate_cache,
@@ -2333,7 +2439,7 @@ async fn derived_prepare_rejects_malformed_ids_and_rates_before_cache_writes() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn derived_prepare_missing_ffprobe_is_typed_redacted_and_precedes_cache_creation() {
+async fn derived_prepare_missing_ffprobe_is_typed_redacted_after_safe_ingest() {
     let workspace = tempdir().expect("prepare workspace must be created");
     let source = workspace.path().join("private-probe-source-secret.mp4");
     fs::write(&source, b"not-media").expect("source fixture must be written");
@@ -2348,7 +2454,8 @@ async fn derived_prepare_missing_ffprobe_is_typed_redacted_and_precedes_cache_cr
             project_id: DERIVED_PROJECT_ID,
             asset_id: DERIVED_ASSET_ID,
             source_path: &source,
-            sequence_rate: derived_rate(),
+            sequence_rate: Some(derived_rate()),
+            expected_content_identity: None,
         },
         &grants,
         &cache_root,
@@ -2362,7 +2469,15 @@ async fn derived_prepare_missing_ffprobe_is_typed_redacted_and_precedes_cache_cr
     let serialized = serde_json::to_string(&error).expect("probe error must serialize");
     assert!(!serialized.contains("private-probe-source-secret"));
     assert!(!serialized.contains("missing-private-ffprobe-secret"));
-    assert!(!cache_root.exists());
+    let store = cache_root.join(MEDIA_STORE_NAMESPACE);
+    assert!(
+        store.join("objects").is_dir(),
+        "authorized bytes must ingest before managed probing"
+    );
+    assert!(
+        !store.join("derived").exists(),
+        "tool failure must precede derived artifact creation"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -4108,6 +4223,32 @@ fn run_local_ffmpeg(args: Vec<OsString>) {
     );
 }
 
+fn write_thumbnail_image(path: &Path, codec: &str, width: u64, height: u64) {
+    let source = format!("color=c=black:s={width}x{height}");
+    let mut args: Vec<OsString> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        &source,
+        "-frames:v",
+        "1",
+        "-c:v",
+        codec,
+        "-f",
+        "image2",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    args.push(path.as_os_str().to_owned());
+    run_local_ffmpeg(args);
+}
+
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg with libx265, zscale, and tonemap support"]
 async fn derived_local_ffmpeg_tone_maps_hdr_to_tagged_bt709_sdr() {
@@ -4344,10 +4485,11 @@ async fn derived_local_ffmpeg_normalizes_rotated_and_anamorphic_sources() {
                 project_id: DERIVED_PROJECT_ID,
                 asset_id,
                 source_path: source,
-                sequence_rate: RationalRate {
+                sequence_rate: Some(RationalRate {
                     numerator: 10,
                     denominator: 1,
-                },
+                }),
+                expected_content_identity: None,
             },
             &grants,
             &cache_root,
@@ -4398,10 +4540,11 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         project_id: DERIVED_PROJECT_ID,
         asset_id: DERIVED_ASSET_ID,
         source_path: &source,
-        sequence_rate: RationalRate {
+        sequence_rate: Some(RationalRate {
             numerator: 30,
             denominator: 1,
-        },
+        }),
+        expected_content_identity: None,
     };
     let actual_programs =
         || MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
@@ -4432,6 +4575,24 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
             .expect("prepared proxy must contain audio")
             .codec_name,
         "aac"
+    );
+    let mut mismatched_identity = prepared.source_identity.clone();
+    mismatched_identity.digest = "ff".repeat(32);
+    let mismatch_error = prepare_asset_core(
+        PrepareAssetCoreRequest {
+            expected_content_identity: Some(mismatched_identity),
+            ..request()
+        },
+        &grants,
+        &cache_root,
+        actual_programs(),
+    )
+    .await
+    .expect_err("an identified project asset must reject changed source bytes");
+    assert_eq!(mismatch_error.code, VideoErrorCode::InvalidMedia);
+    assert_eq!(
+        mismatch_error.details["category"],
+        "source_identity_mismatch"
     );
     let proxy_path = PathBuf::from(&prepared.proxy_path);
     let thumbnail_path = PathBuf::from(&prepared.thumbnail_path);
@@ -4467,9 +4628,54 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
     .await
     .expect("valid prepared pair must be reused without ffmpeg");
     assert_eq!(reused, prepared);
-    assert!(!stale_proxy.exists());
-    assert!(!stale_thumbnail.exists());
-    assert!(!stale_partial.exists());
+    assert!(stale_proxy.exists());
+    assert!(stale_thumbnail.exists());
+    assert!(stale_partial.exists());
+
+    fs::write(&thumbnail_path, b"non-JPEG corrupt thumbnail bytes")
+        .expect("non-JPEG thumbnail corruption must be injectable");
+    let repaired_non_jpeg = prepare_asset_core(request(), &grants, &cache_root, actual_programs())
+        .await
+        .expect("non-JPEG thumbnail bytes must be rejected and repaired");
+    assert_eq!(repaired_non_jpeg, prepared);
+    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
+    assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
+    assert_eq!(repaired_probe["streams"][0]["height"], 90);
+
+    let png_thumbnail = workspace.path().join("wrong-codec-thumbnail.png");
+    write_thumbnail_image(&png_thumbnail, "png", 1_600, 90);
+    let png_probe = derived_probe_thumbnail_shape(&png_thumbnail).await;
+    assert_eq!(png_probe["streams"][0]["codec_name"], "png");
+    fs::copy(&png_thumbnail, &thumbnail_path)
+        .expect("PNG bytes must replace only the exact thumbnail artifact");
+    assert_eq!(
+        fs::read(&thumbnail_path).expect("replaced thumbnail bytes must read"),
+        fs::read(&png_thumbnail).expect("PNG fixture bytes must read")
+    );
+    let repaired_wrong_codec =
+        prepare_asset_core(request(), &grants, &cache_root, actual_programs())
+            .await
+            .expect("wrong thumbnail codec must be rejected and repaired");
+    assert_eq!(repaired_wrong_codec, prepared);
+    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
+    assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
+    assert_eq!(repaired_probe["streams"][0]["height"], 90);
+
+    write_thumbnail_image(&thumbnail_path, "mjpeg", 800, 90);
+    let wrong_dimensions_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(wrong_dimensions_probe["streams"][0]["codec_name"], "mjpeg");
+    assert_eq!(wrong_dimensions_probe["streams"][0]["width"], 800);
+    let repaired_wrong_dimensions =
+        prepare_asset_core(request(), &grants, &cache_root, actual_programs())
+            .await
+            .expect("wrong thumbnail dimensions must be rejected and repaired");
+    assert_eq!(repaired_wrong_dimensions, prepared);
+    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
+    assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
+    assert_eq!(repaired_probe["streams"][0]["height"], 90);
 
     for path in [&stale_proxy, &stale_thumbnail, &stale_partial] {
         fs::write(path, b"stale-owned-artifact").expect("stale artifact must be writable");
@@ -4484,9 +4690,9 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
     assert_eq!(repaired.proxy_probe.video_codec_name, "h264");
     assert_eq!(repaired.proxy_probe.width, 320);
     assert_eq!(repaired.proxy_probe.height, 180);
-    assert!(!stale_proxy.exists());
-    assert!(!stale_thumbnail.exists());
-    assert!(!stale_partial.exists());
+    assert!(stale_proxy.exists());
+    assert!(stale_thumbnail.exists());
+    assert!(stale_partial.exists());
     let repaired_thumbnail_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
     assert_eq!(
         repaired_thumbnail_probe["streams"][0]["codec_name"],
@@ -4495,31 +4701,444 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
     assert_eq!(repaired_thumbnail_probe["streams"][0]["width"], 1_600);
     assert_eq!(repaired_thumbnail_probe["streams"][0]["height"], 90);
 
-    let mut remaining_owned = Vec::new();
-    for entry in fs::read_dir(&profile_directory).expect("profile directory must remain readable") {
-        let entry = entry.expect("profile entry must be readable");
+    for entry in fs::read_dir(&profile_directory).expect("artifact directory must remain readable")
+    {
+        let entry = entry.expect("artifact entry must be readable");
         let name = entry.file_name().to_string_lossy().into_owned();
         assert!(
-            !name.starts_with(".svp-video-"),
+            !name.starts_with(".derive-"),
             "temporary artifact survived: {name}"
         );
-        if name.starts_with("proxy-") || name.starts_with("thumbnail-") {
-            remaining_owned.push(name);
+    }
+    assert_eq!(
+        fs::read(&stale_proxy).expect("unrelated proxy-like file must survive"),
+        b"stale-owned-artifact"
+    );
+    assert_eq!(
+        fs::read(&stale_thumbnail).expect("unrelated thumbnail-like file must survive"),
+        b"stale-owned-artifact"
+    );
+}
+
+fn assert_no_ingest_partials(root: &Path) {
+    if !root.exists() {
+        return;
+    }
+    for entry in fs::read_dir(root).expect("media store directory must be readable") {
+        let entry = entry.expect("media store entry must be readable");
+        let path = entry.path();
+        if path.is_dir() {
+            assert_no_ingest_partials(&path);
+        } else {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            assert!(
+                !name.starts_with(".ingest-") && !name.ends_with(".part"),
+                "ingest partial survived: {name}"
+            );
         }
     }
-    remaining_owned.sort();
-    let mut expected_owned = vec![
-        proxy_path
-            .file_name()
-            .expect("proxy filename must exist")
-            .to_string_lossy()
-            .into_owned(),
-        thumbnail_path
-            .file_name()
-            .expect("thumbnail filename must exist")
-            .to_string_lossy()
-            .into_owned(),
-    ];
-    expected_owned.sort();
-    assert_eq!(remaining_owned, expected_owned);
+}
+
+#[test]
+fn content_addressed_ingest_deduplicates_repairs_and_preserves_unrelated_files() {
+    let workspace = tempdir().expect("media store workspace must exist");
+    let first_source = workspace.path().join("first-name.mp4");
+    let second_source = workspace.path().join("second-name.mov");
+    let bytes = b"same exact source bytes";
+    fs::write(&first_source, bytes).expect("first source must write");
+    fs::write(&second_source, bytes).expect("second source must write");
+    let cache = workspace.path().join("cache");
+
+    let first = ingest_blocking_for_test(
+        first_source
+            .canonicalize()
+            .expect("first source must canonicalize"),
+        cache.clone(),
+    )
+    .expect("first source must ingest");
+    let second = ingest_blocking_for_test(
+        second_source
+            .canonicalize()
+            .expect("second source must canonicalize"),
+        cache.clone(),
+    )
+    .expect("duplicate source must ingest");
+    assert_eq!(first.identity, second.identity);
+    assert_eq!(first.object_path, second.object_path);
+    assert_ne!(first.fingerprint.digest, second.fingerprint.digest);
+
+    let unrelated = cache.join(MEDIA_STORE_NAMESPACE).join("unrelated.keep");
+    fs::write(&unrelated, b"do not delete").expect("unrelated file must write");
+    fs::write(&first.object_path, b"corrupt").expect("owned object must be corruptible");
+    let repaired = ingest_blocking_for_test(
+        first_source
+            .canonicalize()
+            .expect("source must canonicalize"),
+        cache.clone(),
+    )
+    .expect("corrupt exact object must repair");
+    assert_eq!(repaired.identity, first.identity);
+    assert_eq!(
+        fs::read(&repaired.object_path).expect("repaired object must read"),
+        bytes
+    );
+    assert_eq!(
+        fs::read(unrelated).expect("unrelated file must survive"),
+        b"do not delete"
+    );
+    assert_no_ingest_partials(&cache);
+}
+
+#[test]
+fn content_addressed_ingest_mutation_and_concurrency_select_safe_objects() {
+    let workspace = tempdir().expect("media mutation workspace must exist");
+    let source = workspace.path().join("source.bin");
+    fs::write(&source, b"version one").expect("source must write");
+    let source = source.canonicalize().expect("source must canonicalize");
+    let cache = workspace.path().join("cache");
+    let original = ingest_blocking_for_test(source.clone(), cache.clone())
+        .expect("original source must ingest");
+    fs::write(&source, b"version two").expect("source mutation must write");
+    let mutated = ingest_blocking_for_test(source.clone(), cache.clone())
+        .expect("mutated source must ingest");
+    assert_ne!(original.identity.digest, mutated.identity.digest);
+    assert_ne!(original.object_path, mutated.object_path);
+
+    let mut workers = Vec::new();
+    for _ in 0..8 {
+        let source = source.clone();
+        let cache = cache.clone();
+        workers.push(thread::spawn(move || {
+            ingest_blocking_for_test(source, cache).expect("concurrent ingest must converge")
+        }));
+    }
+    let results: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("ingest worker must not panic"))
+        .collect();
+    assert!(results
+        .iter()
+        .all(|result| result.object_path == mutated.object_path));
+    assert_no_ingest_partials(&cache);
+}
+
+#[test]
+fn content_addressed_ingest_failpoints_leave_no_promoted_partial() {
+    for failpoint in [
+        IngestFailpoint::Read,
+        IngestFailpoint::ChangedDuringRead,
+        IngestFailpoint::Write,
+        IngestFailpoint::Flush,
+        IngestFailpoint::Sync,
+        IngestFailpoint::Promotion,
+    ] {
+        let workspace = tempdir().expect("failpoint workspace must exist");
+        let source = workspace.path().join("source.bin");
+        fs::write(&source, b"failpoint source bytes").expect("source must write");
+        let cache = workspace.path().join("cache");
+        assert!(ingest_with_failpoint_for_test(
+            source.canonicalize().expect("source must canonicalize"),
+            cache.clone(),
+            failpoint,
+        )
+        .is_err());
+        assert_no_ingest_partials(&cache);
+        let object_root = cache.join(MEDIA_STORE_NAMESPACE).join("objects");
+        if object_root.exists() {
+            let promoted_objects = walk_regular_files(&object_root);
+            assert!(
+                promoted_objects.is_empty(),
+                "failpoint {failpoint:?} promoted an object: {promoted_objects:?}"
+            );
+        }
+    }
+}
+
+fn walk_regular_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(root).expect("directory must be readable") {
+        let path = entry.expect("entry must be readable").path();
+        if path.is_dir() {
+            files.extend(walk_regular_files(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn content_addressed_store_rejects_components_symlinks_and_lock_contention() {
+    let workspace = tempdir().expect("containment workspace must exist");
+    let root = workspace
+        .path()
+        .canonicalize()
+        .expect("root must canonicalize");
+    for malformed in ["", ".", "..", "a/b", "a\\b", "nul\0part"] {
+        assert!(ensure_direct_directory_for_test(&root, malformed).is_err());
+    }
+    let non_directory = root.join("ordinary-file");
+    fs::write(&non_directory, b"file").expect("ordinary file must write");
+    assert!(ensure_direct_directory_for_test(&root, "ordinary-file").is_err());
+
+    let lock_path = root.join("held.lock");
+    let held = lock_file_for_test(&lock_path, Duration::from_secs(1))
+        .expect("first lock must be acquired");
+    let contender_path = lock_path.clone();
+    let contender =
+        thread::spawn(move || lock_file_for_test(&contender_path, Duration::from_millis(75)));
+    assert!(
+        contender
+            .join()
+            .expect("lock contender must not panic")
+            .is_err(),
+        "contended lock must time out"
+    );
+    drop(held);
+    lock_file_for_test(&lock_path, Duration::from_secs(1))
+        .expect("released lock must be reacquired");
+
+    let target = root.join("target-directory");
+    fs::create_dir(&target).expect("target directory must exist");
+    let link = root.join("linked-directory");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(&target, &link).is_ok();
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&target, &link).is_ok();
+    #[cfg(not(any(windows, unix)))]
+    let linked = false;
+    if linked {
+        assert!(ensure_direct_directory_for_test(&root, "linked-directory").is_err());
+    }
+}
+
+#[test]
+fn source_fingerprint_matches_shared_utf8_vector_and_changes_with_path() {
+    let vector = source_fingerprint_bytes_for_test(
+        "/media/café.mp4".as_bytes(),
+        123_456,
+        1_720_000_000,
+        123_456_789,
+    )
+    .expect("shared fingerprint vector must derive");
+    assert_eq!(
+        vector.digest,
+        "3f93442f2ca6148106623062a8f44483bac6fd0de29fa903dca3da1dd895ee39"
+    );
+    let path_vector = source_fingerprint_for_test(
+        Path::new("/media/café.mp4"),
+        123_456,
+        1_720_000_000,
+        123_456_789,
+    )
+    .expect("UTF-8 path fingerprint vector must derive");
+    assert_eq!(path_vector, vector);
+    let renamed = source_fingerprint_for_test(
+        Path::new("/media/renamed.mp4"),
+        123_456,
+        1_720_000_000,
+        123_456_789,
+    )
+    .expect("renamed fingerprint must derive");
+    assert_ne!(vector.digest, renamed.digest);
+}
+
+#[tokio::test]
+async fn ingest_authorizes_before_creating_the_store() {
+    let workspace = tempdir().expect("authorization workspace must exist");
+    let source = workspace.path().join("source.bin");
+    fs::write(&source, b"authorization source").expect("source must write");
+    let cache = workspace.path().join("cache-must-not-exist");
+    let grants = VideoPathGrants::default();
+    assert!(
+        super::media_store::ingest_source("ungranted-owner", &grants, &source, &cache,)
+            .await
+            .is_err()
+    );
+    assert!(
+        !cache.exists(),
+        "grant rejection must precede store creation"
+    );
+}
+
+#[test]
+fn rust_media_identity_matches_shared_vector() {
+    let profile_identity =
+        derive_profile_identity(&PREVIEW_PROFILE).expect("preview profile identity must derive");
+    assert_eq!(
+        profile_identity.profile_digest,
+        "b055cc1bf33f212debe685eeb7b19a1e0d0a31843e5780ac97b4c97eee0f97c4"
+    );
+    let argv = [
+        "-i",
+        "{source}",
+        "-map",
+        "0:v:0",
+        "-c:v",
+        "libx264",
+        "{destination}",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    let validation = ["regular_nonzero", "probe_size_exact", "h264_yuv420p"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let recipe_digest = derive_recipe_digest(DerivedArtifactKind::Proxy, &argv, &validation)
+        .expect("shared recipe digest must derive");
+    assert_eq!(
+        recipe_digest,
+        "7a27f8436627ebc489d09fedeb040190de32b4443efc42ecfdb86e3334864bb9"
+    );
+    let source_identity = MediaContentIdentityV1 {
+        schema_version: 1,
+        algorithm: MediaContentAlgorithm::Sha256,
+        digest: "0123456789abcdef".repeat(4),
+        byte_length: 123_456,
+    };
+    let identity = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &source_identity,
+        "ffmpeg-test-v1",
+        &profile_identity,
+        &recipe_digest,
+    )
+    .expect("shared derived identity must derive");
+    assert_eq!(
+        identity.key,
+        "e27c60d494f85cb45da098ea8c803f3cf24b2dc9fdd56ad7569e4c02033c1cc5"
+    );
+}
+
+#[test]
+fn output_affecting_inputs_invalidate_recipe_profile_and_derived_keys() {
+    let rate = RationalRate {
+        numerator: 30,
+        denominator: 1,
+    };
+    let dimensions = OutputDimensions {
+        width: 1_280,
+        height: 720,
+    };
+    let (proxy_argv, proxy_validation) = proxy_recipe(dimensions, &rate, false, 0, Some(1))
+        .expect("baseline proxy recipe must derive");
+    let proxy_digest =
+        derive_recipe_digest(DerivedArtifactKind::Proxy, &proxy_argv, &proxy_validation)
+            .expect("baseline proxy digest must derive");
+    for changed in [
+        proxy_recipe(
+            OutputDimensions {
+                width: 640,
+                height: 360,
+            },
+            &rate,
+            false,
+            0,
+            Some(1),
+        ),
+        proxy_recipe(
+            dimensions,
+            &RationalRate {
+                numerator: 24,
+                denominator: 1,
+            },
+            false,
+            0,
+            Some(1),
+        ),
+        proxy_recipe(dimensions, &rate, true, 0, Some(1)),
+        proxy_recipe(dimensions, &rate, false, 2, Some(1)),
+        proxy_recipe(dimensions, &rate, false, 0, None),
+    ] {
+        let (argv, validation) = changed.expect("changed proxy recipe must derive");
+        assert_ne!(
+            derive_recipe_digest(DerivedArtifactKind::Proxy, &argv, &validation)
+                .expect("changed proxy digest must derive"),
+            proxy_digest
+        );
+    }
+
+    let (thumbnail_argv, thumbnail_validation) =
+        thumbnail_recipe(2_000_000, 0).expect("baseline thumbnail recipe must derive");
+    let thumbnail_digest = derive_recipe_digest(
+        DerivedArtifactKind::ThumbnailTile,
+        &thumbnail_argv,
+        &thumbnail_validation,
+    )
+    .expect("baseline thumbnail digest must derive");
+    for changed in [
+        thumbnail_recipe(3_000_000, 0),
+        thumbnail_recipe(2_000_000, 2),
+    ] {
+        let (argv, validation) = changed.expect("changed thumbnail recipe must derive");
+        assert_ne!(
+            derive_recipe_digest(DerivedArtifactKind::ThumbnailTile, &argv, &validation)
+                .expect("changed thumbnail digest must derive"),
+            thumbnail_digest
+        );
+    }
+
+    let baseline_profile =
+        derive_profile_identity(&PREVIEW_PROFILE).expect("baseline profile must derive");
+    let mut changed_profile = PREVIEW_PROFILE;
+    changed_profile.proxy_color_transfer = "smpte2084";
+    assert_ne!(
+        derive_profile_identity(&changed_profile)
+            .expect("changed profile must derive")
+            .profile_digest,
+        baseline_profile.profile_digest
+    );
+    changed_profile = PREVIEW_PROFILE;
+    changed_profile.thumbnail_count += 1;
+    assert_ne!(
+        derive_profile_identity(&changed_profile)
+            .expect("changed sampling profile must derive")
+            .profile_digest,
+        baseline_profile.profile_digest
+    );
+
+    let source_identity = MediaContentIdentityV1 {
+        schema_version: 1,
+        algorithm: MediaContentAlgorithm::Sha256,
+        digest: "11".repeat(32),
+        byte_length: 100,
+    };
+    let baseline = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &source_identity,
+        "toolchain-a",
+        &baseline_profile,
+        &proxy_digest,
+    )
+    .expect("baseline identity must derive");
+    let changed_toolchain = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &source_identity,
+        "toolchain-b",
+        &baseline_profile,
+        &proxy_digest,
+    )
+    .expect("toolchain identity must derive");
+    let changed_source = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &MediaContentIdentityV1 {
+            digest: "22".repeat(32),
+            ..source_identity
+        },
+        "toolchain-a",
+        &baseline_profile,
+        &proxy_digest,
+    )
+    .expect("source identity must derive");
+    assert_ne!(baseline.key, changed_toolchain.key);
+    assert_ne!(baseline.key, changed_source.key);
+
+    let mut reordered = proxy_argv;
+    reordered.swap(0, 1);
+    assert_ne!(
+        derive_recipe_digest(DerivedArtifactKind::Proxy, &reordered, &proxy_validation)
+            .expect("reordered recipe must derive"),
+        proxy_digest
+    );
 }

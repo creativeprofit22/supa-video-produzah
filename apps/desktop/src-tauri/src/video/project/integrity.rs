@@ -12,7 +12,10 @@ use super::types::{
 };
 use crate::video::{
     error::{VideoCommandError, VideoErrorCode},
-    types::{AssetLocator, MediaProbe, RationalRate, RationalTime, VideoAsset},
+    types::{
+        AssetLocator, MediaContentAlgorithm, MediaContentIdentityV1, MediaProbe, RationalRate,
+        RationalTime, VideoAsset,
+    },
 };
 
 fn invalid(category: &'static str) -> VideoCommandError {
@@ -245,11 +248,26 @@ fn valid_probe(probe: &MediaProbe) -> bool {
         })
 }
 
+fn valid_content_identity(identity: &MediaContentIdentityV1) -> bool {
+    identity.schema_version == 1
+        && identity.algorithm == MediaContentAlgorithm::Sha256
+        && identity.digest.len() == 64
+        && identity
+            .digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && (1..=MAX_SAFE_INTEGER).contains(&identity.byte_length)
+}
+
 fn valid_asset_shape(asset: &VideoAsset) -> bool {
     is_canonical_uuid(asset.id.as_str())
         && valid_non_blank(&asset.display_name)
         && valid_locator(&asset.locator)
         && valid_probe(&asset.probe)
+        && asset
+            .content_identity
+            .as_ref()
+            .is_none_or(valid_content_identity)
 }
 
 fn valid_marker_shape(marker: &super::types::ProjectMarker) -> bool {
@@ -691,8 +709,14 @@ fn valid_command(command: &ProjectCommand) -> bool {
             asset_id,
             locator,
             probe,
+            content_identity,
             ..
-        } => is_canonical_uuid(asset_id) && valid_locator(locator) && valid_probe(probe),
+        } => {
+            is_canonical_uuid(asset_id)
+                && valid_locator(locator)
+                && valid_probe(probe)
+                && content_identity.as_ref().is_none_or(valid_content_identity)
+        }
         ProjectCommand::RemoveAsset { asset_id, .. } => is_canonical_uuid(asset_id),
     }
 }

@@ -22,10 +22,46 @@ const probe = {
   audio: null,
   fileSizeBytes: 1000,
 } as const;
+const sourceIdentity = {
+  schemaVersion: 1,
+  algorithm: "sha256",
+  digest: "12".repeat(32),
+  byteLength: probe.fileSizeBytes,
+} as const;
+const profileIdentity = {
+  schemaVersion: 1,
+  profileId: "preview-v1",
+  profileDigest: "34".repeat(32),
+} as const;
+const identityBase = {
+  schemaVersion: 1,
+  sourceIdentity,
+  toolchainId: "ffmpeg-test-v1",
+  profileIdentity,
+  recipeDigest: "56".repeat(32),
+} as const;
 const prepared = {
+  sourceFingerprint: {
+    schemaVersion: 1,
+    algorithm: "sha256",
+    digest: "78".repeat(32),
+    byteLength: probe.fileSizeBytes,
+    modifiedUnixSeconds: 1_720_000_000,
+    modifiedNanoseconds: 42,
+  },
+  sourceIdentity,
+  sourceProbe: probe,
+  sequenceRate: probe.averageFrameRate,
+  profileIdentity,
+  proxyIdentity: { ...identityBase, artifactKind: "proxy", key: "9a".repeat(32) },
   proxyPath: "C:\\Cache\\proxy.mp4",
-  thumbnailPath: "C:\\Cache\\thumb.jpg",
   proxyProbe: probe,
+  thumbnailIdentity: {
+    ...identityBase,
+    artifactKind: "thumbnail_tile",
+    key: "bc".repeat(32),
+  },
+  thumbnailPath: "C:\\Cache\\thumb.jpg",
 } as const;
 
 function emptyProjection(revision = 0): ProjectProjection {
@@ -63,6 +99,7 @@ function clipProjection(revision = 1, sourceIn = 0, sourceOut = 60): ProjectProj
           displayName: "clip.mp4",
           locator: { absolutePath: "C:\\Media\\clip.mp4" },
           probe,
+          contentIdentity: sourceIdentity,
         },
       ],
       sequences: [
@@ -197,16 +234,42 @@ describe("canonical project controller", () => {
   it("consumes snapshot warning events from grouped import command results", async () => {
     const empty = emptyProjection();
     const imported = clipProjection(1);
-    const execute = vi.fn(async (request: CommandGroupRequest) =>
-      withCheckpointWarning(commandResult(empty, imported, request.groupId), "event"),
-    );
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      const commandResultValue = withCheckpointWarning(
+        commandResult(empty, imported, request.groupId),
+        "event",
+      );
+      const importedAsset = request.commands.find((command) => command.type === "ImportAsset");
+      const createdSequence = request.commands.find((command) => command.type === "CreateSequence");
+      const insertedClip = request.commands.find((command) => command.type === "InsertClip");
+      if (
+        importedAsset?.type === "ImportAsset" &&
+        createdSequence?.type === "CreateSequence" &&
+        insertedClip?.type === "InsertClip"
+      ) {
+        commandResultValue.projection.state.assets = [importedAsset.asset];
+        const sequence = structuredClone(createdSequence.sequence);
+        const track = sequence.tracks.find((item) => item.id === insertedClip.trackId);
+        if (track !== undefined && track.kind !== "caption") track.clips.push(insertedClip.clip);
+        commandResultValue.projection.state.sequences = [sequence];
+        commandResultValue.projection.state.activeSequenceId = sequence.id;
+        commandResultValue.projection.sources = [
+          {
+            assetId: importedAsset.asset.id,
+            status: "resolved",
+            resolvedPath: importedAsset.asset.locator.absolutePath ?? "C:\\Media\\clip.mp4",
+          },
+        ];
+      }
+      return commandResultValue;
+    });
     const backend = createBackend({
       createVideoProject: vi.fn(async () => empty),
       executeVideoProjectGroup: execute,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.newProject());
-    await act(() => result.current.prepareImportedSource("C:\\Media\\clip.mp4", probe));
+    await act(() => result.current.prepareImportedSource("C:\\Media\\clip.mp4"));
     const request = execute.mock.calls[0]![0];
     expect(request.commands.map((command) => command.type)).toEqual([
       "ImportAsset",
@@ -220,6 +283,114 @@ describe("canonical project controller", () => {
       type: "snapshot_pending",
       revision: 1,
     });
+  });
+
+  it("derives first-import timing from the canonical prepared source", async () => {
+    const empty = emptyProjection();
+    const preliminaryProbe = {
+      ...probe,
+      averageFrameRate: { numerator: 24, denominator: 1 },
+      realFrameRate: { numerator: 24, denominator: 1 },
+    } as const;
+    const canonicalRate = { numerator: 60, denominator: 1 } as const;
+    const canonicalProbe = {
+      ...probe,
+      durationMicroseconds: 2_500_000,
+      averageFrameRate: canonicalRate,
+      realFrameRate: canonicalRate,
+    } as const;
+    const canonicalPrepared = {
+      ...prepared,
+      sourceProbe: canonicalProbe,
+      sequenceRate: canonicalRate,
+      proxyProbe: {
+        ...prepared.proxyProbe,
+        durationMicroseconds: canonicalProbe.durationMicroseconds,
+        averageFrameRate: canonicalRate,
+        realFrameRate: canonicalRate,
+      },
+    } as const;
+    const prepareRequests: Parameters<VideoBackend["prepareVideoAsset"]>[0][] = [];
+    const prepareVideoAsset = vi.fn(
+      async (request: Parameters<VideoBackend["prepareVideoAsset"]>[0]) => {
+        prepareRequests.push(request);
+        return canonicalPrepared;
+      },
+    );
+    const probeVideoSource = vi.fn(async () => preliminaryProbe);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      const importedAsset = request.commands.find((command) => command.type === "ImportAsset");
+      const createdSequence = request.commands.find((command) => command.type === "CreateSequence");
+      const insertedClip = request.commands.find((command) => command.type === "InsertClip");
+      if (
+        importedAsset?.type !== "ImportAsset" ||
+        createdSequence?.type !== "CreateSequence" ||
+        insertedClip?.type !== "InsertClip"
+      )
+        throw new Error("Expected a grouped first import");
+      const imported = clipProjection(1);
+      imported.state.assets = [importedAsset.asset];
+      const sequence = structuredClone(createdSequence.sequence);
+      const track = sequence.tracks.find((item) => item.id === insertedClip.trackId);
+      if (track === undefined || track.kind === "caption")
+        throw new Error("Expected the imported media track");
+      track.clips.push(insertedClip.clip);
+      imported.state.sequences = [sequence];
+      imported.state.activeSequenceId = sequence.id;
+      imported.sources = [
+        {
+          assetId: importedAsset.asset.id,
+          status: "resolved",
+          resolvedPath: importedAsset.asset.locator.absolutePath ?? "C:\\Media\\clip.mp4",
+        },
+      ];
+      return commandResult(empty, imported, request.groupId);
+    });
+    const backend = createBackend({
+      createVideoProject: vi.fn(async () => empty),
+      pickVideoSource: vi.fn(async () => "C:\\Media\\clip.mp4"),
+      probeVideoSource,
+      prepareVideoAsset,
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.newProject());
+
+    await act(() => result.current.chooseSource());
+
+    expect(probeVideoSource).not.toHaveBeenCalled();
+    const prepareRequest = prepareRequests[0]!;
+    expect(prepareRequest).toEqual(
+      expect.objectContaining({ projectId: empty.projectId, path: "C:\\Media\\clip.mp4" }),
+    );
+    expect(prepareRequest).not.toHaveProperty("sequenceRate");
+    const request = execute.mock.calls[0]![0];
+    const importedAsset = request.commands.find((command) => command.type === "ImportAsset");
+    const createdSequence = request.commands.find((command) => command.type === "CreateSequence");
+    const insertedClip = request.commands.find((command) => command.type === "InsertClip");
+    expect(importedAsset?.type === "ImportAsset" ? importedAsset.asset.probe : null).toEqual(
+      canonicalProbe,
+    );
+    expect(
+      createdSequence?.type === "CreateSequence" ? createdSequence.sequence.rate : null,
+    ).toEqual(canonicalRate);
+    expect(insertedClip?.type === "InsertClip" ? insertedClip.clip.timelineStart : null).toEqual({
+      value: 0,
+      rateNumerator: 60,
+      rateDenominator: 1,
+    });
+    expect(insertedClip?.type === "InsertClip" ? insertedClip.clip.sourceIn : null).toEqual({
+      value: 0,
+      rateNumerator: 60,
+      rateDenominator: 1,
+    });
+    expect(insertedClip?.type === "InsertClip" ? insertedClip.clip.sourceOut : null).toEqual({
+      value: 150,
+      rateNumerator: 60,
+      rateDenominator: 1,
+    });
+    expect(result.current.projection?.state.assets[0]?.probe).toEqual(canonicalProbe);
+    expect(result.current.projection?.state.sequences[0]?.rate).toEqual(canonicalRate);
   });
 
   it("sets and clears checkpoint warnings across trim, undo, and redo results", async () => {
@@ -444,7 +615,7 @@ describe("canonical project controller", () => {
     await act(() => result.current.newProject());
     let importPromise!: Promise<void>;
     act(() => {
-      importPromise = result.current.prepareImportedSource("C:\\Media\\clip.mp4", probe);
+      importPromise = result.current.prepareImportedSource("C:\\Media\\clip.mp4");
     });
     await waitFor(() => expect(backend.executeVideoProjectGroup).toHaveBeenCalled());
     await act(() => result.current.newProject());

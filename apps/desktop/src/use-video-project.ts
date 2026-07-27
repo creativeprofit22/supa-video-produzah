@@ -2,9 +2,6 @@ import {
   createRationalTime,
   microsecondsToSourceFrames,
   type CommandResult,
-  type MediaProbe,
-  type PreparedVideoAsset,
-  type PrepareVideoAssetRequest,
   type ProjectProjection,
   type RecoveryReport,
   type RenderPlanV1,
@@ -13,6 +10,7 @@ import {
   type VideoSourceRecord,
   videoProjectFileV1Schema,
 } from "@supa-video/contracts";
+import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
 import { buildCommandGroup } from "@supa-video/project";
 import { compileSingleClipRenderPlan } from "@supa-video/render";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -234,6 +232,16 @@ function sourceDurationFrames(projection: ProjectProjection | null): number | nu
 }
 function hasSingleClip(projection: ProjectProjection | null): boolean {
   return activeClip(projection) !== null;
+}
+function contentIdentityMatches(
+  expected: { digest: string; byteLength: number },
+  actual: { digest: string; byteLength: number } | undefined,
+): boolean {
+  return (
+    actual !== undefined &&
+    actual.digest === expected.digest &&
+    actual.byteLength === expected.byteLength
+  );
 }
 function preparationRequest(
   projection: ProjectProjection,
@@ -499,6 +507,12 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       patchState({ preparation: { phase: "pending" }, preparedAsset: null });
       try {
         const prepared = await backend.prepareVideoAsset(request);
+        const asset = projection.state.assets.find((item) => item.id === request.assetId);
+        if (
+          asset?.contentIdentity !== undefined &&
+          !contentIdentityMatches(prepared.sourceIdentity, asset.contentIdentity)
+        )
+          throw new Error("The prepared source does not match the committed project asset");
         if (
           operation === projectOperationRef.current &&
           stateRef.current.projection?.projectId === projection.projectId &&
@@ -579,7 +593,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   }, [activateProjection, backend, closeCurrent, patchState, prepareOpenedSource, replaceState]);
 
   const persistImportedSource = useCallback(
-    async (operation: number, path: string, probe: MediaProbe) => {
+    async (operation: number, path: string) => {
       const base = stateRef.current.projection;
       if (base === null) throw new Error("Create or open a project before choosing a source video");
       const assetId = newId();
@@ -590,11 +604,11 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         projectId: base.projectId,
         assetId,
         path,
-        sequenceRate: probe.averageFrameRate,
       };
       const prepared = await backend.prepareVideoAsset(prepareRequest);
       if (operation !== projectOperationRef.current) return;
-      const rate = probe.averageFrameRate;
+      const rate = prepared.sequenceRate;
+      const sourceProbe = prepared.sourceProbe;
       const request = buildCommandGroup({
         groupId: newId(),
         projectId: base.projectId,
@@ -607,7 +621,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
               id: assetId,
               displayName: sourceDisplayName(path),
               locator: { absolutePath: path },
-              probe,
+              probe: sourceProbe,
+              contentIdentity: prepared.sourceIdentity,
             },
           },
           {
@@ -634,7 +649,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
               source: { kind: "asset", assetId },
               timelineStart: createRationalTime(0, rate),
               sourceIn: createRationalTime(0, rate),
-              sourceOut: microsecondsToSourceFrames(probe.durationMicroseconds, rate),
+              sourceOut: microsecondsToSourceFrames(sourceProbe.durationMicroseconds, rate),
               transform: {
                 positionXPermille: 0,
                 positionYPermille: 0,
@@ -658,6 +673,9 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         result.groupId !== request.groupId
       )
         return;
+      const committedAsset = result.projection.state.assets.find((asset) => asset.id === assetId);
+      if (!contentIdentityMatches(prepared.sourceIdentity, committedAsset?.contentIdentity))
+        throw new Error("The committed source identity does not match the prepared media");
       activateProjection(result.projection, {
         projectPath: stateRef.current.projectPath,
         preparedAsset: prepared,
@@ -680,9 +698,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         replaceState({ ...previous, projectOperation: { phase: "idle" } });
         return;
       }
-      const probe = await backend.probeVideoSource(path);
       patchState({ preparation: { phase: "pending" } });
-      await persistImportedSource(operation, path, probe);
+      await persistImportedSource(operation, path);
     } catch (error) {
       if (operation === projectOperationRef.current)
         replaceState({
@@ -693,14 +710,14 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     }
   }, [backend, patchState, persistImportedSource, replaceState]);
   const prepareImportedSource = useCallback(
-    async (path: string, probe: MediaProbe) => {
+    async (path: string) => {
       const operation = ++projectOperationRef.current;
       patchState({
         projectOperation: { phase: "pending", operation: "import" },
         preparation: { phase: "pending" },
       });
       try {
-        await persistImportedSource(operation, path, probe);
+        await persistImportedSource(operation, path);
       } catch (error) {
         if (operation === projectOperationRef.current)
           patchState({

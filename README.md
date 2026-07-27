@@ -1,6 +1,6 @@
 # Supa Video Producer
 
-Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 3 now pins and verifies one bundled FFmpeg/ffprobe toolchain for Windows x86_64 on top of the Rust-owned canonical project engine and crash recovery.
+Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 3A adds content-addressed ingest and deterministic derived media on top of the Rust-owned canonical project engine, crash recovery, and pinned Windows FFmpeg/ffprobe toolchain.
 
 ## Prerequisites
 
@@ -35,11 +35,11 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-Phase 3's FFmpeg distribution baseline is implemented on Phase 2 HEAD `7ad26432e6ffa36e63f1fc85349345179c31fd72`. The product pins Gyan FFmpeg 8.1.2 release essentials by archive length/SHA-256, source commit, executable hashes, build flags, and required encoder/muxer/filter capabilities.
+Phase 3A is implemented from audited baseline `cd262b41f48361ccc98e185c86a51761bb0fec04`. The product pins Gyan FFmpeg 8.1.2 release essentials and now streams authorized source bytes into a global app-owned SHA-256 media store.
 
-Rust compiles the manifest into the application, resolves only exact contained bundled resources, rejects symlinks/reparse points and hash/capability mismatches, and passes verified absolute paths into the existing no-shell process supervisor. Production status, probe, preparation, and render commands share this managed toolchain and expose no path override or `PATH` fallback.
+Equal bytes selected under different filenames, project IDs, or asset IDs converge on one verified object and compatible proxy/thumbnail paths. Derived keys include source content, managed toolchain, complete preview/color profile, stream/rate/geometry/sampling choices, ordered path-neutral FFmpeg arguments, and validation policy. Corrupt exact destinations repair under per-key locks while unrelated files and the legacy cache survive.
 
-The production UI keeps the Phase 2 single-clip workflow and now reports the sanitized bundled source, short version, stable toolchain ID, and actionable missing/damaged/incompatible states. Local gates pass 138 TypeScript tests, 121 default all-feature Rust tests, all eight explicit bundled-FFmpeg integrations, all three stripped-`PATH` packaged IPC integrations, bootstrap adversarial checks, Clippy with warnings denied, Tauri executable/MSI/NSIS assembly, installed-resource hash verification, and stripped-`PATH` launch. See [`apps/desktop/evidence/phase-3/ffmpeg-distribution.md`](./apps/desktop/evidence/phase-3/ffmpeg-distribution.md).
+Grouped import, preparation, and relink use bundled FFprobe, persist exact content identity, reject caller probe/identity tampering before project mutation, and preserve asset UUIDs through relink/undo/redo/replay/reopen. Local gates pass 153 TypeScript tests, 129 all-feature Rust/configuration tests, 3 Chromium checks, all 8 explicit FFmpeg integrations, and all 3 enhanced packaged integrations with an empty `PATH`. See [`apps/desktop/evidence/phase-3/content-addressed-ingest.md`](./apps/desktop/evidence/phase-3/content-addressed-ingest.md).
 
 ## Project format and portability
 
@@ -51,8 +51,8 @@ V1 projects migrate on first native open. The selected V1 state and stable media
 
 ## Security boundary
 
-The architecture keeps arbitrary filesystem access, canonical project mutation, and media-process execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, output, and bundled-resource paths. An embedded manifest verifies exact FFmpeg/ffprobe hashes before the existing no-shell supervisor spawns them with bounded output and descendant cleanup. The asset protocol is active only for product-owned derived media beneath `$APPCACHE/video-phase1/**/*`; source files, bundled tools, and final exports are excluded. Production uses an explicit local-only CSP, and the main-window capability grants only event listen/unlisten and close-guard access.
+The architecture keeps arbitrary filesystem access, canonical project mutation, and media-process execution outside the React webview. Native commands use Rust-owned dialogs and per-window path grants; Rust canonicalizes and revalidates project, source, cache, output, and bundled-resource paths. An embedded manifest verifies exact FFmpeg/ffprobe hashes before the no-shell supervisor spawns them with bounded output and descendant cleanup. The asset protocol exposes only product-owned artifacts beneath `$APPCACHE/supa-video-media-v1/derived/**/*`; content objects, locks, source files, bundled tools, legacy cache files, and final exports are excluded. Production uses an explicit local-only CSP, and the main-window capability grants only event listen/unlisten and close-guard access.
 
 ## Current UI contract and limitations
 
-The V2 domain supports ordered assets, sequences, typed video/audio/caption tracks, clips, markers, fixed-point transforms/gain, and nested-sequence references. The production UI intentionally remains the proven one-local-clip workflow. Professional multitrack interaction, transitions, stock media, cloud services, agents, native compositing, journal compaction, content-addressed ingest, durable media jobs, cache budgets, and waveform/keyframe generation remain later Phase 3 work. Public distribution also remains blocked pending explicit GPL/source-offer and codec-patent review.
+The V2 domain supports ordered assets, sequences, typed video/audio/caption tracks, clips, markers, fixed-point transforms/gain, nested-sequence references, and optional exact source-content identities. The production UI intentionally remains the proven one-local-clip workflow. Phase 3B next adds durable media jobs, scheduling, retry/resume, restart recovery, cache budgets/leases/eviction, audio intermediates, waveforms, keyframe indexes, transcription, and job-center UI. Professional multitrack interaction, transitions, stock media, cloud services, agents, native compositing, and journal compaction remain later work. Public distribution also remains blocked pending explicit GPL/source-offer and codec-patent review.

@@ -76,14 +76,18 @@ fn generated_context_enforces_exact_runtime_security_policy() {
         source_config["app"]["security"]["assetProtocol"],
         json!({
             "enable": true,
-            "scope": ["$APPCACHE/video-phase1/**/*"]
+            "scope": ["$APPCACHE/supa-video-media-v1/derived/**/*"]
         })
     );
     assert_eq!(
         security.asset_protocol.scope.allowed_paths(),
-        &[PathBuf::from("$APPCACHE/video-phase1/**/*")]
+        &[PathBuf::from("$APPCACHE/supa-video-media-v1/derived/**/*")]
     );
     assert!(security.asset_protocol.scope.forbidden_paths().is_none());
+    let allowed = security.asset_protocol.scope.allowed_paths()[0].to_string_lossy();
+    assert!(!allowed.contains("objects"));
+    assert!(!allowed.contains("locks"));
+    assert!(!allowed.contains("video-phase1"));
 }
 
 #[test]
@@ -166,11 +170,14 @@ fn production_media_commands_use_managed_paths_and_expose_no_tool_path_parameter
     let probe = include_str!("../src/video/probe.rs");
     let derived = include_str!("../src/video/derived.rs");
     let render = include_str!("../src/video/render.rs");
+    let project_ipc = include_str!("../src/video/project/ipc.rs");
     for (source, command_name) in [
         (probe, "video_ffmpeg_status"),
         (probe, "video_probe_media"),
         (derived, "video_prepare_asset"),
         (render, "video_start_render"),
+        (project_ipc, "video_execute_project_group"),
+        (project_ipc, "video_relink_project_asset"),
     ] {
         let command = production_command(source, command_name);
         assert!(

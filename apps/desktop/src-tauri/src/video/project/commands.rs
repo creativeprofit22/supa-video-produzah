@@ -771,6 +771,7 @@ fn apply_one(
             asset_id,
             locator,
             probe,
+            content_identity,
             ..
         } => {
             let asset = state
@@ -780,12 +781,15 @@ fn apply_one(
                 .ok_or_else(|| invalid("unknown_asset"))?;
             let old_locator = std::mem::replace(&mut asset.locator, locator.clone());
             let old_probe = std::mem::replace(&mut asset.probe, probe.clone());
+            let old_content_identity =
+                std::mem::replace(&mut asset.content_identity, content_identity.clone());
             Ok((
                 vec![ProjectCommand::RelinkAsset {
                     command_id: inverse_id(id, 0),
                     asset_id: asset_id.clone(),
                     locator: old_locator,
                     probe: old_probe,
+                    content_identity: old_content_identity,
                 }],
                 vec![],
             ))

@@ -36,7 +36,7 @@ use crate::video::{
     error::{VideoCommandError, VideoErrorCode},
     grants::{normalize_existing_file, GrantCategory, VideoPathGrants},
     project_io::{require_extension, resolve_project_asset_sources, VideoSourceRecord},
-    types::{AssetLocator, MediaProbe},
+    types::{AssetLocator, MediaContentIdentityV1, MediaProbe},
 };
 
 const CHECKPOINT_INTERVAL: u64 = 25;
@@ -770,6 +770,7 @@ impl VideoProjectService {
         self.history_operation(owner, project_id, base_revision, operation_id, true, grants)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn relink(
         &self,
         owner: &str,
@@ -777,6 +778,7 @@ impl VideoProjectService {
         asset_id: &str,
         locator: AssetLocator,
         probe: MediaProbe,
+        content_identity: Option<MediaContentIdentityV1>,
         grants: &VideoPathGrants,
     ) -> Result<CommandResult, VideoCommandError> {
         let session = self.session(owner, project_id)?;
@@ -795,9 +797,29 @@ impl VideoProjectService {
                 asset_id: asset_id.to_owned(),
                 locator,
                 probe,
+                content_identity,
             }],
         };
         self.execute(owner, request, grants)
+    }
+
+    pub fn asset_content_identity(
+        &self,
+        owner: &str,
+        project_id: &str,
+        asset_id: &str,
+    ) -> Result<Option<MediaContentIdentityV1>, VideoCommandError> {
+        let session = self.session(owner, project_id)?;
+        let session = session
+            .lock()
+            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        Ok(session
+            .snapshot
+            .state
+            .assets
+            .iter()
+            .find(|asset| asset.id.as_str() == asset_id)
+            .and_then(|asset| asset.content_identity.clone()))
     }
 
     pub fn inspector(

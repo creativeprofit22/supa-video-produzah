@@ -32,7 +32,7 @@ use super::{
 use crate::video::{
     grants::GrantCategory,
     project_io::VideoSourceStatus,
-    types::{AssetLocator, RationalTime},
+    types::{AssetLocator, MediaContentAlgorithm, MediaContentIdentityV1, RationalTime},
 };
 
 #[test]
@@ -135,6 +135,57 @@ fn shared_v2_fixture_shape_and_integrity_parity() {
     }
 }
 #[test]
+fn relink_asset_command_serde_matches_shared_optional_non_null_contract() {
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let snapshot: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+    let asset = &snapshot.state.assets[0];
+    let command = serde_json::json!({
+        "type": "RelinkAsset",
+        "commandId": "7a000000-0000-4000-8000-000000000001",
+        "assetId": asset.id.as_str(),
+        "locator": asset.locator,
+        "probe": asset.probe,
+    });
+
+    let omitted: ProjectCommand = serde_json::from_value(command.clone()).unwrap();
+    let ProjectCommand::RelinkAsset {
+        content_identity, ..
+    } = omitted
+    else {
+        unreachable!();
+    };
+    assert_eq!(content_identity, None);
+
+    let identity = MediaContentIdentityV1 {
+        schema_version: 1,
+        algorithm: MediaContentAlgorithm::Sha256,
+        digest: "42".repeat(32),
+        byte_length: 17,
+    };
+    let mut valid = command.clone();
+    valid["contentIdentity"] = serde_json::to_value(&identity).unwrap();
+    let decoded: ProjectCommand = serde_json::from_value(valid).unwrap();
+    let ProjectCommand::RelinkAsset {
+        content_identity, ..
+    } = decoded
+    else {
+        unreachable!();
+    };
+    assert_eq!(content_identity, Some(identity));
+
+    let mut explicit_null = command.clone();
+    explicit_null["contentIdentity"] = Value::Null;
+    assert!(serde_json::from_value::<ProjectCommand>(explicit_null).is_err());
+
+    let mut unknown_field = command;
+    unknown_field["unexpected"] = Value::Bool(true);
+    assert!(serde_json::from_value::<ProjectCommand>(unknown_field).is_err());
+}
+
+#[test]
 fn over_limit_sequence_name_is_rejected_without_leaking_a_locked_session() {
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("over-limit-name.svpvideo");
@@ -193,6 +244,12 @@ fn active_locked_project_relinks_a_missing_source_without_reopening() {
         .grant_existing_file(owner, GrantCategory::Source, &replacement_path)
         .unwrap();
     let asset = &opened.projection.state.assets[0];
+    let content_identity = MediaContentIdentityV1 {
+        schema_version: 1,
+        algorithm: MediaContentAlgorithm::Sha256,
+        digest: "42".repeat(32),
+        byte_length: 17,
+    };
     let result = service
         .relink(
             owner,
@@ -203,6 +260,7 @@ fn active_locked_project_relinks_a_missing_source_without_reopening() {
                 absolute_path: Some(canonical_replacement.to_str().unwrap().to_owned()),
             },
             asset.probe.clone(),
+            Some(content_identity.clone()),
             &grants,
         )
         .unwrap();
@@ -223,6 +281,44 @@ fn active_locked_project_relinks_a_missing_source_without_reopening() {
             .absolute_path
             .as_deref(),
         canonical_replacement.to_str()
+    );
+    assert_eq!(
+        result.projection.state.assets[0].content_identity,
+        Some(content_identity.clone())
+    );
+
+    let undone = service
+        .undo(
+            owner,
+            &opened.projection.project_id,
+            result.new_revision.number,
+            "7b000000-0000-4000-8000-000000000001",
+            &grants,
+        )
+        .expect("relink undo must succeed");
+    assert_eq!(undone.projection.state.assets[0].content_identity, None);
+    let redone = service
+        .redo(
+            owner,
+            &opened.projection.project_id,
+            undone.new_revision.number,
+            "7b000000-0000-4000-8000-000000000002",
+            &grants,
+        )
+        .expect("relink redo must succeed");
+    assert_eq!(
+        redone.projection.state.assets[0].content_identity,
+        Some(content_identity.clone())
+    );
+    service
+        .close(owner, &opened.projection.project_id)
+        .expect("relinked project must close");
+    let reopened = service
+        .open(owner, &project_path, &grants)
+        .expect("relinked project must replay and reopen");
+    assert_eq!(
+        reopened.projection.state.assets[0].content_identity,
+        Some(content_identity)
     );
 }
 #[test]

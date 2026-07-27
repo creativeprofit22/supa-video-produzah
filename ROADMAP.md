@@ -370,19 +370,23 @@ Runtime: decoders, GPU textures, file handles
 
 **Depends on:** Phase 2
 
-## Implementation checkpoint - verified 26 July 2026
+## Implementation checkpoint - re-audited and verified 26 July 2026
 
-The Windows x86_64 FFmpeg distribution baseline is complete on Phase 2 HEAD `7ad26432e6ffa36e63f1fc85349345179c31fd72`. Production now uses only Gyan FFmpeg 8.1.2 release essentials resources pinned by archive length/SHA-256, source commit, executable length/SHA-256, build flags, and required encoder/muxer/filter capabilities.
+Phase 3A is implemented and locally verified from exact audited baseline `cd262b41f48361ccc98e185c86a51761bb0fec04`, built on the Phase 2 engine and pinned Gyan FFmpeg 8.1.2 distribution baseline.
 
-Rust compiles the strict target-indexed manifest into the application, resolves exact contained regular resources, rejects symlink/reparse escapes and integrity/capability mismatches, and gives verified absolute paths to the existing no-shell supervisor. Status, probe, preparation, and render share the managed toolchain; webview paths and system `PATH` cannot redirect production execution.
+The audit prerequisite is closed: grouped import and relink consume `MediaToolchainState`, verify bundled FFprobe, ingest authorized source bytes, and probe the canonical object copy. Source guards and an assembled packaged test with an empty `PATH` now cover create/import/prepare/relink/reopen as well as status, standalone probe, render, executable tamper rejection, and cancellation cleanup.
 
-Bootstrap, adversarial validation, contract/IPC/UI accessibility coverage, all-feature Rust tests, all eight real bundled-FFmpeg integrations, Clippy, Tauri executable/MSI/NSIS assembly, MSI/NSIS payload inspection, installed hashes, and stripped-`PATH` runtime launch pass locally. See [`apps/desktop/evidence/phase-3/ffmpeg-distribution.md`](./apps/desktop/evidence/phase-3/ffmpeg-distribution.md). Public release remains mechanically blocked while GPL/source-offer and codec-patent review is `pending`.
+`packages/video-media` owns strict browser-safe preparation, source-fingerprint, profile, recipe, and derived-identity contracts. Shared vectors pin UTF-8 domains, u32 length delimiters, raw digest bytes, little-endian safe integers, field order, and expected SHA-256 outputs across TypeScript `crypto.subtle` and Rust.
 
-Still absent are `packages/video-media/`, a content-addressed object store, durable media-job records and restart recovery, priorities/retries, audio intermediates, keyframe indexes, waveform pyramids, cache budgets/eviction, and a job-center UI.
+The native store streams exact bytes into `$APPCACHE/supa-video-media-v1/objects/sha256`, converges duplicate bytes under different names on one verified object, and independently validates/repairs proxy and thumbnail artifacts under deterministic per-key locks. Source, toolchain, profile/color/HDR, stream, rate, geometry, sampling, validation policy, and argv-order changes invalidate the expected keys. Traversal, malformed components, non-directories, symlink/reparse escapes, changed-during-read input, lock contention, corruption, concurrency, and read/write/flush/sync/promotion failpoints are covered without recursive sweeps or surviving partials.
+
+New import and relink operations persist strict `MediaContentIdentityV1`; caller probe/identity tampering fails before journal mutation. Relink keeps the asset UUID and restores locator, probe, and identity together through semantic inverse, undo, redo, replay, close, and reopen. Existing V1/V2 fixtures without identity remain valid and readable.
+
+Measured local gates pass frozen install; root build/check/test; ESLint; Prettier; 153 TypeScript tests; 3 Chromium responsive/accessibility tests; 129 all-feature Rust/configuration tests; Rustfmt; all-target/all-feature Clippy with warnings denied; all 8 explicit FFmpeg integrations; all 3 enhanced packaged integrations with an empty `PATH`; the 51-assertion bootstrap suite; staged-media verification; Windows no-bundle assembly; and `git diff --check`. Release measurements are 4.6883 ms p95 durable acknowledgment and 689.4418 ms for a generated 10,000-record journal scan. See [`apps/desktop/evidence/phase-3/content-addressed-ingest.md`](./apps/desktop/evidence/phase-3/content-addressed-ingest.md).
 
 ### Next implementation item
 
-Build content-addressed ingest and deterministic derived-media keys using the stable toolchain ID, source fingerprints, and explicit proxy/color profiles before adding durable media jobs.
+Begin **Phase 3B — durable media jobs and cache lifecycle**: add persistent job/event records, scheduling and priority, retry/resume, restart recovery, cache budgets/leases/eviction, and job-center UI before audio intermediates, waveforms, keyframe indexes, or transcription. The legacy `$APPCACHE/video-phase1` tree remains untouched until Phase 3B defines a lease-aware migration and eviction policy. Public release remains mechanically blocked while GPL/source-offer and codec-patent review is `pending`.
 
 ## Scope
 

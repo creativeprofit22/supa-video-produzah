@@ -2,6 +2,7 @@
 pub(crate) mod derived;
 mod error;
 mod grants;
+pub(crate) mod media_store;
 pub(crate) mod probe;
 mod process;
 pub mod project;

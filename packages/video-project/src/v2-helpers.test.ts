@@ -30,6 +30,41 @@ describe("V2 browser-safe helpers", () => {
     expect(group).not.toHaveProperty("stateHash");
   });
 
+  it("rejects live imports without content identity", () => {
+    const legacyImport = buildProjectCommand({
+      type: "ImportAsset",
+      commandId: id(4),
+      asset: {
+        id: id(5),
+        displayName: "legacy.mp4",
+        locator: { absolutePath: "C:\\Media\\legacy.mp4" },
+        probe: {
+          durationMicroseconds: 1_000_000,
+          averageFrameRate: { numerator: 30, denominator: 1 },
+          realFrameRate: { numerator: 30, denominator: 1 },
+          variableFrameRate: false,
+          width: 640,
+          height: 360,
+          videoCodecName: "h264",
+          audio: null,
+          fileSizeBytes: 1_000,
+        },
+      },
+    });
+
+    expect(legacyImport.type).toBe("ImportAsset");
+    if (legacyImport.type !== "ImportAsset") throw new Error("Expected a legacy import command");
+    expect(legacyImport.asset.contentIdentity).toBeUndefined();
+    expect(() =>
+      buildCommandGroup({
+        groupId: id(1),
+        projectId: id(2),
+        baseRevision: 0,
+        commands: [legacyImport],
+      }),
+    ).toThrow("Live asset imports require a content identity");
+  });
+
   it("rejects authority-only command fields", () => {
     expect(() =>
       buildProjectCommand({

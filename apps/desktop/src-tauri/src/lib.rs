@@ -401,6 +401,14 @@ mod tests {
         fs::write(&source, b"source bytes never reach FFprobe")
             .expect("integrity source fixture must be writable");
         let grants = app.state::<video::VideoPathGrants>();
+        let project_path = workspace.path().join("integrity-project.svpvideo");
+        grants
+            .grant_destination(OWNER, video::GrantCategory::Project, &project_path)
+            .expect("integrity project destination must be granted");
+        let created = app
+            .state::<video::VideoProjectService>()
+            .create(OWNER, &project_path, "Integrity project", &grants)
+            .expect("integrity project must be created before preparation");
         let source = grants
             .grant_existing_file(OWNER, video::GrantCategory::Source, &source)
             .expect("integrity source must be granted");
@@ -432,7 +440,7 @@ mod tests {
             invoke_request(
                 "video_prepare_asset",
                 json!({
-                    "projectId": "11111111-1111-4111-8111-111111111111",
+                    "projectId": created.project_id,
                     "assetId": "22222222-2222-4222-8222-222222222222",
                     "path": source.to_string_lossy(),
                     "sequenceRate": { "numerator": 30, "denominator": 1 }
@@ -806,6 +814,10 @@ mod tests {
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::project::ipc::video_create_project,
+                video::project::ipc::video_execute_project_group,
+                video::project::ipc::video_project_inspector,
+                video::project::ipc::video_close_project,
             ])
             .build(context)
             .expect("packaged media IPC app must build")
@@ -1036,6 +1048,7 @@ mod tests {
             .expect("canonical packaged media fixture must exist");
         let workspace = tempfile::tempdir().expect("packaged complete workspace must exist");
         let output = workspace.path().join("packaged-complete.mp4");
+        let project_path = workspace.path().join("packaged-media.svpvideo");
         let grants = app.state::<video::VideoPathGrants>();
         let source = grants
             .grant_existing_file("packaged-complete", video::GrantCategory::Source, &source)
@@ -1043,6 +1056,30 @@ mod tests {
         let output = grants
             .grant_destination("packaged-complete", video::GrantCategory::Output, &output)
             .expect("packaged output path must be granted");
+        grants
+            .grant_destination(
+                "packaged-complete",
+                video::GrantCategory::Project,
+                &project_path,
+            )
+            .expect("packaged project path must be granted");
+        let created = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_create_project",
+                json!({
+                    "path": project_path.to_string_lossy(),
+                    "name": "Packaged media"
+                }),
+            ),
+        )
+        .expect("packaged project create IPC must succeed")
+        .deserialize::<Value>()
+        .expect("packaged project must be JSON");
+        let project_id = created["projectId"]
+            .as_str()
+            .expect("packaged project ID must be present")
+            .to_owned();
 
         let status = get_ipc_response(&webview, invoke_request("video_ffmpeg_status", json!({})))
             .expect("packaged status IPC must succeed")
@@ -1085,7 +1122,7 @@ mod tests {
             invoke_request(
                 "video_prepare_asset",
                 json!({
-                    "projectId": "11111111-1111-4111-8111-111111111111",
+                    "projectId": project_id.clone(),
                     "assetId": "22222222-2222-4222-8222-222222222222",
                     "path": source.to_string_lossy(),
                     "sequenceRate": { "numerator": 30, "denominator": 1 }
@@ -1110,6 +1147,142 @@ mod tests {
         assert_eq!(prepared["proxyProbe"]["videoCodecName"], "h264");
         assert_eq!(prepared["proxyProbe"]["width"], 320);
         assert_eq!(prepared["proxyProbe"]["height"], 180);
+
+        let asset_id = "22222222-2222-4222-8222-222222222222";
+        let imported = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_execute_project_group",
+                json!({
+                    "request": {
+                        "groupId": "77777777-7777-4777-8777-777777777701",
+                        "projectId": project_id.clone(),
+                        "baseRevision": 0,
+                        "commands": [{
+                            "type": "ImportAsset",
+                            "commandId": "77777777-7777-4777-8777-777777777702",
+                            "asset": {
+                                "id": asset_id,
+                                "displayName": "single-clip.mp4",
+                                "locator": { "absolutePath": source.to_string_lossy() },
+                                "probe": prepared["sourceProbe"].clone(),
+                                "contentIdentity": prepared["sourceIdentity"].clone()
+                            }
+                        }]
+                    }
+                }),
+            ),
+        )
+        .expect("packaged grouped import IPC must succeed")
+        .deserialize::<Value>()
+        .expect("packaged grouped import must be JSON");
+        assert_eq!(
+            imported["projection"]["state"]["assets"][0]["contentIdentity"],
+            prepared["sourceIdentity"]
+        );
+
+        let duplicate_source = workspace.path().join("same-bytes-another-name.mp4");
+        fs::copy(&source, &duplicate_source).expect("duplicate source bytes must copy");
+        let relinked =
+            tauri::async_runtime::block_on(video::project::ipc::relink_project_asset_from_path(
+                app.handle().clone(),
+                "packaged-complete".to_owned(),
+                app.state::<video::toolchain::MediaToolchainState>()
+                    .inner()
+                    .clone(),
+                project_id.clone(),
+                asset_id.to_owned(),
+                duplicate_source.clone(),
+            ))
+            .expect("packaged managed relink path must succeed");
+        assert_eq!(
+            relinked.projection.state.assets[0].id.as_str(),
+            asset_id,
+            "relink must preserve the asset UUID"
+        );
+        assert_eq!(
+            serde_json::to_value(&relinked.projection.state.assets[0].content_identity)
+                .expect("relinked identity must serialize"),
+            prepared["sourceIdentity"]
+        );
+
+        let deduplicated = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_prepare_asset",
+                json!({
+                    "projectId": project_id.clone(),
+                    "assetId": "77777777-7777-4777-8777-777777777703",
+                    "path": duplicate_source.to_string_lossy(),
+                    "sequenceRate": { "numerator": 30, "denominator": 1 }
+                }),
+            ),
+        )
+        .expect("same bytes under another name must prepare")
+        .deserialize::<Value>()
+        .expect("deduplicated prepare must be JSON");
+        assert_eq!(deduplicated["sourceIdentity"], prepared["sourceIdentity"]);
+        assert_eq!(deduplicated["proxyPath"], prepared["proxyPath"]);
+        assert_eq!(deduplicated["thumbnailPath"], prepared["thumbnailPath"]);
+
+        fs::write(&proxy_path, b"corrupt packaged proxy")
+            .expect("packaged proxy corruption must be injectable");
+        let repaired = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_prepare_asset",
+                json!({
+                    "projectId": project_id.clone(),
+                    "assetId": "77777777-7777-4777-8777-777777777703",
+                    "path": duplicate_source.to_string_lossy(),
+                    "sequenceRate": { "numerator": 30, "denominator": 1 }
+                }),
+            ),
+        )
+        .expect("corrupt exact packaged artifact must repair")
+        .deserialize::<Value>()
+        .expect("repaired prepare must be JSON");
+        assert_eq!(repaired["proxyPath"], prepared["proxyPath"]);
+        assert!(
+            fs::metadata(&proxy_path)
+                .expect("repaired proxy must exist")
+                .len()
+                > b"corrupt packaged proxy".len() as u64
+        );
+
+        app.state::<video::VideoProjectService>()
+            .close("packaged-complete", &project_id)
+            .expect("packaged project must close cleanly");
+        let reopened = app
+            .state::<video::VideoProjectService>()
+            .open("packaged-complete", &project_path, &grants)
+            .expect("packaged project must reopen from persisted identity");
+        assert_eq!(
+            reopened.projection.state.assets[0].content_identity,
+            relinked.projection.state.assets[0].content_identity
+        );
+
+        let mut mutated_bytes = fs::read(&duplicate_source).expect("duplicate source must read");
+        mutated_bytes.push(0);
+        fs::write(&duplicate_source, mutated_bytes).expect("source mutation must write");
+        let mutated = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_prepare_asset",
+                json!({
+                    "projectId": project_id.clone(),
+                    "assetId": "77777777-7777-4777-8777-777777777704",
+                    "path": duplicate_source.to_string_lossy(),
+                    "sequenceRate": { "numerator": 30, "denominator": 1 }
+                }),
+            ),
+        )
+        .expect("mutated packaged source must prepare with a new identity")
+        .deserialize::<Value>()
+        .expect("mutated prepare must be JSON");
+        assert_ne!(mutated["sourceIdentity"], prepared["sourceIdentity"]);
+        assert_ne!(mutated["proxyPath"], prepared["proxyPath"]);
+        assert_ne!(mutated["thumbnailPath"], prepared["thumbnailPath"]);
 
         let captured = capture_render_events(&app);
         let started = get_ipc_response(

@@ -17,10 +17,46 @@ export const testProbe = {
   audio: { codecName: "aac", channels: 2, sampleRate: 48_000 },
   fileSizeBytes: 12_000_000,
 } as const;
+export const testSourceIdentity = {
+  schemaVersion: 1,
+  algorithm: "sha256",
+  digest: "12".repeat(32),
+  byteLength: testProbe.fileSizeBytes,
+} as const;
+const testProfileIdentity = {
+  schemaVersion: 1,
+  profileId: "preview-v1",
+  profileDigest: "34".repeat(32),
+} as const;
+const identityBase = {
+  schemaVersion: 1,
+  sourceIdentity: testSourceIdentity,
+  toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",
+  profileIdentity: testProfileIdentity,
+  recipeDigest: "56".repeat(32),
+} as const;
 export const testPrepared = {
+  sourceFingerprint: {
+    schemaVersion: 1,
+    algorithm: "sha256",
+    digest: "78".repeat(32),
+    byteLength: testProbe.fileSizeBytes,
+    modifiedUnixSeconds: 1_720_000_000,
+    modifiedNanoseconds: 42,
+  },
+  sourceIdentity: testSourceIdentity,
+  sourceProbe: testProbe,
+  sequenceRate: testProbe.averageFrameRate,
+  profileIdentity: testProfileIdentity,
+  proxyIdentity: { ...identityBase, artifactKind: "proxy", key: "9a".repeat(32) },
   proxyPath: "C:\\Neutral\\Cache\\proxy.mp4",
-  thumbnailPath: "C:\\Neutral\\Cache\\thumb.jpg",
   proxyProbe: { ...testProbe, width: 540, height: 720, fileSizeBytes: 5_000_000 },
+  thumbnailIdentity: {
+    ...identityBase,
+    artifactKind: "thumbnail_tile",
+    key: "bc".repeat(32),
+  },
+  thumbnailPath: "C:\\Neutral\\Cache\\thumb.jpg",
 } as const;
 
 function emptyProjection(): ProjectProjection {
@@ -247,6 +283,7 @@ export function createMockVideoService(
       const asset = next.state.assets.find(({ id }) => id === assetId);
       if (asset === undefined) throw new Error("Unexpected relink asset");
       asset.locator = { absolutePath: replacementPath };
+      asset.contentIdentity = testSourceIdentity;
       next.sources = next.sources.map((source) =>
         source.assetId === assetId
           ? { ...source, status: "resolved" as const, resolvedPath: replacementPath }

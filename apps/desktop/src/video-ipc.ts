@@ -4,8 +4,6 @@ import {
   commandResultSchema,
   mediaProbeSchema,
   openedProjectV2Schema,
-  prepareVideoAssetRequestSchema,
-  preparedVideoAssetSchema,
   projectInspectorSchema,
   projectProjectionSchema,
   renderPlanV1Schema,
@@ -22,14 +20,14 @@ import type {
   OpenedProjectV2,
   ProjectInspector,
   ProjectProjection,
-  PreparedVideoAsset,
-  PrepareVideoAssetRequest,
   RenderPlanV1,
   VideoErrorCode,
   VideoRenderEvent,
   VideoRenderStarted,
   VideoToolStatus,
 } from "@supa-video/contracts";
+import { prepareVideoAssetRequestSchema, preparedVideoAssetSchema } from "@supa-video/media";
+import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";

@@ -17,6 +17,26 @@ const ids = {
 } as const;
 const timestamp = "2026-07-26T12:00:00.000Z";
 const hash = "0".repeat(64);
+const legacyImportCommand = {
+  type: "ImportAsset" as const,
+  commandId: ids.command,
+  asset: {
+    id: ids.operation,
+    displayName: "legacy.mp4",
+    locator: { absolutePath: "C:\\Media\\legacy.mp4" },
+    probe: {
+      durationMicroseconds: 1_000_000,
+      averageFrameRate: { numerator: 30, denominator: 1 },
+      realFrameRate: { numerator: 30, denominator: 1 },
+      variableFrameRate: false,
+      width: 640,
+      height: 360,
+      videoCodecName: "h264",
+      audio: null,
+      fileSizeBytes: 1_000,
+    },
+  },
+};
 
 function snapshot() {
   return {
@@ -148,6 +168,33 @@ describe("V2 project contracts", () => {
     expect(commandGroupRequestSchema.parse(request)).toEqual(request);
     expect(() => commandGroupRequestSchema.parse({ ...request, committedAt: timestamp })).toThrow();
     expect(() => projectCommandSchemaV2.parse({ ...command, summary: "caller owned" })).toThrow();
+  });
+
+  it("requires content identity only for live import groups", async () => {
+    expect(projectCommandSchemaV2.parse(legacyImportCommand)).toEqual(legacyImportCommand);
+
+    const liveRequest = commandGroupRequestSchema.safeParse({
+      groupId: ids.group,
+      projectId: ids.project,
+      baseRevision: 0,
+      commands: [legacyImportCommand],
+    });
+    expect(liveRequest.success).toBe(false);
+    if (liveRequest.success) throw new Error("Expected a missing import identity to fail");
+    expect(liveRequest.error.issues).toContainEqual(
+      expect.objectContaining({ path: ["commands", 0, "asset", "contentIdentity"] }),
+    );
+
+    const fixtureUrl = new URL(
+      "../fixtures/project-v2/valid-relative-source.svpvideo",
+      import.meta.url,
+    );
+    const legacyProject = parseVideoProjectFile(
+      JSON.parse(await readFile(fixtureUrl, "utf8")) as unknown,
+    );
+    expect(legacyProject.schemaVersion).toBe(2);
+    if (legacyProject.schemaVersion !== 2) throw new Error("Expected a V2 legacy fixture");
+    expect(legacyProject.state.assets[0]?.contentIdentity).toBeUndefined();
   });
 
   it("preserves index and active-sequence fields used by semantic inverses", async () => {

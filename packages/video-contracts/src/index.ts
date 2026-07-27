@@ -1,5 +1,4 @@
 export * from "./commands.js";
-export * from "./derived-media.js";
 export * from "./errors.js";
 export * from "./migrations.js";
 export * from "./project.js";
@@ -8,5 +7,6 @@ export * from "./project-commands-v2.js";
 export * from "./project-service.js";
 export * from "./project-io.js";
 export * from "./render-plan.js";
+export * from "./source-content.js";
 export * from "./time.js";
 export * from "./tools.js";

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::video::types::{AssetLocator, MediaProbe, RationalRate, RationalTime, VideoAsset};
+use crate::video::types::{
+    deserialize_optional_non_null, AssetLocator, MediaContentIdentityV1, MediaProbe, RationalRate,
+    RationalTime, VideoAsset,
+};
 
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 pub const MAX_GROUP_COMMANDS: usize = 100;
@@ -369,6 +372,13 @@ pub enum ProjectCommand {
         asset_id: String,
         locator: AssetLocator,
         probe: MediaProbe,
+        #[serde(
+            rename = "contentIdentity",
+            default,
+            deserialize_with = "deserialize_optional_non_null",
+            skip_serializing_if = "Option::is_none"
+        )]
+        content_identity: Option<MediaContentIdentityV1>,
     },
     RemoveAsset {
         #[serde(rename = "commandId")]

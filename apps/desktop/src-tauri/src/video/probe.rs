@@ -30,6 +30,7 @@ const MEDIA_PROBE_STDOUT_LIMIT: usize = 1024 * 1024;
 const MEDIA_PROBE_STDERR_TAIL_LIMIT: usize = 64 * 1024;
 const TOOL_STATUS_TIMEOUT: Duration = Duration::from_secs(6 * 60);
 const FFPROBE_ENTRIES: &str = "format=duration,size:stream=index,codec_type,codec_name,duration,width,height,pix_fmt,color_range,color_space,color_primaries,color_transfer,avg_frame_rate,r_frame_rate,sample_aspect_ratio,display_aspect_ratio,sample_rate,channels:stream_disposition=attached_pic:stream_tags=rotate:stream_side_data=rotation";
+const THUMBNAIL_FFPROBE_ENTRIES: &str = "stream=codec_type,codec_name,width,height,nb_read_frames";
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +239,7 @@ pub async fn video_probe_media<R: Runtime>(
         .map(|inspected| inspected.probe)
 }
 
+#[cfg(test)]
 pub(crate) async fn probe_media_with_program(
     owner_label: &str,
     grants: &VideoPathGrants,
@@ -289,6 +291,47 @@ pub(crate) async fn probe_trusted_media_with_program(
     })
 }
 
+pub(crate) async fn probe_thumbnail_artifact_with_program(
+    trusted_path: &Path,
+    ffprobe_program: OsString,
+    cancellation: ProcessCancellation,
+    operation: &'static str,
+) -> Result<ThumbnailArtifactProbe, VideoCommandError> {
+    let file_size_bytes = fs::metadata(trusted_path)
+        .map_err(|_| VideoCommandError::invalid_media(operation, "metadata"))?
+        .len();
+    let spec = ProcessSpec {
+        program: ffprobe_program,
+        args: vec![
+            OsString::from("-v"),
+            OsString::from("error"),
+            OsString::from("-count_frames"),
+            OsString::from("-output_format"),
+            OsString::from("json"),
+            OsString::from("-select_streams"),
+            OsString::from("v:0"),
+            OsString::from("-show_entries"),
+            OsString::from(THUMBNAIL_FFPROBE_ENTRIES),
+            OsString::from("-i"),
+            trusted_path.as_os_str().to_owned(),
+        ],
+        operation,
+        timeout: MEDIA_PROBE_TIMEOUT,
+        stdout_limit: MEDIA_PROBE_STDOUT_LIMIT,
+        stderr_tail_limit: MEDIA_PROBE_STDERR_TAIL_LIMIT,
+    };
+    let output = run_supervised(spec, cancellation)
+        .await
+        .map_err(map_probe_process_failure)?;
+    parse_thumbnail_artifact_json(&output.stdout, file_size_bytes).map_err(|error| {
+        let category = match error {
+            ProbeParseError::InvalidJson => "invalid_json",
+            ProbeParseError::InvalidMedia => "unsupported_metadata",
+        };
+        VideoCommandError::invalid_media(operation, category)
+    })
+}
+
 fn map_probe_process_failure(failure: ProcessFailure) -> VideoCommandError {
     let operation = failure.operation();
     match failure {
@@ -328,6 +371,15 @@ pub(crate) struct InspectedMedia {
     pub(crate) display_shape: MediaDisplayShape,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ThumbnailArtifactProbe {
+    pub(crate) file_size_bytes: u64,
+    pub(crate) video_codec_name: String,
+    pub(crate) width: u64,
+    pub(crate) height: u64,
+    pub(crate) decoded_frame_count: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeParseError {
     InvalidJson,
@@ -344,6 +396,20 @@ struct ProbeEnvelope {
 struct ProbeFormat {
     duration: Option<String>,
     size: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThumbnailProbeEnvelope {
+    streams: Vec<ThumbnailProbeStream>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThumbnailProbeStream {
+    codec_type: Option<String>,
+    codec_name: Option<String>,
+    width: Option<u64>,
+    height: Option<u64>,
+    nb_read_frames: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -413,6 +479,56 @@ pub(crate) fn parse_ffprobe_json_inspected(
     let envelope: ProbeEnvelope =
         serde_json::from_slice(bytes).map_err(|_| ProbeParseError::InvalidJson)?;
     parse_probe_envelope(envelope, file_size_bytes)
+}
+
+pub(crate) fn parse_thumbnail_artifact_json(
+    bytes: &[u8],
+    file_size_bytes: u64,
+) -> Result<ThumbnailArtifactProbe, ProbeParseError> {
+    if !(1..=MAX_SAFE_INTEGER).contains(&file_size_bytes) {
+        return Err(ProbeParseError::InvalidMedia);
+    }
+    let envelope: ThumbnailProbeEnvelope =
+        serde_json::from_slice(bytes).map_err(|_| ProbeParseError::InvalidJson)?;
+    if envelope.streams.len() != 1 {
+        return Err(ProbeParseError::InvalidMedia);
+    }
+    let stream = envelope
+        .streams
+        .into_iter()
+        .next()
+        .ok_or(ProbeParseError::InvalidMedia)?;
+    if stream.codec_type.as_deref() != Some("video") {
+        return Err(ProbeParseError::InvalidMedia);
+    }
+    let video_codec_name = normalize_codec_name(
+        stream
+            .codec_name
+            .as_deref()
+            .ok_or(ProbeParseError::InvalidMedia)?,
+    )
+    .ok_or(ProbeParseError::InvalidMedia)?;
+    let width = stream
+        .width
+        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
+        .ok_or(ProbeParseError::InvalidMedia)?;
+    let height = stream
+        .height
+        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
+        .ok_or(ProbeParseError::InvalidMedia)?;
+    let decoded_frame_count = parse_positive_integer_text(
+        stream
+            .nb_read_frames
+            .as_deref()
+            .ok_or(ProbeParseError::InvalidMedia)?,
+    )?;
+    Ok(ThumbnailArtifactProbe {
+        file_size_bytes,
+        video_codec_name,
+        width,
+        height,
+        decoded_frame_count,
+    })
 }
 
 fn parse_probe_envelope(

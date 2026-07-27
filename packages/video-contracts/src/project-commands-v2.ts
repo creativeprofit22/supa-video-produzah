@@ -14,6 +14,7 @@ import {
   projectUuidSchema,
   videoAssetSchema,
 } from "./project.js";
+import { mediaContentIdentityV1Schema } from "./source-content.js";
 import { rationalTimeSchema } from "./time.js";
 
 const commandId = { commandId: projectUuidSchema };
@@ -162,6 +163,7 @@ export const relinkAssetCommandSchemaV2 = z
     assetId: projectUuidSchema,
     locator: assetLocatorSchema,
     probe: mediaProbeSchema,
+    contentIdentity: mediaContentIdentityV1Schema.optional(),
   })
   .strict();
 export const removeAssetCommandSchemaV2 = z
@@ -197,5 +199,16 @@ export const commandGroupRequestSchema = z
     baseRevision: z.number().int().safe().nonnegative(),
     commands: z.array(projectCommandSchemaV2).min(1).max(100),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    for (const [index, command] of request.commands.entries()) {
+      if (command.type === "ImportAsset" && command.asset.contentIdentity === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Live asset imports require a content identity",
+          path: ["commands", index, "asset", "contentIdentity"],
+        });
+      }
+    }
+  });
 export type CommandGroupRequest = z.infer<typeof commandGroupRequestSchema>;

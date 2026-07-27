@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { VideoProjectSnapshotV2 } from "./project-v2.js";
+import { mediaContentIdentityV1Schema } from "./source-content.js";
 import {
   compareRationalTimes,
   rationalRateSchema,
@@ -83,6 +84,7 @@ export const videoAssetSchema = z
     displayName: nonBlankSchema,
     locator: assetLocatorSchema,
     probe: mediaProbeSchema,
+    contentIdentity: mediaContentIdentityV1Schema.optional(),
   })
   .strict();
 
