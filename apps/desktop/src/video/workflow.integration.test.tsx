@@ -3,11 +3,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { EventCallback } from "@tauri-apps/api/event";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { MediaJobRecord } from "@supa-video/media";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
-import { createMockVideoService } from "../test-video-service";
+import { createMockVideoService, testMediaJob } from "../test-video-service";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset:${path}`),
@@ -22,9 +23,17 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
+function dispatchTauriEvent(eventName: string, payload: unknown) {
+  const callback = listenMock.mock.calls.find(([name]) => name === eventName)?.[1] as
+    EventCallback<unknown> | undefined;
+  if (callback === undefined) throw new Error(`No listener registered for ${eventName}`);
+  callback({ event: eventName, id: 1, payload });
+}
 function dispatchRender(payload: unknown) {
-  const callback = listenMock.mock.calls.at(-1)?.[1] as EventCallback<unknown>;
-  callback({ event: "video:render-event", id: 1, payload });
+  dispatchTauriEvent("video:render-event", payload);
+}
+function dispatchMediaJob(payload: unknown) {
+  dispatchTauriEvent("video:media-job-event", payload);
 }
 afterEach(cleanup);
 
@@ -253,6 +262,160 @@ describe("complete mocked Phase 2 workflow", () => {
       path: service.replacementPath,
     });
   });
+  it("reconciles preparation retry and recovery in the panel and Job Center", async () => {
+    const service = createMockVideoService({ mediaJobs: [] });
+    let failNextPreparation = false;
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "video_prepare_asset" && failNextPreparation) {
+        failNextPreparation = false;
+        throw {
+          code: "process_failed",
+          message: "Preview preparation did not complete",
+          details: { operation: "prepare_asset" },
+        };
+      }
+      return service.invoke(command, args);
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const assetId = service.projection.state.assets[0]!.id;
+    const blocked = {
+      ...testMediaJob,
+      projectId: service.projection.projectId,
+      assetId,
+      revisionId: null,
+      state: "blocked",
+      stage: "blocked",
+      error: {
+        code: "temporary_preview_failure",
+        category: "transient_io",
+        message: "Preview preparation needs attention.",
+        retryable: true,
+        action: "retry",
+      },
+      updatedAt: "2026-07-26T12:00:01.000Z",
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([blocked]));
+    expect(await screen.findByText("Preview preparation: Needs attention")).toBeTruthy();
+
+    failNextPreparation = true;
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    await waitFor(() => expect(screen.queryByText("Could not prepare the preview")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Open preview preparation in Job Center" }));
+    const jobTitle = await screen.findByRole("heading", { name: "Prepare preview media" });
+    await waitFor(() => expect(document.activeElement).toBe(jobTitle.closest("article")));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Preview preparation: Queued")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Job Center" })).toBeTruthy();
+
+    const complete = {
+      ...blocked,
+      state: "complete",
+      stage: "complete",
+      progress: { completed: 2, total: 2, unit: "stages" },
+      error: null,
+      settledAt: "2026-07-26T12:00:02.000Z",
+      updatedAt: "2026-07-26T12:00:02.000Z",
+      resultAvailable: true,
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([complete]));
+
+    expect(await screen.findByText("Preview preparation: Complete")).toBeTruthy();
+    expect(await screen.findByLabelText("Prepared source proxy")).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Job Center" })).getByText("Complete"),
+    ).toBeTruthy();
+  });
+
+  it("uses one durable render lifecycle through retry and cancellation", async () => {
+    const service = createMockVideoService({ mediaJobs: [] });
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+    fireEvent.click(screen.getByRole("button", { name: "Export MP4" }));
+    await screen.findByRole("button", { name: "Cancel export" });
+
+    const start = invokeMock.mock.calls.find(
+      ([command]) => command === "video_start_render",
+    )?.[1] as { plan: { planId: string; revisionId: string } };
+    const identity = {
+      jobId: "70000000-0000-4000-8000-000000000090",
+      planId: start.plan.planId,
+      revisionId: start.plan.revisionId,
+    };
+    const running = {
+      ...testMediaJob,
+      id: identity.jobId,
+      kind: "final_render",
+      projectId: null,
+      assetId: null,
+      revisionId: identity.revisionId,
+      priority: "export",
+      state: "running",
+      stage: "encoding",
+      progress: { completed: 900_000, total: 1_800_000, unit: "microseconds" },
+      attempt: 1,
+      startedAt: "2026-07-26T12:00:01.000Z",
+      updatedAt: "2026-07-26T12:00:01.000Z",
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([running]));
+    expect(await screen.findByText("Final export: Running")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open final export in Job Center" }));
+    await screen.findByRole("heading", { name: "Job Center" });
+    const exportPanel = screen.getByRole("region", { name: "Export MP4" });
+    expect(within(exportPanel).queryByText("Exporting video")).toBeNull();
+
+    const retrying = {
+      ...running,
+      state: "retrying",
+      stage: "retry_wait",
+      retryAt: "2026-07-26T12:01:00.000Z",
+      error: {
+        code: "transient_render_failure",
+        category: "transient_io",
+        message: "The export will retry.",
+        retryable: true,
+        action: "retry",
+      },
+      updatedAt: "2026-07-26T12:00:02.000Z",
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([retrying]));
+    expect(await within(exportPanel).findByText("Final export: Retry scheduled")).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Job Center" })).getByText("Retry scheduled"),
+    ).toBeTruthy();
+    expect(within(exportPanel).queryByText("Exporting video")).toBeNull();
+
+    fireEvent.click(within(exportPanel).getByRole("button", { name: "Cancel export" }));
+    dispatchRender({ type: "cancelled", ...identity });
+    const cancelled = {
+      ...running,
+      state: "cancelled",
+      stage: "cancelled",
+      settledAt: "2026-07-26T12:00:03.000Z",
+      updatedAt: "2026-07-26T12:00:03.000Z",
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([cancelled]));
+
+    expect(await within(exportPanel).findByText("Final export: Cancelled")).toBeTruthy();
+    expect(within(exportPanel).queryByText("Export cancelled")).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "Job Center" })).getByText("Cancelled"),
+    ).toBeTruthy();
+  });
+
   it("preserves the opener on cancellation and redacts malformed open", async () => {
     const service = createMockVideoService();
     let openCount = 0;

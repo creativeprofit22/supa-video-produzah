@@ -16,26 +16,39 @@ use serde_json::Value;
 use tempfile::{tempdir, NamedTempFile};
 
 use super::{
+    cache::{CacheArtifactKind, CacheArtifactRegistration, MediaCacheService},
     derived::{
         acquire_profile_cache_lock_with, artifact_paths, artifact_paths_in_validated_cache,
         cache_pair_is_valid_with, create_temp_artifacts, derive_media_identity,
         derive_profile_identity, derive_recipe_digest, duration_within_one_frame,
         ensure_profile_cache_directory, fit_proxy_dimensions, fit_proxy_dimensions_for_display,
-        map_cache_error, one_frame_tolerance_microseconds, prepare_asset_core,
-        promote_validated_pair, promote_validated_pair_with, proxy_ffmpeg_args, proxy_recipe,
-        run_derived_ffmpeg, source_fingerprint, source_fingerprint_with_profile,
-        thumbnail_ffmpeg_args, thumbnail_recipe, unix_time_parts, validate_proxy_artifact,
-        validate_thumbnail_artifact, ArtifactFileFacts, ArtifactValidationError,
-        CacheLifecycleError, DerivedArtifactKind, DerivedArtifactPaths, DerivedModelError,
-        MediaPrograms, OutputDimensions, PrepareAssetCoreRequest, SourceIdentity,
-        ValidatedDerivedInput, PREVIEW_PROFILE,
+        map_cache_error, one_frame_tolerance_microseconds, plan_asset_core, prepare_asset_core,
+        prepare_asset_durable, prepared_asset_plan_fixture, promote_validated_pair,
+        promote_validated_pair_with, proxy_ffmpeg_args, proxy_recipe, resume_durable_preparations,
+        resume_durable_preparations_with_test_workers, run_derived_ffmpeg, source_fingerprint,
+        source_fingerprint_with_profile, thumbnail_ffmpeg_args, thumbnail_recipe, unix_time_parts,
+        validate_proxy_artifact, validate_thumbnail_artifact, ArtifactFileFacts,
+        ArtifactValidationError, CacheLifecycleError, DerivedArtifactKind, DerivedArtifactPaths,
+        DerivedModelError, MediaPrograms, OutputDimensions, PrepareAssetCoreRequest,
+        SourceIdentity, ValidatedDerivedInput, PREVIEW_PROFILE,
     },
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
+    jobs::{
+        current_timestamp_millis,
+        model::{
+            MediaJobError, MediaJobErrorCategory, MediaJobEventType, MediaJobKind,
+            MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobState,
+        },
+        scheduler::{MediaJobWorker, MediaWorkerFuture, MediaWorkerOutcome, SchedulerResource},
+        store::{MediaJobStore, MediaJobTransition, NewMediaJob},
+        MediaJobService,
+    },
     media_store::{
-        ensure_direct_directory_for_test, ingest_blocking_for_test, ingest_with_failpoint_for_test,
-        lock_file_for_test, source_fingerprint_bytes_for_test, source_fingerprint_for_test,
-        IngestFailpoint, MEDIA_STORE_NAMESPACE,
+        acquire_artifact, ensure_direct_directory_for_test, ingest_blocking_for_test,
+        ingest_with_failpoint_for_test, lock_file_for_test, source_fingerprint_bytes_for_test,
+        source_fingerprint_for_test, ArtifactStoreKind, IngestFailpoint, PublicationFailpoint,
+        MEDIA_STORE_NAMESPACE,
     },
     probe::{
         parse_ffprobe_json, parse_ffprobe_json_inspected, parse_thumbnail_artifact_json,
@@ -54,10 +67,11 @@ use super::{
         save_project_to_path, VideoSourceStatus, MAX_PROJECT_BYTES,
     },
     render::{
-        create_owned_partial, ensure_preview_directory, map_render_preview_failure,
-        parse_and_validate_render_plan, partial_render_path, promote_render_partial,
-        render_execution_arguments, run_render_worker, validate_render_output, RenderEventSink,
-        RenderProgress, RenderWorkerRequest, VideoRenderJobs,
+        cancel_render_for_owner, create_owned_partial, ensure_preview_directory,
+        map_render_preview_failure, parse_and_validate_render_plan, partial_render_path,
+        promote_render_partial, render_dedupe_key, render_execution_arguments, run_render_worker,
+        start_render_with_context, validate_render_output, RenderEventSink, RenderProgress,
+        RenderWorkerRequest,
     },
     toolchain::{
         MediaToolchain, MediaToolchainError, MediaToolchainInspection, MediaToolchainProblem,
@@ -2903,92 +2917,137 @@ fn render_progress_is_monotonic_clamped_and_prefers_out_time_us() {
     assert_eq!(progress.ingest_record(b"progress=end\n"), None);
 }
 
-#[test]
-fn render_registry_is_owner_scoped_and_bounds_tombstones() {
-    let directory = tempdir().expect("registry workspace must be created");
-    let (_, first) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
-    let jobs = VideoRenderJobs::with_tombstone_limit(2);
-    let (identity, _) = jobs.register("owner", &first).expect("job must register");
-    assert_eq!(
-        jobs.register("owner", &first)
-            .expect_err("duplicate id must fail")
-            .code,
-        VideoErrorCode::InvalidRenderPlan
-    );
-    assert_eq!(
-        jobs.cancel("intruder", &identity.job_id)
-            .expect_err("wrong owner must fail")
-            .code,
-        VideoErrorCode::InvalidRenderPlan
-    );
-    jobs.cancel("owner", &identity.job_id)
-        .expect("owner cancel must work");
-    jobs.cancel("owner", &identity.job_id)
-        .expect("repeat cancel must work");
-    assert!(jobs.settle(&identity.job_id).expect("settlement must work"));
-    assert!(!jobs
-        .settle(&identity.job_id)
-        .expect("repeat settlement must be inert"));
-    jobs.cancel("owner", &identity.job_id)
-        .expect("settled cancellation must be idempotent");
+struct QueuedRenderCancellationWorker;
 
-    for (index, id) in [
-        "55555555-5555-4555-8555-555555555555",
-        "66666666-6666-4666-8666-666666666666",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let (_, plan) = validated_render_fixture(directory.path(), index % 2 == 0, id);
-        let (identity, _) = jobs
-            .register("owner", &plan)
-            .expect("new job must register");
-        assert!(jobs.settle(&identity.job_id).expect("new job must settle"));
+impl MediaJobWorker for QueuedRenderCancellationWorker {
+    fn run(&self, _job_id: String, _cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        panic!("queued render cancellation fixture must not execute")
     }
-    assert_eq!(jobs.tombstone_count(), 2);
 }
 
-#[test]
-fn render_registry_bulk_cancellation_is_scoped_idempotent_and_worker_settled() {
-    let directory = tempdir().expect("bulk cancellation workspace must be created");
-    let jobs = VideoRenderJobs::default();
-    let mut registered = Vec::new();
-    for (owner, job_id) in [
-        ("first-owner", "77777777-7777-4777-8777-777777777777"),
-        ("first-owner", "88888888-8888-4888-8888-888888888888"),
-        ("second-owner", "99999999-9999-4999-8999-999999999999"),
-    ] {
-        let (_, validated) = validated_render_fixture(directory.path(), false, job_id);
-        let (identity, cancellation) = jobs
-            .register(owner, &validated)
-            .expect("bulk cancellation job must register");
-        registered.push((identity.job_id, cancellation));
-    }
+async fn enqueue_render_cancellation_fixture(
+    jobs: &MediaJobService,
+    owner_label: &str,
+    label: &str,
+) -> super::jobs::model::MediaJobRecord {
+    jobs.store()
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::FinalRender,
+            parent_id: None,
+            dedupe_key: format!("render-cancellation:{label}:{}", uuid::Uuid::new_v4()),
+            project_id: None,
+            asset_id: None,
+            revision_id: Some(format!("{label}-revision")),
+            priority: MediaJobPriority::Export,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 1,
+                unit: MediaJobProgressUnit::Items,
+            },
+            max_attempts: 3,
+            summary: format!("Render cancellation fixture {label}"),
+            private_payload: serde_json::json!({
+                "ownerLabel": owner_label,
+                "plan": { "schemaVersion": 1 },
+                "overwrite": false,
+                "outputAuthorizationPresent": true,
+            }),
+            created_at_ms: current_timestamp_millis(),
+        })
+        .await
+        .expect("render cancellation fixture must enqueue")
+        .job
+}
 
-    jobs.cancel_owner("first-owner")
-        .expect("owner cleanup must cancel its jobs");
-    jobs.cancel_owner("first-owner")
-        .expect("repeated owner cleanup must be idempotent");
-    assert!(registered[0].1.is_cancelled());
-    assert!(registered[1].1.is_cancelled());
-    assert!(!registered[2].1.is_cancelled());
-    assert!(registered.iter().all(|(job_id, _)| jobs.is_active(job_id)));
-    assert_eq!(jobs.tombstone_count(), 0);
+#[tokio::test(flavor = "current_thread")]
+async fn render_cancel_compatibility_handles_unknown_wrong_owner_terminal_and_active_jobs() {
+    const OWNER: &str = "render-cancellation-owner";
+    let workspace = tempdir().expect("render cancellation workspace must be created");
+    let jobs = MediaJobService::initialize(
+        workspace.path().join("local-data"),
+        workspace.path().join("app-cache"),
+    )
+    .await
+    .expect("render cancellation media jobs must initialize");
 
-    jobs.cancel_all().expect("shutdown must cancel every job");
-    jobs.cancel_all()
-        .expect("repeated shutdown cleanup must be idempotent");
-    assert!(registered
-        .iter()
-        .all(|(job_id, cancellation)| cancellation.is_cancelled() && jobs.is_active(job_id)));
-    assert_eq!(jobs.tombstone_count(), 0);
+    let unknown = cancel_render_for_owner(OWNER, &jobs, "missing-render-job")
+        .await
+        .expect_err("unknown render job must fail");
+    assert_eq!(unknown.code, VideoErrorCode::InvalidRenderPlan);
+    assert_eq!(unknown.details["category"], "unknown_job");
 
-    for (job_id, _) in registered {
-        assert!(jobs
-            .settle(&job_id)
-            .expect("the worker must retain terminal settlement ownership"));
-    }
-    assert_eq!(jobs.tombstone_count(), 3);
+    let owned_by_another_window =
+        enqueue_render_cancellation_fixture(&jobs, "another-owner", "wrong-owner").await;
+    let wrong_owner = cancel_render_for_owner(OWNER, &jobs, &owned_by_another_window.id)
+        .await
+        .expect_err("another owner's render job must stay hidden");
+    assert_eq!(wrong_owner.code, VideoErrorCode::InvalidRenderPlan);
+    assert_eq!(wrong_owner.details["category"], "unknown_job");
+
+    let terminal = enqueue_render_cancellation_fixture(&jobs, OWNER, "terminal").await;
+    jobs.store()
+        .transition(
+            terminal.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Cancelled,
+                stage: "cancelled".to_owned(),
+                progress: terminal.progress.clone(),
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: true,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Render cancellation fixture settled.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .expect("terminal render fixture must settle");
+    cancel_render_for_owner(OWNER, &jobs, &terminal.id)
+        .await
+        .expect("terminal render cancellation must be idempotent");
+    let terminal_after_cancel = jobs
+        .store()
+        .get_private(terminal.id)
+        .await
+        .expect("terminal render fixture must remain readable");
+    assert_eq!(terminal_after_cancel.public.state, MediaJobState::Cancelled);
+
+    let ffmpeg_permit = jobs
+        .scheduler()
+        .acquire_resource_permit(SchedulerResource::Ffmpeg)
+        .await
+        .expect("test must hold the FFmpeg permit");
+    let active = enqueue_render_cancellation_fixture(&jobs, OWNER, "active").await;
+    jobs.scheduler()
+        .submit(
+            active.id.clone(),
+            active.priority,
+            active.attempt,
+            active.max_attempts,
+            SchedulerResource::Ffmpeg,
+            Arc::new(QueuedRenderCancellationWorker),
+        )
+        .await
+        .expect("active render fixture must enter the scheduler");
+    cancel_render_for_owner(OWNER, &jobs, &active.id)
+        .await
+        .expect("active render cancellation must succeed");
+    let cancelled = jobs
+        .store()
+        .get_private(active.id)
+        .await
+        .expect("cancelled render fixture must remain readable");
+    assert_eq!(cancelled.public.state, MediaJobState::Cancelled);
+    assert!(cancelled.public.cancellation_requested);
+
+    drop(ffmpeg_permit);
+    jobs.shutdown()
+        .await
+        .expect("render cancellation media jobs must shut down");
 }
 
 #[test]
@@ -3131,6 +3190,7 @@ const RENDER_AV_PLAN_ID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RENDER_VIDEO_ONLY_PLAN_ID: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const RENDER_COLLISION_PLAN_ID: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const RENDER_CANCELLATION_PLAN_ID: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const RENDER_RESTART_PLAN_ID: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 #[derive(Clone, Copy)]
 struct RenderTestProfile {
@@ -3198,15 +3258,12 @@ fn registered_system_render_worker(
     validated: super::render::ValidatedRenderPlan,
     overwrite: bool,
     app_cache_dir: PathBuf,
-) -> (
-    RenderWorkerRequest,
-    VideoRenderJobs,
-    Arc<Mutex<Vec<VideoRenderEvent>>>,
-) {
-    let jobs = VideoRenderJobs::default();
-    let (identity, cancellation) = jobs
-        .register(RENDER_INTEGRATION_OWNER, &validated)
-        .expect("integration render job must register");
+) -> (RenderWorkerRequest, Arc<Mutex<Vec<VideoRenderEvent>>>) {
+    let identity = super::render::RenderEventIdentity {
+        job_id: validated.plan.plan_id.as_str().to_owned(),
+        plan_id: validated.plan.plan_id.as_str().to_owned(),
+        revision_id: validated.plan.revision_id.as_str().to_owned(),
+    };
     let captured = Arc::new(Mutex::new(Vec::new()));
     let events_for_sink = captured.clone();
     let events: RenderEventSink = Arc::new(move |event| {
@@ -3222,12 +3279,11 @@ fn registered_system_render_worker(
         overwrite,
         app_cache_dir,
         programs: MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
-        cancellation,
+        cancellation: ProcessCancellation::new(),
         identity,
-        jobs: jobs.clone(),
         events,
     };
-    (request, jobs, captured)
+    (request, captured)
 }
 
 fn captured_render_events(captured: &Arc<Mutex<Vec<VideoRenderEvent>>>) -> Vec<VideoRenderEvent> {
@@ -3295,6 +3351,176 @@ async fn probe_and_validate_system_render(
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn final_render_restart_reauthorization_requeues_same_job_and_completes_once() {
+    let workspace = tempdir().expect("restart recovery workspace must be created");
+    let local_data_dir = workspace.path().join("local-data");
+    let app_cache_dir = workspace.path().join("app-cache");
+    let validated = validated_system_render_fixture(
+        workspace.path(),
+        &canonical_media_fixture(),
+        true,
+        RENDER_RESTART_PLAN_ID,
+        CANONICAL_RENDER_PROFILE,
+    );
+    let plan = serde_json::to_value(&validated.plan).expect("restart render plan must serialize");
+    let created_at_ms = current_timestamp_millis();
+    let store = MediaJobStore::initialize(local_data_dir.clone())
+        .await
+        .expect("initial durable render store must initialize");
+    let initial = store
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::FinalRender,
+            parent_id: None,
+            dedupe_key: render_dedupe_key(&validated, false),
+            project_id: None,
+            asset_id: None,
+            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            priority: MediaJobPriority::Export,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: validated.duration_microseconds,
+                unit: MediaJobProgressUnit::Microseconds,
+            },
+            max_attempts: 3,
+            summary: "Export project revision".to_owned(),
+            private_payload: serde_json::json!({
+                "ownerLabel": RENDER_INTEGRATION_OWNER,
+                "plan": validated.plan,
+                "overwrite": false,
+                "outputAuthorizationPresent": true,
+            }),
+            created_at_ms,
+        })
+        .await
+        .expect("initial durable render must enqueue")
+        .job;
+    store
+        .transition(
+            initial.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "render".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: validated.duration_microseconds,
+                    unit: MediaJobProgressUnit::Microseconds,
+                },
+                attempt: Some(1),
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Final render started before restart.".to_owned()),
+                occurred_at_ms: created_at_ms,
+            },
+        )
+        .await
+        .expect("initial render must enter running state");
+    drop(store);
+
+    let jobs = MediaJobService::initialize(local_data_dir, app_cache_dir.clone())
+        .await
+        .expect("restarted media job service must initialize");
+    assert_eq!(jobs.recovery().blocked_count, 1);
+    let blocked = jobs
+        .store()
+        .get_private(initial.id.clone())
+        .await
+        .expect("interrupted render must remain durable");
+    assert_eq!(blocked.public.state, MediaJobState::Blocked);
+    assert_eq!(
+        blocked
+            .public
+            .error
+            .as_ref()
+            .map(|error| error.code.as_str()),
+        Some("output_authorization_required")
+    );
+    assert_eq!(blocked.payload_version, 1);
+
+    let fresh_grants = VideoPathGrants::default();
+    fresh_grants
+        .grant_existing_file(
+            RENDER_INTEGRATION_OWNER,
+            GrantCategory::Source,
+            &validated.input_path,
+        )
+        .expect("restarted render source must receive fresh authorization");
+    fresh_grants
+        .grant_destination(
+            RENDER_INTEGRATION_OWNER,
+            GrantCategory::Output,
+            &validated.output_path,
+        )
+        .expect("restarted render output must receive fresh authorization");
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let captured_for_sink = captured.clone();
+    let events: RenderEventSink = Arc::new(move |event| {
+        captured_for_sink
+            .lock()
+            .expect("restart compatibility event capture must lock")
+            .push(event);
+        Ok(())
+    });
+
+    let restarted = start_render_with_context(
+        RENDER_INTEGRATION_OWNER,
+        &fresh_grants,
+        &jobs,
+        MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        app_cache_dir,
+        plan,
+        false,
+        events,
+    )
+    .await
+    .expect("freshly authorized render-start path must resume the durable job");
+    assert_eq!(restarted.job_id, initial.id);
+    jobs.scheduler().wait_idle().await;
+
+    let completed = jobs
+        .store()
+        .get_private(initial.id.clone())
+        .await
+        .expect("resumed durable render must remain readable");
+    assert_eq!(completed.public.state, MediaJobState::Complete);
+    assert_eq!(completed.payload_version, 2);
+    assert!(completed.public.error.is_none());
+    assert!(validated.output_path.is_file());
+    let durable_events = jobs
+        .store()
+        .events(Some(initial.id.clone()), 0, 100)
+        .await
+        .expect("durable render events must be readable");
+    assert_eq!(
+        durable_events
+            .events
+            .iter()
+            .filter(|event| event.state == MediaJobState::Complete)
+            .count(),
+        1,
+        "the resumed durable job must settle complete exactly once"
+    );
+    let compatibility_events = captured_render_events(&captured);
+    assert_worker_event_order(&compatibility_events);
+    assert_eq!(
+        compatibility_events
+            .iter()
+            .filter(|event| matches!(event, VideoRenderEvent::Completed { .. }))
+            .count(),
+        1,
+        "compatibility lifecycle must report completion exactly once"
+    );
+    jobs.shutdown()
+        .await
+        .expect("restarted media job service must shut down cleanly");
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
 async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events() {
     let source = canonical_media_fixture();
     for (audio, plan_id) in [
@@ -3309,7 +3535,7 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
             plan_id,
             CANONICAL_RENDER_PROFILE,
         );
-        let (request, _, captured) = registered_system_render_worker(
+        let (request, captured) = registered_system_render_worker(
             validated.clone(),
             false,
             workspace.path().join("app-cache"),
@@ -3371,7 +3597,7 @@ async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
     let preserved = b"pre-existing export must survive";
     fs::write(&validated.output_path, preserved).expect("collision destination must be written");
     let partial_path = partial_render_path(&validated).expect("partial path must derive");
-    let (request, _, captured) = registered_system_render_worker(
+    let (request, captured) = registered_system_render_worker(
         validated.clone(),
         false,
         workspace.path().join("app-cache"),
@@ -3456,8 +3682,9 @@ async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partia
     );
     let output_path = validated.output_path.clone();
     let partial_path = partial_render_path(&validated).expect("partial path must derive");
-    let (request, jobs, captured) =
+    let (request, captured) =
         registered_system_render_worker(validated, false, workspace.path().join("app-cache"));
+    let cancellation = request.cancellation.clone();
     let worker = tokio::spawn(run_render_worker(request));
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
 
@@ -3486,8 +3713,7 @@ async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partia
             panic!("long real render completed before cancellation could be exercised");
         }
         if tokio::time::Instant::now() >= deadline {
-            jobs.cancel(RENDER_INTEGRATION_OWNER, RENDER_CANCELLATION_PLAN_ID)
-                .expect("timed-out integration worker must cancel");
+            cancellation.cancel();
             worker
                 .await
                 .expect("timed-out integration worker task must join");
@@ -3496,8 +3722,7 @@ async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partia
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    jobs.cancel(RENDER_INTEGRATION_OWNER, RENDER_CANCELLATION_PLAN_ID)
-        .expect("active integration render must cancel");
+    cancellation.cancel();
     worker
         .await
         .expect("cancelled integration worker task must join");
@@ -4524,6 +4749,449 @@ async fn derived_local_ffmpeg_normalizes_rotated_and_anamorphic_sources() {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum PreparationCrashBoundary {
+    AfterPlanPersistence,
+    AfterProxyChildCreation,
+    DuringProxyExecution,
+}
+
+struct RecoveryCompletingWorker {
+    kind: MediaJobKind,
+}
+
+impl MediaJobWorker for RecoveryCompletingWorker {
+    fn run(&self, _job_id: String, _cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let kind = self.kind;
+        Box::pin(async move {
+            let result = match kind {
+                MediaJobKind::Proxy => serde_json::json!({
+                    "path": "recovered-proxy.mp4",
+                    "probe": {
+                        "durationMicroseconds": 2_000_000,
+                        "averageFrameRate": { "numerator": 30, "denominator": 1 },
+                        "realFrameRate": { "numerator": 30, "denominator": 1 },
+                        "variableFrameRate": false,
+                        "width": 320,
+                        "height": 180,
+                        "videoCodecName": "h264",
+                        "audio": { "codecName": "aac", "channels": 2, "sampleRate": 48_000 },
+                        "fileSizeBytes": 4_096
+                    }
+                }),
+                MediaJobKind::ThumbnailTile => serde_json::json!({
+                    "path": "recovered-thumbnail.jpg"
+                }),
+                other => panic!("unexpected recovery worker kind: {other:?}"),
+            };
+            MediaWorkerOutcome::Complete {
+                result,
+                progress: MediaJobProgress {
+                    completed: 1,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+            }
+        })
+    }
+}
+
+async fn enqueue_interrupted_preparation(
+    store: &MediaJobStore,
+    plan: Value,
+    boundary: PreparationCrashBoundary,
+) -> String {
+    let created_at_ms = current_timestamp_millis().saturating_sub(1_000);
+    let parent = store
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::AssetPreparation,
+            parent_id: None,
+            dedupe_key: format!("restart-safe-parent:{boundary:?}"),
+            project_id: Some(DERIVED_PROJECT_ID.to_owned()),
+            asset_id: Some(DERIVED_ASSET_ID.to_owned()),
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 2,
+                unit: MediaJobProgressUnit::Stages,
+            },
+            max_attempts: 3,
+            summary: "Prepare media asset".to_owned(),
+            private_payload: serde_json::json!({
+                "canonicalObjectAvailable": true,
+                "ownerLabel": "restart-safe-preparation",
+                "projectId": DERIVED_PROJECT_ID,
+                "plan": plan.clone(),
+            }),
+            created_at_ms,
+        })
+        .await
+        .expect("interrupted parent must enqueue")
+        .job;
+    store
+        .transition(
+            parent.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "derived_media".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: Some(1),
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preparing preview media before restart.".to_owned()),
+                occurred_at_ms: created_at_ms + 1,
+            },
+        )
+        .await
+        .expect("interrupted parent must enter running state");
+
+    if matches!(
+        boundary,
+        PreparationCrashBoundary::AfterProxyChildCreation
+            | PreparationCrashBoundary::DuringProxyExecution
+    ) {
+        let proxy_key = plan["proxyIdentity"]["key"]
+            .as_str()
+            .expect("fixture proxy identity must have a key");
+        let proxy = store
+            .enqueue(NewMediaJob {
+                kind: MediaJobKind::Proxy,
+                parent_id: Some(parent.id.clone()),
+                dedupe_key: format!("proxy:{proxy_key}:{}", parent.id),
+                project_id: parent.project_id.clone(),
+                asset_id: parent.asset_id.clone(),
+                revision_id: None,
+                priority: MediaJobPriority::Interactive,
+                priority_value: 0,
+                stage: "queued".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+                max_attempts: 3,
+                summary: "Build preview proxy".to_owned(),
+                private_payload: serde_json::json!({
+                    "canonicalObjectAvailable": true,
+                    "ownerLabel": "restart-safe-preparation",
+                    "projectId": DERIVED_PROJECT_ID,
+                    "plan": plan,
+                }),
+                created_at_ms: created_at_ms + 2,
+            })
+            .await
+            .expect("interrupted proxy child must enqueue")
+            .job;
+        if matches!(boundary, PreparationCrashBoundary::DuringProxyExecution) {
+            store
+                .transition(
+                    proxy.id,
+                    MediaJobTransition {
+                        state: MediaJobState::Running,
+                        stage: "running".to_owned(),
+                        progress: MediaJobProgress {
+                            completed: 0,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                        attempt: Some(1),
+                        error: None,
+                        retry_at_ms: None,
+                        result: None,
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: Some("Proxy execution interrupted by restart.".to_owned()),
+                        occurred_at_ms: created_at_ms + 3,
+                    },
+                )
+                .await
+                .expect("interrupted proxy must enter running state");
+        }
+    }
+    parent.id
+}
+
+async fn assert_preparation_restart_boundary(boundary: PreparationCrashBoundary) {
+    let workspace = tempdir().expect("restart preparation workspace must be created");
+    let local_data_dir = workspace.path().join("local-data");
+    let cache_root = workspace.path().join("app-cache");
+    let store = MediaJobStore::initialize(local_data_dir.clone())
+        .await
+        .expect("initial restart store must initialize");
+    let plan = prepared_asset_plan_fixture(&cache_root);
+    let parent_id = enqueue_interrupted_preparation(&store, plan, boundary).await;
+    drop(store);
+
+    let jobs = MediaJobService::initialize(local_data_dir, cache_root)
+        .await
+        .expect("restarted preparation service must initialize");
+    let worker_factory =
+        Arc::new(|kind| Arc::new(RecoveryCompletingWorker { kind }) as Arc<dyn MediaJobWorker>);
+    resume_durable_preparations_with_test_workers(
+        &jobs,
+        MediaPrograms::explicit(
+            OsString::from("unused-test-ffmpeg"),
+            OsString::from("unused-test-ffprobe"),
+        ),
+        worker_factory,
+    )
+    .await
+    .expect("restart recovery must complete");
+    jobs.scheduler().wait_idle().await;
+
+    let records = jobs
+        .store()
+        .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
+        .await
+        .expect("recovered preparation records must list");
+    assert_eq!(
+        records.len(),
+        3,
+        "recovery must materialize exactly two children"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.id == parent_id && record.parent_id.is_none())
+            .count(),
+        1
+    );
+    for kind in [
+        MediaJobKind::AssetPreparation,
+        MediaJobKind::Proxy,
+        MediaJobKind::ThumbnailTile,
+    ] {
+        let matches = records
+            .iter()
+            .filter(|record| record.kind == kind)
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1, "recovery must dedupe {kind:?}");
+        assert_eq!(matches[0].state, MediaJobState::Complete);
+        let events = jobs
+            .store()
+            .events(Some(matches[0].id.clone()), 0, 100)
+            .await
+            .expect("recovered job events must list");
+        assert_eq!(
+            events
+                .events
+                .iter()
+                .filter(|event| event.state == MediaJobState::Complete)
+                .count(),
+            1,
+            "{kind:?} must complete exactly once"
+        );
+    }
+    jobs.shutdown()
+        .await
+        .expect("restarted preparation service must shut down");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn restart_safe_preparation_materializes_both_children_after_plan_persistence() {
+    assert_preparation_restart_boundary(PreparationCrashBoundary::AfterPlanPersistence).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn restart_safe_preparation_materializes_thumbnail_after_proxy_child_creation() {
+    assert_preparation_restart_boundary(PreparationCrashBoundary::AfterProxyChildCreation).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn restart_safe_preparation_requeues_interrupted_proxy_execution() {
+    assert_preparation_restart_boundary(PreparationCrashBoundary::DuringProxyExecution).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries() {
+    let workspace = tempdir().expect("system restart workspace must be created");
+    let source = canonical_media_fixture();
+    for (index, boundary) in [
+        PreparationCrashBoundary::AfterPlanPersistence,
+        PreparationCrashBoundary::AfterProxyChildCreation,
+        PreparationCrashBoundary::DuringProxyExecution,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let case_root = workspace.path().join(format!("case-{index}"));
+        let local_data_dir = case_root.join("local-data");
+        let cache_root = case_root.join("app-cache");
+        let owner = format!("system-restart-preparation-{index}");
+        let grants = VideoPathGrants::default();
+        grants
+            .grant_existing_file(&owner, GrantCategory::Source, &source)
+            .expect("system restart source must be granted");
+        let plan = plan_asset_core(
+            PrepareAssetCoreRequest {
+                owner_label: &owner,
+                project_id: DERIVED_PROJECT_ID,
+                asset_id: DERIVED_ASSET_ID,
+                source_path: &source,
+                sequence_rate: Some(RationalRate {
+                    numerator: 30,
+                    denominator: 1,
+                }),
+                expected_content_identity: None,
+            },
+            &grants,
+            &cache_root,
+            &MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        )
+        .await
+        .expect("system restart plan must prepare");
+        let plan = serde_json::to_value(plan).expect("system restart plan must serialize");
+        let store = MediaJobStore::initialize(local_data_dir.clone())
+            .await
+            .expect("system restart store must initialize");
+        let parent_id = enqueue_interrupted_preparation(&store, plan, boundary).await;
+        drop(store);
+
+        let jobs = MediaJobService::initialize(local_data_dir, cache_root)
+            .await
+            .expect("system restart service must reopen");
+        resume_durable_preparations(
+            &jobs,
+            MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        )
+        .await
+        .expect("system FFmpeg restart recovery must complete");
+        jobs.scheduler().wait_idle().await;
+
+        let records = jobs
+            .store()
+            .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
+            .await
+            .expect("system restart records must list");
+        assert_eq!(
+            records.len(),
+            3,
+            "{boundary:?} must keep exactly three jobs"
+        );
+        for kind in [
+            MediaJobKind::AssetPreparation,
+            MediaJobKind::Proxy,
+            MediaJobKind::ThumbnailTile,
+        ] {
+            let matching = records
+                .iter()
+                .filter(|record| record.kind == kind)
+                .collect::<Vec<_>>();
+            assert_eq!(matching.len(), 1, "{boundary:?} must dedupe {kind:?}");
+            assert_eq!(matching[0].state, MediaJobState::Complete);
+        }
+        let completed = jobs
+            .store()
+            .get_private(parent_id.clone())
+            .await
+            .expect("system restart parent must load");
+        let prepared: super::types::PreparedVideoAsset = serde_json::from_value(
+            completed
+                .result
+                .expect("system restart parent must persist its result"),
+        )
+        .expect("system restart result must deserialize");
+        assert!(Path::new(&prepared.proxy_path).is_file());
+        assert!(Path::new(&prepared.thumbnail_path).is_file());
+        let parent_events = jobs
+            .store()
+            .events(Some(parent_id), 0, 100)
+            .await
+            .expect("system restart parent events must list");
+        assert_eq!(
+            parent_events
+                .events
+                .iter()
+                .filter(|event| event.state == MediaJobState::Complete)
+                .count(),
+            1,
+            "{boundary:?} must complete the parent exactly once"
+        );
+        jobs.shutdown()
+            .await
+            .expect("system restart service must shut down");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn durable_preparation_records_parent_and_hidden_children() {
+    let workspace = tempdir().expect("durable preparation workspace must be created");
+    let cache_root = workspace.path().join("app-cache");
+    let source =
+        workspace_root().join("apps/desktop/src-tauri/fixtures/video-phase1/single-clip.mp4");
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("durable-preparation", GrantCategory::Source, &source)
+        .expect("canonical source must be granted");
+    let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+        .await
+        .expect("durable media service must initialize");
+
+    let prepared = prepare_asset_durable(
+        PrepareAssetCoreRequest {
+            owner_label: "durable-preparation",
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: Some(RationalRate {
+                numerator: 30,
+                denominator: 1,
+            }),
+            expected_content_identity: None,
+        },
+        &grants,
+        &cache_root,
+        MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        &jobs,
+    )
+    .await
+    .expect("durable preparation must complete");
+    assert!(Path::new(&prepared.proxy_path).is_file());
+    assert!(Path::new(&prepared.thumbnail_path).is_file());
+
+    let records = jobs
+        .store()
+        .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
+        .await
+        .expect("durable records must list");
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.parent_id.is_none())
+            .count(),
+        1
+    );
+    assert!(records
+        .iter()
+        .any(|record| record.kind == MediaJobKind::Proxy));
+    assert!(records
+        .iter()
+        .any(|record| record.kind == MediaJobKind::ThumbnailTile));
+    assert!(records
+        .iter()
+        .all(|record| record.state == super::jobs::model::MediaJobState::Complete));
+    let cache_status = jobs.cache().status().await.expect("cache status must load");
+    assert_eq!(cache_status.artifact_count, 3);
+    assert_eq!(cache_status.leased_artifact_count, 3);
+    assert!(cache_status.managed_bytes > 0);
+    jobs.shutdown()
+        .await
+        .expect("durable scheduler must stop cleanly");
+}
+
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
 async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts() {
@@ -4831,6 +5499,7 @@ fn content_addressed_ingest_failpoints_leave_no_promoted_partial() {
         IngestFailpoint::Flush,
         IngestFailpoint::Sync,
         IngestFailpoint::Promotion,
+        IngestFailpoint::PostPromotion,
     ] {
         let workspace = tempdir().expect("failpoint workspace must exist");
         let source = workspace.path().join("source.bin");
@@ -4851,6 +5520,322 @@ fn content_addressed_ingest_failpoints_leave_no_promoted_partial() {
                 "failpoint {failpoint:?} promoted an object: {promoted_objects:?}"
             );
         }
+    }
+}
+
+#[derive(Clone)]
+struct SourcePublicationGateWorker {
+    source: PathBuf,
+    cache_root: PathBuf,
+    cache: MediaCacheService,
+    failpoint: IngestFailpoint,
+}
+
+impl MediaJobWorker for SourcePublicationGateWorker {
+    fn run(&self, _job_id: String, _cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let source = self.source.clone();
+        let cache_root = self.cache_root.clone();
+        let cache = self.cache.clone();
+        let failpoint = self.failpoint;
+        Box::pin(async move {
+            let ingested = match ingest_with_failpoint_for_test(source, cache_root, failpoint) {
+                Ok(ingested) => ingested,
+                Err(_) => return publication_gate_failure(),
+            };
+            if cache
+                .register(CacheArtifactRegistration {
+                    key: ingested.identity.digest.clone(),
+                    content_digest: ingested.identity.digest,
+                    kind: CacheArtifactKind::SourceObject,
+                    path: ingested.object_path,
+                    profile_id: None,
+                    toolchain_id: None,
+                    recipe_id: None,
+                })
+                .await
+                .is_err()
+            {
+                return publication_gate_failure();
+            }
+            MediaWorkerOutcome::Complete {
+                result: serde_json::json!({ "published": true }),
+                progress: MediaJobProgress {
+                    completed: 1,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+struct PublicationGateWorker {
+    cache_root: PathBuf,
+    cache: MediaCacheService,
+    key: String,
+    failpoint: PublicationFailpoint,
+}
+
+fn publication_gate_failure() -> MediaWorkerOutcome {
+    MediaWorkerOutcome::Failed {
+        error: MediaJobError {
+            code: "durable_publication_failed".to_owned(),
+            category: MediaJobErrorCategory::IntegrityFailed,
+            message: "Durable publication did not cross its commit gate.".to_owned(),
+            retryable: false,
+            action: None,
+        },
+        progress: MediaJobProgress {
+            completed: 0,
+            total: 1,
+            unit: MediaJobProgressUnit::Items,
+        },
+    }
+}
+
+impl MediaJobWorker for PublicationGateWorker {
+    fn run(&self, _job_id: String, _cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let cache_root = self.cache_root.clone();
+        let cache = self.cache.clone();
+        let key = self.key.clone();
+        let failpoint = self.failpoint;
+        Box::pin(async move {
+            let guard = match acquire_artifact(&cache_root, ArtifactStoreKind::Proxy, &key).await {
+                Ok(guard) => guard,
+                Err(_) => return publication_gate_failure(),
+            };
+            let mut temporary = match guard.temporary() {
+                Ok(temporary) => temporary,
+                Err(_) => return publication_gate_failure(),
+            };
+            if temporary.write_all(b"durable derived bytes").is_err() {
+                return publication_gate_failure();
+            }
+            if guard
+                .promote_with_failpoint_for_test(temporary, failpoint)
+                .is_err()
+            {
+                return publication_gate_failure();
+            }
+            if fs::read(guard.path()).ok().as_deref() != Some(b"durable derived bytes")
+                || guard.confirm_durable().is_err()
+            {
+                return publication_gate_failure();
+            }
+            if cache
+                .register(CacheArtifactRegistration {
+                    key: key.clone(),
+                    content_digest: key.clone(),
+                    kind: CacheArtifactKind::Proxy,
+                    path: guard.path().to_path_buf(),
+                    profile_id: None,
+                    toolchain_id: None,
+                    recipe_id: None,
+                })
+                .await
+                .is_err()
+            {
+                return publication_gate_failure();
+            }
+            MediaWorkerOutcome::Complete {
+                result: serde_json::json!({ "path": guard.path() }),
+                progress: MediaJobProgress {
+                    completed: 1,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+            }
+        })
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn durability_failpoints_block_catalog_registration_and_job_completion() {
+    for (index, failpoint) in [
+        PublicationFailpoint::BeforeRename,
+        PublicationFailpoint::AfterRename,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let workspace = tempdir().expect("durability gate workspace must exist");
+        let cache_root = workspace.path().join("cache");
+        let jobs =
+            MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+                .await
+                .expect("durability gate media service must initialize");
+        let key = format!("{:064x}", index + 1);
+        let job = jobs
+            .store()
+            .enqueue(NewMediaJob {
+                kind: MediaJobKind::Proxy,
+                parent_id: None,
+                dedupe_key: format!("durability-gate-{index}"),
+                project_id: None,
+                asset_id: None,
+                revision_id: None,
+                priority: MediaJobPriority::Interactive,
+                priority_value: 0,
+                stage: "queued".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+                max_attempts: 1,
+                summary: "Prove durable publication gate".to_owned(),
+                private_payload: serde_json::json!({}),
+                created_at_ms: current_timestamp_millis(),
+            })
+            .await
+            .expect("durability gate job must enqueue")
+            .job;
+        jobs.scheduler()
+            .submit(
+                job.id.clone(),
+                job.priority,
+                job.attempt,
+                job.max_attempts,
+                SchedulerResource::BlockingIo,
+                Arc::new(PublicationGateWorker {
+                    cache_root: cache_root.clone(),
+                    cache: jobs.cache().clone(),
+                    key: key.clone(),
+                    failpoint,
+                }),
+            )
+            .await
+            .expect("durability gate worker must submit");
+        jobs.scheduler().wait_idle().await;
+
+        let stored = jobs
+            .store()
+            .get_private(job.id.clone())
+            .await
+            .expect("durability gate job must load");
+        assert_eq!(stored.public.state, MediaJobState::Failed);
+        assert!(
+            stored.result.is_none(),
+            "failed gate cannot persist a result"
+        );
+        let events = jobs
+            .store()
+            .events(Some(job.id), 0, 100)
+            .await
+            .expect("durability gate events must load");
+        assert!(!events
+            .events
+            .iter()
+            .any(|event| event.state == MediaJobState::Complete));
+        let status = jobs.cache().status().await.expect("cache status must load");
+        assert_eq!(
+            status.artifact_count, 0,
+            "failed gate cannot register a row"
+        );
+        let destination = cache_root
+            .join(MEDIA_STORE_NAMESPACE)
+            .join("derived")
+            .join("proxy")
+            .join(&key[..2])
+            .join(format!("{key}.mp4"));
+        assert!(
+            !destination.exists(),
+            "failed gate must clean its publication"
+        );
+        jobs.shutdown()
+            .await
+            .expect("durability gate service must shut down");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn source_durability_failpoints_block_catalog_registration_and_job_completion() {
+    for (index, failpoint) in [IngestFailpoint::Promotion, IngestFailpoint::PostPromotion]
+        .into_iter()
+        .enumerate()
+    {
+        let workspace = tempdir().expect("source durability workspace must exist");
+        let source = workspace.path().join("source.bin");
+        fs::write(&source, b"durable source bytes").expect("source bytes must write");
+        let source = source.canonicalize().expect("source must canonicalize");
+        let cache_root = workspace.path().join("cache");
+        let jobs =
+            MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+                .await
+                .expect("source durability service must initialize");
+        let job = jobs
+            .store()
+            .enqueue(NewMediaJob {
+                kind: MediaJobKind::AssetPreparation,
+                parent_id: None,
+                dedupe_key: format!("source-durability-gate-{index}"),
+                project_id: None,
+                asset_id: None,
+                revision_id: None,
+                priority: MediaJobPriority::Interactive,
+                priority_value: 0,
+                stage: "queued".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Items,
+                },
+                max_attempts: 1,
+                summary: "Prove durable source publication gate".to_owned(),
+                private_payload: serde_json::json!({}),
+                created_at_ms: current_timestamp_millis(),
+            })
+            .await
+            .expect("source durability job must enqueue")
+            .job;
+        jobs.scheduler()
+            .submit(
+                job.id.clone(),
+                job.priority,
+                job.attempt,
+                job.max_attempts,
+                SchedulerResource::BlockingIo,
+                Arc::new(SourcePublicationGateWorker {
+                    source,
+                    cache_root: cache_root.clone(),
+                    cache: jobs.cache().clone(),
+                    failpoint,
+                }),
+            )
+            .await
+            .expect("source durability worker must submit");
+        jobs.scheduler().wait_idle().await;
+
+        let stored = jobs
+            .store()
+            .get_private(job.id.clone())
+            .await
+            .expect("source durability job must load");
+        assert_eq!(stored.public.state, MediaJobState::Failed);
+        assert!(stored.result.is_none());
+        let events = jobs
+            .store()
+            .events(Some(job.id), 0, 100)
+            .await
+            .expect("source durability events must load");
+        assert!(!events
+            .events
+            .iter()
+            .any(|event| event.state == MediaJobState::Complete));
+        let status = jobs.cache().status().await.expect("cache status must load");
+        assert_eq!(
+            status.artifact_count, 0,
+            "failed source cannot register a row"
+        );
+        let object_root = cache_root.join(MEDIA_STORE_NAMESPACE).join("objects");
+        assert!(
+            !object_root.exists() || walk_regular_files(&object_root).is_empty(),
+            "failed source gate must clean its publication"
+        );
+        jobs.shutdown()
+            .await
+            .expect("source durability service must shut down");
     }
 }
 

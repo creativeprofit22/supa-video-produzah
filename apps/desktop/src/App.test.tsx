@@ -24,22 +24,34 @@ const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
 
 afterEach(cleanup);
-describe("App Phase 2 canonical workspace", () => {
+describe("App Phase 3B durable workspace", () => {
   beforeEach(() => {
     invokeMock.mockReset();
     listenMock.mockReset().mockResolvedValue(vi.fn());
   });
 
-  it("shows tool loading and the Phase 2 label", async () => {
+  it("shows tool loading, the Phase 3B label, and app-level jobs without a project", async () => {
+    const service = createMockVideoService();
     let resolve!: (value: unknown) => void;
-    invokeMock.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    invokeMock.mockImplementation((command, args) => {
+      if (command === "video_ffmpeg_status") {
+        return new Promise((done) => {
+          resolve = done;
+        });
+      }
+      return service.invoke(command, args);
+    });
     render(<App />);
     expect(screen.getByRole("heading", { name: "Checking bundled media tools" })).toBeTruthy();
-    expect(screen.getByText("Phase 2 · Canonical history")).toBeTruthy();
+    expect(screen.getByText("Phase 3B · Durable media jobs")).toBeTruthy();
+
+    const jobsToggle = screen.getByRole("button", { name: /Jobs/ });
+    fireEvent.click(jobsToggle);
+    expect(await screen.findByRole("heading", { name: "Job Center" })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(document.activeElement).toBe(jobsToggle));
+
     resolve({
       source: "bundled",
       toolchainId: "ffmpeg-8.1.2-gyan-essentials-windows-x86_64",

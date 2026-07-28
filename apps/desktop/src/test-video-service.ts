@@ -1,4 +1,10 @@
 import type { CommandGroupRequest, ProjectProjection, RecoveryReport } from "@supa-video/contracts";
+import type {
+  MediaCacheStatus,
+  MediaJobEvent,
+  MediaJobRecord,
+  MediaJobRecoveryReport,
+} from "@supa-video/media";
 
 const timestamp = "2026-07-26T12:00:00.000Z";
 const initialProjectId = "70000000-0000-4000-8000-000000000001";
@@ -59,6 +65,48 @@ export const testPrepared = {
   thumbnailPath: "C:\\Neutral\\Cache\\thumb.jpg",
 } as const;
 
+export const testMediaJob = {
+  schemaVersion: 1,
+  id: "70000000-0000-4000-8000-000000000080",
+  kind: "asset_preparation",
+  parentId: null,
+  projectId: initialProjectId,
+  assetId: "70000000-0000-4000-8000-000000000081",
+  revisionId: revisionId(0),
+  priority: "interactive",
+  state: "queued",
+  stage: "queued",
+  progress: { completed: 0, total: 2, unit: "stages" },
+  attempt: 0,
+  maxAttempts: 3,
+  summary: "Prepare preview media",
+  error: null,
+  retryAt: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  startedAt: null,
+  settledAt: null,
+  cancellationRequested: false,
+  resultAvailable: false,
+} satisfies MediaJobRecord;
+
+export const testMediaCacheStatus: MediaCacheStatus = {
+  schemaVersion: 1,
+  budgetBytes: 10_000_000,
+  managedBytes: 5_000_000,
+  leasedBytes: 0,
+  reclaimableBytes: 5_000_000,
+  artifactCount: 2,
+  leasedArtifactCount: 0,
+  pressure: "normal",
+  legacyBytes: 1_000,
+  legacyEntryCount: 1,
+  legacyUnsafeEntryCount: 0,
+  legacyClearAvailable: true,
+  recoveryWarning: null,
+  refreshedAt: timestamp,
+};
+
 function emptyProjection(): ProjectProjection {
   return {
     projectId: initialProjectId,
@@ -105,6 +153,9 @@ export function createMockVideoService(
     recovery?: Partial<RecoveryReport>;
     sourceStatusOnOpen?: "missing" | "relink_required";
     checkpointWarningRevisions?: readonly number[];
+    mediaJobs?: readonly MediaJobRecord[];
+    mediaCacheStatus?: MediaCacheStatus;
+    mediaRecovery?: MediaJobRecoveryReport | null;
   } = {},
 ) {
   let projection = emptyProjection();
@@ -123,6 +174,42 @@ export function createMockVideoService(
   const sourcePath = "C:\\Neutral\\Media\\clip.mp4";
   const replacementPath = "C:\\Neutral\\Media\\replacement.mp4";
   const outputPath = "C:\\Neutral\\Exports\\clip.mp4";
+  let mediaJobs: MediaJobRecord[] = (options.mediaJobs ?? [testMediaJob]).map((job) =>
+    structuredClone(job),
+  );
+  let mediaEvents: MediaJobEvent[] = mediaJobs.map((job, index) => ({
+    schemaVersion: 1,
+    eventId: index + 1,
+    jobId: job.id,
+    eventType: "created",
+    state: job.state,
+    stage: job.stage,
+    progress: job.progress,
+    message: null,
+    category: job.error?.category ?? null,
+    createdAt: job.createdAt,
+  }));
+  const replaceMediaJobs = (next: readonly MediaJobRecord[]): MediaJobEvent => {
+    mediaJobs = next.map((job) => structuredClone(job));
+    const job = mediaJobs.at(-1);
+    if (job === undefined) throw new Error("A mock media event requires at least one job");
+    const event: MediaJobEvent = {
+      schemaVersion: 1,
+      eventId: (mediaEvents.at(-1)?.eventId ?? 0) + 1,
+      jobId: job.id,
+      eventType: "state_changed",
+      state: job.state,
+      stage: job.stage,
+      progress: job.progress,
+      message: null,
+      category: job.error?.category ?? null,
+      createdAt: job.updatedAt,
+    };
+    mediaEvents = [...mediaEvents, event];
+    return structuredClone(event);
+  };
+  let mediaCacheStatus = structuredClone(options.mediaCacheStatus ?? testMediaCacheStatus);
+  const mediaRecovery = structuredClone(options.mediaRecovery ?? null);
   const invoke = async (command: string, args?: unknown): Promise<unknown> => {
     if (command === "video_ffmpeg_status")
       return {
@@ -265,6 +352,109 @@ export function createMockVideoService(
         revisionId: plan.revisionId,
       };
     }
+    if (command === "video_list_media_jobs") {
+      const request = (
+        args as {
+          request: { includeSettled: boolean; projectId: string | null };
+        }
+      ).request;
+      return {
+        schemaVersion: 1,
+        jobs: mediaJobs.filter(
+          (job) =>
+            (request.includeSettled || !["cancelled", "failed", "complete"].includes(job.state)) &&
+            (request.projectId === null || job.projectId === request.projectId),
+        ),
+        nextBeforeUpdatedAt: null,
+        latestEventId: mediaEvents.at(-1)?.eventId ?? 0,
+        recovery: mediaRecovery,
+      };
+    }
+    if (command === "video_get_media_job_events") {
+      const request = (
+        args as {
+          request: { jobId: string | null; afterEventId: number; limit: number };
+        }
+      ).request;
+      const matching = mediaEvents.filter(
+        (event) =>
+          event.eventId > request.afterEventId &&
+          (request.jobId === null || event.jobId === request.jobId),
+      );
+      return {
+        schemaVersion: 1,
+        events: matching.slice(0, request.limit),
+        latestEventId: mediaEvents.at(-1)?.eventId ?? 0,
+        hasMore: matching.length > request.limit,
+      };
+    }
+    if (command === "video_cancel_media_job" || command === "video_retry_media_job") {
+      const { jobId } = (args as { request: { jobId: string } }).request;
+      const current = mediaJobs.find((job) => job.id === jobId);
+      if (current === undefined) throw new Error("Unknown mock media job");
+      const eventId = (mediaEvents.at(-1)?.eventId ?? 0) + 1;
+      const cancelled = command === "video_cancel_media_job";
+      const updated: MediaJobRecord = cancelled
+        ? {
+            ...current,
+            state: "cancelled",
+            stage: "cancelled",
+            settledAt: timestamp,
+            retryAt: null,
+            error: null,
+            resultAvailable: false,
+            cancellationRequested: false,
+          }
+        : ({
+            ...current,
+            state: "queued",
+            stage: "queued",
+            settledAt: null,
+            retryAt: null,
+            error: null,
+            resultAvailable: false,
+            cancellationRequested: false,
+          } as MediaJobRecord);
+      mediaJobs = mediaJobs.map((job) => (job.id === jobId ? updated : job));
+      mediaEvents = [
+        ...mediaEvents,
+        {
+          schemaVersion: 1,
+          eventId,
+          jobId,
+          eventType: "state_changed",
+          state: updated.state,
+          stage: updated.stage,
+          progress: updated.progress,
+          message: null,
+          category: null,
+          createdAt: timestamp,
+        },
+      ];
+      return { schemaVersion: 1, job: structuredClone(updated) };
+    }
+    if (command === "video_get_media_cache_status") return structuredClone(mediaCacheStatus);
+    if (command === "video_clear_legacy_media_cache") {
+      const { confirmed } = (args as { request: { confirmed: boolean } }).request;
+      if (!confirmed) throw new Error("Legacy cache clear requires confirmation");
+      const clearedBytes = mediaCacheStatus.legacyBytes;
+      const clearedEntryCount = mediaCacheStatus.legacyEntryCount;
+      const skippedUnsafeEntryCount = mediaCacheStatus.legacyUnsafeEntryCount;
+      mediaCacheStatus = {
+        ...mediaCacheStatus,
+        legacyBytes: 0,
+        legacyEntryCount: 0,
+        legacyUnsafeEntryCount: 0,
+        legacyClearAvailable: false,
+      };
+      return {
+        schemaVersion: 1,
+        clearedBytes,
+        clearedEntryCount,
+        skippedUnsafeEntryCount,
+        status: structuredClone(mediaCacheStatus),
+      };
+    }
     if (command === "video_project_inspector")
       return {
         projectId: projection.projectId,
@@ -320,5 +510,6 @@ export function createMockVideoService(
     sourcePath,
     replacementPath,
     outputPath,
+    replaceMediaJobs,
   };
 }

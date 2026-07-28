@@ -1,7 +1,9 @@
+pub(crate) mod cache;
 #[allow(dead_code)]
 pub(crate) mod derived;
 mod error;
 mod grants;
+pub(crate) mod jobs;
 pub(crate) mod media_store;
 pub(crate) mod probe;
 mod process;
@@ -21,7 +23,7 @@ pub use project_io::{
     video_regrant_project_source, video_save_project, OpenedVideoProject, VideoSourceRecord,
     VideoSourceStatus, MAX_PROJECT_BYTES,
 };
-pub use render::{video_cancel_render, video_start_render, VideoRenderJobs, VIDEO_RENDER_EVENT};
+pub use render::{video_cancel_render, video_start_render, VIDEO_RENDER_EVENT};
 pub use types::{
     MediaProbe, PreparedVideoAsset, RenderExpectation, RenderPlanV1, VerifiedRenderOutput,
     VideoProjectFileV1, VideoRenderEvent, VideoRenderStarted, VideoToolInfo, VideoToolProblem,

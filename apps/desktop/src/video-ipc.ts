@@ -26,8 +26,36 @@ import type {
   VideoRenderStarted,
   VideoToolStatus,
 } from "@supa-video/contracts";
-import { prepareVideoAssetRequestSchema, preparedVideoAssetSchema } from "@supa-video/media";
-import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
+import {
+  clearLegacyMediaCacheRequestSchema,
+  clearLegacyMediaCacheResponseSchema,
+  getMediaCacheStatusRequestSchema,
+  getMediaJobEventsRequestSchema,
+  listMediaJobsRequestSchema,
+  mediaCacheStatusSchema,
+  mediaJobActionRequestSchema,
+  mediaJobActionResponseSchema,
+  mediaJobEventListSchema,
+  mediaJobEventSchema,
+  mediaJobListSchema,
+  prepareVideoAssetRequestSchema,
+  preparedVideoAssetSchema,
+} from "@supa-video/media";
+import type {
+  ClearLegacyMediaCacheRequest,
+  ClearLegacyMediaCacheResponse,
+  GetMediaCacheStatusRequest,
+  GetMediaJobEventsRequest,
+  ListMediaJobsRequest,
+  MediaCacheStatus,
+  MediaJobActionRequest,
+  MediaJobActionResponse,
+  MediaJobEvent,
+  MediaJobEventList,
+  MediaJobList,
+  PreparedVideoAsset,
+  PrepareVideoAssetRequest,
+} from "@supa-video/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -37,6 +65,7 @@ const selectedPathSchema = absoluteNativePathSchema.nullable();
 const emptyCommandResponseSchema = z.null();
 const videoErrorCodeSet = new Set<string>(videoErrorCodes);
 const VIDEO_RENDER_EVENT = "video:render-event";
+const VIDEO_MEDIA_JOB_EVENT = "video:media-job-event";
 
 export class VideoIpcResponseError extends Error {
   constructor() {
@@ -201,11 +230,80 @@ export async function cancelVideoRender(jobId: string): Promise<void> {
   parseResponse(emptyCommandResponseSchema.safeParse(response));
 }
 
+export async function listMediaJobs(request: ListMediaJobsRequest = {}): Promise<MediaJobList> {
+  const validated = listMediaJobsRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_list_media_jobs", { request: validated });
+  return parseResponse(mediaJobListSchema.safeParse(response));
+}
+
+export async function getMediaJobEvents(
+  request: GetMediaJobEventsRequest = {},
+): Promise<MediaJobEventList> {
+  const validated = getMediaJobEventsRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_get_media_job_events", { request: validated });
+  return parseResponse(mediaJobEventListSchema.safeParse(response));
+}
+
+export async function cancelMediaJob(
+  request: MediaJobActionRequest,
+): Promise<MediaJobActionResponse> {
+  const validated = mediaJobActionRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_cancel_media_job", { request: validated });
+  return parseResponse(mediaJobActionResponseSchema.safeParse(response));
+}
+
+export async function retryMediaJob(
+  request: MediaJobActionRequest,
+): Promise<MediaJobActionResponse> {
+  const validated = mediaJobActionRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_retry_media_job", { request: validated });
+  return parseResponse(mediaJobActionResponseSchema.safeParse(response));
+}
+
+export async function getMediaCacheStatus(
+  request: GetMediaCacheStatusRequest = {},
+): Promise<MediaCacheStatus> {
+  getMediaCacheStatusRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_get_media_cache_status");
+  return parseResponse(mediaCacheStatusSchema.safeParse(response));
+}
+
+export async function clearLegacyMediaCache(
+  request: ClearLegacyMediaCacheRequest,
+): Promise<ClearLegacyMediaCacheResponse> {
+  const validated = clearLegacyMediaCacheRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_clear_legacy_media_cache", {
+    request: validated,
+  });
+  return parseResponse(clearLegacyMediaCacheResponseSchema.safeParse(response));
+}
+
 type FailedVideoRenderEvent = Extract<VideoRenderEvent, { type: "failed" }>;
 
 export type VideoRenderNotification =
   | Exclude<VideoRenderEvent, FailedVideoRenderEvent>
   | (Omit<FailedVideoRenderEvent, "error"> & { error: VideoDomainError });
+
+export async function listenMediaJobEvents(
+  handler: (event: MediaJobEvent) => void,
+  onError?: (error: VideoIpcResponseError) => void,
+): Promise<UnlistenFn> {
+  const unlisten = await listen<unknown>(VIDEO_MEDIA_JOB_EVENT, (event) => {
+    const parsed = mediaJobEventSchema.safeParse(event.payload);
+    if (!parsed.success) {
+      onError?.(new VideoIpcResponseError());
+      return;
+    }
+    handler(parsed.data);
+  });
+  let disposed = false;
+
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    unlisten();
+  };
+}
 
 export async function listenVideoRenderEvents(
   handler: (event: VideoRenderNotification) => void,
@@ -254,6 +352,13 @@ export interface VideoBackend {
   readonly startVideoRender: typeof startVideoRender;
   readonly cancelVideoRender: typeof cancelVideoRender;
   readonly listenVideoRenderEvents: typeof listenVideoRenderEvents;
+  readonly listMediaJobs: typeof listMediaJobs;
+  readonly getMediaJobEvents: typeof getMediaJobEvents;
+  readonly cancelMediaJob: typeof cancelMediaJob;
+  readonly retryMediaJob: typeof retryMediaJob;
+  readonly getMediaCacheStatus: typeof getMediaCacheStatus;
+  readonly clearLegacyMediaCache: typeof clearLegacyMediaCache;
+  readonly listenMediaJobEvents: typeof listenMediaJobEvents;
   readonly convertFileSrc: typeof convertFileSrc;
 }
 
@@ -275,5 +380,12 @@ export const tauriVideoBackend: VideoBackend = {
   startVideoRender,
   cancelVideoRender,
   listenVideoRenderEvents,
+  listMediaJobs,
+  getMediaJobEvents,
+  cancelMediaJob,
+  retryMediaJob,
+  getMediaCacheStatus,
+  clearLegacyMediaCache,
+  listenMediaJobEvents,
   convertFileSrc,
 };

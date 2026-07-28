@@ -103,12 +103,18 @@ jobs:
       - name: Test Rust canonical engine and recovery
         run: cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml
 
-      - name: Verify release-mode 10k journal performance budgets
+      - name: Verify release-mode storage performance budgets
         run: |
           cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
-            video::project::tests::generated_10k_record_journal_scans_below_reopen_budget -- --exact --nocapture
+            video::project::tests::generated_10k_record_journal_scans_correctly_and_meets_release_budget -- --exact --nocapture
           cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
             video::project::tests::durable_command_acknowledgement_p95_meets_budget -- --exact --nocapture
+          cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
+            video::jobs::store::tests::enqueue_with_durable_event_p95_meets_release_budget -- --exact --nocapture
+          cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
+            video::jobs::store::tests::list_100_recent_jobs_meets_release_budget -- --exact --nocapture
+          cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
+            video::jobs::store::tests::restart_recovery_selection_across_10k_jobs_meets_release_budget -- --exact --nocapture
 
   windows:
     name: Windows canonical recovery and Tauri build

@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1 and 2 plus the Phase 3 FFmpeg distribution baseline are complete
+- **Status:** Active implementation; Phases 1 and 2, the Phase 3 FFmpeg distribution baseline, and Phase 3A are complete; Phase 3B is next
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 26 July 2026
+- **Implementation audit:** 27 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -370,11 +370,11 @@ Runtime: decoders, GPU textures, file handles
 
 **Depends on:** Phase 2
 
-## Implementation checkpoint - re-audited and verified 26 July 2026
+## Implementation checkpoint - re-audited 27 July 2026
 
-Phase 3A is implemented and locally verified from exact audited baseline `cd262b41f48361ccc98e185c86a51761bb0fec04`, built on the Phase 2 engine and pinned Gyan FFmpeg 8.1.2 distribution baseline.
+Phase 3A is implemented and locally verified at exact audited HEAD `19c747d9c91bb68dd6188fab27e5775a43121450`, built on the Phase 2 engine and pinned Gyan FFmpeg 8.1.2 distribution baseline. Phase 3B is the next implementation checkpoint.
 
-The audit prerequisite is closed: grouped import and relink consume `MediaToolchainState`, verify bundled FFprobe, ingest authorized source bytes, and probe the canonical object copy. Source guards and an assembled packaged test with an empty `PATH` now cover create/import/prepare/relink/reopen as well as status, standalone probe, render, executable tamper rejection, and cancellation cleanup.
+The Phase 3A audit prerequisite is closed: grouped import and relink consume `MediaToolchainState`, verify bundled FFprobe, ingest authorized source bytes, and probe the canonical object copy. Source guards and an assembled packaged test with an empty `PATH` cover create/import/prepare/relink/reopen as well as status, standalone probe, render, executable tamper rejection, and cancellation cleanup.
 
 `packages/video-media` owns strict browser-safe preparation, source-fingerprint, profile, recipe, and derived-identity contracts. Shared vectors pin UTF-8 domains, u32 length delimiters, raw digest bytes, little-endian safe integers, field order, and expected SHA-256 outputs across TypeScript `crypto.subtle` and Rust.
 
@@ -382,75 +382,80 @@ The native store streams exact bytes into `$APPCACHE/supa-video-media-v1/objects
 
 New import and relink operations persist strict `MediaContentIdentityV1`; caller probe/identity tampering fails before journal mutation. Relink keeps the asset UUID and restores locator, probe, and identity together through semantic inverse, undo, redo, replay, close, and reopen. Existing V1/V2 fixtures without identity remain valid and readable.
 
-Measured local gates pass frozen install; root build/check/test; ESLint; Prettier; 153 TypeScript tests; 3 Chromium responsive/accessibility tests; 129 all-feature Rust/configuration tests; Rustfmt; all-target/all-feature Clippy with warnings denied; all 8 explicit FFmpeg integrations; all 3 enhanced packaged integrations with an empty `PATH`; the 51-assertion bootstrap suite; staged-media verification; Windows no-bundle assembly; and `git diff --check`. Release measurements are 4.6883 ms p95 durable acknowledgment and 689.4418 ms for a generated 10,000-record journal scan. See [`apps/desktop/evidence/phase-3/content-addressed-ingest.md`](./apps/desktop/evidence/phase-3/content-addressed-ingest.md).
+The 27 July audit passed frozen install; root build/check/test/lint/format; 156 TypeScript tests; 3 Chromium responsive/accessibility checks; Rustfmt; all-target/all-feature Clippy with warnings denied; all 8 explicit system-FFmpeg integrations; packaged-resource checks; release performance checks; Windows no-bundle assembly; staged-media verification; and `git diff --check`. The release 10,000-record journal scan passed in `705.876 ms`, and durable command acknowledgment passed at `7.9254 ms` p95.
+
+The full parallel debug all-feature Rust run twice exceeded its debug-only 5-second journal benchmark, including `5.4347 s` in the isolated final full-suite run, while the same test passed alone in debug at `3.5443 s`. This is a benchmark-isolation defect, not evidence of a release performance regression. Phase 3B will separate functional scan verification from the authoritative release-only wall-clock gate.
+
+Exact-HEAD GitHub Actions run [`30243539199`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30243539199) executed no steps because the account is blocked by a billing/spending limit. The prior Phase 3 baseline run was blocked for the same external reason; Phase 2 exact-SHA CI remains the last completed successful run. The working tree remained clean after the audit/build commands.
+
+Public distribution review remains explicitly pending for GPL/source-offer and codec-patent obligations.
 
 ### Next implementation item
 
-Begin **Phase 3B — durable media jobs and cache lifecycle**: add persistent job/event records, scheduling and priority, retry/resume, restart recovery, cache budgets/leases/eviction, and job-center UI before audio intermediates, waveforms, keyframe indexes, or transcription. The legacy `$APPCACHE/video-phase1` tree remains untouched until Phase 3B defines a lease-aware migration and eviction policy. Public release remains mechanically blocked while GPL/source-offer and codec-patent review is `pending`.
+Implement **Phase 3B - durable media jobs and cache lifecycle**: persistent job/event records, scheduling and priority, retry/resume, restart recovery, cache budgets/leases/eviction, and an app-level Job Center. Phase 3B ends before audio intermediates, waveform pyramids, keyframe indexes, transcription, embeddings, semantic search, or stock acquisition.
 
-## Scope
+## Completed Phase 3A deliverables
 
-- Bundle versioned FFmpeg and ffprobe binaries per platform/architecture
-- Build content-addressed ingest and derived-media storage
-- Generate controlled proxies, audio intermediates, thumbnail tiles, keyframe indexes, and waveform pyramids
-- Add durable job records, priorities, retries, cancellation, progress, and atomic completion
-- Separate interactive proxy jobs from background analysis and final exports
-- Add relink and offline-media behavior
+- Pinned, verified FFmpeg and FFprobe distribution baseline
+- Content-addressed source ingest with exact source fingerprints
+- Strict proxy profiles and deterministic derived-media keys
+- Independently validated proxy and thumbnail generation and repair
+- Relink workflow preserving stable asset IDs and content identity
+- Path, link, toolchain, process, promotion, and partial-file security guarantees
 
-## Non-goals
+## Remaining Phase 3B deliverables
 
-- Semantic search
-- Native compositor
-- Remote workers
-- Automatic stock acquisition
+- Persistent hierarchical `MediaJob` and atomic `MediaJobEvent` records for preparation, proxy, thumbnail, and final render work
+- Bounded priority scheduler with deterministic FIFO aging, cancellation, automatic/manual retry, and restart recovery
+- Explicit blocked recovery when fresh source or output authorization is required
+- Persistent cache catalog with a 20 GiB default budget, current-session leases, deterministic unleased LRU eviction, stale-build cleanup, and cache-miss regeneration
+- Explicit legacy `$APPCACHE/video-phase1` inventory and confirmed clear action; no automatic migration or deletion
+- Strict native and TypeScript list/event/cancel/retry/cache contracts with sanitized public DTOs
+- App-level accessible Job Center available with or without an open project
+- Stable functional/performance benchmark separation and exact-SHA verification evidence
+
+## Phase 3B scope
+
+- Make existing proxy, thumbnail, and final-render work observable, persistent, deduplicated, and restart-safe
+- Keep one FFmpeg permit and two bounded blocking-I/O permits initially
+- Preserve the existing `video_prepare_asset`, `video_start_render`, `video_cancel_render`, and render-event compatibility surfaces
+- Store job/cache query state in machine-local SQLite while project snapshots and journals remain authoritative files
+- Measure and bound the managed `supa-video-media-v1` object and derived trees without weakening exact-path and symlink/reparse protections
+- Keep the production editor intentionally limited to its proven local single-clip workflow
+
+## Phase 3B non-goals
+
+- Audio intermediates, waveform pyramids, keyframe indexes, transcription chunks, embeddings, or semantic search
+- Running-job preemption, remote workers, cloud queues, collaboration, or multi-process writers
+- User-editable cache budgets, project-journal compaction, SQLite-backed canonical project state, or automatic legacy-cache deletion
+- Phase 4 multitrack interaction or an editor redesign
 
 ## Affected modules
 
 - `packages/video-media/`
-- `packages/video-render/`
-- `packages/video-contracts/`
-- `apps/desktop/src-tauri/` resource packaging and process supervision
-- `apps/desktop/src/` job and proxy-health surfaces
+- `apps/desktop/src-tauri/src/video/` job, scheduler, render, derived-media, and cache boundaries
+- `apps/desktop/src/` job controller, IPC validation, Job Center, and compatibility status links
+- Root CI, release-performance evidence, `README.md`, and `DESIGN.md`
 
-## Deliverables
+## Phase 3B tests and runtime verification
 
-- Versioned FFmpeg build manifest and third-party notices
-- Content hash and source fingerprint policy
-- Proxy profiles and deterministic cache keys
-- Durable `MediaJob` schema and event stream
-- Hierarchical progress units
-- Job recovery after application restart
-- Cache budget, eviction, and stale-build invalidation
-- Relink workflow preserving stable asset IDs
-
-## Tests
-
-- Duplicate source deduplication
-- Same bytes under different filenames produce one canonical object
-- Cache key changes when FFmpeg build/profile/color policy changes
-- Resume/retry/cancel tests
-- Corrupt and truncated source tests
-- Symlink/path traversal tests
-- Proxy/source duration and frame-mapping comparison, including VFR fixtures
-- Bounded concurrency and priority inversion tests
-
-## Runtime and visual verification
-
-- Job center showing queued, probing, running, blocked, retrying, cancelled, failed, and complete
-- Restart app mid-proxy and verify safe recovery
-- Relink a moved source and verify timeline identity remains unchanged
-- Scrub a long proxy while thumbnails and waveforms load progressively
+- Strict schema/parity/redaction, SQLite migration/transaction/recovery, scheduler ordering/retry/cancellation, and cache lease/eviction/security tests
+- Subscribe-before-snapshot UI reconciliation, every lifecycle and recovery state, keyboard/focus/live-region behavior, and zero applicable Axe WCAG A/AA/2.2 violations
+- 1280x800, 480x360, and 320 CSS pixels at 200% text; long content, forced colors, reduced motion, and no horizontal document overflow
+- Real bundled-FFmpeg restart/resume, priority, export cancellation/retry, lease/eviction/cache-miss, stripped-`PATH`, and legacy-policy proof
 
 ## Risks
 
-- CFR proxies silently shifting VFR edit decisions
-- Global frame caches growing without bound
-- UI stalls from waveform serialization
-- Shipping an FFmpeg build whose license or codec patent posture is unsuitable
+- SQLite work can block Tokio unless every operation stays short and runs through `spawn_blocking`
+- A crash can leave false running state unless startup recovery owns every nonterminal transition
+- Eviction can race playback/build unless session leases, exact locks, and post-lock rechecks all agree
+- Stale filesystem grants must never be persisted or silently restored
+- Progress can flood disk/UI unless writes and announcements are coalesced
+- Exact-SHA CI remains externally blocked until the account owner restores billing/spending access
 
-## Hard completion gate
+## Phase 3B hard completion gate
 
-A large source can be imported, proxied, cancelled, resumed, relinked, and evicted without blocking the UI, losing project identity, leaking temporary files, or changing the mapped source frame beyond the declared rounding policy.
+Phase 3B is complete only when every proxy, thumbnail, and final-render operation has one strict durable lifecycle; a terminated real app resumes the same deduplicated proxy job from its canonical object without stale processes or partials; deterministic tests prove bounded priority, cancellation, retry, blocked authorization, and recovery; managed usage is bounded by lease-aware safe LRU eviction and cache misses regenerate without changing project identity; the legacy cache has a visible confirmed policy; the existing single-clip workflow and all path/toolchain guarantees still pass; the Job Center passes keyboard, required reflow, forced-color, reduced-motion, Axe, and redaction checks; every local TypeScript, browser, Rust, FFmpeg, packaged-resource, performance, Tauri, staged-media, and diff gate passes; and an exact-SHA GitHub Actions run actually executes and passes. Until the external billing block is removed and that run succeeds, this checkpoint remains **in progress: exact-SHA CI externally blocked**.
 
 ## Proven References
 

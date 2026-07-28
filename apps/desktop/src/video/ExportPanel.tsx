@@ -1,9 +1,11 @@
 import { VideoDomainError, type VideoErrorCode } from "@supa-video/contracts";
+import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, CheckCircle2, Download, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import type { RenderState } from "../use-video-project";
 import { formatDuration, formatFileSize } from "./format-video";
+import { isMediaJobActive, isMediaJobSettled, MediaJobStatus } from "./MediaJobStatus";
 import type { ReadinessState } from "./VideoProjectOpener";
 
 const renderErrorMessages: Partial<Record<VideoErrorCode, string>> = {
@@ -27,6 +29,7 @@ function safeRenderError(error: Error): string {
 
 interface ExportPanelProps {
   readonly render: RenderState;
+  readonly renderJob: MediaJobRecord | null;
   readonly readiness: ReadinessState;
   readonly destinationPending: boolean;
   readonly destinationError: Error | null;
@@ -34,10 +37,12 @@ interface ExportPanelProps {
   readonly onExport: () => void;
   readonly onCancel: () => void;
   readonly onConfirmOverwrite: () => void;
+  readonly onOpenJobCenter: (jobId: string) => void;
 }
 
 export function ExportPanel({
   render,
+  renderJob,
   readiness,
   destinationPending,
   destinationError,
@@ -45,11 +50,12 @@ export function ExportPanel({
   onExport,
   onCancel,
   onConfirmOverwrite,
+  onOpenJobCenter,
 }: ExportPanelProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelDialogButtonRef = useRef<HTMLButtonElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
-  const collision = render.phase === "failed" && render.canOverwrite;
+  const collision = renderJob === null && render.phase === "failed" && render.canOverwrite;
   const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
 
   useEffect(() => {
@@ -79,27 +85,35 @@ export function ExportPanel({
     onConfirmOverwrite();
   };
 
-  const active = render.phase === "starting" || render.phase === "running";
+  const compatibilityActive = render.phase === "starting" || render.phase === "running";
+  const active = renderJob === null ? compatibilityActive : !isMediaJobSettled(renderJob);
+  const busy = renderJob === null ? compatibilityActive : isMediaJobActive(renderJob);
+  const cancellationPending =
+    (render.phase === "running" && render.cancellationPending) ||
+    renderJob?.cancellationRequested === true;
+  const showCancel =
+    render.phase === "running" && (renderJob === null || !isMediaJobSettled(renderJob));
+  const verifiedCompletion = renderJob === null || renderJob.state === "complete";
   return (
     <section
       className="panel export-panel"
       aria-labelledby="export-title"
-      aria-busy={active || destinationPending}
+      aria-busy={busy || destinationPending}
     >
       <div className="panel-heading">
         <div>
           <p className="state-kicker">Master</p>
           <h2 id="export-title">Export MP4</h2>
         </div>
-        {render.phase === "running" ? (
+        {showCancel ? (
           <button
             className="secondary-button compact-button"
             type="button"
-            disabled={render.cancellationPending}
+            disabled={cancellationPending}
             onClick={onCancel}
           >
             <X size={16} aria-hidden />
-            {render.cancellationPending ? "Cancelling" : "Cancel export"}
+            {cancellationPending ? "Cancelling" : "Cancel export"}
           </button>
         ) : (
           <button
@@ -109,28 +123,35 @@ export function ExportPanel({
             disabled={!toolsReady || disabled || destinationPending || active}
             onClick={onExport}
           >
-            {destinationPending || render.phase === "starting" ? (
+            {destinationPending || (renderJob === null && render.phase === "starting") ? (
               <span className="button-spinner" aria-hidden />
             ) : (
               <Download size={17} aria-hidden />
             )}
             {destinationPending
               ? "Choosing destination"
-              : render.phase === "starting"
+              : renderJob === null && render.phase === "starting"
                 ? "Starting export"
-                : render.phase === "completed" || render.phase === "completed_with_warning"
+                : verifiedCompletion &&
+                    (render.phase === "completed" || render.phase === "completed_with_warning")
                   ? "Export another"
                   : "Export MP4"}
           </button>
         )}
       </div>
 
-      {render.phase === "idle" ? (
+      {renderJob !== null ? (
+        <MediaJobStatus
+          job={renderJob}
+          label="Final export"
+          subject="Final export"
+          onOpenJobCenter={onOpenJobCenter}
+        />
+      ) : render.phase === "idle" ? (
         <p className="panel-guidance">
           Export uses the current saved revision and exact half-open frame range.
         </p>
-      ) : null}
-      {render.phase === "starting" ? (
+      ) : render.phase === "starting" ? (
         <div className="neutral-status" role="status">
           <span className="spinner" aria-hidden />
           <div>
@@ -138,8 +159,7 @@ export function ExportPanel({
             <p>Validating the immutable render plan.</p>
           </div>
         </div>
-      ) : null}
-      {render.phase === "running" ? (
+      ) : render.phase === "running" ? (
         <div className="render-progress" role="status">
           <div className="progress-heading">
             <div>
@@ -162,7 +182,7 @@ export function ExportPanel({
           </div>
         </div>
       ) : null}
-      {render.phase === "completed" ? (
+      {render.phase === "completed" && verifiedCompletion ? (
         <div className="output-report" role="status">
           <div className="output-report-heading">
             <CheckCircle2 size={20} aria-hidden />
@@ -201,7 +221,7 @@ export function ExportPanel({
           </dl>
         </div>
       ) : null}
-      {render.phase === "completed_with_warning" ? (
+      {render.phase === "completed_with_warning" && verifiedCompletion ? (
         <div className="neutral-status" role="status">
           <AlertCircle size={18} aria-hidden />
           <div>
@@ -210,7 +230,7 @@ export function ExportPanel({
           </div>
         </div>
       ) : null}
-      {render.phase === "cancelled" ? (
+      {renderJob === null && render.phase === "cancelled" ? (
         <div className="neutral-status" role="status">
           <AlertCircle size={18} aria-hidden />
           <div>
@@ -219,7 +239,7 @@ export function ExportPanel({
           </div>
         </div>
       ) : null}
-      {render.phase === "failed" && !render.canOverwrite ? (
+      {renderJob === null && render.phase === "failed" && !render.canOverwrite ? (
         <div className="inline-error" role="alert">
           <AlertCircle size={18} aria-hidden />
           <div>

@@ -91,12 +91,14 @@ describe("Phase 2 accessibility defect scanning", () => {
           ready: true,
         },
       },
+      renderJob: null,
       destinationPending: false,
       destinationError: null,
       disabled: false,
       onExport: vi.fn(),
       onCancel: vi.fn(),
       onConfirmOverwrite: vi.fn(),
+      onOpenJobCenter: vi.fn(),
     } as const;
     const identity = {
       jobId: "50000000-0000-4000-8000-000000000001",

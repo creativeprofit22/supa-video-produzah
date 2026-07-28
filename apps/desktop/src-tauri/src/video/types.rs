@@ -279,8 +279,8 @@ pub struct MediaProbe {
     pub file_size_bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreparedVideoAsset {
     pub source_fingerprint: SourceFingerprintV1,
     pub source_identity: MediaContentIdentityV1,
@@ -325,8 +325,8 @@ pub struct VideoRenderStarted {
     pub revision_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerifiedRenderOutput {
     pub output_path: String,
     pub preview_path: String,

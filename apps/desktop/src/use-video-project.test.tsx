@@ -5,7 +5,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { useVideoProject } from "./use-video-project";
-import type { VideoBackend } from "./video-ipc";
+import type { VideoBackend, VideoRenderNotification } from "./video-ipc";
 
 const id = (suffix: number): string =>
   `00000000-0000-4000-8000-${suffix.toString().padStart(12, "0")}`;
@@ -214,6 +214,45 @@ function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
     startVideoRender: vi.fn(async () => ({ jobId: id(90), planId: id(91), revisionId: id(92) })),
     cancelVideoRender: vi.fn(async () => undefined),
     listenVideoRenderEvents: vi.fn(async () => () => undefined),
+    listMediaJobs: vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      jobs: [],
+      nextBeforeUpdatedAt: null,
+      latestEventId: 0,
+      recovery: null,
+    })),
+    getMediaJobEvents: vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      events: [],
+      latestEventId: 0,
+      hasMore: false,
+    })),
+    cancelMediaJob: vi.fn(async () => {
+      throw new Error("unexpected media job cancellation");
+    }),
+    retryMediaJob: vi.fn(async () => {
+      throw new Error("unexpected media job retry");
+    }),
+    getMediaCacheStatus: vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      budgetBytes: 1_000_000,
+      managedBytes: 0,
+      leasedBytes: 0,
+      reclaimableBytes: 0,
+      artifactCount: 0,
+      leasedArtifactCount: 0,
+      pressure: "normal" as const,
+      legacyBytes: 0,
+      legacyEntryCount: 0,
+      legacyUnsafeEntryCount: 0,
+      legacyClearAvailable: false,
+      recoveryWarning: null,
+      refreshedAt: timestamp,
+    })),
+    clearLegacyMediaCache: vi.fn(async () => {
+      throw new Error("unexpected legacy cache clear");
+    }),
+    listenMediaJobEvents: vi.fn(async () => () => undefined),
     convertFileSrc: vi.fn((path: string) => `asset:${path}`),
     ...overrides,
   };
@@ -600,6 +639,82 @@ describe("canonical project controller", () => {
     expect(result.current.source?.status).toBe("missing");
     expect(result.current.projectOperation).toEqual({ phase: "idle" });
   });
+  it("stays running through a durable retry and accepts the sole completion terminal", async () => {
+    const opened = clipProjection(1);
+    const outputPath = "C:\\Exports\\clip.mp4";
+    const unlisten = vi.fn();
+    let renderHandler: ((event: VideoRenderNotification) => void) | null = null;
+    const emitRenderEvent = (event: VideoRenderNotification) => {
+      if (renderHandler === null) throw new Error("Render listener was not registered");
+      renderHandler(event);
+    };
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      pickVideoExportPath: vi.fn(async () => outputPath),
+      listenVideoRenderEvents: vi.fn(async (handler) => {
+        renderHandler = handler;
+        return unlisten;
+      }),
+      startVideoRender: vi.fn(async (plan) => ({
+        jobId: id(90),
+        planId: plan.planId,
+        revisionId: plan.revisionId,
+      })),
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.exportVideo());
+
+    expect(result.current.render.phase).toBe("running");
+    if (result.current.render.phase !== "running") throw new Error("Render did not start");
+    const identity = {
+      jobId: result.current.render.jobId,
+      planId: result.current.render.planId,
+      revisionId: result.current.render.revisionId,
+    };
+    const observedPhases = [result.current.render.phase];
+
+    act(() =>
+      emitRenderEvent({
+        type: "progress",
+        ...identity,
+        completedMicroseconds: 250_000,
+        durationMicroseconds: 2_000_000,
+      }),
+    );
+    observedPhases.push(result.current.render.phase);
+    expect(result.current.render).toMatchObject({ phase: "running", progress: 12 });
+    expect(unlisten).not.toHaveBeenCalled();
+
+    act(() =>
+      emitRenderEvent({
+        type: "completed",
+        ...identity,
+        output: {
+          outputPath,
+          previewPath: "C:\\Cache\\clip-preview.mp4",
+          probe,
+        },
+      }),
+    );
+    observedPhases.push(result.current.render.phase);
+
+    expect(observedPhases).toEqual(["running", "running", "completed"]);
+    expect(observedPhases).not.toContain("failed");
+    expect(result.current.render).toMatchObject({ phase: "completed", jobId: identity.jobId });
+    expect(unlisten).toHaveBeenCalledOnce();
+  });
+
   it("ignores a stale import result after a project switch", async () => {
     let resolveExecute!: (value: CommandResult) => void;
     const pending = new Promise<CommandResult>((resolve) => {

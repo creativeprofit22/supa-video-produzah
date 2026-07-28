@@ -18,17 +18,60 @@ fn manage_media_toolchain<R: Runtime>(
 }
 
 #[cfg(all(not(test), feature = "desktop-runtime"))]
+use tauri::Emitter;
+
+#[cfg(all(not(test), feature = "desktop-runtime"))]
+fn initialize_media_jobs<R: Runtime>(
+    app: &tauri::App<R>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let local_data_dir = app.path().app_local_data_dir()?;
+    let app_cache_dir = app.path().app_cache_dir()?;
+    let service = tauri::async_runtime::block_on(video::jobs::MediaJobService::initialize(
+        local_data_dir,
+        app_cache_dir,
+    ))?;
+    let event_app = app.handle().clone();
+    service
+        .store()
+        .set_event_sink(std::sync::Arc::new(move |event| {
+            let _ = event_app.emit(video::jobs::ipc::VIDEO_MEDIA_JOB_EVENT, event);
+        }))?;
+    app.manage(service);
+
+    let resume_app = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let toolchain = resume_app
+            .state::<video::toolchain::MediaToolchainState>()
+            .inner()
+            .clone();
+        let jobs = resume_app.state::<video::jobs::MediaJobService>();
+        if video::derived::resume_durable_preparations(
+            &jobs,
+            video::derived::MediaPrograms::bundled(toolchain),
+        )
+        .await
+        .is_err()
+        {
+            jobs.record_recovery_warning(
+                "Preview recovery could not finish. Retry the affected media job.",
+            );
+        }
+    });
+    Ok(())
+}
+
+#[cfg(all(not(test), feature = "desktop-runtime"))]
 fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .plugin(tauri_plugin_dialog::init())
         .manage(video::VideoPathGrants::default())
-        .manage(video::VideoRenderJobs::default())
         .manage(video::VideoProjectService::default())
         .setup(|app| {
             manage_media_toolchain(
                 app,
                 video::toolchain::MediaToolchainState::start_for_app(app.handle()),
             );
+            initialize_media_jobs(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +92,12 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::project::ipc::video_close_project,
             video::project_io::video_regrant_project_source,
             video::project_io::video_pick_export_path,
+            video::jobs::ipc::video_list_media_jobs,
+            video::jobs::ipc::video_get_media_job_events,
+            video::jobs::ipc::video_cancel_media_job,
+            video::jobs::ipc::video_retry_media_job,
+            video::jobs::ipc::video_get_media_cache_status,
+            video::jobs::ipc::video_clear_legacy_media_cache,
         ])
         .on_window_event(clean_up_video_state_on_destroyed)
 }
@@ -63,11 +112,14 @@ fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &Win
             .state::<video::VideoProjectService>()
             .close_owner(window.label());
         let _ = window
-            .state::<video::VideoRenderJobs>()
-            .cancel_owner(window.label());
-        let _ = window
             .state::<video::VideoPathGrants>()
             .revoke_window(window.label());
+        let owner_label = window.label().to_owned();
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            let jobs = app.state::<video::jobs::MediaJobService>();
+            let _ = jobs.cancel_owner(&owner_label).await;
+        });
     }
 }
 
@@ -78,7 +130,8 @@ fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &Win
 fn clean_up_video_state_on_exit<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
     if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
         let _ = app.state::<video::VideoProjectService>().close_all();
-        let _ = app.state::<video::VideoRenderJobs>().cancel_all();
+        let jobs = app.state::<video::jobs::MediaJobService>();
+        let _ = tauri::async_runtime::block_on(jobs.shutdown());
     }
 }
 
@@ -105,7 +158,7 @@ mod tests {
         ipc::{CallbackFn, InvokeBody},
         test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY},
         webview::InvokeRequest,
-        Listener, Manager, RunEvent, WebviewWindowBuilder, WindowEvent,
+        Emitter, Listener, Manager, RunEvent, WebviewWindowBuilder, WindowEvent,
     };
 
     use super::{
@@ -131,10 +184,112 @@ mod tests {
         }
     }
 
+    fn test_media_jobs(label: &str) -> video::jobs::MediaJobService {
+        let root = std::env::temp_dir().join(format!(
+            "supa-video-media-jobs-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        tauri::async_runtime::block_on(video::jobs::MediaJobService::initialize(
+            root.join("local"),
+            root.join("cache"),
+        ))
+        .expect("test media job service must initialize")
+    }
+
+    fn persist_failed_final_render(jobs: &video::jobs::MediaJobService, owner: &str) -> String {
+        use video::jobs::{
+            model::{
+                MediaJobError, MediaJobErrorCategory, MediaJobEventType, MediaJobKind,
+                MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobRecoveryAction,
+                MediaJobState,
+            },
+            store::{MediaJobTransition, NewMediaJob},
+        };
+
+        tauri::async_runtime::block_on(async {
+            let now = video::jobs::current_timestamp_millis().saturating_sub(2);
+            let job = jobs
+                .store()
+                .enqueue(NewMediaJob {
+                    kind: MediaJobKind::FinalRender,
+                    parent_id: None,
+                    dedupe_key: format!("ipc-final-render:{}", uuid::Uuid::new_v4()),
+                    project_id: None,
+                    asset_id: None,
+                    revision_id: Some("ipc-revision".to_owned()),
+                    priority: MediaJobPriority::Export,
+                    priority_value: 0,
+                    stage: "queued".to_owned(),
+                    progress: MediaJobProgress {
+                        completed: 0,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                    max_attempts: 3,
+                    summary: "IPC final render retry".to_owned(),
+                    private_payload: json!({
+                        "ownerLabel": owner,
+                        "plan": { "schemaVersion": 1 },
+                        "overwrite": false,
+                        "outputAuthorizationPresent": true,
+                    }),
+                    created_at_ms: now,
+                })
+                .await
+                .expect("IPC render fixture must enqueue")
+                .job;
+            jobs.store()
+                .transition(
+                    job.id.clone(),
+                    MediaJobTransition {
+                        state: MediaJobState::Running,
+                        stage: "running".to_owned(),
+                        progress: job.progress.clone(),
+                        attempt: Some(1),
+                        error: None,
+                        retry_at_ms: None,
+                        result: None,
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: Some("IPC render fixture started.".to_owned()),
+                        occurred_at_ms: now.saturating_add(1),
+                    },
+                )
+                .await
+                .expect("IPC render fixture must start");
+            jobs.store()
+                .transition(
+                    job.id.clone(),
+                    MediaJobTransition {
+                        state: MediaJobState::Failed,
+                        stage: "failed".to_owned(),
+                        progress: job.progress,
+                        attempt: Some(1),
+                        error: Some(MediaJobError {
+                            code: "render_process_failed".to_owned(),
+                            category: MediaJobErrorCategory::ProcessFailed,
+                            message: "The export process failed.".to_owned(),
+                            retryable: true,
+                            action: Some(MediaJobRecoveryAction::Retry),
+                        }),
+                        retry_at_ms: None,
+                        result: None,
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: Some("The export process failed.".to_owned()),
+                        occurred_at_ms: now.saturating_add(2),
+                    },
+                )
+                .await
+                .expect("IPC render fixture must fail");
+            job.id
+        })
+    }
+
     fn mock_video_app() -> tauri::App<tauri::test::MockRuntime> {
-        mock_builder()
+        let app = mock_builder()
             .manage(video::VideoPathGrants::default())
-            .manage(video::VideoRenderJobs::default())
+            .manage(test_media_jobs("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(
                 video::toolchain::MediaToolchain::from_test_programs(
@@ -157,10 +312,24 @@ mod tests {
                 video::project::ipc::video_close_project,
                 video::project_io::video_regrant_project_source,
                 video::project_io::video_save_project,
+                video::jobs::ipc::video_list_media_jobs,
+                video::jobs::ipc::video_get_media_job_events,
+                video::jobs::ipc::video_cancel_media_job,
+                video::jobs::ipc::video_retry_media_job,
+                video::jobs::ipc::video_get_media_cache_status,
+                video::jobs::ipc::video_clear_legacy_media_cache,
             ])
             .on_window_event(clean_up_video_state_on_destroyed)
             .build(mock_context(noop_assets()))
-            .expect("video IPC smoke app must build")
+            .expect("video IPC smoke app must build");
+        let event_app = app.handle().clone();
+        app.state::<video::jobs::MediaJobService>()
+            .store()
+            .set_event_sink(Arc::new(move |event| {
+                let _ = event_app.emit(video::jobs::ipc::VIDEO_MEDIA_JOB_EVENT, event);
+            }))
+            .expect("mock media job event sink must register");
+        app
     }
 
     fn mock_video_app_with_toolchain(
@@ -168,7 +337,7 @@ mod tests {
     ) -> tauri::App<tauri::test::MockRuntime> {
         mock_builder()
             .manage(video::VideoPathGrants::default())
-            .manage(video::VideoRenderJobs::default())
+            .manage(test_media_jobs("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(toolchain))
             .invoke_handler(tauri::generate_handler![
@@ -243,6 +412,176 @@ mod tests {
             state.phase_for_test(),
             video::toolchain::MediaToolchainProblemOrPhase::Ready
         );
+    }
+
+    #[test]
+    fn media_retry_ipc_rejects_other_owners_and_returns_output_reauthorization() {
+        const OWNER: &str = "retry-ipc-owner";
+        let app = mock_video_app();
+        let job_id =
+            persist_failed_final_render(app.state::<video::jobs::MediaJobService>().inner(), OWNER);
+        let owner_webview = WebviewWindowBuilder::new(&app, OWNER, Default::default())
+            .build()
+            .expect("retry owner webview must build");
+        let other_webview = WebviewWindowBuilder::new(&app, "retry-ipc-other", Default::default())
+            .build()
+            .expect("retry other-owner webview must build");
+        let body = json!({ "request": { "jobId": job_id } });
+
+        let other_owner_error = get_ipc_response(
+            &other_webview,
+            invoke_request("video_retry_media_job", body.clone()),
+        )
+        .expect_err("another owner must not retry a durable media job");
+        assert_eq!(other_owner_error["code"], "project_io");
+
+        let response = get_ipc_response(
+            &owner_webview,
+            invoke_request("video_retry_media_job", body.clone()),
+        )
+        .expect("failed final render retry must return an actionable record")
+        .deserialize::<Value>()
+        .expect("retry response must be JSON");
+        assert_eq!(response["job"]["id"], job_id);
+        assert_eq!(response["job"]["state"], "blocked");
+        assert_eq!(
+            response["job"]["error"]["category"],
+            "output_authorization_required"
+        );
+        assert_eq!(response["job"]["error"]["action"], "reauthorize_output");
+
+        let repeated = get_ipc_response(
+            &owner_webview,
+            invoke_request("video_retry_media_job", body),
+        )
+        .expect("repeated final-render retry must remain deterministically actionable")
+        .deserialize::<Value>()
+        .expect("repeated retry response must be JSON");
+        assert_eq!(repeated, response);
+    }
+
+    #[test]
+    fn media_job_list_events_and_cache_ipc_are_strict_and_redacted() {
+        const OWNER: &str = "media-state-ipc-owner";
+        let app = mock_video_app();
+        let emitted_events = Arc::new(Mutex::new(Vec::new()));
+        let captured_events = emitted_events.clone();
+        app.listen_any(video::jobs::ipc::VIDEO_MEDIA_JOB_EVENT, move |event| {
+            captured_events
+                .lock()
+                .expect("media job event capture must lock")
+                .push(event.payload().to_owned());
+        });
+        let job_id =
+            persist_failed_final_render(app.state::<video::jobs::MediaJobService>().inner(), OWNER);
+        let emitted_events = emitted_events
+            .lock()
+            .expect("media job event capture must lock");
+        assert!(emitted_events.len() >= 3);
+        assert!(emitted_events.iter().all(|event| !event.contains(OWNER)));
+        drop(emitted_events);
+        let webview = WebviewWindowBuilder::new(&app, OWNER, Default::default())
+            .build()
+            .expect("media state owner webview must build");
+
+        let list = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_list_media_jobs",
+                json!({
+                    "request": {
+                        "limit": 100,
+                        "includeSettled": true,
+                        "projectId": null,
+                        "beforeUpdatedAt": null
+                    }
+                }),
+            ),
+        )
+        .expect("media jobs must be listable over IPC")
+        .deserialize::<Value>()
+        .expect("media job list must be JSON");
+        assert_eq!(list["schemaVersion"], 1);
+        assert_eq!(list["jobs"][0]["id"], job_id);
+        assert!(list["latestEventId"].as_u64().unwrap_or_default() >= 3);
+        let serialized_list = serde_json::to_string(&list).expect("media job list must serialize");
+        assert!(!serialized_list.contains("privatePayload"));
+        assert!(!serialized_list.contains("ownerLabel"));
+        assert!(!serialized_list.contains(OWNER));
+        assert!(!serialized_list.contains("outputAuthorizationPresent"));
+
+        let events = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_get_media_job_events",
+                json!({
+                    "request": { "jobId": job_id, "afterEventId": 0, "limit": 500 }
+                }),
+            ),
+        )
+        .expect("media job events must be reachable over IPC")
+        .deserialize::<Value>()
+        .expect("media job events must be JSON");
+        assert_eq!(events["schemaVersion"], 1);
+        assert_eq!(events["events"][0]["jobId"], job_id);
+        let serialized_events =
+            serde_json::to_string(&events).expect("media job events must serialize");
+        assert!(!serialized_events.contains("privatePayload"));
+        assert!(!serialized_events.contains(OWNER));
+
+        let malformed = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_list_media_jobs",
+                json!({
+                    "request": {
+                        "limit": 100,
+                        "includeSettled": true,
+                        "projectId": null,
+                        "beforeUpdatedAt": null,
+                        "sourcePath": "C:\\private\\clip.mp4"
+                    }
+                }),
+            ),
+        )
+        .expect_err("unknown media list request fields must be rejected");
+        let malformed_text =
+            serde_json::to_string(&malformed).expect("malformed media list error must serialize");
+        assert!(!malformed_text.contains("C:\\private\\clip.mp4"));
+
+        let status = get_ipc_response(
+            &webview,
+            invoke_request("video_get_media_cache_status", json!({})),
+        )
+        .expect("media cache status must be reachable over IPC")
+        .deserialize::<Value>()
+        .expect("media cache status must be JSON");
+        assert_eq!(status["schemaVersion"], 1);
+        assert!(status.get("managedBytes").is_some());
+        assert!(status.get("legacyClearAvailable").is_some());
+
+        let unconfirmed = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_clear_legacy_media_cache",
+                json!({ "request": { "confirmed": false } }),
+            ),
+        )
+        .expect_err("legacy cache clearing must require explicit confirmation");
+        assert_eq!(unconfirmed["code"], "project_io");
+
+        let cleared = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_clear_legacy_media_cache",
+                json!({ "request": { "confirmed": true } }),
+            ),
+        )
+        .expect("confirmed legacy cache clearing must be reachable over IPC")
+        .deserialize::<Value>()
+        .expect("legacy cache clear response must be JSON");
+        assert_eq!(cleared["schemaVersion"], 1);
+        assert!(cleared.get("status").is_some());
     }
 
     #[test]
@@ -483,7 +822,6 @@ mod tests {
         )
         .expect_err("render must reject the replaced FFprobe before worker spawn");
         assert_integrity_error(&render_error, "start_render");
-        assert!(!app.state::<video::VideoRenderJobs>().is_active(PLAN_ID));
         assert!(!output.exists(), "rejected render must not create output");
     }
 
@@ -679,40 +1017,6 @@ mod tests {
         assert_eq!(cancel_error["details"]["category"], "unknown_job");
     }
 
-    fn register_lifecycle_test_job(
-        app: &tauri::App<tauri::test::MockRuntime>,
-        owner_label: &str,
-        job_id: &str,
-    ) {
-        let output_path = PathBuf::from(format!("lifecycle-output-{job_id}.mp4"));
-        let plan = serde_json::from_value(serde_json::json!({
-            "schemaVersion": 1,
-            "planId": job_id,
-            "revisionId": "44444444-4444-4444-8444-444444444444",
-            "executable": "ffmpeg",
-            "inputPath": "lifecycle-input.mp4",
-            "outputPath": output_path.to_string_lossy(),
-            "expected": {
-                "durationFrames": 1,
-                "rate": { "numerator": 30, "denominator": 1 },
-                "width": 16,
-                "height": 16,
-                "audio": false
-            },
-            "argv": []
-        }))
-        .expect("lifecycle test render plan must deserialize");
-        let validated = video::render::ValidatedRenderPlan {
-            plan,
-            input_path: PathBuf::from("lifecycle-input.mp4"),
-            output_path,
-            duration_microseconds: 33_333,
-        };
-        app.state::<video::VideoRenderJobs>()
-            .register(owner_label, &validated)
-            .expect("lifecycle test job must register");
-    }
-
     #[test]
     fn destroyed_window_cancels_only_its_render_jobs_and_revokes_its_grants() {
         let app = mock_video_app();
@@ -727,19 +1031,8 @@ mod tests {
             .grant_existing_file("grant-owner", video::GrantCategory::Source, &source)
             .expect("source grant must be created");
 
-        let owner_job_id = "77777777-7777-4777-8777-777777777777";
-        let other_job_id = "88888888-8888-4888-8888-888888888888";
-        register_lifecycle_test_job(&app, "grant-owner", owner_job_id);
-        register_lifecycle_test_job(&app, "other-owner", other_job_id);
-        let jobs = app.state::<video::VideoRenderJobs>();
-
         clean_up_video_state_on_destroyed(&window, &WindowEvent::Destroyed);
         clean_up_video_state_on_destroyed(&window, &WindowEvent::Destroyed);
-
-        assert!(jobs.cancellation_requested(owner_job_id));
-        assert!(!jobs.cancellation_requested(other_job_id));
-        assert!(jobs.is_active(owner_job_id));
-        assert!(jobs.is_active(other_job_id));
 
         let error = grants
             .authorize("grant-owner", video::GrantCategory::Source, &source)
@@ -748,27 +1041,10 @@ mod tests {
     }
 
     #[test]
-    fn app_exit_cancels_all_render_jobs_idempotently_without_settling_workers() {
+    fn app_exit_shuts_down_durable_media_jobs_idempotently() {
         let app = mock_video_app();
-        let first_job_id = "99999999-9999-4999-8999-999999999999";
-        let second_job_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        register_lifecycle_test_job(&app, "first-owner", first_job_id);
-        register_lifecycle_test_job(&app, "second-owner", second_job_id);
-        let jobs = app.state::<video::VideoRenderJobs>();
-
         clean_up_video_state_on_exit(app.handle(), &RunEvent::Exit);
         clean_up_video_state_on_exit(app.handle(), &RunEvent::Exit);
-
-        assert!(jobs.cancellation_requested(first_job_id));
-        assert!(jobs.cancellation_requested(second_job_id));
-        assert!(jobs.is_active(first_job_id));
-        assert!(jobs.is_active(second_job_id));
-        assert!(jobs
-            .settle(first_job_id)
-            .expect("worker settlement must work"));
-        assert!(jobs
-            .settle(second_job_id)
-            .expect("worker settlement must work"));
     }
 
     #[cfg(windows)]
@@ -805,7 +1081,7 @@ mod tests {
         );
         mock_builder()
             .manage(video::VideoPathGrants::default())
-            .manage(video::VideoRenderJobs::default())
+            .manage(test_media_jobs("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(toolchain))
             .invoke_handler(tauri::generate_handler![

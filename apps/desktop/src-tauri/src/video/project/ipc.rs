@@ -13,6 +13,7 @@ use super::{
 use crate::video::{
     error::VideoCommandError,
     grants::{GrantCategory, VideoPathGrants},
+    jobs::MediaJobService,
     media_store::{ingest_source, IngestedSource},
     probe::probe_trusted_media_with_program,
     process::ProcessCancellation,
@@ -395,15 +396,22 @@ pub async fn video_project_inspector<R: Runtime>(
 #[tauri::command]
 pub async fn video_close_project<R: Runtime>(
     window: WebviewWindow<R>,
+    jobs: State<'_, MediaJobService>,
     project_id: String,
 ) -> Result<(), VideoCommandError> {
     let app = window.app_handle().clone();
     let owner = window.label().to_owned();
+    let project_for_close = project_id.clone();
     run_project_worker("close_project", move || {
         app.state::<VideoProjectService>()
-            .close(&owner, &project_id)
+            .close(&owner, &project_for_close)
     })
-    .await
+    .await?;
+    jobs.cache()
+        .release_project(project_id)
+        .await
+        .map_err(|_| VideoCommandError::project_io("close_project", "cache_leases"))?;
+    Ok(())
 }
 
 #[cfg(test)]

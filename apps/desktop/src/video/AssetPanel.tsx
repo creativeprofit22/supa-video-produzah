@@ -1,17 +1,21 @@
-import type { PreparationState, ProjectOperationState } from "../use-video-project";
 import type { MediaProbe, VideoSourceRecord } from "@supa-video/contracts";
+import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, CheckCircle2, Film, FolderOpen, RefreshCw } from "lucide-react";
 
+import type { PreparationState, ProjectOperationState } from "../use-video-project";
 import { formatDuration, formatFileSize, formatFrameRate } from "./format-video";
+import { isMediaJobActive, MediaJobStatus } from "./MediaJobStatus";
 import type { ReadinessState } from "./VideoProjectOpener";
 
 interface AssetPanelProps {
   readonly probe: MediaProbe | null;
   readonly source: VideoSourceRecord | null;
   readonly preparation: PreparationState;
+  readonly preparationJob: MediaJobRecord | null;
   readonly projectOperation: ProjectOperationState;
   readonly readiness: ReadinessState;
   readonly onChooseSource: () => void;
+  readonly onOpenJobCenter: (jobId: string) => void;
   readonly onRetryPreparation: () => void;
   readonly onRelinkSource: () => void;
 }
@@ -20,17 +24,24 @@ export function AssetPanel({
   probe,
   source,
   preparation,
+  preparationJob,
   projectOperation,
   readiness,
   onChooseSource,
+  onOpenJobCenter,
   onRetryPreparation,
   onRelinkSource,
 }: AssetPanelProps) {
   const pending = projectOperation.phase === "pending" || preparation.phase === "pending";
+  const authoritativePending = preparationJob !== null && isMediaJobActive(preparationJob);
   const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
   const unresolved = source?.status === "missing" || source?.status === "relink_required";
   return (
-    <section className="panel asset-panel" aria-labelledby="asset-title" aria-busy={pending}>
+    <section
+      className="panel asset-panel"
+      aria-labelledby="asset-title"
+      aria-busy={pending || authoritativePending}
+    >
       <div className="panel-heading">
         <div>
           <p className="state-kicker">Source</p>
@@ -132,7 +143,14 @@ export function AssetPanel({
         </div>
       ) : null}
 
-      {preparation.phase === "pending" ? (
+      {preparationJob !== null ? (
+        <MediaJobStatus
+          job={preparationJob}
+          label="Preview preparation"
+          subject="Preview preparation"
+          onOpenJobCenter={onOpenJobCenter}
+        />
+      ) : preparation.phase === "pending" ? (
         <div className="neutral-status" role="status">
           <span className="spinner" aria-hidden />
           <div>
@@ -140,8 +158,7 @@ export function AssetPanel({
             <p>Creating and validating the cache proxy and thumbnail.</p>
           </div>
         </div>
-      ) : null}
-      {preparation.phase === "error" ? (
+      ) : preparation.phase === "error" ? (
         <div className="inline-error" role="alert">
           <AlertCircle size={18} aria-hidden />
           <div>

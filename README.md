@@ -1,13 +1,13 @@
 # Supa Video Producer
 
-Supa Video Producer is a standalone, offline-first Tauri desktop application. Phase 3A adds content-addressed ingest and deterministic derived media on top of the Rust-owned canonical project engine, crash recovery, and pinned Windows FFmpeg/ffprobe toolchain.
+Supa Video Producer is a standalone, offline-first Tauri desktop application. Phases 1 and 2, the pinned FFmpeg distribution baseline, and Phase 3A content-addressed ingest are implemented. Phase 3B durable media jobs and cache lifecycle is the next checkpoint.
 
 ## Prerequisites
 
 - Windows x86_64 with Microsoft C++ Build Tools and the WebView2 Evergreen Runtime
 - Node.js 22.12 or newer
 - pnpm 10.34.5 through Corepack
-- Rust 1.87 or newer with the MSVC toolchain
+- Rust 1.94 or newer with the MSVC toolchain (required by the pinned bundled SQLite dependency)
 
 Production does not use system FFmpeg or search `PATH`. Explicit development comparison tests may still use a separately installed system FFmpeg.
 
@@ -35,11 +35,13 @@ Release artifacts must be Authenticode-signed with SHA-256 and timestamped using
 
 ## Current implementation checkpoint
 
-Phase 3A is implemented from audited baseline `cd262b41f48361ccc98e185c86a51761bb0fec04`. The product pins Gyan FFmpeg 8.1.2 release essentials and now streams authorized source bytes into a global app-owned SHA-256 media store.
+Phase 3A is implemented at audited HEAD `19c747d9c91bb68dd6188fab27e5775a43121450`. The product pins Gyan FFmpeg 8.1.2 release essentials and streams authorized source bytes into a global app-owned SHA-256 media store.
 
 Equal bytes selected under different filenames, project IDs, or asset IDs converge on one verified object and compatible proxy/thumbnail paths. Derived keys include source content, managed toolchain, complete preview/color profile, stream/rate/geometry/sampling choices, ordered path-neutral FFmpeg arguments, and validation policy. Corrupt exact destinations repair under per-key locks while unrelated files and the legacy cache survive.
 
-Grouped import, preparation, and relink use bundled FFprobe, persist exact content identity, reject caller probe/identity tampering before project mutation, and preserve asset UUIDs through relink/undo/redo/replay/reopen. Local gates pass 153 TypeScript tests, 129 all-feature Rust/configuration tests, 3 Chromium checks, all 8 explicit FFmpeg integrations, and all 3 enhanced packaged integrations with an empty `PATH`. See [`apps/desktop/evidence/phase-3/content-addressed-ingest.md`](./apps/desktop/evidence/phase-3/content-addressed-ingest.md).
+Grouped import, preparation, and relink use bundled FFprobe, persist exact content identity, reject caller probe/identity tampering before project mutation, and preserve asset UUIDs through relink/undo/redo/replay/reopen. The 27 July audit passed 156 TypeScript tests, 3 Chromium checks, all 8 explicit system-FFmpeg integrations, packaged-resource checks, and release performance gates. The release journal scan measured `705.876 ms`; durable acknowledgment measured `7.9254 ms` p95.
+
+The full parallel debug Rust suite exposed a benchmark-isolation defect: the 10,000-record scan reached `5.4347 s` under contention but passed alone at `3.5443 s`, while its authoritative release gate passed. Exact-HEAD GitHub Actions run [`30243539199`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30243539199) executed no steps because of an external account billing/spending-limit block; Phase 2 exact-SHA CI is the last completed successful run. See [`apps/desktop/evidence/phase-3/content-addressed-ingest.md`](./apps/desktop/evidence/phase-3/content-addressed-ingest.md).
 
 ## Project format and portability
 
@@ -55,4 +57,4 @@ The architecture keeps arbitrary filesystem access, canonical project mutation, 
 
 ## Current UI contract and limitations
 
-The V2 domain supports ordered assets, sequences, typed video/audio/caption tracks, clips, markers, fixed-point transforms/gain, nested-sequence references, and optional exact source-content identities. The production UI intentionally remains the proven one-local-clip workflow. Phase 3B next adds durable media jobs, scheduling, retry/resume, restart recovery, cache budgets/leases/eviction, audio intermediates, waveforms, keyframe indexes, transcription, and job-center UI. Professional multitrack interaction, transitions, stock media, cloud services, agents, native compositing, and journal compaction remain later work. Public distribution also remains blocked pending explicit GPL/source-offer and codec-patent review.
+The V2 domain supports ordered assets, sequences, typed video/audio/caption tracks, clips, markers, fixed-point transforms/gain, nested-sequence references, and optional exact source-content identities. The production UI intentionally remains the proven one-local-clip workflow. Phase 3B adds durable preparation/render jobs, bounded scheduling, retry/cancel/restart recovery, a lease-aware 20 GiB managed-cache lifecycle, explicit legacy-cache cleanup, and an app-level Job Center. Audio intermediates, waveform pyramids, keyframe indexes, transcription, embeddings, professional multitrack interaction, transitions, stock media, cloud services, agents, native compositing, and journal compaction remain later work. Public distribution remains blocked pending explicit GPL/source-offer and codec-patent review; Phase 3B completion also requires a real exact-SHA CI run after the external billing block is removed.

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
+import type { MediaJobRecord } from "@supa-video/media";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { testMediaJob } from "../test-video-service";
 import { ExportPanel } from "./ExportPanel";
 
 const identity = {
@@ -23,12 +25,14 @@ function baseProps() {
         ready: true,
       },
     },
+    renderJob: null,
     destinationPending: false,
     destinationError: null,
     disabled: false,
     onExport: vi.fn(),
     onCancel: vi.fn(),
     onConfirmOverwrite: vi.fn(),
+    onOpenJobCenter: vi.fn(),
   } as const;
 }
 
@@ -76,6 +80,50 @@ describe("ExportPanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Replace existing file" }));
     expect(props.onConfirmOverwrite).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the durable retry lifecycle instead of compatibility progress", () => {
+    const onOpenJobCenter = vi.fn();
+    const retryingJob = {
+      ...testMediaJob,
+      id: identity.jobId,
+      kind: "final_render",
+      projectId: null,
+      assetId: null,
+      revisionId: identity.revisionId,
+      priority: "export",
+      state: "retrying",
+      stage: "retry_wait",
+      retryAt: "2026-07-26T12:01:00.000Z",
+      error: {
+        code: "transient_render_failure",
+        category: "transient_io",
+        message: "The export will retry.",
+        retryable: true,
+        action: "retry",
+      },
+      attempt: 1,
+    } as MediaJobRecord;
+    render(
+      <ExportPanel
+        {...baseProps()}
+        renderJob={retryingJob}
+        onOpenJobCenter={onOpenJobCenter}
+        render={{
+          phase: "running",
+          ...identity,
+          outputPath: "C:\\Neutral\\output.mp4",
+          progress: 42,
+          cancellationPending: false,
+          cancellationError: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Final export: Retry scheduled")).toBeTruthy();
+    expect(screen.queryByText("Exporting video")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open final export in Job Center" }));
+    expect(onOpenJobCenter).toHaveBeenCalledWith(identity.jobId);
   });
 
   it("reports verified output facts and the display-only destination", () => {

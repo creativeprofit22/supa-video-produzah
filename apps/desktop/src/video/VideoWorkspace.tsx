@@ -1,4 +1,5 @@
 import type { VideoProjectFileV1 } from "@supa-video/contracts";
+import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,11 +15,35 @@ import type { ReadinessState } from "./VideoProjectOpener";
 
 interface VideoWorkspaceProps {
   readonly controller: ReturnType<typeof useVideoProject>;
+  readonly mediaJobs: readonly MediaJobRecord[];
   readonly project: Readonly<VideoProjectFileV1>;
   readonly readiness: ReadinessState;
   readonly onCheckTools: () => void;
+  readonly onOpenJobCenter: (jobId: string) => void;
   readonly onNewProject: () => void;
   readonly onOpenProject: () => void;
+}
+
+export function findAssetPreparationJob(
+  jobs: readonly MediaJobRecord[],
+  projectId: string | undefined,
+  assetId: string | undefined,
+): MediaJobRecord | null {
+  if (projectId === undefined || assetId === undefined) return null;
+  return (
+    jobs
+      .filter(
+        (job) =>
+          job.parentId === null &&
+          job.kind === "asset_preparation" &&
+          job.projectId === projectId &&
+          job.assetId === assetId,
+      )
+      .sort((left, right) => {
+        const created = Date.parse(right.createdAt) - Date.parse(left.createdAt);
+        return created === 0 ? Date.parse(right.updatedAt) - Date.parse(left.updatedAt) : created;
+      })[0] ?? null
+  );
 }
 
 function editableOwnsShortcut(target: EventTarget | null): boolean {
@@ -31,15 +56,18 @@ function editableOwnsShortcut(target: EventTarget | null): boolean {
 
 export function VideoWorkspace({
   controller,
+  mediaJobs,
   project,
   readiness,
   onCheckTools,
+  onOpenJobCenter,
   onNewProject,
   onOpenProject,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
+  const reconciledPreparationJobs = useRef(new Set<string>());
   const revision = project.revisions[0]!;
   const asset = revision.state.asset;
   const sourceHasAudio = asset !== null && asset.probe.audio !== null;
@@ -49,8 +77,25 @@ export function VideoWorkspace({
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
   const projectPending = controller.projectOperation.phase === "pending";
+  const preparationJob = useMemo(
+    () =>
+      findAssetPreparationJob(
+        mediaJobs,
+        controller.projection?.projectId,
+        asset?.id ?? controller.source?.assetId,
+      ),
+    [asset?.id, controller.projection?.projectId, controller.source?.assetId, mediaJobs],
+  );
+  const renderJobId = "jobId" in controller.render ? controller.render.jobId : null;
+  const renderJob = useMemo(
+    () => mediaJobs.find((job) => job.id === renderJobId && job.parentId === null) ?? null,
+    [mediaJobs, renderJobId],
+  );
   const finalPreviewPath =
-    controller.render.phase === "completed" ? controller.render.output.previewPath : null;
+    controller.render.phase === "completed" &&
+    (renderJob === null || renderJob.state === "complete")
+      ? controller.render.output.previewPath
+      : null;
   const projectName = formatProjectName(controller.projectPath, project.name);
 
   useEffect(() => {
@@ -58,6 +103,14 @@ export function VideoWorkspace({
       setPlayhead(draft.inFrame);
     }
   }, [draft, playhead]);
+
+  useEffect(() => {
+    if (preparationJob?.state !== "complete" || controller.preparation.phase === "success") return;
+    const reconciliationKey = `${preparationJob.id}:${preparationJob.updatedAt}`;
+    if (reconciledPreparationJobs.current.has(reconciliationKey)) return;
+    reconciledPreparationJobs.current.add(reconciliationKey);
+    void controller.retryPreparation();
+  }, [controller.preparation.phase, controller.retryPreparation, preparationJob]);
 
   const handleWorkspaceShortcut = useCallback(
     (
@@ -302,9 +355,11 @@ export function VideoWorkspace({
             probe={asset?.probe ?? null}
             source={controller.source}
             preparation={controller.preparation}
+            preparationJob={preparationJob}
             projectOperation={controller.projectOperation}
             readiness={readiness}
             onChooseSource={() => void controller.chooseSource()}
+            onOpenJobCenter={onOpenJobCenter}
             onRetryPreparation={() => void controller.retryPreparation()}
             onRelinkSource={() => void controller.regrantSourceAccess()}
           />
@@ -327,6 +382,7 @@ export function VideoWorkspace({
           ) : null}
           <ExportPanel
             render={controller.render}
+            renderJob={renderJob}
             readiness={readiness}
             destinationPending={controller.destinationPending}
             destinationError={controller.destinationError}
@@ -334,6 +390,7 @@ export function VideoWorkspace({
             onExport={() => void controller.exportVideo()}
             onCancel={() => void controller.cancelRender()}
             onConfirmOverwrite={() => void controller.confirmOverwrite()}
+            onOpenJobCenter={onOpenJobCenter}
           />
         </aside>
       </div>

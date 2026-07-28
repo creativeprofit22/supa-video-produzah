@@ -8,14 +8,26 @@ use std::{
 };
 
 use fs4::TryLockError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{Manager, Runtime, State, WebviewWindow};
 use tempfile::{Builder as TempFileBuilder, TempPath};
 
 use super::{
+    cache::{CacheArtifactKind, CacheArtifactRegistration, MediaCacheService},
     error::{VideoCommandError, VideoErrorCode},
     grants::VideoPathGrants,
+    jobs::{
+        current_timestamp_millis,
+        model::{
+            MediaJobError, MediaJobErrorCategory, MediaJobEventType, MediaJobKind,
+            MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobRecoveryAction,
+            MediaJobState,
+        },
+        scheduler::{MediaJobWorker, MediaWorkerFuture, MediaWorkerOutcome, SchedulerResource},
+        store::{MediaJobTransition, MediaStateStoreError, NewMediaJob, StoredPrivateJob},
+        MediaJobService,
+    },
     media_store::{acquire_artifact, ingest_source, ArtifactStoreKind},
     probe::{
         probe_thumbnail_artifact_with_program, probe_trusted_media_with_program, InspectedMedia,
@@ -51,7 +63,8 @@ pub(crate) enum DerivedModelError {
     Duration,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct OutputDimensions {
     pub(crate) width: u64,
     pub(crate) height: u64,
@@ -225,7 +238,7 @@ pub(crate) const PREVIEW_PROFILE: DerivedProfile = DerivedProfile {
     thumbnail_quality: 2,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DerivedArtifactKind {
     Proxy,
@@ -241,16 +254,16 @@ impl DerivedArtifactKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MediaProfileIdentityV1 {
     pub schema_version: u64,
     pub profile_id: String,
     pub profile_digest: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DerivedMediaIdentityV1 {
     pub schema_version: u64,
     pub artifact_kind: DerivedArtifactKind,
@@ -269,6 +282,766 @@ pub(crate) struct PrepareAssetCoreRequest<'a> {
     pub(crate) source_path: &'a Path,
     pub(crate) sequence_rate: Option<RationalRate>,
     pub(crate) expected_content_identity: Option<MediaContentIdentityV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PreparedAssetPlan {
+    cache_root: PathBuf,
+    object_path: PathBuf,
+    source_fingerprint: super::media_store::SourceFingerprintV1,
+    source_identity: MediaContentIdentityV1,
+    source_probe: MediaProbe,
+    sequence_rate: RationalRate,
+    profile_identity: MediaProfileIdentityV1,
+    proxy_identity: DerivedMediaIdentityV1,
+    thumbnail_identity: DerivedMediaIdentityV1,
+    dimensions: OutputDimensions,
+    source_is_hdr: bool,
+    source_video_stream_index: u64,
+    source_audio_stream_index: Option<u64>,
+    source_has_audio: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProxyChildResult {
+    path: String,
+    probe: MediaProbe,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ThumbnailChildResult {
+    path: String,
+}
+
+impl PreparedAssetPlan {
+    fn finish(
+        self,
+        proxy: ProxyChildResult,
+        thumbnail: ThumbnailChildResult,
+    ) -> PreparedVideoAsset {
+        PreparedVideoAsset {
+            source_fingerprint: self.source_fingerprint,
+            source_identity: self.source_identity,
+            source_probe: self.source_probe,
+            sequence_rate: self.sequence_rate,
+            profile_identity: self.profile_identity,
+            proxy_identity: self.proxy_identity,
+            proxy_path: proxy.path,
+            proxy_probe: proxy.probe,
+            thumbnail_identity: self.thumbnail_identity,
+            thumbnail_path: thumbnail.path,
+        }
+    }
+}
+
+struct ProxyPreparationWorker {
+    plan: Arc<PreparedAssetPlan>,
+    programs: MediaPrograms,
+    cache: MediaCacheService,
+    owner_label: String,
+    project_id: String,
+}
+
+impl MediaJobWorker for ProxyPreparationWorker {
+    fn run(&self, _job_id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let plan = self.plan.clone();
+        let programs = self.programs.clone();
+        let cache = self.cache.clone();
+        let owner_label = self.owner_label.clone();
+        let project_id = self.project_id.clone();
+        Box::pin(async move {
+            match execute_proxy_child(&plan, &programs, cancellation).await {
+                Ok(result) => {
+                    if let Err(error) = register_derived_artifact(
+                        &cache,
+                        &owner_label,
+                        &project_id,
+                        CacheArtifactKind::Proxy,
+                        &plan.proxy_identity,
+                        Path::new(&result.path),
+                    )
+                    .await
+                    {
+                        return MediaWorkerOutcome::Failed {
+                            error: media_job_error_from_cache(error),
+                            progress: MediaJobProgress {
+                                completed: 0,
+                                total: 1,
+                                unit: MediaJobProgressUnit::Items,
+                            },
+                        };
+                    }
+                    MediaWorkerOutcome::Complete {
+                        result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+                        progress: MediaJobProgress {
+                            completed: 1,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                    }
+                }
+                Err(error) if error.code == VideoErrorCode::ProcessCancelled => {
+                    MediaWorkerOutcome::Cancelled {
+                        progress: MediaJobProgress {
+                            completed: 0,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                    }
+                }
+                Err(error) => MediaWorkerOutcome::Failed {
+                    error: media_job_error_from_video(&error),
+                    progress: MediaJobProgress {
+                        completed: 0,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                },
+            }
+        })
+    }
+}
+
+struct ThumbnailPreparationWorker {
+    plan: Arc<PreparedAssetPlan>,
+    programs: MediaPrograms,
+    cache: MediaCacheService,
+    owner_label: String,
+    project_id: String,
+}
+
+impl MediaJobWorker for ThumbnailPreparationWorker {
+    fn run(&self, _job_id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let plan = self.plan.clone();
+        let programs = self.programs.clone();
+        let cache = self.cache.clone();
+        let owner_label = self.owner_label.clone();
+        let project_id = self.project_id.clone();
+        Box::pin(async move {
+            match execute_thumbnail_child(&plan, &programs, cancellation).await {
+                Ok(result) => {
+                    if let Err(error) = register_derived_artifact(
+                        &cache,
+                        &owner_label,
+                        &project_id,
+                        CacheArtifactKind::ThumbnailTile,
+                        &plan.thumbnail_identity,
+                        Path::new(&result.path),
+                    )
+                    .await
+                    {
+                        return MediaWorkerOutcome::Failed {
+                            error: media_job_error_from_cache(error),
+                            progress: MediaJobProgress {
+                                completed: 0,
+                                total: 1,
+                                unit: MediaJobProgressUnit::Items,
+                            },
+                        };
+                    }
+                    MediaWorkerOutcome::Complete {
+                        result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+                        progress: MediaJobProgress {
+                            completed: 1,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                    }
+                }
+                Err(error) if error.code == VideoErrorCode::ProcessCancelled => {
+                    MediaWorkerOutcome::Cancelled {
+                        progress: MediaJobProgress {
+                            completed: 0,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                    }
+                }
+                Err(error) => MediaWorkerOutcome::Failed {
+                    error: media_job_error_from_video(&error),
+                    progress: MediaJobProgress {
+                        completed: 0,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                },
+            }
+        })
+    }
+}
+
+struct DurablePreparationDescriptor {
+    plan: Arc<PreparedAssetPlan>,
+    owner_label: String,
+    project_id: String,
+}
+
+fn durable_preparation_descriptor(
+    stored: &StoredPrivateJob,
+    expected_owner: Option<&str>,
+) -> Result<DurablePreparationDescriptor, VideoCommandError> {
+    if stored.payload_version != 1
+        || !matches!(
+            stored.public.kind,
+            MediaJobKind::Proxy | MediaJobKind::ThumbnailTile
+        )
+        || stored
+            .private_payload
+            .get("canonicalObjectAvailable")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+    {
+        return Err(VideoCommandError::project_io(
+            "prepare_asset",
+            "job_payload_version",
+        ));
+    }
+    let owner_label = stored
+        .private_payload
+        .get("ownerLabel")
+        .and_then(serde_json::Value::as_str)
+        .filter(|owner| !owner.is_empty())
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_owner"))?
+        .to_owned();
+    if expected_owner.is_some_and(|expected| expected != owner_label) {
+        return Err(VideoCommandError::project_io("prepare_asset", "job_owner"));
+    }
+    let payload_project_id = stored
+        .private_payload
+        .get("projectId")
+        .and_then(serde_json::Value::as_str);
+    let project_id = stored
+        .public
+        .project_id
+        .as_deref()
+        .filter(|project_id| Some(*project_id) == payload_project_id)
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_project"))?
+        .to_owned();
+    let plan = serde_json::from_value(
+        stored
+            .private_payload
+            .get("plan")
+            .cloned()
+            .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_payload"))?,
+    )
+    .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_payload"))?;
+    Ok(DurablePreparationDescriptor {
+        plan: Arc::new(plan),
+        owner_label,
+        project_id,
+    })
+}
+
+pub(crate) fn preparation_worker_from_durable_job(
+    stored: &StoredPrivateJob,
+    expected_owner: &str,
+    programs: MediaPrograms,
+    cache: MediaCacheService,
+) -> Result<Arc<dyn MediaJobWorker>, VideoCommandError> {
+    let descriptor = durable_preparation_descriptor(stored, Some(expected_owner))?;
+    preparation_worker(
+        stored.public.kind,
+        descriptor.plan,
+        programs,
+        cache,
+        descriptor.owner_label,
+        descriptor.project_id,
+    )
+}
+
+fn preparation_worker(
+    kind: MediaJobKind,
+    plan: Arc<PreparedAssetPlan>,
+    programs: MediaPrograms,
+    cache: MediaCacheService,
+    owner_label: String,
+    project_id: String,
+) -> Result<Arc<dyn MediaJobWorker>, VideoCommandError> {
+    match kind {
+        MediaJobKind::Proxy => Ok(Arc::new(ProxyPreparationWorker {
+            plan,
+            programs,
+            cache,
+            owner_label,
+            project_id,
+        })),
+        MediaJobKind::ThumbnailTile => Ok(Arc::new(ThumbnailPreparationWorker {
+            plan,
+            programs,
+            cache,
+            owner_label,
+            project_id,
+        })),
+        _ => Err(VideoCommandError::project_io("prepare_asset", "job_kind")),
+    }
+}
+
+pub(crate) async fn resume_durable_preparations(
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+) -> Result<(), VideoCommandError> {
+    resume_durable_preparations_with_factory(
+        jobs,
+        programs,
+        |kind, plan, programs, cache, owner_label, project_id| {
+            preparation_worker(kind, plan, programs, cache, owner_label, project_id)
+        },
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) type TestPreparationWorkerFactory =
+    Arc<dyn Fn(MediaJobKind) -> Arc<dyn MediaJobWorker> + Send + Sync>;
+
+#[cfg(test)]
+pub(crate) async fn resume_durable_preparations_with_test_workers(
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    worker_factory: TestPreparationWorkerFactory,
+) -> Result<(), VideoCommandError> {
+    resume_durable_preparations_with_factory(
+        jobs,
+        programs,
+        move |kind, _plan, _programs, _cache, _owner_label, _project_id| Ok(worker_factory(kind)),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) fn prepared_asset_plan_fixture(cache_root: &Path) -> serde_json::Value {
+    use super::types::{MediaAudioShape, MediaContentAlgorithm};
+
+    let source_identity = MediaContentIdentityV1 {
+        schema_version: 1,
+        algorithm: MediaContentAlgorithm::Sha256,
+        digest: "01".repeat(32),
+        byte_length: 4_096,
+    };
+    let profile_identity = derive_profile_identity(&PREVIEW_PROFILE)
+        .expect("test preview profile identity must derive");
+    let proxy_identity = derive_media_identity(
+        DerivedArtifactKind::Proxy,
+        &source_identity,
+        "test-recovery-toolchain",
+        &profile_identity,
+        &"02".repeat(32),
+    )
+    .expect("test proxy identity must derive");
+    let thumbnail_identity = derive_media_identity(
+        DerivedArtifactKind::ThumbnailTile,
+        &source_identity,
+        "test-recovery-toolchain",
+        &profile_identity,
+        &"03".repeat(32),
+    )
+    .expect("test thumbnail identity must derive");
+    let rate = RationalRate {
+        numerator: 30,
+        denominator: 1,
+    };
+    let source_probe = MediaProbe {
+        duration_microseconds: 2_000_000,
+        average_frame_rate: rate.clone(),
+        real_frame_rate: rate.clone(),
+        variable_frame_rate: false,
+        width: 320,
+        height: 180,
+        video_codec_name: "h264".to_owned(),
+        audio: Some(MediaAudioShape {
+            codec_name: "aac".to_owned(),
+            channels: 2,
+            sample_rate: 48_000,
+        }),
+        file_size_bytes: 4_096,
+    };
+    serde_json::to_value(PreparedAssetPlan {
+        cache_root: cache_root.to_path_buf(),
+        object_path: cache_root.join("recovery-object.mp4"),
+        source_fingerprint: super::media_store::SourceFingerprintV1 {
+            schema_version: 1,
+            algorithm: MediaContentAlgorithm::Sha256,
+            digest: "04".repeat(32),
+            byte_length: 4_096,
+            modified_unix_seconds: 1,
+            modified_nanoseconds: 0,
+        },
+        source_identity,
+        source_probe,
+        sequence_rate: rate,
+        profile_identity,
+        proxy_identity,
+        thumbnail_identity,
+        dimensions: OutputDimensions {
+            width: 320,
+            height: 180,
+        },
+        source_is_hdr: false,
+        source_video_stream_index: 0,
+        source_audio_stream_index: Some(1),
+        source_has_audio: true,
+    })
+    .expect("test prepared asset plan must serialize")
+}
+
+async fn resume_durable_preparations_with_factory<WorkerFactory>(
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    worker_factory: WorkerFactory,
+) -> Result<(), VideoCommandError>
+where
+    WorkerFactory: Fn(
+        MediaJobKind,
+        Arc<PreparedAssetPlan>,
+        MediaPrograms,
+        MediaCacheService,
+        String,
+        String,
+    ) -> Result<Arc<dyn MediaJobWorker>, VideoCommandError>,
+{
+    let records = jobs
+        .store()
+        .recovery_jobs()
+        .await
+        .map_err(map_job_store_error)?;
+    for parent in records.iter().filter(|record| {
+        record.kind == MediaJobKind::AssetPreparation && record.state == MediaJobState::Queued
+    }) {
+        if let Err(_error) =
+            recover_durable_preparation_parent(jobs, &programs, parent, &worker_factory).await
+        {
+            persist_preparation_recovery_failure(jobs, &parent.id)
+                .await
+                .map_err(map_job_store_error)?;
+            #[cfg(test)]
+            eprintln!(
+                "durable preview preparation recovery failed for {}: {:?}",
+                parent.id, _error
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn recover_durable_preparation_parent<WorkerFactory>(
+    jobs: &MediaJobService,
+    programs: &MediaPrograms,
+    parent: &super::jobs::model::MediaJobRecord,
+    worker_factory: &WorkerFactory,
+) -> Result<(), VideoCommandError>
+where
+    WorkerFactory: Fn(
+        MediaJobKind,
+        Arc<PreparedAssetPlan>,
+        MediaPrograms,
+        MediaCacheService,
+        String,
+        String,
+    ) -> Result<Arc<dyn MediaJobWorker>, VideoCommandError>,
+{
+    let stored = jobs
+        .store()
+        .get_private(parent.id.clone())
+        .await
+        .map_err(map_job_store_error)?;
+    if stored
+        .private_payload
+        .get("canonicalObjectAvailable")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return Err(VideoCommandError::project_io(
+            "prepare_asset",
+            "recovery_plan_unavailable",
+        ));
+    }
+    let plan: PreparedAssetPlan = serde_json::from_value(
+        stored
+            .private_payload
+            .get("plan")
+            .cloned()
+            .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_payload"))?,
+    )
+    .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_payload"))?;
+    let owner_label = stored
+        .private_payload
+        .get("ownerLabel")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("recovered-media-job")
+        .to_owned();
+    let project_id = parent
+        .project_id
+        .clone()
+        .or_else(|| {
+            stored
+                .private_payload
+                .get("projectId")
+                .and_then(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "recovery_association"))?;
+    let shared_plan = Arc::new(plan);
+
+    // Materialize both children before either is scheduled. Enqueue dedupe makes this
+    // restart-safe at every crash boundary between parent persistence and dispatch.
+    let proxy_job = enqueue_preparation_child(
+        jobs,
+        PreparationChildRequest {
+            parent_id: &parent.id,
+            kind: MediaJobKind::Proxy,
+            dedupe_key: preparation_child_dedupe_key(
+                MediaJobKind::Proxy,
+                &shared_plan,
+                &parent.id,
+            )?,
+            summary: "Build preview proxy",
+            owner_label: owner_label.clone(),
+            project_id: parent.project_id.clone(),
+            asset_id: parent.asset_id.clone(),
+            plan: &shared_plan,
+        },
+    )
+    .await?;
+    let thumbnail_job = enqueue_preparation_child(
+        jobs,
+        PreparationChildRequest {
+            parent_id: &parent.id,
+            kind: MediaJobKind::ThumbnailTile,
+            dedupe_key: preparation_child_dedupe_key(
+                MediaJobKind::ThumbnailTile,
+                &shared_plan,
+                &parent.id,
+            )?,
+            summary: "Build preview thumbnails",
+            owner_label: owner_label.clone(),
+            project_id: parent.project_id.clone(),
+            asset_id: parent.asset_id.clone(),
+            plan: &shared_plan,
+        },
+    )
+    .await?;
+
+    let proxy_was_complete = proxy_job.state == MediaJobState::Complete;
+    let thumbnail_was_complete = thumbnail_job.state == MediaJobState::Complete;
+    for child in [&proxy_job, &thumbnail_job] {
+        if child.parent_id.as_deref() != Some(parent.id.as_str()) {
+            return Err(VideoCommandError::project_io(
+                "prepare_asset",
+                "recovery_child_association",
+            ));
+        }
+    }
+
+    jobs.store()
+        .transition(
+            parent.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "recovered".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::Recovered,
+                message: Some("Preview preparation resumed after restart.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+
+    for child in [&proxy_job, &thumbnail_job] {
+        if child.state == MediaJobState::Queued {
+            let stored_child = jobs
+                .store()
+                .get_private(child.id.clone())
+                .await
+                .map_err(map_job_store_error)?;
+            let descriptor = durable_preparation_descriptor(&stored_child, Some(&owner_label))?;
+            if descriptor.project_id != project_id {
+                return Err(VideoCommandError::project_io(
+                    "prepare_asset",
+                    "recovery_child_association",
+                ));
+            }
+            let worker = worker_factory(
+                child.kind,
+                descriptor.plan,
+                programs.clone(),
+                jobs.cache().clone(),
+                descriptor.owner_label,
+                descriptor.project_id,
+            )?;
+            jobs.scheduler()
+                .submit(
+                    child.id.clone(),
+                    child.priority,
+                    child.attempt,
+                    child.max_attempts,
+                    SchedulerResource::Ffmpeg,
+                    worker,
+                )
+                .await
+                .map_err(map_job_store_error)?;
+        }
+    }
+
+    let proxy = if proxy_was_complete {
+        validate_recovered_proxy_artifact(jobs, &shared_plan, programs, &owner_label, &project_id)
+            .await?
+    } else {
+        wait_for_job_result(jobs, &proxy_job.id).await?
+    };
+    let thumbnail = if thumbnail_was_complete {
+        validate_recovered_thumbnail_artifact(
+            jobs,
+            &shared_plan,
+            programs,
+            &owner_label,
+            &project_id,
+        )
+        .await?
+    } else {
+        wait_for_job_result(jobs, &thumbnail_job.id).await?
+    };
+    let prepared = Arc::unwrap_or_clone(shared_plan).finish(proxy, thumbnail);
+    jobs.cache()
+        .enforce_budget()
+        .await
+        .map_err(map_job_store_error)?;
+    complete_recovered_preparation(jobs, &parent.id, &prepared).await
+}
+
+async fn validate_recovered_proxy_artifact(
+    jobs: &MediaJobService,
+    plan: &PreparedAssetPlan,
+    programs: &MediaPrograms,
+    owner_label: &str,
+    project_id: &str,
+) -> Result<ProxyChildResult, VideoCommandError> {
+    let result = execute_proxy_child(plan, programs, ProcessCancellation::new()).await?;
+    register_derived_artifact(
+        jobs.cache(),
+        owner_label,
+        project_id,
+        CacheArtifactKind::Proxy,
+        &plan.proxy_identity,
+        Path::new(&result.path),
+    )
+    .await
+    .map_err(map_job_store_error)?;
+    Ok(result)
+}
+
+async fn validate_recovered_thumbnail_artifact(
+    jobs: &MediaJobService,
+    plan: &PreparedAssetPlan,
+    programs: &MediaPrograms,
+    owner_label: &str,
+    project_id: &str,
+) -> Result<ThumbnailChildResult, VideoCommandError> {
+    let result = execute_thumbnail_child(plan, programs, ProcessCancellation::new()).await?;
+    register_derived_artifact(
+        jobs.cache(),
+        owner_label,
+        project_id,
+        CacheArtifactKind::ThumbnailTile,
+        &plan.thumbnail_identity,
+        Path::new(&result.path),
+    )
+    .await
+    .map_err(map_job_store_error)?;
+    Ok(result)
+}
+
+async fn complete_recovered_preparation(
+    jobs: &MediaJobService,
+    parent_id: &str,
+    prepared: &PreparedVideoAsset,
+) -> Result<(), VideoCommandError> {
+    let current = jobs
+        .store()
+        .get_private(parent_id.to_owned())
+        .await
+        .map_err(map_job_store_error)?
+        .public;
+    if current.state == MediaJobState::Complete {
+        return Ok(());
+    }
+    let result = serde_json::to_value(prepared)
+        .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_result"))?;
+    jobs.store()
+        .transition(
+            parent_id.to_owned(),
+            MediaJobTransition {
+                state: MediaJobState::Complete,
+                stage: "complete".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 2,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: Some(result),
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preview media ready after restart.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    Ok(())
+}
+
+async fn persist_preparation_recovery_failure(
+    jobs: &MediaJobService,
+    parent_id: &str,
+) -> Result<(), MediaStateStoreError> {
+    let current = jobs.store().get_private(parent_id.to_owned()).await?.public;
+    if current.state.is_terminal() {
+        return Ok(());
+    }
+    jobs.store()
+        .transition(
+            parent_id.to_owned(),
+            MediaJobTransition {
+                state: MediaJobState::Failed,
+                stage: "recovery_failed".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: Some(MediaJobError {
+                    code: "preparation_recovery_failed".to_owned(),
+                    category: MediaJobErrorCategory::IntegrityFailed,
+                    message: "Preview preparation could not be recovered.".to_owned(),
+                    retryable: false,
+                    action: Some(MediaJobRecoveryAction::Retry),
+                }),
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preview preparation could not be recovered.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map(|_| ())
 }
 
 #[derive(Debug, Clone)]
@@ -354,6 +1127,7 @@ pub async fn video_prepare_asset<R: Runtime>(
     grants: State<'_, VideoPathGrants>,
     projects: State<'_, VideoProjectService>,
     toolchain: State<'_, MediaToolchainState>,
+    jobs: State<'_, MediaJobService>,
     project_id: String,
     asset_id: String,
     path: String,
@@ -371,7 +1145,7 @@ pub async fn video_prepare_asset<R: Runtime>(
         .app_cache_dir()
         .map_err(|_| VideoCommandError::project_io("prepare_asset", "app_cache"))?;
     let programs = MediaPrograms::bundled(toolchain.inner().clone());
-    prepare_asset_core(
+    prepare_asset_durable(
         PrepareAssetCoreRequest {
             owner_label: window.label(),
             project_id: &project_id,
@@ -383,8 +1157,692 @@ pub async fn video_prepare_asset<R: Runtime>(
         &grants,
         &cache_root,
         programs,
+        &jobs,
     )
     .await
+}
+
+pub(crate) async fn prepare_asset_durable(
+    request: PrepareAssetCoreRequest<'_>,
+    grants: &VideoPathGrants,
+    cache_root: &Path,
+    programs: MediaPrograms,
+    jobs: &MediaJobService,
+) -> Result<PreparedVideoAsset, VideoCommandError> {
+    let created_at_ms = current_timestamp_millis();
+    let owner_label = request.owner_label.to_owned();
+    let association_project_id = request.project_id.to_owned();
+    let dedupe_key = preparation_dedupe_key(&request);
+    let parent = jobs
+        .store()
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::AssetPreparation,
+            parent_id: None,
+            dedupe_key,
+            project_id: Some(request.project_id.to_owned()),
+            asset_id: Some(request.asset_id.to_owned()),
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 2,
+                unit: MediaJobProgressUnit::Stages,
+            },
+            max_attempts: 3,
+            summary: "Prepare media asset".to_owned(),
+            private_payload: serde_json::json!({
+                "canonicalObjectAvailable": false,
+                "ownerLabel": owner_label.clone(),
+                "projectId": association_project_id.clone(),
+                "sourcePath": request.source_path,
+            }),
+            created_at_ms,
+        })
+        .await
+        .map_err(map_job_store_error)?;
+    if parent.reused {
+        match parent.job.state {
+            MediaJobState::Complete => {
+                match completed_prepared_asset_result(jobs, &parent.job.id).await? {
+                    CompletedPreparationReuse::Ready(prepared) => return Ok(*prepared),
+                    CompletedPreparationReuse::Rebuild => {
+                        jobs.store()
+                            .remove_stale_completed_preparation(parent.job.id)
+                            .await
+                            .map_err(map_job_store_error)?;
+                        return Box::pin(prepare_asset_durable(
+                            request, grants, cache_root, programs, jobs,
+                        ))
+                        .await;
+                    }
+                }
+            }
+            MediaJobState::Blocked => {
+                jobs.store()
+                    .transition(
+                        parent.job.id.clone(),
+                        MediaJobTransition {
+                            state: MediaJobState::Queued,
+                            stage: "queued".to_owned(),
+                            progress: MediaJobProgress {
+                                completed: 0,
+                                total: 2,
+                                unit: MediaJobProgressUnit::Stages,
+                            },
+                            attempt: None,
+                            error: None,
+                            retry_at_ms: None,
+                            result: None,
+                            cancellation_requested: false,
+                            event_type: MediaJobEventType::StateChanged,
+                            message: Some("Preparation authorization restored.".to_owned()),
+                            occurred_at_ms: current_timestamp_millis(),
+                        },
+                    )
+                    .await
+                    .map_err(map_job_store_error)?;
+            }
+            MediaJobState::Queued => {}
+            _ => return wait_for_job_result(jobs, &parent.job.id).await,
+        }
+    }
+
+    jobs.store()
+        .transition(
+            parent.job.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Probing,
+                stage: "probing".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: Some(parent.job.attempt.saturating_add(1)),
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Inspecting source media.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+
+    let plan = match plan_asset_core(request, grants, cache_root, &programs).await {
+        Ok(plan) => plan,
+        Err(error) => {
+            settle_preparation_error(jobs, &parent.job.id, &error).await;
+            return Err(error);
+        }
+    };
+    jobs.cache()
+        .register(CacheArtifactRegistration {
+            key: plan.source_identity.digest.clone(),
+            content_digest: plan.source_identity.digest.clone(),
+            kind: CacheArtifactKind::SourceObject,
+            path: plan.object_path.clone(),
+            profile_id: None,
+            toolchain_id: None,
+            recipe_id: None,
+        })
+        .await
+        .map_err(map_job_store_error)?;
+    jobs.cache()
+        .lease(
+            owner_label.clone(),
+            Some(association_project_id.clone()),
+            plan.source_identity.digest.clone(),
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    jobs.store()
+        .replace_private_payload(
+            parent.job.id.clone(),
+            serde_json::json!({
+                "canonicalObjectAvailable": true,
+                "ownerLabel": owner_label,
+                "projectId": association_project_id,
+                "plan": plan,
+            }),
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    jobs.store()
+        .transition(
+            parent.job.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "derived_media".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preparing preview media.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+
+    let shared_plan = Arc::new(plan);
+    let proxy_job = enqueue_preparation_child(
+        jobs,
+        PreparationChildRequest {
+            parent_id: &parent.job.id,
+            kind: MediaJobKind::Proxy,
+            dedupe_key: preparation_child_dedupe_key(
+                MediaJobKind::Proxy,
+                &shared_plan,
+                &parent.job.id,
+            )?,
+            summary: "Build preview proxy",
+            owner_label: owner_label.clone(),
+            project_id: parent.job.project_id.clone(),
+            asset_id: parent.job.asset_id.clone(),
+            plan: &shared_plan,
+        },
+    )
+    .await?;
+    if proxy_job.state == MediaJobState::Queued {
+        jobs.scheduler()
+            .submit(
+                proxy_job.id.clone(),
+                MediaJobPriority::Interactive,
+                proxy_job.attempt,
+                proxy_job.max_attempts,
+                SchedulerResource::Ffmpeg,
+                Arc::new(ProxyPreparationWorker {
+                    plan: shared_plan.clone(),
+                    programs: programs.clone(),
+                    cache: jobs.cache().clone(),
+                    owner_label: owner_label.clone(),
+                    project_id: association_project_id.clone(),
+                }),
+            )
+            .await
+            .map_err(map_job_store_error)?;
+    }
+
+    let thumbnail_job = enqueue_preparation_child(
+        jobs,
+        PreparationChildRequest {
+            parent_id: &parent.job.id,
+            kind: MediaJobKind::ThumbnailTile,
+            dedupe_key: preparation_child_dedupe_key(
+                MediaJobKind::ThumbnailTile,
+                &shared_plan,
+                &parent.job.id,
+            )?,
+            summary: "Build preview thumbnails",
+            owner_label: owner_label.clone(),
+            project_id: parent.job.project_id.clone(),
+            asset_id: parent.job.asset_id.clone(),
+            plan: &shared_plan,
+        },
+    )
+    .await?;
+    if thumbnail_job.state == MediaJobState::Queued {
+        jobs.scheduler()
+            .submit(
+                thumbnail_job.id.clone(),
+                MediaJobPriority::Interactive,
+                thumbnail_job.attempt,
+                thumbnail_job.max_attempts,
+                SchedulerResource::Ffmpeg,
+                Arc::new(ThumbnailPreparationWorker {
+                    plan: shared_plan.clone(),
+                    programs: programs.clone(),
+                    cache: jobs.cache().clone(),
+                    owner_label: owner_label.clone(),
+                    project_id: association_project_id.clone(),
+                }),
+            )
+            .await
+            .map_err(map_job_store_error)?;
+    }
+
+    let proxy: ProxyChildResult = match wait_for_job_result(jobs, &proxy_job.id).await {
+        Ok(proxy) => proxy,
+        Err(error) => {
+            settle_preparation_error(jobs, &parent.job.id, &error).await;
+            return Err(error);
+        }
+    };
+    jobs.store()
+        .transition(
+            parent.job.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "thumbnail".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 1,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::Progress,
+                message: Some("Preview proxy ready.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    let thumbnail: ThumbnailChildResult = match wait_for_job_result(jobs, &thumbnail_job.id).await {
+        Ok(thumbnail) => thumbnail,
+        Err(error) => {
+            settle_preparation_error(jobs, &parent.job.id, &error).await;
+            return Err(error);
+        }
+    };
+    let prepared = Arc::unwrap_or_clone(shared_plan).finish(proxy, thumbnail);
+    jobs.cache()
+        .enforce_budget()
+        .await
+        .map_err(map_job_store_error)?;
+    let result = serde_json::to_value(&prepared)
+        .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_result"))?;
+    jobs.store()
+        .transition(
+            parent.job.id,
+            MediaJobTransition {
+                state: MediaJobState::Complete,
+                stage: "complete".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 2,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: None,
+                retry_at_ms: None,
+                result: Some(result),
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preview media ready.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    Ok(prepared)
+}
+
+fn preparation_child_dedupe_key(
+    kind: MediaJobKind,
+    plan: &PreparedAssetPlan,
+    parent_id: &str,
+) -> Result<String, VideoCommandError> {
+    match kind {
+        MediaJobKind::Proxy => Ok(format!("proxy:{}:{parent_id}", plan.proxy_identity.key)),
+        MediaJobKind::ThumbnailTile => Ok(format!(
+            "thumbnail:{}:{parent_id}",
+            plan.thumbnail_identity.key
+        )),
+        _ => Err(VideoCommandError::project_io("prepare_asset", "job_kind")),
+    }
+}
+
+struct PreparationChildRequest<'a> {
+    parent_id: &'a str,
+    kind: MediaJobKind,
+    dedupe_key: String,
+    summary: &'a str,
+    owner_label: String,
+    project_id: Option<String>,
+    asset_id: Option<String>,
+    plan: &'a PreparedAssetPlan,
+}
+
+async fn enqueue_preparation_child(
+    jobs: &MediaJobService,
+    request: PreparationChildRequest<'_>,
+) -> Result<super::jobs::model::MediaJobRecord, VideoCommandError> {
+    jobs.store()
+        .enqueue(NewMediaJob {
+            kind: request.kind,
+            parent_id: Some(request.parent_id.to_owned()),
+            dedupe_key: request.dedupe_key,
+            project_id: request.project_id.clone(),
+            asset_id: request.asset_id,
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 1,
+                unit: MediaJobProgressUnit::Items,
+            },
+            max_attempts: 3,
+            summary: request.summary.to_owned(),
+            private_payload: serde_json::json!({
+                "canonicalObjectAvailable": true,
+                "ownerLabel": request.owner_label,
+                "projectId": request.project_id,
+                "plan": request.plan,
+            }),
+            created_at_ms: current_timestamp_millis(),
+        })
+        .await
+        .map(|outcome| outcome.job)
+        .map_err(map_job_store_error)
+}
+
+enum CompletedPreparationReuse {
+    Ready(Box<PreparedVideoAsset>),
+    Rebuild,
+}
+
+async fn completed_prepared_asset_result(
+    jobs: &MediaJobService,
+    job_id: &str,
+) -> Result<CompletedPreparationReuse, VideoCommandError> {
+    let stored = jobs
+        .store()
+        .get_private(job_id.to_owned())
+        .await
+        .map_err(map_job_store_error)?;
+    let prepared = stored
+        .result
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_result"))
+        .and_then(|result| {
+            serde_json::from_value::<PreparedVideoAsset>(result)
+                .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_result"))
+        })?;
+    let plan = stored
+        .private_payload
+        .get("plan")
+        .cloned()
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_payload"))
+        .and_then(|plan| {
+            serde_json::from_value::<PreparedAssetPlan>(plan)
+                .map_err(|_| VideoCommandError::project_io("prepare_asset", "job_payload"))
+        })?;
+    let owner_label = stored
+        .private_payload
+        .get("ownerLabel")
+        .and_then(serde_json::Value::as_str)
+        .filter(|owner| !owner.is_empty())
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_owner"))?
+        .to_owned();
+    let project_id = stored
+        .public
+        .project_id
+        .or_else(|| {
+            stored
+                .private_payload
+                .get("projectId")
+                .and_then(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_project"))?;
+    let registrations = [
+        CacheArtifactRegistration {
+            key: plan.source_identity.digest.clone(),
+            content_digest: plan.source_identity.digest.clone(),
+            kind: CacheArtifactKind::SourceObject,
+            path: plan.object_path,
+            profile_id: None,
+            toolchain_id: None,
+            recipe_id: None,
+        },
+        CacheArtifactRegistration {
+            key: prepared.proxy_identity.key.clone(),
+            content_digest: prepared.proxy_identity.source_identity.digest.clone(),
+            kind: CacheArtifactKind::Proxy,
+            path: PathBuf::from(&prepared.proxy_path),
+            profile_id: Some(prepared.proxy_identity.profile_identity.profile_id.clone()),
+            toolchain_id: Some(prepared.proxy_identity.toolchain_id.clone()),
+            recipe_id: Some(prepared.proxy_identity.recipe_digest.clone()),
+        },
+        CacheArtifactRegistration {
+            key: prepared.thumbnail_identity.key.clone(),
+            content_digest: prepared.thumbnail_identity.source_identity.digest.clone(),
+            kind: CacheArtifactKind::ThumbnailTile,
+            path: PathBuf::from(&prepared.thumbnail_path),
+            profile_id: Some(
+                prepared
+                    .thumbnail_identity
+                    .profile_identity
+                    .profile_id
+                    .clone(),
+            ),
+            toolchain_id: Some(prepared.thumbnail_identity.toolchain_id.clone()),
+            recipe_id: Some(prepared.thumbnail_identity.recipe_digest.clone()),
+        },
+    ];
+    for registration in registrations {
+        let artifact_key = registration.key.clone();
+        match jobs.cache().register(registration).await {
+            Ok(()) => {}
+            Err(MediaStateStoreError::Io(_) | MediaStateStoreError::CorruptRecord) => {
+                return Ok(CompletedPreparationReuse::Rebuild);
+            }
+            Err(error) => return Err(map_job_store_error(error)),
+        }
+        jobs.cache()
+            .lease(owner_label.clone(), Some(project_id.clone()), artifact_key)
+            .await
+            .map_err(map_job_store_error)?;
+    }
+    Ok(CompletedPreparationReuse::Ready(Box::new(prepared)))
+}
+
+async fn wait_for_job_result<T: serde::de::DeserializeOwned>(
+    jobs: &MediaJobService,
+    job_id: &str,
+) -> Result<T, VideoCommandError> {
+    let started = Instant::now();
+    loop {
+        let stored = jobs
+            .store()
+            .get_private(job_id.to_owned())
+            .await
+            .map_err(map_job_store_error)?;
+        match stored.public.state {
+            MediaJobState::Complete => {
+                return stored
+                    .result
+                    .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_result"))
+                    .and_then(|result| {
+                        serde_json::from_value(result).map_err(|_| {
+                            VideoCommandError::project_io("prepare_asset", "job_result")
+                        })
+                    });
+            }
+            MediaJobState::Blocked | MediaJobState::Failed | MediaJobState::Cancelled => {
+                return Err(VideoCommandError::new(
+                    VideoErrorCode::ProcessFailed,
+                    "Preview preparation did not complete",
+                    serde_json::json!({ "operation": "prepare_asset", "category": "media_job" }),
+                ));
+            }
+            _ if started.elapsed() >= PROFILE_CACHE_LOCK_TIMEOUT => {
+                return Err(VideoCommandError::project_io(
+                    "prepare_asset",
+                    "job_timeout",
+                ));
+            }
+            _ => tokio::time::sleep(Duration::from_millis(25)).await,
+        }
+    }
+}
+
+async fn settle_preparation_error(
+    jobs: &MediaJobService,
+    parent_id: &str,
+    error: &VideoCommandError,
+) {
+    let job_error = media_job_error_from_video(error);
+    let state = if matches!(
+        job_error.category,
+        MediaJobErrorCategory::AuthorizationRequired
+            | MediaJobErrorCategory::ToolchainUnavailable
+            | MediaJobErrorCategory::CachePressure
+    ) {
+        MediaJobState::Blocked
+    } else {
+        MediaJobState::Failed
+    };
+    let _ = jobs
+        .store()
+        .transition(
+            parent_id.to_owned(),
+            MediaJobTransition {
+                state,
+                stage: if state == MediaJobState::Blocked {
+                    "blocked"
+                } else {
+                    "failed"
+                }
+                .to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 2,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: None,
+                error: Some(job_error),
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Preview preparation needs attention.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await;
+}
+
+fn preparation_dedupe_key(request: &PrepareAssetCoreRequest<'_>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"supa-video/asset-preparation-job/v1");
+    hasher.update(request.project_id.as_bytes());
+    hasher.update(request.asset_id.as_bytes());
+    if let Some(identity) = request.expected_content_identity.as_ref() {
+        hasher.update(identity.digest.as_bytes());
+        hasher.update(identity.byte_length.to_le_bytes());
+    } else {
+        hasher.update(request.source_path.as_os_str().to_string_lossy().as_bytes());
+    }
+    if let Some(rate) = request.sequence_rate.as_ref() {
+        hasher.update(rate.numerator.to_le_bytes());
+        hasher.update(rate.denominator.to_le_bytes());
+    }
+    format!("asset_preparation:{}", hex_sha256(&hasher.finalize()))
+}
+
+async fn register_derived_artifact(
+    cache: &MediaCacheService,
+    owner_label: &str,
+    project_id: &str,
+    kind: CacheArtifactKind,
+    identity: &DerivedMediaIdentityV1,
+    path: &Path,
+) -> Result<(), MediaStateStoreError> {
+    cache
+        .register(CacheArtifactRegistration {
+            key: identity.key.clone(),
+            content_digest: identity.source_identity.digest.clone(),
+            kind,
+            path: path.to_path_buf(),
+            profile_id: Some(identity.profile_identity.profile_id.clone()),
+            toolchain_id: Some(identity.toolchain_id.clone()),
+            recipe_id: Some(identity.recipe_digest.clone()),
+        })
+        .await?;
+    cache
+        .lease(
+            owner_label.to_owned(),
+            Some(project_id.to_owned()),
+            identity.key.clone(),
+        )
+        .await?;
+    Ok(())
+}
+
+fn media_job_error_from_cache(_error: MediaStateStoreError) -> MediaJobError {
+    MediaJobError {
+        code: "cache_catalog_failure".to_owned(),
+        category: MediaJobErrorCategory::TransientIo,
+        message: "The prepared media cache could not be updated.".to_owned(),
+        retryable: true,
+        action: Some(MediaJobRecoveryAction::Retry),
+    }
+}
+
+fn media_job_error_from_video(error: &VideoCommandError) -> MediaJobError {
+    let (category, retryable, action, message) = match error.code {
+        VideoErrorCode::PathNotGranted => (
+            MediaJobErrorCategory::AuthorizationRequired,
+            false,
+            Some(MediaJobRecoveryAction::ReauthorizeSource),
+            "Choose the source again to continue.",
+        ),
+        VideoErrorCode::ToolUnavailable => (
+            MediaJobErrorCategory::ToolchainUnavailable,
+            false,
+            Some(MediaJobRecoveryAction::VerifyToolchain),
+            "The verified media tools are unavailable.",
+        ),
+        VideoErrorCode::ProjectIo
+        | VideoErrorCode::ProcessFailed
+        | VideoErrorCode::ProcessTimeout
+        | VideoErrorCode::ProcessOutputLimit => (
+            MediaJobErrorCategory::TransientIo,
+            true,
+            Some(MediaJobRecoveryAction::Retry),
+            "A temporary media operation failed.",
+        ),
+        VideoErrorCode::InvalidMedia => (
+            MediaJobErrorCategory::InvalidMedia,
+            false,
+            None,
+            "The selected media is invalid.",
+        ),
+        _ => (
+            MediaJobErrorCategory::PolicyRejected,
+            false,
+            None,
+            "Preview preparation could not continue.",
+        ),
+    };
+    MediaJobError {
+        code: match category {
+            MediaJobErrorCategory::AuthorizationRequired => "source_authorization_required",
+            MediaJobErrorCategory::ToolchainUnavailable => "toolchain_unavailable",
+            MediaJobErrorCategory::TransientIo => "temporary_media_failure",
+            MediaJobErrorCategory::InvalidMedia => "invalid_media",
+            _ => "preparation_failed",
+        }
+        .to_owned(),
+        category,
+        message: message.to_owned(),
+        retryable,
+        action,
+    }
+}
+
+fn map_job_store_error(_error: MediaStateStoreError) -> VideoCommandError {
+    #[cfg(test)]
+    eprintln!("durable media job store error: {_error:?}");
+    VideoCommandError::project_io("prepare_asset", "media_job_state")
 }
 
 pub(crate) async fn prepare_asset_core(
@@ -393,6 +1851,19 @@ pub(crate) async fn prepare_asset_core(
     cache_root: &Path,
     programs: MediaPrograms,
 ) -> Result<PreparedVideoAsset, VideoCommandError> {
+    let plan = plan_asset_core(request, grants, cache_root, &programs).await?;
+    let cancellation = ProcessCancellation::new();
+    let proxy = execute_proxy_child(&plan, &programs, cancellation.clone()).await?;
+    let thumbnail = execute_thumbnail_child(&plan, &programs, cancellation).await?;
+    Ok(plan.finish(proxy, thumbnail))
+}
+
+pub(crate) async fn plan_asset_core(
+    request: PrepareAssetCoreRequest<'_>,
+    grants: &VideoPathGrants,
+    cache_root: &Path,
+    programs: &MediaPrograms,
+) -> Result<PreparedAssetPlan, VideoCommandError> {
     validated_uuid_segment(request.project_id)
         .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "project_id"))?;
     validated_uuid_segment(request.asset_id)
@@ -410,7 +1881,7 @@ pub(crate) async fn prepare_asset_core(
     let source_inspected = probe_trusted_media_with_program(
         &ingested.object_path,
         programs.verified_ffprobe(source_probe_operation).await?,
-        cancellation.clone(),
+        cancellation,
         source_probe_operation,
     )
     .await?;
@@ -484,37 +1955,64 @@ pub(crate) async fn prepare_asset_core(
     )
     .map_err(map_model_error)?;
 
-    let proxy_expectation = ProxyValidationExpectation {
+    Ok(PreparedAssetPlan {
+        cache_root: cache_root.to_path_buf(),
+        object_path: ingested.object_path,
+        source_fingerprint: ingested.fingerprint,
+        source_identity: ingested.identity,
+        source_probe,
+        sequence_rate: input.sequence_rate,
+        profile_identity,
+        proxy_identity,
+        thumbnail_identity,
         dimensions,
-        sequence_rate: &input.sequence_rate,
-        source_duration_microseconds: source_probe.duration_microseconds,
+        source_is_hdr,
+        source_video_stream_index,
+        source_audio_stream_index,
         source_has_audio,
+    })
+}
+
+async fn execute_proxy_child(
+    plan: &PreparedAssetPlan,
+    programs: &MediaPrograms,
+    cancellation: ProcessCancellation,
+) -> Result<ProxyChildResult, VideoCommandError> {
+    let proxy_expectation = ProxyValidationExpectation {
+        dimensions: plan.dimensions,
+        sequence_rate: &plan.sequence_rate,
+        source_duration_microseconds: plan.source_probe.duration_microseconds,
+        source_has_audio: plan.source_has_audio,
     };
-    let proxy_lease =
-        acquire_artifact(cache_root, ArtifactStoreKind::Proxy, &proxy_identity.key).await?;
+    let proxy_guard = acquire_artifact(
+        &plan.cache_root,
+        ArtifactStoreKind::Proxy,
+        &plan.proxy_identity.key,
+    )
+    .await?;
     let proxy_probe = if let Some(probe) = cached_proxy_probe(
-        proxy_lease.path(),
+        proxy_guard.path(),
         proxy_expectation,
-        &programs,
+        programs,
         cancellation.clone(),
     )
     .await?
     {
         probe
     } else {
-        let temporary = proxy_lease.temporary()?;
+        let temporary = proxy_guard.temporary()?;
         let proxy_args = proxy_ffmpeg_args(
-            &ingested.object_path,
+            &plan.object_path,
             temporary.path(),
-            dimensions,
-            &input.sequence_rate,
-            source_is_hdr,
-            source_video_stream_index,
-            source_audio_stream_index,
+            plan.dimensions,
+            &plan.sequence_rate,
+            plan.source_is_hdr,
+            plan.source_video_stream_index,
+            plan.source_audio_stream_index,
         )
         .map_err(map_model_error)?;
         run_derived_ffmpeg_with_programs(
-            &programs,
+            programs,
             proxy_args,
             "prepare_proxy",
             PROXY_TIMEOUT,
@@ -524,52 +2022,57 @@ pub(crate) async fn prepare_asset_core(
         validate_proxy_path(
             temporary.path(),
             proxy_expectation,
-            &programs,
+            programs,
             cancellation.clone(),
             "validate_proxy_temp",
         )
         .await?;
-        temporary
-            .as_file()
-            .sync_all()
-            .map_err(|_| VideoCommandError::project_io("prepare_asset", "proxy_sync"))?;
-        proxy_lease.promote(temporary)?;
+        proxy_guard.promote(temporary)?;
         match validate_proxy_path(
-            proxy_lease.path(),
+            proxy_guard.path(),
             proxy_expectation,
-            &programs,
-            cancellation.clone(),
+            programs,
+            cancellation,
             "validate_proxy_final",
         )
         .await
         {
             Ok(probe) => probe,
             Err(error) => {
-                let _ = proxy_lease.remove_exact();
+                let _ = proxy_guard.remove_exact();
                 return Err(error);
             }
         }
     };
-    let proxy_path = response_path(proxy_lease.path())?;
-    drop(proxy_lease);
+    proxy_guard.confirm_durable()?;
+    Ok(ProxyChildResult {
+        path: response_path(proxy_guard.path())?,
+        probe: proxy_probe,
+    })
+}
 
-    let thumbnail_lease = acquire_artifact(
-        cache_root,
+async fn execute_thumbnail_child(
+    plan: &PreparedAssetPlan,
+    programs: &MediaPrograms,
+    cancellation: ProcessCancellation,
+) -> Result<ThumbnailChildResult, VideoCommandError> {
+    let thumbnail_guard = acquire_artifact(
+        &plan.cache_root,
         ArtifactStoreKind::ThumbnailTile,
-        &thumbnail_identity.key,
+        &plan.thumbnail_identity.key,
     )
     .await?;
-    if !cached_thumbnail_is_valid(thumbnail_lease.path(), &programs, cancellation.clone()).await? {
-        let temporary = thumbnail_lease.temporary()?;
+    if !cached_thumbnail_is_valid(thumbnail_guard.path(), programs, cancellation.clone()).await? {
+        let temporary = thumbnail_guard.temporary()?;
         let thumbnail_args = thumbnail_ffmpeg_args(
-            &ingested.object_path,
+            &plan.object_path,
             temporary.path(),
-            source_probe.duration_microseconds,
-            source_video_stream_index,
+            plan.source_probe.duration_microseconds,
+            plan.source_video_stream_index,
         )
         .map_err(map_model_error)?;
         run_derived_ffmpeg_with_programs(
-            &programs,
+            programs,
             thumbnail_args,
             "prepare_thumbnail",
             THUMBNAIL_TIMEOUT,
@@ -579,42 +2082,28 @@ pub(crate) async fn prepare_asset_core(
         validate_thumbnail_path(
             temporary.path(),
             temporary.path(),
-            &programs,
+            programs,
             cancellation.clone(),
             "validate_thumbnail_temp",
         )
         .await?;
-        temporary
-            .as_file()
-            .sync_all()
-            .map_err(|_| VideoCommandError::project_io("prepare_asset", "thumbnail_sync"))?;
-        thumbnail_lease.promote(temporary)?;
+        thumbnail_guard.promote(temporary)?;
         if let Err(error) = validate_thumbnail_path(
-            thumbnail_lease.path(),
-            thumbnail_lease.path(),
-            &programs,
+            thumbnail_guard.path(),
+            thumbnail_guard.path(),
+            programs,
             cancellation,
             "validate_thumbnail_final",
         )
         .await
         {
-            let _ = thumbnail_lease.remove_exact();
+            let _ = thumbnail_guard.remove_exact();
             return Err(error);
         }
     }
-    let thumbnail_path = response_path(thumbnail_lease.path())?;
-
-    Ok(PreparedVideoAsset {
-        source_fingerprint: ingested.fingerprint,
-        source_identity: ingested.identity,
-        source_probe,
-        sequence_rate: input.sequence_rate,
-        profile_identity,
-        proxy_identity,
-        proxy_path,
-        proxy_probe,
-        thumbnail_identity,
-        thumbnail_path,
+    thumbnail_guard.confirm_durable()?;
+    Ok(ThumbnailChildResult {
+        path: response_path(thumbnail_guard.path())?,
     })
 }
 

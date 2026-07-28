@@ -24,8 +24,6 @@ use tokio::{
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
-pub(crate) const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
-
 pub(crate) type StdoutRecordObserver = Arc<dyn Fn(&[u8]) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone)]
@@ -38,9 +36,26 @@ pub(crate) struct ProcessSpec {
     pub(crate) stderr_tail_limit: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
+struct ProcessCancellationState {
+    cancelled: AtomicBool,
+    notification: tokio::sync::Notify,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ProcessCancellation {
-    cancelled: Arc<AtomicBool>,
+    state: Arc<ProcessCancellationState>,
+}
+
+impl Default for ProcessCancellation {
+    fn default() -> Self {
+        Self {
+            state: Arc::new(ProcessCancellationState {
+                cancelled: AtomicBool::new(false),
+                notification: tokio::sync::Notify::new(),
+            }),
+        }
+    }
 }
 
 impl ProcessCancellation {
@@ -50,17 +65,24 @@ impl ProcessCancellation {
 
     #[allow(dead_code)]
     pub(crate) fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
+        if !self.state.cancelled.swap(true, Ordering::AcqRel) {
+            self.state.notification.notify_waiters();
+        }
     }
 
     pub(crate) fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
+        self.state.cancelled.load(Ordering::Acquire)
     }
 
-    async fn wait(&self) {
-        while !self.is_cancelled() {
-            time::sleep(CANCELLATION_POLL_INTERVAL).await;
+    pub(crate) async fn wait(&self) {
+        if self.is_cancelled() {
+            return;
         }
+        let notified = self.state.notification.notified();
+        if self.is_cancelled() {
+            return;
+        }
+        notified.await;
     }
 }
 

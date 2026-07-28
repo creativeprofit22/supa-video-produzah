@@ -7,7 +7,7 @@ use std::{
 };
 
 use fs4::{FileExt, TryLockError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
@@ -22,8 +22,8 @@ const HASH_BUFFER_BYTES: usize = 1024 * 1024;
 const OBJECT_LOCK_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const OBJECT_LOCK_RETRY: Duration = Duration::from_millis(50);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceFingerprintV1 {
     pub schema_version: u64,
     pub algorithm: MediaContentAlgorithm,
@@ -49,6 +49,14 @@ struct SourceFacts {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum PublicationFailpoint {
+    None,
+    BeforeRename,
+    AfterRename,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum IngestFailpoint {
     None,
     Read,
@@ -57,6 +65,16 @@ pub(crate) enum IngestFailpoint {
     Flush,
     Sync,
     Promotion,
+    PostPromotion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PublicationError {
+    TemporaryContainment,
+    DestinationContainment,
+    TemporarySync,
+    Promotion,
+    DirectorySync,
 }
 
 #[derive(Debug)]
@@ -348,6 +366,134 @@ fn copy_source_to_temporary(
     Ok(temporary)
 }
 
+fn sync_publication_directory(directory: &Path) -> Result<(), PublicationError> {
+    #[cfg(unix)]
+    {
+        File::open(directory)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| PublicationError::DirectorySync)
+    }
+    #[cfg(any(windows, not(any(unix, windows))))]
+    {
+        let _ = directory;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn publish_atomic(temporary: &NamedTempFile, destination: &Path) -> io::Result<()> {
+    use std::{iter, os::windows::ffi::OsStrExt};
+
+    use windows::{
+        core::PCWSTR,
+        Win32::Storage::FileSystem::{
+            MoveFileExW, SetFileAttributesW, FILE_ATTRIBUTE_NORMAL, MOVEFILE_REPLACE_EXISTING,
+            MOVEFILE_WRITE_THROUGH,
+        },
+    };
+
+    let temporary_path: Vec<u16> = temporary
+        .path()
+        .as_os_str()
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    let destination_path: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    unsafe {
+        // NamedTempFile marks the path temporary. Normalize it before publication so the
+        // destination has ordinary file semantics even after the temporary handle closes.
+        SetFileAttributesW(PCWSTR(temporary_path.as_ptr()), FILE_ATTRIBUTE_NORMAL)
+            .map_err(|error| io::Error::from_raw_os_error(error.code().0))?;
+        // Windows does not document directory-handle FlushFileBuffers as a namespace barrier.
+        // MOVEFILE_WRITE_THROUGH is the documented durable-move barrier, so parent sync is a no-op.
+        MoveFileExW(
+            PCWSTR(temporary_path.as_ptr()),
+            PCWSTR(destination_path.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+        .map_err(|error| io::Error::from_raw_os_error(error.code().0))
+    }
+}
+
+#[cfg(not(windows))]
+fn publish_atomic(temporary: &NamedTempFile, destination: &Path) -> io::Result<()> {
+    fs::rename(temporary.path(), destination)
+}
+
+fn remove_failed_publication(destination: &Path, directory: &Path) {
+    if fs::symlink_metadata(destination).is_ok() {
+        let _ = fs::remove_file(destination);
+        let _ = sync_publication_directory(directory);
+    }
+}
+
+fn durable_publish(
+    temporary: NamedTempFile,
+    directory: &Path,
+    destination: &Path,
+    failpoint: PublicationFailpoint,
+) -> Result<(), PublicationError> {
+    if temporary.path().parent() != Some(directory) {
+        return Err(PublicationError::TemporaryContainment);
+    }
+    if destination.parent() != Some(directory) {
+        return Err(PublicationError::DestinationContainment);
+    }
+    let directory_metadata =
+        fs::symlink_metadata(directory).map_err(|_| PublicationError::DestinationContainment)?;
+    if !directory_metadata.is_dir() || is_reparse_or_symlink(&directory_metadata) {
+        return Err(PublicationError::DestinationContainment);
+    }
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.is_file() && !is_reparse_or_symlink(&metadata) => {}
+        Ok(_) => return Err(PublicationError::DestinationContainment),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(PublicationError::DestinationContainment),
+    }
+
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|_| PublicationError::TemporarySync)?;
+    if failpoint == PublicationFailpoint::BeforeRename {
+        return Err(PublicationError::Promotion);
+    }
+    publish_atomic(&temporary, destination).map_err(|_| PublicationError::Promotion)?;
+    if failpoint == PublicationFailpoint::AfterRename {
+        remove_failed_publication(destination, directory);
+        return Err(PublicationError::DirectorySync);
+    }
+    if let Err(error) = sync_publication_directory(directory) {
+        remove_failed_publication(destination, directory);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn ingest_publication_error(error: PublicationError) -> VideoCommandError {
+    invalid(match error {
+        PublicationError::TemporaryContainment => "temporary_containment",
+        PublicationError::DestinationContainment => "object_repair",
+        PublicationError::TemporarySync => "temporary_sync",
+        PublicationError::Promotion => "object_promotion",
+        PublicationError::DirectorySync => "object_directory_sync",
+    })
+}
+
+fn artifact_publication_error(error: PublicationError) -> VideoCommandError {
+    artifact_invalid(match error {
+        PublicationError::TemporaryContainment => "temporary_containment",
+        PublicationError::DestinationContainment => "artifact_repair",
+        PublicationError::TemporarySync => "artifact_sync",
+        PublicationError::Promotion => "artifact_promotion",
+        PublicationError::DirectorySync => "artifact_directory_sync",
+    })
+}
+
 fn ingest_blocking_with_failpoint(
     canonical_source: PathBuf,
     app_cache_root: PathBuf,
@@ -399,25 +545,25 @@ fn ingest_blocking_with_failpoint(
         if capture_source_facts(&canonical_source)? != pre_read {
             return Err(invalid("source_changed"));
         }
-        if object_path.exists() {
-            let metadata =
-                fs::symlink_metadata(&object_path).map_err(|_| invalid("object_repair"))?;
-            if !metadata.is_file() || is_reparse_or_symlink(&metadata) {
-                return Err(invalid("object_repair"));
-            }
-            fs::remove_file(&object_path).map_err(|_| invalid("object_repair"))?;
-        }
-        if failpoint == IngestFailpoint::Promotion {
-            return Err(invalid("object_promotion"));
-        }
-        temporary
-            .persist(&object_path)
-            .map_err(|_| invalid("object_promotion"))?;
+        let publication_failpoint = match failpoint {
+            IngestFailpoint::Promotion => PublicationFailpoint::BeforeRename,
+            IngestFailpoint::PostPromotion => PublicationFailpoint::AfterRename,
+            _ => PublicationFailpoint::None,
+        };
+        durable_publish(
+            temporary,
+            &object_directory,
+            &object_path,
+            publication_failpoint,
+        )
+        .map_err(ingest_publication_error)?;
         if !validate_object(&object_path, &digest, pre_read.byte_length) {
-            let _ = fs::remove_file(&object_path);
+            remove_failed_publication(&object_path, &object_directory);
             return Err(invalid("object_validation"));
         }
     }
+    // This also gates reuse of a valid orphan left by an interrupted pre-gate publisher.
+    sync_publication_directory(&object_directory).map_err(ingest_publication_error)?;
 
     Ok(IngestedSource {
         object_path,
@@ -476,14 +622,14 @@ impl ArtifactStoreKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct ArtifactLease {
+pub(crate) struct ArtifactBuildGuard {
     destination: PathBuf,
     directory: PathBuf,
     kind: ArtifactStoreKind,
     _lock: StoreLock,
 }
 
-impl ArtifactLease {
+impl ArtifactBuildGuard {
     pub(crate) fn path(&self) -> &Path {
         &self.destination
     }
@@ -497,22 +643,29 @@ impl ArtifactLease {
     }
 
     pub(crate) fn promote(&self, temporary: NamedTempFile) -> Result<(), VideoCommandError> {
-        let temporary_path = temporary.path();
-        if temporary_path.parent() != Some(self.directory.as_path()) {
-            return Err(artifact_invalid("temporary_containment"));
-        }
-        if self.destination.exists() {
-            let metadata = fs::symlink_metadata(&self.destination)
-                .map_err(|_| artifact_invalid("artifact_repair"))?;
-            if !metadata.is_file() || is_reparse_or_symlink(&metadata) {
-                return Err(artifact_invalid("artifact_repair"));
-            }
-            fs::remove_file(&self.destination).map_err(|_| artifact_invalid("artifact_repair"))?;
-        }
-        temporary
-            .persist(&self.destination)
-            .map_err(|_| artifact_invalid("artifact_promotion"))?;
-        Ok(())
+        self.promote_with_failpoint(temporary, PublicationFailpoint::None)
+    }
+
+    fn promote_with_failpoint(
+        &self,
+        temporary: NamedTempFile,
+        failpoint: PublicationFailpoint,
+    ) -> Result<(), VideoCommandError> {
+        durable_publish(temporary, &self.directory, &self.destination, failpoint)
+            .map_err(artifact_publication_error)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn promote_with_failpoint_for_test(
+        &self,
+        temporary: NamedTempFile,
+        failpoint: PublicationFailpoint,
+    ) -> Result<(), VideoCommandError> {
+        self.promote_with_failpoint(temporary, failpoint)
+    }
+
+    pub(crate) fn confirm_durable(&self) -> Result<(), VideoCommandError> {
+        sync_publication_directory(&self.directory).map_err(artifact_publication_error)
     }
 
     pub(crate) fn remove_exact(&self) -> Result<(), VideoCommandError> {
@@ -541,7 +694,7 @@ fn acquire_artifact_blocking(
     app_cache_root: PathBuf,
     kind: ArtifactStoreKind,
     key: String,
-) -> Result<ArtifactLease, VideoCommandError> {
+) -> Result<ArtifactBuildGuard, VideoCommandError> {
     if !valid_key(&key) {
         return Err(artifact_invalid("artifact_key"));
     }
@@ -559,7 +712,7 @@ fn acquire_artifact_blocking(
     let destination = directory.join(format!("{key}.{}", kind.extension()));
     let lock_path = lock_directory.join(format!("{key}.lock"));
     let lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT)?;
-    Ok(ArtifactLease {
+    Ok(ArtifactBuildGuard {
         destination,
         directory,
         kind,
@@ -571,7 +724,7 @@ pub(crate) async fn acquire_artifact(
     app_cache_root: &Path,
     kind: ArtifactStoreKind,
     key: &str,
-) -> Result<ArtifactLease, VideoCommandError> {
+) -> Result<ArtifactBuildGuard, VideoCommandError> {
     let app_cache_root = app_cache_root.to_owned();
     let key = key.to_owned();
     tauri::async_runtime::spawn_blocking(move || {

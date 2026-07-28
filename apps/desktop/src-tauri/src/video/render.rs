@@ -1,5 +1,4 @@
 use std::{
-    collections::{HashMap, VecDeque},
     ffi::OsString,
     fs::{self, OpenOptions},
     io,
@@ -9,6 +8,7 @@ use std::{
 };
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 use tempfile::{Builder as TempFileBuilder, TempPath};
 
@@ -16,6 +16,20 @@ use super::{
     derived::{duration_within_one_frame, MediaPrograms},
     error::{VideoCommandError, VideoErrorCode},
     grants::{GrantCategory, VideoPathGrants},
+    jobs::{
+        current_timestamp_millis,
+        model::{
+            MediaJobError, MediaJobErrorCategory, MediaJobEventType, MediaJobKind,
+            MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobRecoveryAction,
+            MediaJobState,
+        },
+        scheduler::{
+            MediaJobFinalOutcome, MediaJobWorker, MediaWorkerFuture, MediaWorkerOutcome,
+            SchedulerResource,
+        },
+        store::{MediaJobStore, MediaJobTransition, MediaStateStoreError, NewMediaJob},
+        MediaJobService,
+    },
     probe::{probe_trusted_media_with_program, InspectedMedia},
     process::{
         run_supervised_streaming, ProcessCancellation, ProcessFailure, ProcessSpec,
@@ -91,198 +105,6 @@ impl RenderEventIdentity {
     }
 }
 
-const SETTLED_TOMBSTONE_LIMIT: usize = 256;
-
-#[derive(Debug, Clone)]
-struct ActiveRenderJob {
-    owner_label: String,
-    plan_id: String,
-    revision_id: String,
-    destination: PathBuf,
-    cancellation: ProcessCancellation,
-    committed: bool,
-}
-
-#[derive(Debug, Clone)]
-struct SettledRenderJob {
-    owner_label: String,
-    job_id: String,
-}
-
-#[derive(Debug, Default)]
-struct RenderJobsInner {
-    active: HashMap<String, ActiveRenderJob>,
-    settled: VecDeque<SettledRenderJob>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VideoRenderJobs {
-    inner: Arc<Mutex<RenderJobsInner>>,
-    tombstone_limit: usize,
-}
-
-impl Default for VideoRenderJobs {
-    fn default() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(RenderJobsInner::default())),
-            tombstone_limit: SETTLED_TOMBSTONE_LIMIT,
-        }
-    }
-}
-
-impl VideoRenderJobs {
-    pub(crate) fn register(
-        &self,
-        owner_label: &str,
-        validated: &ValidatedRenderPlan,
-    ) -> Result<(RenderEventIdentity, ProcessCancellation), VideoCommandError> {
-        let job_id = validated.plan.plan_id.as_str().to_owned();
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        if inner.active.contains_key(&job_id)
-            || inner.settled.iter().any(|entry| entry.job_id == job_id)
-            || inner
-                .active
-                .values()
-                .any(|entry| paths_equal(&entry.destination, &validated.output_path))
-        {
-            return Err(VideoCommandError::invalid_render_plan("job_conflict"));
-        }
-        let cancellation = ProcessCancellation::new();
-        let identity = RenderEventIdentity {
-            job_id: job_id.clone(),
-            plan_id: job_id.clone(),
-            revision_id: validated.plan.revision_id.as_str().to_owned(),
-        };
-        inner.active.insert(
-            job_id,
-            ActiveRenderJob {
-                owner_label: owner_label.to_owned(),
-                plan_id: identity.plan_id.clone(),
-                revision_id: identity.revision_id.clone(),
-                destination: validated.output_path.clone(),
-                cancellation: cancellation.clone(),
-                committed: false,
-            },
-        );
-        Ok((identity, cancellation))
-    }
-
-    pub(crate) fn cancel(&self, owner_label: &str, job_id: &str) -> Result<(), VideoCommandError> {
-        let inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        if let Some(active) = inner.active.get(job_id) {
-            if active.owner_label != owner_label {
-                return Err(VideoCommandError::invalid_render_plan("unknown_job"));
-            }
-            active.cancellation.cancel();
-            return Ok(());
-        }
-        if inner
-            .settled
-            .iter()
-            .any(|entry| entry.job_id == job_id && entry.owner_label == owner_label)
-        {
-            return Ok(());
-        }
-        Err(VideoCommandError::invalid_render_plan("unknown_job"))
-    }
-
-    pub(crate) fn cancel_owner(&self, owner_label: &str) -> Result<(), VideoCommandError> {
-        let inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        for active in inner
-            .active
-            .values()
-            .filter(|active| active.owner_label == owner_label)
-        {
-            active.cancellation.cancel();
-        }
-        Ok(())
-    }
-
-    pub(crate) fn cancel_all(&self) -> Result<(), VideoCommandError> {
-        let inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        for active in inner.active.values() {
-            active.cancellation.cancel();
-        }
-        Ok(())
-    }
-
-    pub(crate) fn is_active(&self, job_id: &str) -> bool {
-        self.inner
-            .lock()
-            .is_ok_and(|inner| inner.active.contains_key(job_id))
-    }
-
-    pub(crate) fn mark_committed(&self, job_id: &str) -> Result<bool, VideoCommandError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        let Some(active) = inner.active.get_mut(job_id) else {
-            return Ok(false);
-        };
-        active.committed = true;
-        Ok(true)
-    }
-
-    pub(crate) fn settle(&self, job_id: &str) -> Result<bool, VideoCommandError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| VideoCommandError::invalid_render_plan("job_registry"))?;
-        let Some(active) = inner.active.remove(job_id) else {
-            return Ok(false);
-        };
-        let _ = (active.plan_id, active.revision_id, active.committed);
-        inner.settled.push_back(SettledRenderJob {
-            owner_label: active.owner_label,
-            job_id: job_id.to_owned(),
-        });
-        while inner.settled.len() > self.tombstone_limit {
-            inner.settled.pop_front();
-        }
-        Ok(true)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_tombstone_limit(tombstone_limit: usize) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(RenderJobsInner::default())),
-            tombstone_limit,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tombstone_count(&self) -> usize {
-        self.inner.lock().map_or(0, |inner| inner.settled.len())
-    }
-
-    #[cfg(all(test, feature = "tauri-ipc-test"))]
-    pub(crate) fn cancellation_requested(&self, job_id: &str) -> bool {
-        self.inner
-            .lock()
-            .ok()
-            .and_then(|inner| {
-                inner
-                    .active
-                    .get(job_id)
-                    .map(|active| active.cancellation.is_cancelled())
-            })
-            .unwrap_or(false)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ValidatedRenderPlan {
     pub(crate) plan: RenderPlanV1,
@@ -291,11 +113,191 @@ pub(crate) struct ValidatedRenderPlan {
     pub(crate) duration_microseconds: u64,
 }
 
+#[derive(Default)]
+struct RenderCompatibilityLifecycle {
+    pending_terminal: Option<VideoRenderEvent>,
+    emitted: bool,
+}
+
+struct FinalRenderWorker {
+    validated: ValidatedRenderPlan,
+    overwrite: bool,
+    app_cache_dir: PathBuf,
+    programs: MediaPrograms,
+    identity: RenderEventIdentity,
+    store: MediaJobStore,
+    compatibility_events: RenderEventSink,
+    compatibility_lifecycle: Arc<Mutex<RenderCompatibilityLifecycle>>,
+}
+
+impl MediaJobWorker for FinalRenderWorker {
+    fn run(&self, job_id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
+        let validated = self.validated.clone();
+        let overwrite = self.overwrite;
+        let app_cache_dir = self.app_cache_dir.clone();
+        let programs = self.programs.clone();
+        let identity = self.identity.clone();
+        let store = self.store.clone();
+        let compatibility_events = self.compatibility_events.clone();
+        let compatibility_lifecycle = self.compatibility_lifecycle.clone();
+        Box::pin(async move {
+            let progress_gate = Arc::new(Mutex::new((
+                std::time::Instant::now() - Duration::from_millis(250),
+                0_u64,
+            )));
+            let gate_for_events = progress_gate.clone();
+            let store_for_events = store.clone();
+            let job_for_events = job_id.clone();
+            let compatibility_for_events = compatibility_events.clone();
+            let events: RenderEventSink = Arc::new(move |event| {
+                let compatibility_result = compatibility_for_events(event.clone());
+                if let VideoRenderEvent::Progress {
+                    completed_microseconds,
+                    duration_microseconds,
+                    ..
+                } = event
+                {
+                    let persist = gate_for_events.lock().is_ok_and(|mut gate| {
+                        let old_percent = gate
+                            .1
+                            .saturating_mul(100)
+                            .checked_div(duration_microseconds)
+                            .unwrap_or(0);
+                        let new_percent = completed_microseconds
+                            .saturating_mul(100)
+                            .checked_div(duration_microseconds)
+                            .unwrap_or(0);
+                        if new_percent > old_percent
+                            || gate.0.elapsed() >= Duration::from_millis(250)
+                        {
+                            *gate = (std::time::Instant::now(), completed_microseconds);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if persist {
+                        let progress_store = store_for_events.clone();
+                        let progress_job = job_for_events.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = progress_store
+                                .transition(
+                                    progress_job,
+                                    MediaJobTransition {
+                                        state: MediaJobState::Running,
+                                        stage: "render".to_owned(),
+                                        progress: MediaJobProgress {
+                                            completed: completed_microseconds,
+                                            total: duration_microseconds,
+                                            unit: MediaJobProgressUnit::Microseconds,
+                                        },
+                                        attempt: None,
+                                        error: None,
+                                        retry_at_ms: None,
+                                        result: None,
+                                        cancellation_requested: false,
+                                        event_type: MediaJobEventType::Progress,
+                                        message: None,
+                                        occurred_at_ms: current_timestamp_millis(),
+                                    },
+                                )
+                                .await;
+                        });
+                    }
+                }
+                compatibility_result
+            });
+            let request = RenderWorkerRequest {
+                validated,
+                overwrite,
+                app_cache_dir,
+                programs,
+                cancellation,
+                identity: identity.clone(),
+                events,
+            };
+            match execute_render_worker(&request).await {
+                Ok(output) => {
+                    if let Ok(mut lifecycle) = compatibility_lifecycle.lock() {
+                        lifecycle.pending_terminal = Some(identity.completed(output.clone()));
+                    }
+                    MediaWorkerOutcome::Complete {
+                        result: serde_json::to_value(output).unwrap_or(Value::Null),
+                        progress: MediaJobProgress {
+                            completed: request.validated.duration_microseconds,
+                            total: request.validated.duration_microseconds,
+                            unit: MediaJobProgressUnit::Microseconds,
+                        },
+                    }
+                }
+                Err(error) if error.code == VideoErrorCode::ProcessCancelled => {
+                    if let Ok(mut lifecycle) = compatibility_lifecycle.lock() {
+                        lifecycle.pending_terminal = Some(identity.cancelled());
+                    }
+                    MediaWorkerOutcome::Cancelled {
+                        progress: MediaJobProgress {
+                            completed: 0,
+                            total: request.validated.duration_microseconds,
+                            unit: MediaJobProgressUnit::Microseconds,
+                        },
+                    }
+                }
+                Err(error) => {
+                    if let Ok(mut lifecycle) = compatibility_lifecycle.lock() {
+                        lifecycle.pending_terminal = Some(identity.failed(error.clone()));
+                    }
+                    MediaWorkerOutcome::Failed {
+                        error: render_job_error(&error),
+                        progress: MediaJobProgress {
+                            completed: 0,
+                            total: request.validated.duration_microseconds,
+                            unit: MediaJobProgressUnit::Microseconds,
+                        },
+                    }
+                }
+            }
+        })
+    }
+
+    fn on_terminal(&self, outcome: MediaJobFinalOutcome) {
+        let event = {
+            let Ok(mut lifecycle) = self.compatibility_lifecycle.lock() else {
+                return;
+            };
+            if lifecycle.emitted {
+                return;
+            }
+            let event = match outcome {
+                MediaJobFinalOutcome::Cancelled => self.identity.cancelled(),
+                MediaJobFinalOutcome::Complete => {
+                    let Some(event @ VideoRenderEvent::Completed { .. }) =
+                        lifecycle.pending_terminal.take()
+                    else {
+                        return;
+                    };
+                    event
+                }
+                MediaJobFinalOutcome::Failed => {
+                    let Some(event @ VideoRenderEvent::Failed { .. }) =
+                        lifecycle.pending_terminal.take()
+                    else {
+                        return;
+                    };
+                    event
+                }
+            };
+            lifecycle.emitted = true;
+            event
+        };
+        let _ = (self.compatibility_events)(event);
+    }
+}
+
 #[tauri::command]
 pub async fn video_start_render<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
-    jobs: State<'_, VideoRenderJobs>,
+    jobs: State<'_, MediaJobService>,
     toolchain: State<'_, MediaToolchainState>,
     plan: Value,
     overwrite: bool,
@@ -305,48 +307,239 @@ pub async fn video_start_render<R: Runtime>(
         .path()
         .app_cache_dir()
         .map_err(|_| VideoCommandError::project_io("start_render", "app_cache"))?;
-    let validated = parse_and_validate_render_plan(plan, window.label(), &grants)?;
-    if !overwrite && validated.output_path.exists() {
-        return Err(VideoCommandError::output_exists("start_render"));
-    }
     toolchain
         .verified_programs()
         .await
         .map_err(|error| error.into_command_error("start_render"))?;
     let programs = MediaPrograms::bundled(toolchain.inner().clone());
-    let (identity, cancellation) = jobs.register(window.label(), &validated)?;
-    let response = VideoRenderStarted {
-        job_id: identity.job_id.clone(),
-        plan_id: identity.plan_id.clone(),
-        revision_id: identity.revision_id.clone(),
-    };
     let event_window = window.clone();
     let events: RenderEventSink = Arc::new(move |event| {
         event_window
             .emit(VIDEO_RENDER_EVENT, event)
             .map_err(|_| VideoCommandError::project_io("emit_render_event", "owner_window"))
     });
-    let _ = events(identity.started());
-    tauri::async_runtime::spawn(run_render_worker(RenderWorkerRequest {
-        validated,
-        overwrite,
-        app_cache_dir,
+    start_render_with_context(
+        window.label(),
+        &grants,
+        &jobs,
         programs,
-        cancellation,
-        identity,
-        jobs: jobs.inner().clone(),
+        app_cache_dir,
+        plan,
+        overwrite,
         events,
-    }));
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start_render_with_context(
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    app_cache_dir: PathBuf,
+    plan: Value,
+    overwrite: bool,
+    events: RenderEventSink,
+) -> Result<VideoRenderStarted, VideoCommandError> {
+    let validated = parse_and_validate_render_plan(plan, owner_label, grants)?;
+    if !overwrite && validated.output_path.exists() {
+        return Err(VideoCommandError::output_exists("start_render"));
+    }
+    let enqueued = jobs
+        .store()
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::FinalRender,
+            parent_id: None,
+            dedupe_key: render_dedupe_key(&validated, overwrite),
+            project_id: None,
+            asset_id: None,
+            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            priority: MediaJobPriority::Export,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: validated.duration_microseconds,
+                unit: MediaJobProgressUnit::Microseconds,
+            },
+            max_attempts: 3,
+            summary: "Export project revision".to_owned(),
+            private_payload: serde_json::json!({
+                "ownerLabel": owner_label,
+                "plan": validated.plan,
+                "overwrite": overwrite,
+                "outputAuthorizationPresent": true,
+            }),
+            created_at_ms: current_timestamp_millis(),
+        })
+        .await
+        .map_err(map_render_job_store_error)?;
+    let identity = RenderEventIdentity {
+        job_id: enqueued.job.id.clone(),
+        plan_id: validated.plan.plan_id.as_str().to_owned(),
+        revision_id: validated.plan.revision_id.as_str().to_owned(),
+    };
+    let response = VideoRenderStarted {
+        job_id: identity.job_id.clone(),
+        plan_id: identity.plan_id.clone(),
+        revision_id: identity.revision_id.clone(),
+    };
+    if enqueued.job.state == MediaJobState::Complete {
+        if let Some(output) = jobs
+            .store()
+            .get_private(enqueued.job.id.clone())
+            .await
+            .map_err(map_render_job_store_error)?
+            .result
+            .and_then(|value| serde_json::from_value::<VerifiedRenderOutput>(value).ok())
+        {
+            let _ = events(identity.completed(output));
+        }
+        return Ok(response);
+    }
+    if enqueued.job.state == MediaJobState::Blocked {
+        return Err(map_render_job_store_error(
+            MediaStateStoreError::InvalidTransition,
+        ));
+    }
+    let _ = events(identity.started());
+    if enqueued.job.state == MediaJobState::Queued {
+        jobs.scheduler()
+            .submit(
+                enqueued.job.id,
+                MediaJobPriority::Export,
+                enqueued.job.attempt,
+                enqueued.job.max_attempts,
+                SchedulerResource::Ffmpeg,
+                Arc::new(FinalRenderWorker {
+                    validated,
+                    overwrite,
+                    app_cache_dir,
+                    programs,
+                    identity,
+                    store: jobs.store().clone(),
+                    compatibility_events: events,
+                    compatibility_lifecycle: Arc::new(Mutex::new(
+                        RenderCompatibilityLifecycle::default(),
+                    )),
+                }),
+            )
+            .await
+            .map_err(map_render_job_store_error)?;
+    }
     Ok(response)
 }
 
 #[tauri::command]
-pub fn video_cancel_render<R: Runtime>(
+pub async fn video_cancel_render<R: Runtime>(
     window: WebviewWindow<R>,
-    jobs: State<'_, VideoRenderJobs>,
+    jobs: State<'_, MediaJobService>,
     job_id: String,
 ) -> Result<(), VideoCommandError> {
-    jobs.cancel(window.label(), &job_id)
+    cancel_render_for_owner(window.label(), &jobs, &job_id).await
+}
+
+pub(crate) async fn cancel_render_for_owner(
+    owner_label: &str,
+    jobs: &MediaJobService,
+    job_id: &str,
+) -> Result<(), VideoCommandError> {
+    let stored = match jobs.store().get_private(job_id.to_owned()).await {
+        Ok(stored) => stored,
+        Err(MediaStateStoreError::NotFound) => {
+            return Err(VideoCommandError::invalid_render_plan("unknown_job"));
+        }
+        Err(error) => return Err(map_render_job_store_error(error)),
+    };
+    let owner_matches = stored
+        .private_payload
+        .get("ownerLabel")
+        .and_then(Value::as_str)
+        .is_some_and(|owner| owner == owner_label);
+    if stored.public.kind != MediaJobKind::FinalRender || !owner_matches {
+        return Err(VideoCommandError::invalid_render_plan("unknown_job"));
+    }
+    if stored.public.state.is_terminal() {
+        return Ok(());
+    }
+    jobs.scheduler()
+        .cancel(job_id)
+        .await
+        .map_err(map_render_job_store_error)
+}
+
+pub(crate) fn render_dedupe_key(validated: &ValidatedRenderPlan, overwrite: bool) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"supa-video/final-render-job/v1");
+    hasher.update(serde_json::to_vec(&validated.plan).unwrap_or_else(|_| Vec::new()));
+    hasher.update([u8::from(overwrite)]);
+    let digest = hasher.finalize();
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    format!("final_render:{encoded}")
+}
+
+fn render_job_error(error: &VideoCommandError) -> MediaJobError {
+    if error.code == VideoErrorCode::ProjectIo
+        && error.details.get("outputExists").and_then(Value::as_bool) == Some(true)
+    {
+        return MediaJobError {
+            code: "render_preview_failed".to_owned(),
+            category: MediaJobErrorCategory::ProcessFailed,
+            message: "The export completed, but its preview could not be prepared.".to_owned(),
+            retryable: false,
+            action: None,
+        };
+    }
+    let (category, retryable, action, code, message) = match error.code {
+        VideoErrorCode::ToolUnavailable => (
+            MediaJobErrorCategory::ToolchainUnavailable,
+            false,
+            Some(MediaJobRecoveryAction::VerifyToolchain),
+            "toolchain_unavailable",
+            "The verified media tools are unavailable.",
+        ),
+        VideoErrorCode::ProcessFailed
+        | VideoErrorCode::ProcessTimeout
+        | VideoErrorCode::ProjectIo => (
+            MediaJobErrorCategory::ProcessFailed,
+            true,
+            Some(MediaJobRecoveryAction::Retry),
+            "render_process_failed",
+            "The export process failed.",
+        ),
+        VideoErrorCode::InvalidMedia | VideoErrorCode::InvalidRenderPlan => (
+            MediaJobErrorCategory::InvalidMedia,
+            false,
+            None,
+            "invalid_render",
+            "The export could not be validated.",
+        ),
+        _ => (
+            MediaJobErrorCategory::PolicyRejected,
+            false,
+            None,
+            "render_failed",
+            "The export could not continue.",
+        ),
+    };
+    MediaJobError {
+        code: code.to_owned(),
+        category,
+        message: message.to_owned(),
+        retryable,
+        action,
+    }
+}
+
+fn map_render_job_store_error(_error: MediaStateStoreError) -> VideoCommandError {
+    #[cfg(test)]
+    eprintln!("durable render job store error: {_error:?}");
+    VideoCommandError::project_io("render_job", "media_job_state")
 }
 
 pub(crate) fn parse_and_validate_render_plan(
@@ -603,19 +796,14 @@ pub(crate) struct RenderWorkerRequest {
     pub(crate) programs: MediaPrograms,
     pub(crate) cancellation: ProcessCancellation,
     pub(crate) identity: RenderEventIdentity,
-    pub(crate) jobs: VideoRenderJobs,
     pub(crate) events: RenderEventSink,
 }
 
+#[cfg(test)]
 pub(crate) async fn run_render_worker(request: RenderWorkerRequest) {
     let identity = request.identity.clone();
-    let jobs = request.jobs.clone();
     let events = request.events.clone();
-    let result = execute_render_worker(&request).await;
-    if jobs.settle(&identity.job_id).ok() != Some(true) {
-        return;
-    }
-    let event = match result {
+    let event = match execute_render_worker(&request).await {
         Ok(output) => identity.completed(output),
         Err(error) if error.code == VideoErrorCode::ProcessCancelled => identity.cancelled(),
         Err(error) => identity.failed(error),
@@ -633,15 +821,12 @@ async fn execute_render_worker(
         request.validated.duration_microseconds,
     )));
     let progress_for_observer = progress.clone();
-    let jobs_for_observer = request.jobs.clone();
     let cancellation_for_observer = request.cancellation.clone();
     let identity_for_observer = request.identity.clone();
     let events_for_observer = request.events.clone();
     let duration_microseconds = request.validated.duration_microseconds;
     let observer: StdoutRecordObserver = Arc::new(move |record| {
-        if cancellation_for_observer.is_cancelled()
-            || !jobs_for_observer.is_active(&identity_for_observer.job_id)
-        {
+        if cancellation_for_observer.is_cancelled() {
             return;
         }
         let completed = progress_for_observer
@@ -675,7 +860,6 @@ async fn execute_render_worker(
     .await?;
     validate_render_output(&partial_path, &inspected, &request.validated)?;
     promote_render_partial(partial, &request.validated.output_path, request.overwrite)?;
-    request.jobs.mark_committed(&request.identity.job_id)?;
 
     let preview_result = prepare_render_preview(
         &request.app_cache_dir,
