@@ -1420,6 +1420,37 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn packaged_media_programs() -> video::derived::MediaPrograms {
+        let resource_root = std::env::var_os(PACKAGED_MEDIA_RESOURCE_ROOT_ENV)
+            .map(PathBuf::from)
+            .expect("SVP_MEDIA_RESOURCE_ROOT must identify the assembled Tauri resource root");
+        let toolchain =
+            video::toolchain::MediaToolchain::resolve_from_resource_root(&resource_root);
+        assert_eq!(
+            toolchain.toolchain_id(),
+            "ffmpeg-8.1.2-gyan-essentials-windows-x86_64"
+        );
+        toolchain
+            .programs()
+            .expect("packaged Phase 3B toolchain must verify before media work");
+        video::derived::MediaPrograms::bundled(video::toolchain::MediaToolchainState::from_ready(
+            toolchain,
+        ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
+    fn packaged_phase3b_hierarchical_preparation_and_restart_boundaries() {
+        tauri::async_runtime::block_on(async {
+            video::tests::assert_durable_preparation_records(packaged_media_programs()).await;
+            video::tests::assert_durable_preparation_restart_boundaries(packaged_media_programs())
+                .await;
+        });
+    }
+
+
+    #[cfg(windows)]
     #[test]
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_media_ipc_status_probe_prepare_and_render_complete() {

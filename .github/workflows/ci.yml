@@ -296,6 +296,19 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Packaged render cancellation IPC integration failed"
             }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_phase3b_hierarchical_preparation_and_restart_boundaries `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged Phase 3B hierarchical preparation and all restart-boundary proof failed"
+            }
           }
           finally {
             $env:PATH = $originalPath
