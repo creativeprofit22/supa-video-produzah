@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
@@ -15,7 +16,7 @@ use tempfile::{Builder as TempFileBuilder, TempPath};
 use super::{
     derived::{duration_within_one_frame, MediaPrograms},
     error::{VideoCommandError, VideoErrorCode},
-    grants::{GrantCategory, VideoPathGrants},
+    grants::{normalize_existing_file, GrantCategory, VideoPathGrants},
     jobs::{
         current_timestamp_millis,
         model::{
@@ -117,6 +118,15 @@ pub(crate) struct ValidatedRenderPlan {
 struct RenderCompatibilityLifecycle {
     pending_terminal: Option<VideoRenderEvent>,
     emitted: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PersistedFinalRenderPayload {
+    owner_label: String,
+    plan: RenderPlanV1,
+    overwrite: bool,
+    output_authorization_present: bool,
 }
 
 struct FinalRenderWorker {
@@ -343,6 +353,28 @@ pub(crate) async fn start_render_with_context(
     events: RenderEventSink,
 ) -> Result<VideoRenderStarted, VideoCommandError> {
     let validated = parse_and_validate_render_plan(plan, owner_label, grants)?;
+    start_validated_render_with_context(
+        owner_label,
+        jobs,
+        programs,
+        app_cache_dir,
+        validated,
+        overwrite,
+        events,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn start_validated_render_with_context(
+    owner_label: &str,
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    app_cache_dir: PathBuf,
+    validated: ValidatedRenderPlan,
+    overwrite: bool,
+    events: RenderEventSink,
+) -> Result<VideoRenderStarted, VideoCommandError> {
     if !overwrite && validated.output_path.exists() {
         return Err(VideoCommandError::output_exists("start_render"));
     }
@@ -429,6 +461,93 @@ pub(crate) async fn start_render_with_context(
             .map_err(map_render_job_store_error)?;
     }
     Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn reauthorize_final_render_output_with_context(
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    app_cache_dir: PathBuf,
+    job_id: &str,
+    output_path: &str,
+    events: RenderEventSink,
+) -> Result<super::jobs::model::MediaJobRecord, VideoCommandError> {
+    let stored = jobs
+        .store()
+        .get_private(job_id.to_owned())
+        .await
+        .map_err(map_render_job_store_error)?;
+    let owner_matches = stored
+        .private_payload
+        .get("ownerLabel")
+        .and_then(Value::as_str)
+        .is_some_and(|owner| owner == owner_label);
+    if stored.public.kind != MediaJobKind::FinalRender || !owner_matches {
+        return Err(VideoCommandError::invalid_render_plan("unknown_job"));
+    }
+    let reauthorization_required = stored.public.state == MediaJobState::Blocked
+        && !stored.public.cancellation_requested
+        && stored.public.error.as_ref().is_some_and(|error| {
+            error.category == MediaJobErrorCategory::OutputAuthorizationRequired
+                && error.action == Some(MediaJobRecoveryAction::ReauthorizeOutput)
+        });
+    if !reauthorization_required {
+        return Err(VideoCommandError::invalid_render_plan(
+            "output_reauthorization_state",
+        ));
+    }
+
+    let payload: PersistedFinalRenderPayload =
+        serde_json::from_value(stored.private_payload.clone())
+            .map_err(|_| VideoCommandError::invalid_render_plan("persisted_payload"))?;
+    if payload.owner_label != owner_label
+        || !payload.output_authorization_present
+        || stored.public.revision_id.as_deref() != Some(payload.plan.revision_id.as_str())
+    {
+        return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
+    }
+    if output_path != payload.plan.output_path {
+        return Err(VideoCommandError::invalid_render_plan(
+            "output_path_mismatch",
+        ));
+    }
+    remove_owned_render_partial(&payload.plan)?;
+    let authorized_output = grants
+        .authorize(owner_label, GrantCategory::Output, Path::new(output_path))
+        .map_err(|_| VideoCommandError::invalid_render_plan("output_grant"))?;
+    if authorized_output.to_string_lossy() != payload.plan.output_path {
+        return Err(VideoCommandError::invalid_render_plan(
+            "output_path_normalization",
+        ));
+    }
+
+    let plan_id = payload.plan.plan_id.as_str().to_owned();
+    let revision_id = payload.plan.revision_id.as_str().to_owned();
+    let validated = validate_persisted_render_plan(payload.plan, owner_label, grants)?;
+    if stored.dedupe_key != render_dedupe_key(&validated, payload.overwrite) {
+        return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
+    }
+    let started = start_validated_render_with_context(
+        owner_label,
+        jobs,
+        programs,
+        app_cache_dir,
+        validated,
+        payload.overwrite,
+        events,
+    )
+    .await?;
+    if started.job_id != job_id || started.plan_id != plan_id || started.revision_id != revision_id
+    {
+        return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
+    }
+    jobs.store()
+        .get_private(job_id.to_owned())
+        .await
+        .map(|stored| stored.public)
+        .map_err(map_render_job_store_error)
 }
 
 #[tauri::command]
@@ -557,6 +676,33 @@ pub(crate) fn validate_render_plan(
     owner_label: &str,
     grants: &VideoPathGrants,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
+    let requested_input = Path::new(&plan.input_path);
+    let input_path = grants
+        .authorize(owner_label, GrantCategory::Source, requested_input)
+        .map_err(|_| VideoCommandError::invalid_render_plan("input_grant"))?;
+    validate_render_plan_with_input(plan, owner_label, grants, input_path)
+}
+
+fn validate_persisted_render_plan(
+    plan: RenderPlanV1,
+    owner_label: &str,
+    grants: &VideoPathGrants,
+) -> Result<ValidatedRenderPlan, VideoCommandError> {
+    let input_path = normalize_existing_file(
+        Path::new(&plan.input_path),
+        "reauthorize_render",
+        GrantCategory::Source,
+    )
+    .map_err(|_| VideoCommandError::invalid_render_plan("persisted_input"))?;
+    validate_render_plan_with_input(plan, owner_label, grants, input_path)
+}
+
+fn validate_render_plan_with_input(
+    plan: RenderPlanV1,
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    input_path: PathBuf,
+) -> Result<ValidatedRenderPlan, VideoCommandError> {
     if plan.schema_version != 1 {
         return Err(VideoCommandError::invalid_render_plan("schema_version"));
     }
@@ -566,11 +712,7 @@ pub(crate) fn validate_render_plan(
     validate_expectation(&plan)?;
     validate_argument_text(&plan)?;
 
-    let requested_input = Path::new(&plan.input_path);
     let requested_output = Path::new(&plan.output_path);
-    let input_path = grants
-        .authorize(owner_label, GrantCategory::Source, requested_input)
-        .map_err(|_| VideoCommandError::invalid_render_plan("input_grant"))?;
     let output_path = grants
         .authorize(owner_label, GrantCategory::Output, requested_output)
         .map_err(|_| VideoCommandError::invalid_render_plan("output_grant"))?;
@@ -875,6 +1017,29 @@ async fn execute_render_worker(
         preview_path: preview_path.to_string_lossy().into_owned(),
         probe: preview_probe.probe,
     })
+}
+
+fn remove_owned_render_partial(plan: &RenderPlanV1) -> Result<(), VideoCommandError> {
+    let output_path = Path::new(&plan.output_path);
+    let parent = output_path
+        .parent()
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("partial_parent"))?;
+    let partial = parent.join(format!(".svp-part-{}.mp4", plan.plan_id.as_str()));
+    if partial.parent() != Some(parent) || paths_equal(&partial, output_path) {
+        return Err(VideoCommandError::invalid_render_plan(
+            "partial_containment",
+        ));
+    }
+    match fs::symlink_metadata(&partial) {
+        Ok(metadata) if metadata.file_type().is_file() => fs::remove_file(partial)
+            .map_err(|_| VideoCommandError::project_io("reauthorize_render", "partial_cleanup")),
+        Ok(_) => Err(VideoCommandError::invalid_render_plan("partial_shape")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(VideoCommandError::project_io(
+            "reauthorize_render",
+            "partial_cleanup",
+        )),
+    }
 }
 
 pub(crate) fn create_owned_partial(path: &Path) -> Result<TempPath, VideoCommandError> {

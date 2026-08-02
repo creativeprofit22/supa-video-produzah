@@ -9,6 +9,7 @@ import {
   mediaJobProgressSchema,
   mediaJobRecordSchema,
   mediaJobRecoveryReportSchema,
+  reauthorizeMediaJobOutputRequestSchema,
 } from "./jobs.js";
 
 const timestamp = "2026-07-27T12:00:00.000Z";
@@ -201,6 +202,25 @@ describe("media job contracts", () => {
       ).toThrow();
     }
     expect(() => mediaJobActionRequestSchema.parse({ jobId, force: true })).toThrow();
+    expect(
+      reauthorizeMediaJobOutputRequestSchema.parse({
+        jobId,
+        outputPath: "C:\\Exports\\launch.mp4",
+      }),
+    ).toEqual({ jobId, outputPath: "C:\\Exports\\launch.mp4" });
+    expect(() =>
+      reauthorizeMediaJobOutputRequestSchema.parse({
+        jobId,
+        outputPath: "relative.mp4",
+      }),
+    ).toThrow();
+    expect(() =>
+      reauthorizeMediaJobOutputRequestSchema.parse({
+        jobId,
+        outputPath: "C:\\Exports\\launch.mp4",
+        planId: jobId,
+      }),
+    ).toThrow();
   });
 
   it("accepts bounded list, event, and recovery envelopes", () => {

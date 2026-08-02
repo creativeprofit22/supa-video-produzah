@@ -40,6 +40,7 @@ import {
   mediaJobListSchema,
   prepareVideoAssetRequestSchema,
   preparedVideoAssetSchema,
+  reauthorizeMediaJobOutputRequestSchema,
 } from "@supa-video/media";
 import type {
   ClearLegacyMediaCacheRequest,
@@ -55,6 +56,7 @@ import type {
   MediaJobList,
   PreparedVideoAsset,
   PrepareVideoAssetRequest,
+  ReauthorizeMediaJobOutputRequest,
 } from "@supa-video/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -260,6 +262,16 @@ export async function retryMediaJob(
   return parseResponse(mediaJobActionResponseSchema.safeParse(response));
 }
 
+export async function reauthorizeMediaJobOutput(
+  request: ReauthorizeMediaJobOutputRequest,
+): Promise<MediaJobActionResponse> {
+  const validated = reauthorizeMediaJobOutputRequestSchema.parse(request);
+  const response = await invokeVideoCommand("video_reauthorize_media_job_output", {
+    request: validated,
+  });
+  return parseResponse(mediaJobActionResponseSchema.safeParse(response));
+}
+
 export async function getMediaCacheStatus(
   request: GetMediaCacheStatusRequest = {},
 ): Promise<MediaCacheStatus> {
@@ -356,6 +368,7 @@ export interface VideoBackend {
   readonly getMediaJobEvents: typeof getMediaJobEvents;
   readonly cancelMediaJob: typeof cancelMediaJob;
   readonly retryMediaJob: typeof retryMediaJob;
+  readonly reauthorizeMediaJobOutput: typeof reauthorizeMediaJobOutput;
   readonly getMediaCacheStatus: typeof getMediaCacheStatus;
   readonly clearLegacyMediaCache: typeof clearLegacyMediaCache;
   readonly listenMediaJobEvents: typeof listenMediaJobEvents;
@@ -384,6 +397,7 @@ export const tauriVideoBackend: VideoBackend = {
   getMediaJobEvents,
   cancelMediaJob,
   retryMediaJob,
+  reauthorizeMediaJobOutput,
   getMediaCacheStatus,
   clearLegacyMediaCache,
   listenMediaJobEvents,

@@ -1,5 +1,8 @@
 import type { CommandGroupRequest, ProjectProjection, RecoveryReport } from "@supa-video/contracts";
-import { listMediaJobsRequestSchema } from "@supa-video/media";
+import {
+  listMediaJobsRequestSchema,
+  reauthorizeMediaJobOutputRequestSchema,
+} from "@supa-video/media";
 import type {
   MediaCacheStatus,
   MediaJobEvent,
@@ -415,8 +418,16 @@ export function createMockVideoService(
         hasMore: matching.length > request.limit,
       };
     }
-    if (command === "video_cancel_media_job" || command === "video_retry_media_job") {
-      const { jobId } = (args as { request: { jobId: string } }).request;
+    if (
+      command === "video_cancel_media_job" ||
+      command === "video_retry_media_job" ||
+      command === "video_reauthorize_media_job_output"
+    ) {
+      const request = (args as { request: unknown }).request;
+      const { jobId } =
+        command === "video_reauthorize_media_job_output"
+          ? reauthorizeMediaJobOutputRequestSchema.parse(request)
+          : (request as { jobId: string });
       const current = mediaJobs.find((job) => job.id === jobId);
       if (current === undefined) throw new Error("Unknown mock media job");
       const eventId = (mediaEvents.at(-1)?.eventId ?? 0) + 1;

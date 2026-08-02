@@ -1,4 +1,4 @@
-import { projectUuidSchema } from "@supa-video/contracts";
+import { absoluteNativePathSchema, projectUuidSchema } from "@supa-video/contracts";
 import { z } from "zod";
 
 const safeNonNegativeIntegerSchema = z.number().int().safe().nonnegative();
@@ -326,6 +326,16 @@ export type MediaJobEventList = z.infer<typeof mediaJobEventListSchema>;
 
 export const mediaJobActionRequestSchema = z.object({ jobId: projectUuidSchema }).strict();
 export type MediaJobActionRequest = z.infer<typeof mediaJobActionRequestSchema>;
+
+export const reauthorizeMediaJobOutputRequestSchema = z
+  .object({
+    jobId: projectUuidSchema,
+    outputPath: absoluteNativePathSchema,
+  })
+  .strict();
+export type ReauthorizeMediaJobOutputRequest = z.infer<
+  typeof reauthorizeMediaJobOutputRequestSchema
+>;
 
 export const mediaJobActionResponseSchema = z
   .object({ schemaVersion: z.literal(1), job: mediaJobRecordSchema })

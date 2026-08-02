@@ -23,6 +23,7 @@ import {
   listMediaJobs,
   openVideoProject,
   redoVideoProject,
+  reauthorizeMediaJobOutput,
   relinkVideoProjectAsset,
   retryMediaJob,
   startVideoRender,
@@ -302,6 +303,7 @@ describe("strict V2 video IPC adapter", () => {
         hasMore: false,
       })
       .mockResolvedValueOnce({ schemaVersion: 1, job: testMediaJob })
+      .mockResolvedValueOnce({ schemaVersion: 1, job: testMediaJob })
       .mockResolvedValueOnce({ schemaVersion: 1, job: testMediaJob });
 
     await expect(listMediaJobs()).resolves.toMatchObject({
@@ -323,11 +325,21 @@ describe("strict V2 video IPC adapter", () => {
     });
     await cancelMediaJob({ jobId: testMediaJob.id });
     await retryMediaJob({ jobId: testMediaJob.id });
+    await reauthorizeMediaJobOutput({
+      jobId: testMediaJob.id,
+      outputPath: "C:\\Exports\\launch.mp4",
+    });
     expect(invokeMock).toHaveBeenNthCalledWith(3, "video_cancel_media_job", {
       request: { jobId: testMediaJob.id },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(4, "video_retry_media_job", {
       request: { jobId: testMediaJob.id },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "video_reauthorize_media_job_output", {
+      request: {
+        jobId: testMediaJob.id,
+        outputPath: "C:\\Exports\\launch.mp4",
+      },
     });
   });
 

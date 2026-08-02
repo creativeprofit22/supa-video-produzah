@@ -96,6 +96,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::jobs::ipc::video_get_media_job_events,
             video::jobs::ipc::video_cancel_media_job,
             video::jobs::ipc::video_retry_media_job,
+            video::jobs::ipc::video_reauthorize_media_job_output,
             video::jobs::ipc::video_get_media_cache_status,
             video::jobs::ipc::video_clear_legacy_media_cache,
         ])

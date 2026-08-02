@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
-use tauri::{Runtime, State, WebviewWindow};
+use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 
 use crate::video::{
-    derived::MediaPrograms, error::VideoCommandError, toolchain::MediaToolchainState,
+    derived::MediaPrograms,
+    error::VideoCommandError,
+    grants::VideoPathGrants,
+    render::{reauthorize_final_render_output_with_context, RenderEventSink, VIDEO_RENDER_EVENT},
+    toolchain::MediaToolchainState,
+    types::is_recognizable_absolute_path,
 };
 
 use super::{
@@ -60,6 +65,13 @@ pub(crate) struct MediaJobEventListResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaJobActionRequest {
     job_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ReauthorizeMediaJobOutputRequest {
+    job_id: String,
+    output_path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -205,6 +217,53 @@ pub(crate) async fn video_retry_media_job<R: Runtime>(
 }
 
 #[tauri::command]
+pub(crate) async fn video_reauthorize_media_job_output<R: Runtime>(
+    window: WebviewWindow<R>,
+    grants: State<'_, VideoPathGrants>,
+    jobs: State<'_, MediaJobService>,
+    toolchain: State<'_, MediaToolchainState>,
+    request: ReauthorizeMediaJobOutputRequest,
+) -> Result<MediaJobActionResponse, VideoCommandError> {
+    let job_id = uuid::Uuid::parse_str(&request.job_id)
+        .map_err(|_| job_error("reauthorize_job_id"))?
+        .to_string();
+    if !is_recognizable_absolute_path(&request.output_path) {
+        return Err(job_error("reauthorize_output_path"));
+    }
+    let app_cache_dir = window
+        .app_handle()
+        .path()
+        .app_cache_dir()
+        .map_err(|_| job_error("app_cache"))?;
+    toolchain
+        .verified_programs()
+        .await
+        .map_err(|error| error.into_command_error("reauthorize_render"))?;
+    let programs = MediaPrograms::bundled(toolchain.inner().clone());
+    let event_window = window.clone();
+    let events: RenderEventSink = std::sync::Arc::new(move |event| {
+        event_window
+            .emit(VIDEO_RENDER_EVENT, event)
+            .map_err(|_| VideoCommandError::project_io("emit_render_event", "owner_window"))
+    });
+    let job = reauthorize_final_render_output_with_context(
+        window.label(),
+        &grants,
+        &jobs,
+        programs,
+        app_cache_dir,
+        &job_id,
+        &request.output_path,
+        events,
+    )
+    .await?;
+    Ok(MediaJobActionResponse {
+        schema_version: 1,
+        job,
+    })
+}
+
+#[tauri::command]
 pub(crate) async fn video_get_media_cache_status(
     jobs: State<'_, MediaJobService>,
 ) -> Result<MediaCacheStatus, VideoCommandError> {
@@ -260,6 +319,24 @@ fn job_error(category: &'static str) -> VideoCommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_reauthorization_request_is_strict_and_matches_the_shared_contract() {
+        let request = serde_json::json!({
+            "jobId": "70000000-0000-4000-8000-000000000095",
+            "outputPath": "C:\\Exports\\launch.mp4"
+        });
+        let parsed: ReauthorizeMediaJobOutputRequest =
+            serde_json::from_value(request.clone()).expect("strict request must deserialize");
+        assert_eq!(serde_json::to_value(parsed).unwrap(), request);
+
+        let mut unknown = request.clone();
+        unknown["planId"] = serde_json::json!("70000000-0000-4000-8000-000000000096");
+        assert!(serde_json::from_value::<ReauthorizeMediaJobOutputRequest>(unknown).is_err());
+        let mut missing = request;
+        missing.as_object_mut().unwrap().remove("outputPath");
+        assert!(serde_json::from_value::<ReauthorizeMediaJobOutputRequest>(missing).is_err());
+    }
 
     #[test]
     fn shared_list_fixture_has_strict_ipc_dto_parity_and_rejects_half_cursors() {

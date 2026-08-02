@@ -38,7 +38,8 @@ use super::{
         current_timestamp_millis,
         model::{
             MediaJobError, MediaJobErrorCategory, MediaJobEventType, MediaJobKind,
-            MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobState,
+            MediaJobPriority, MediaJobProgress, MediaJobProgressUnit, MediaJobRecoveryAction,
+            MediaJobState,
         },
         scheduler::{MediaJobWorker, MediaWorkerFuture, MediaWorkerOutcome, SchedulerResource},
         store::{MediaJobStore, MediaJobTransition, NewMediaJob},
@@ -69,9 +70,9 @@ use super::{
     render::{
         cancel_render_for_owner, create_owned_partial, ensure_preview_directory,
         map_render_preview_failure, parse_and_validate_render_plan, partial_render_path,
-        promote_render_partial, render_dedupe_key, render_execution_arguments, run_render_worker,
-        start_render_with_context, validate_render_output, RenderEventSink, RenderProgress,
-        RenderWorkerRequest,
+        promote_render_partial, reauthorize_final_render_output_with_context, render_dedupe_key,
+        render_execution_arguments, run_render_worker, validate_render_output, RenderEventSink,
+        RenderProgress, RenderWorkerRequest,
     },
     toolchain::{
         MediaToolchain, MediaToolchainError, MediaToolchainInspection, MediaToolchainProblem,
@@ -3254,13 +3255,16 @@ fn validated_system_render_fixture(
     .expect("integration render plan must validate")
 }
 
-fn registered_system_render_worker(
+fn registered_render_worker(
     validated: super::render::ValidatedRenderPlan,
     overwrite: bool,
     app_cache_dir: PathBuf,
+    programs: MediaPrograms,
 ) -> (RenderWorkerRequest, Arc<Mutex<Vec<VideoRenderEvent>>>) {
+    let durable_job_id = uuid::Uuid::new_v4().to_string();
+    assert_ne!(durable_job_id, validated.plan.plan_id.as_str());
     let identity = super::render::RenderEventIdentity {
-        job_id: validated.plan.plan_id.as_str().to_owned(),
+        job_id: durable_job_id,
         plan_id: validated.plan.plan_id.as_str().to_owned(),
         revision_id: validated.plan.revision_id.as_str().to_owned(),
     };
@@ -3278,7 +3282,7 @@ fn registered_system_render_worker(
         validated,
         overwrite,
         app_cache_dir,
-        programs: MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        programs,
         cancellation: ProcessCancellation::new(),
         identity,
         events,
@@ -3331,27 +3335,164 @@ fn assert_worker_event_order(events: &[VideoRenderEvent]) {
     );
 }
 
-async fn probe_and_validate_system_render(
+async fn probe_and_validate_render(
     path: &Path,
     validated: &super::render::ValidatedRenderPlan,
+    programs: &MediaPrograms,
     operation: &'static str,
 ) -> InspectedMedia {
     let inspected = probe_trusted_media_with_program(
         path,
-        OsString::from("ffprobe"),
+        programs
+            .verified_ffprobe(operation)
+            .await
+            .expect("render FFprobe program must verify"),
         ProcessCancellation::new(),
         operation,
     )
     .await
-    .expect("render artifact must probe through the supervised system FFprobe");
+    .expect("render artifact must probe through the supervised FFprobe program");
     validate_render_output(path, &inspected, validated)
         .expect("render artifact must satisfy the worker's verified output contract");
     inspected
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn final_render_restart_reauthorization_requeues_same_job_and_completes_once() {
+async fn final_render_output_reauthorization_rejects_owner_state_path_and_missing_grant() {
+    const OWNER: &str = "owner";
+    let workspace = tempdir().expect("reauthorization rejection workspace must be created");
+    let app_cache_dir = workspace.path().join("app-cache");
+    let (_, validated) = validated_render_fixture(workspace.path(), true, RENDER_PLAN_ID);
+    let jobs =
+        MediaJobService::initialize(workspace.path().join("local-data"), app_cache_dir.clone())
+            .await
+            .expect("reauthorization rejection jobs must initialize");
+    let created_at_ms = current_timestamp_millis();
+    let queued = jobs
+        .store()
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::FinalRender,
+            parent_id: None,
+            dedupe_key: render_dedupe_key(&validated, false),
+            project_id: None,
+            asset_id: None,
+            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            priority: MediaJobPriority::Export,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: validated.duration_microseconds,
+                unit: MediaJobProgressUnit::Microseconds,
+            },
+            max_attempts: 3,
+            summary: "Export project revision".to_owned(),
+            private_payload: serde_json::json!({
+                "ownerLabel": OWNER,
+                "plan": validated.plan.clone(),
+                "overwrite": false,
+                "outputAuthorizationPresent": true,
+            }),
+            created_at_ms,
+        })
+        .await
+        .expect("queued render rejection fixture must persist")
+        .job;
+    let fresh_grants = VideoPathGrants::default();
+    let events: RenderEventSink = Arc::new(|_| Ok(()));
+    let programs = MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
+    let output_path = validated.output_path.to_string_lossy().into_owned();
+
+    let wrong_owner = reauthorize_final_render_output_with_context(
+        "another-owner",
+        &fresh_grants,
+        &jobs,
+        programs.clone(),
+        app_cache_dir.clone(),
+        &queued.id,
+        &output_path,
+        events.clone(),
+    )
+    .await
+    .expect_err("another owner must not reauthorize the render");
+    assert_eq!(wrong_owner.details["category"], "unknown_job");
+
+    let wrong_state = reauthorize_final_render_output_with_context(
+        OWNER,
+        &fresh_grants,
+        &jobs,
+        programs.clone(),
+        app_cache_dir.clone(),
+        &queued.id,
+        &output_path,
+        events.clone(),
+    )
+    .await
+    .expect_err("a queued render must not accept output reauthorization");
+    assert_eq!(
+        wrong_state.details["category"],
+        "output_reauthorization_state"
+    );
+
+    jobs.store()
+        .transition(
+            queued.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Blocked,
+                stage: "authorization".to_owned(),
+                progress: queued.progress.clone(),
+                attempt: Some(queued.attempt),
+                error: Some(MediaJobError {
+                    code: "output_authorization_required".to_owned(),
+                    category: MediaJobErrorCategory::OutputAuthorizationRequired,
+                    message: "Choose the export destination again to continue.".to_owned(),
+                    retryable: false,
+                    action: Some(MediaJobRecoveryAction::ReauthorizeOutput),
+                }),
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: Some("Output authorization is required.".to_owned()),
+                occurred_at_ms: current_timestamp_millis(),
+            },
+        )
+        .await
+        .expect("render rejection fixture must become blocked");
+
+    let path_mismatch = reauthorize_final_render_output_with_context(
+        OWNER,
+        &fresh_grants,
+        &jobs,
+        programs.clone(),
+        app_cache_dir.clone(),
+        &queued.id,
+        &workspace.path().join("different.mp4").to_string_lossy(),
+        events.clone(),
+    )
+    .await
+    .expect_err("a different destination must not mutate the durable plan");
+    assert_eq!(path_mismatch.details["category"], "output_path_mismatch");
+
+    let missing_grant = reauthorize_final_render_output_with_context(
+        OWNER,
+        &fresh_grants,
+        &jobs,
+        programs,
+        app_cache_dir,
+        &queued.id,
+        &output_path,
+        events,
+    )
+    .await
+    .expect_err("the persisted destination needs a fresh owner grant");
+    assert_eq!(missing_grant.details["category"], "output_grant");
+    jobs.shutdown()
+        .await
+        .expect("reauthorization rejection jobs must shut down");
+}
+
+pub(crate) async fn assert_final_render_restart_reauthorization(programs: MediaPrograms) {
     let workspace = tempdir().expect("restart recovery workspace must be created");
     let local_data_dir = workspace.path().join("local-data");
     let app_cache_dir = workspace.path().join("app-cache");
@@ -3362,7 +3503,8 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
         RENDER_RESTART_PLAN_ID,
         CANONICAL_RENDER_PROFILE,
     );
-    let plan = serde_json::to_value(&validated.plan).expect("restart render plan must serialize");
+    let persisted_plan_id = validated.plan.plan_id.as_str().to_owned();
+    let persisted_revision_id = validated.plan.revision_id.as_str().to_owned();
     let created_at_ms = current_timestamp_millis();
     let store = MediaJobStore::initialize(local_data_dir.clone())
         .await
@@ -3387,7 +3529,7 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
             summary: "Export project revision".to_owned(),
             private_payload: serde_json::json!({
                 "ownerLabel": RENDER_INTEGRATION_OWNER,
-                "plan": validated.plan,
+                "plan": validated.plan.clone(),
                 "overwrite": false,
                 "outputAuthorizationPresent": true,
             }),
@@ -3420,6 +3562,10 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
         .await
         .expect("initial render must enter running state");
     drop(store);
+    let partial_path =
+        partial_render_path(&validated).expect("interrupted render partial path must derive");
+    fs::write(&partial_path, b"interrupted render bytes")
+        .expect("interrupted render partial must exist before restart");
 
     let jobs = MediaJobService::initialize(local_data_dir, app_cache_dir.clone())
         .await
@@ -3443,13 +3589,6 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
 
     let fresh_grants = VideoPathGrants::default();
     fresh_grants
-        .grant_existing_file(
-            RENDER_INTEGRATION_OWNER,
-            GrantCategory::Source,
-            &validated.input_path,
-        )
-        .expect("restarted render source must receive fresh authorization");
-    fresh_grants
         .grant_destination(
             RENDER_INTEGRATION_OWNER,
             GrantCategory::Output,
@@ -3466,19 +3605,36 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
         Ok(())
     });
 
-    let restarted = start_render_with_context(
+    let restarted = reauthorize_final_render_output_with_context(
         RENDER_INTEGRATION_OWNER,
         &fresh_grants,
         &jobs,
-        MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+        programs,
         app_cache_dir,
-        plan,
-        false,
+        &initial.id,
+        &validated.output_path.to_string_lossy(),
         events,
     )
     .await
-    .expect("freshly authorized render-start path must resume the durable job");
-    assert_eq!(restarted.job_id, initial.id);
+    .expect("freshly authorized Job Center path must resume the durable job");
+    assert!(
+        !partial_path.exists(),
+        "fresh output authorization must remove the prior process partial before retry"
+    );
+    assert_eq!(restarted.id, initial.id);
+    assert_eq!(
+        restarted.revision_id.as_deref(),
+        Some(persisted_revision_id.as_str())
+    );
+    let refreshed_payload = jobs
+        .store()
+        .get_private(initial.id.clone())
+        .await
+        .expect("reauthorized durable payload must remain readable");
+    assert_eq!(
+        refreshed_payload.private_payload["plan"]["planId"],
+        persisted_plan_id
+    );
     jobs.scheduler().wait_idle().await;
 
     let completed = jobs
@@ -3521,7 +3677,15 @@ async fn final_render_restart_reauthorization_requeues_same_job_and_completes_on
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events() {
+async fn final_render_restart_reauthorization_requeues_same_job_and_completes_once() {
+    assert_final_render_restart_reauthorization(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
+}
+
+pub(crate) async fn assert_render_worker_exports(programs: MediaPrograms) {
     let source = canonical_media_fixture();
     for (audio, plan_id) in [
         (true, RENDER_AV_PLAN_ID),
@@ -3535,10 +3699,11 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
             plan_id,
             CANONICAL_RENDER_PROFILE,
         );
-        let (request, captured) = registered_system_render_worker(
+        let (request, captured) = registered_render_worker(
             validated.clone(),
             false,
             workspace.path().join("app-cache"),
+            programs.clone(),
         );
 
         run_render_worker(request).await;
@@ -3554,15 +3719,17 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
             validated.output_path.to_string_lossy()
         );
         let preview_path = PathBuf::from(&completed.preview_path);
-        let final_inspected = probe_and_validate_system_render(
+        let final_inspected = probe_and_validate_render(
             &validated.output_path,
             &validated,
+            &programs,
             "probe_render_final_integration",
         )
         .await;
-        let preview_inspected = probe_and_validate_system_render(
+        let preview_inspected = probe_and_validate_render(
             &preview_path,
             &validated,
+            &programs,
             "probe_render_preview_integration",
         )
         .await;
@@ -3585,7 +3752,15 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
+async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verified_events() {
+    assert_render_worker_exports(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
+}
+
+pub(crate) async fn assert_render_worker_collision(programs: MediaPrograms) {
     let workspace = tempdir().expect("render collision workspace must be created");
     let validated = validated_system_render_fixture(
         workspace.path(),
@@ -3597,10 +3772,11 @@ async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
     let preserved = b"pre-existing export must survive";
     fs::write(&validated.output_path, preserved).expect("collision destination must be written");
     let partial_path = partial_render_path(&validated).expect("partial path must derive");
-    let (request, captured) = registered_system_render_worker(
+    let (request, captured) = registered_render_worker(
         validated.clone(),
         false,
         workspace.path().join("app-cache"),
+        programs,
     );
 
     run_render_worker(request).await;
@@ -3630,7 +3806,17 @@ async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
     );
 }
 
-fn create_long_canonical_render_source(destination: &Path) {
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn render_worker_local_ffmpeg_preserves_no_overwrite_collision() {
+    assert_render_worker_collision(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
+}
+
+async fn create_long_canonical_render_source(destination: &Path, programs: &MediaPrograms) {
     let source = canonical_media_fixture();
     let mut args = vec![
         OsString::from("-hide_banner"),
@@ -3664,15 +3850,25 @@ fn create_long_canonical_render_source(destination: &Path) {
         OsString::from("+faststart"),
     ];
     args.push(destination.as_os_str().to_owned());
-    run_local_ffmpeg(args);
+    let ffmpeg = programs
+        .verified_ffmpeg("create_long_render_source")
+        .await
+        .expect("long render source FFmpeg must verify");
+    run_derived_ffmpeg(
+        ffmpeg,
+        args,
+        "create_long_render_source",
+        Duration::from_secs(120),
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("long render source must be generated");
 }
 
-#[tokio::test(flavor = "current_thread")]
-#[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partial_once() {
+pub(crate) async fn assert_render_worker_cancellation(programs: MediaPrograms) {
     let workspace = tempdir().expect("render cancellation workspace must be created");
     let long_source = workspace.path().join("long-canonical-source.mp4");
-    create_long_canonical_render_source(&long_source);
+    create_long_canonical_render_source(&long_source, &programs).await;
     let validated = validated_system_render_fixture(
         workspace.path(),
         &long_source,
@@ -3682,8 +3878,12 @@ async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partia
     );
     let output_path = validated.output_path.clone();
     let partial_path = partial_render_path(&validated).expect("partial path must derive");
-    let (request, captured) =
-        registered_system_render_worker(validated, false, workspace.path().join("app-cache"));
+    let (request, captured) = registered_render_worker(
+        validated,
+        false,
+        workspace.path().join("app-cache"),
+        programs,
+    );
     let cancellation = request.cancellation.clone();
     let worker = tokio::spawn(run_render_worker(request));
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
@@ -3753,6 +3953,16 @@ async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partia
         events.len(),
         "no event may arrive after the cancelled terminal event"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn render_worker_local_ffmpeg_cancellation_reaps_process_and_cleans_partial_once() {
+    assert_render_worker_cancellation(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
 }
 
 const PROCESS_HELPER_MODE_ENV: &str = "SUPA_VIDEO_PROCESS_HELPER_MODE";
@@ -4410,8 +4620,22 @@ async fn local_ffmpeg_status_and_canonical_probe_match_fixture() {
 }
 
 async fn derived_probe_thumbnail_shape(path: &Path) -> Value {
+    derived_probe_thumbnail_shape_with_programs(
+        path,
+        &MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+    )
+    .await
+}
+
+async fn derived_probe_thumbnail_shape_with_programs(
+    path: &Path,
+    programs: &MediaPrograms,
+) -> Value {
     let spec = ProcessSpec {
-        program: OsString::from("ffprobe"),
+        program: programs
+            .verified_ffprobe("probe_thumbnail_integration")
+            .await
+            .expect("thumbnail FFprobe must verify"),
         args: vec![
             OsString::from("-v"),
             OsString::from("error"),
@@ -4448,7 +4672,13 @@ fn run_local_ffmpeg(args: Vec<OsString>) {
     );
 }
 
-fn write_thumbnail_image(path: &Path, codec: &str, width: u64, height: u64) {
+async fn write_thumbnail_image_with_programs(
+    path: &Path,
+    codec: &str,
+    width: u64,
+    height: u64,
+    programs: &MediaPrograms,
+) {
     let source = format!("color=c=black:s={width}x{height}");
     let mut args: Vec<OsString> = [
         "-hide_banner",
@@ -4471,7 +4701,19 @@ fn write_thumbnail_image(path: &Path, codec: &str, width: u64, height: u64) {
     .map(OsString::from)
     .collect();
     args.push(path.as_os_str().to_owned());
-    run_local_ffmpeg(args);
+    let ffmpeg = programs
+        .verified_ffmpeg("write_thumbnail_integration")
+        .await
+        .expect("thumbnail FFmpeg must verify");
+    run_derived_ffmpeg(
+        ffmpeg,
+        args,
+        "write_thumbnail_integration",
+        Duration::from_secs(30),
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("thumbnail test image must be generated");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -4953,7 +5195,8 @@ async fn assert_preparation_restart_boundary(boundary: PreparationCrashBoundary)
         .store()
         .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
         .await
-        .expect("recovered preparation records must list");
+        .expect("recovered preparation records must list")
+        .jobs;
     assert_eq!(
         records.len(),
         3,
@@ -5012,9 +5255,7 @@ async fn restart_safe_preparation_requeues_interrupted_proxy_execution() {
     assert_preparation_restart_boundary(PreparationCrashBoundary::DuringProxyExecution).await;
 }
 
-#[tokio::test(flavor = "current_thread")]
-#[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries() {
+pub(crate) async fn assert_durable_preparation_restart_boundaries(programs: MediaPrograms) {
     let workspace = tempdir().expect("system restart workspace must be created");
     let source = canonical_media_fixture();
     for (index, boundary) in [
@@ -5047,7 +5288,7 @@ async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries()
             },
             &grants,
             &cache_root,
-            &MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
+            &programs,
         )
         .await
         .expect("system restart plan must prepare");
@@ -5061,19 +5302,17 @@ async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries()
         let jobs = MediaJobService::initialize(local_data_dir, cache_root)
             .await
             .expect("system restart service must reopen");
-        resume_durable_preparations(
-            &jobs,
-            MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
-        )
-        .await
-        .expect("system FFmpeg restart recovery must complete");
+        resume_durable_preparations(&jobs, programs.clone())
+            .await
+            .expect("system FFmpeg restart recovery must complete");
         jobs.scheduler().wait_idle().await;
 
         let records = jobs
             .store()
             .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
             .await
-            .expect("system restart records must list");
+            .expect("system restart records must list")
+            .jobs;
         assert_eq!(
             records.len(),
             3,
@@ -5126,7 +5365,15 @@ async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries()
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn durable_preparation_records_parent_and_hidden_children() {
+async fn durable_preparation_restart_system_ffmpeg_proves_all_crash_boundaries() {
+    assert_durable_preparation_restart_boundaries(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
+}
+
+pub(crate) async fn assert_durable_preparation_records(programs: MediaPrograms) {
     let workspace = tempdir().expect("durable preparation workspace must be created");
     let cache_root = workspace.path().join("app-cache");
     let source =
@@ -5139,33 +5386,38 @@ async fn durable_preparation_records_parent_and_hidden_children() {
         .await
         .expect("durable media service must initialize");
 
-    let prepared = prepare_asset_durable(
-        PrepareAssetCoreRequest {
-            owner_label: "durable-preparation",
-            project_id: DERIVED_PROJECT_ID,
-            asset_id: DERIVED_ASSET_ID,
-            source_path: &source,
-            sequence_rate: Some(RationalRate {
-                numerator: 30,
-                denominator: 1,
-            }),
-            expected_content_identity: None,
-        },
-        &grants,
-        &cache_root,
-        MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe")),
-        &jobs,
-    )
-    .await
-    .expect("durable preparation must complete");
+    let request = || PrepareAssetCoreRequest {
+        owner_label: "durable-preparation",
+        project_id: DERIVED_PROJECT_ID,
+        asset_id: DERIVED_ASSET_ID,
+        source_path: &source,
+        sequence_rate: Some(RationalRate {
+            numerator: 30,
+            denominator: 1,
+        }),
+        expected_content_identity: None,
+    };
+    let prepared = prepare_asset_durable(request(), &grants, &cache_root, programs.clone(), &jobs)
+        .await
+        .expect("durable preparation must complete");
     assert!(Path::new(&prepared.proxy_path).is_file());
     assert!(Path::new(&prepared.thumbnail_path).is_file());
+    fs::remove_file(&prepared.proxy_path).expect("durable cache miss must be injectable");
+    let regenerated = prepare_asset_durable(request(), &grants, &cache_root, programs, &jobs)
+        .await
+        .expect("durable cache miss must regenerate");
+    assert_eq!(regenerated.source_identity, prepared.source_identity);
+    assert_eq!(regenerated.proxy_identity, prepared.proxy_identity);
+    assert_eq!(regenerated.thumbnail_identity, prepared.thumbnail_identity);
+    assert!(Path::new(&regenerated.proxy_path).is_file());
+    assert!(Path::new(&regenerated.thumbnail_path).is_file());
 
     let records = jobs
         .store()
         .list(100, true, Some(DERIVED_PROJECT_ID.to_owned()), None)
         .await
-        .expect("durable records must list");
+        .expect("durable records must list")
+        .jobs;
     assert_eq!(records.len(), 3);
     assert_eq!(
         records
@@ -5194,7 +5446,15 @@ async fn durable_preparation_records_parent_and_hidden_children() {
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires system FFmpeg and the canonical media fixture"]
-async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts() {
+async fn durable_preparation_records_parent_and_hidden_children() {
+    assert_durable_preparation_records(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
+}
+
+pub(crate) async fn assert_derived_media_reuse_repair(programs: MediaPrograms) {
     let workspace = tempdir().expect("derived integration workspace must be created");
     let cache_root = workspace.path().join("app-cache");
     let source =
@@ -5214,8 +5474,7 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         }),
         expected_content_identity: None,
     };
-    let actual_programs =
-        || MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
+    let actual_programs = || programs.clone();
 
     let prepared = prepare_asset_core(request(), &grants, &cache_root, actual_programs())
         .await
@@ -5266,7 +5525,8 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
     let thumbnail_path = PathBuf::from(&prepared.thumbnail_path);
     assert!(proxy_path.is_file());
     assert!(thumbnail_path.is_file());
-    let thumbnail_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    let thumbnail_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(thumbnail_probe["streams"][0]["codec_name"], "mjpeg");
     assert_eq!(thumbnail_probe["streams"][0]["width"], 1_600);
     assert_eq!(thumbnail_probe["streams"][0]["height"], 90);
@@ -5284,17 +5544,17 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         fs::write(path, b"stale-owned-artifact").expect("stale artifact must be writable");
     }
 
-    let reused = prepare_asset_core(
-        request(),
-        &grants,
-        &cache_root,
+    let reuse_programs = if programs.toolchain_id() == "test-explicit-programs" {
         MediaPrograms::explicit(
             OsString::from("missing-ffmpeg-proves-cache-reuse"),
             OsString::from("ffprobe"),
-        ),
-    )
-    .await
-    .expect("valid prepared pair must be reused without ffmpeg");
+        )
+    } else {
+        programs.clone()
+    };
+    let reused = prepare_asset_core(request(), &grants, &cache_root, reuse_programs)
+        .await
+        .expect("valid prepared pair must be reused without ffmpeg");
     assert_eq!(reused, prepared);
     assert!(stale_proxy.exists());
     assert!(stale_thumbnail.exists());
@@ -5306,14 +5566,15 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         .await
         .expect("non-JPEG thumbnail bytes must be rejected and repaired");
     assert_eq!(repaired_non_jpeg, prepared);
-    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    let repaired_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
     assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
     assert_eq!(repaired_probe["streams"][0]["height"], 90);
 
     let png_thumbnail = workspace.path().join("wrong-codec-thumbnail.png");
-    write_thumbnail_image(&png_thumbnail, "png", 1_600, 90);
-    let png_probe = derived_probe_thumbnail_shape(&png_thumbnail).await;
+    write_thumbnail_image_with_programs(&png_thumbnail, "png", 1_600, 90, &programs).await;
+    let png_probe = derived_probe_thumbnail_shape_with_programs(&png_thumbnail, &programs).await;
     assert_eq!(png_probe["streams"][0]["codec_name"], "png");
     fs::copy(&png_thumbnail, &thumbnail_path)
         .expect("PNG bytes must replace only the exact thumbnail artifact");
@@ -5326,13 +5587,15 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
             .await
             .expect("wrong thumbnail codec must be rejected and repaired");
     assert_eq!(repaired_wrong_codec, prepared);
-    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    let repaired_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
     assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
     assert_eq!(repaired_probe["streams"][0]["height"], 90);
 
-    write_thumbnail_image(&thumbnail_path, "mjpeg", 800, 90);
-    let wrong_dimensions_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    write_thumbnail_image_with_programs(&thumbnail_path, "mjpeg", 800, 90, &programs).await;
+    let wrong_dimensions_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(wrong_dimensions_probe["streams"][0]["codec_name"], "mjpeg");
     assert_eq!(wrong_dimensions_probe["streams"][0]["width"], 800);
     let repaired_wrong_dimensions =
@@ -5340,7 +5603,8 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
             .await
             .expect("wrong thumbnail dimensions must be rejected and repaired");
     assert_eq!(repaired_wrong_dimensions, prepared);
-    let repaired_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    let repaired_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(repaired_probe["streams"][0]["codec_name"], "mjpeg");
     assert_eq!(repaired_probe["streams"][0]["width"], 1_600);
     assert_eq!(repaired_probe["streams"][0]["height"], 90);
@@ -5361,7 +5625,8 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
     assert!(stale_proxy.exists());
     assert!(stale_thumbnail.exists());
     assert!(stale_partial.exists());
-    let repaired_thumbnail_probe = derived_probe_thumbnail_shape(&thumbnail_path).await;
+    let repaired_thumbnail_probe =
+        derived_probe_thumbnail_shape_with_programs(&thumbnail_path, &programs).await;
     assert_eq!(
         repaired_thumbnail_probe["streams"][0]["codec_name"],
         "mjpeg"
@@ -5386,6 +5651,16 @@ async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts()
         fs::read(&stale_thumbnail).expect("unrelated thumbnail-like file must survive"),
         b"stale-owned-artifact"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg and the canonical media fixture"]
+async fn derived_local_ffmpeg_prepares_reuses_and_repairs_controlled_artifacts() {
+    assert_derived_media_reuse_repair(MediaPrograms::explicit(
+        OsString::from("ffmpeg"),
+        OsString::from("ffprobe"),
+    ))
+    .await;
 }
 
 fn assert_no_ingest_partials(root: &Path) {

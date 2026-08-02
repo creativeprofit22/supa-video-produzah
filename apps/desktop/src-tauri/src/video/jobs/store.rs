@@ -310,6 +310,7 @@ pub(crate) struct MediaJobListPage {
 #[derive(Clone, Debug)]
 pub(crate) struct StoredPrivateJob {
     pub(crate) public: MediaJobRecord,
+    pub(crate) dedupe_key: String,
     pub(crate) payload_version: u32,
     pub(crate) private_payload: Value,
     pub(crate) result: Option<Value>,
@@ -1207,20 +1208,22 @@ fn load_private_job(
     };
     let private = connection
         .query_row(
-            "SELECT payload_version, private_payload_json, result_version, result_json
+            "SELECT dedupe_key, payload_version, private_payload_json, result_version, result_json
              FROM media_jobs WHERE id = ?1",
             [job_id],
             |row| {
                 Ok((
-                    row.get::<_, u32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<u32>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<u32>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             },
         )
         .optional()?;
-    let Some((payload_version, payload_json, result_version, result_json)) = private else {
+    let Some((dedupe_key, payload_version, payload_json, result_version, result_json)) = private
+    else {
         return Ok(None);
     };
     if result_version != result_json.as_ref().map(|_| 1) {
@@ -1228,6 +1231,7 @@ fn load_private_job(
     }
     Ok(Some(StoredPrivateJob {
         public,
+        dedupe_key,
         payload_version,
         private_payload: serde_json::from_str(&payload_json)?,
         result: result_json
