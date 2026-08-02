@@ -874,3 +874,35 @@ pub(crate) fn ensure_direct_directory_for_test(
     ensure_direct_directory(parent, component)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn artifact_guard_removes_only_same_key_crash_partials_before_rebuild() {
+        let root = tempfile::tempdir().unwrap();
+        let key = "ab".repeat(32);
+        let other_key = "ab".to_owned() + &"c".repeat(62);
+        let guard = acquire_artifact(root.path(), ArtifactStoreKind::Proxy, &key)
+            .await
+            .unwrap();
+        let stale = guard
+            .directory
+            .join(format!(".derive-{key}-stale.part.mp4"));
+        let unrelated = guard
+            .directory
+            .join(format!(".derive-{other_key}-active.part.mp4"));
+        fs::write(&stale, b"stale").unwrap();
+        fs::write(&unrelated, b"active").unwrap();
+
+        let temporary = guard.temporary().unwrap();
+        assert!(!stale.exists());
+        assert!(unrelated.exists());
+        assert!(temporary
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(&format!(".derive-{key}-")));
+    }
+}

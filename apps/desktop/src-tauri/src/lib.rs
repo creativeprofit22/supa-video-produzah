@@ -319,6 +319,7 @@ mod tests {
                 video::jobs::ipc::video_get_media_job_events,
                 video::jobs::ipc::video_cancel_media_job,
                 video::jobs::ipc::video_retry_media_job,
+                video::jobs::ipc::video_reauthorize_media_job_output,
                 video::jobs::ipc::video_get_media_cache_status,
                 video::jobs::ipc::video_clear_legacy_media_cache,
             ])
@@ -496,7 +497,8 @@ mod tests {
                         "limit": 100,
                         "includeSettled": true,
                         "projectId": null,
-                        "beforeUpdatedAt": null
+                        "beforeUpdatedAt": null,
+                        "beforeJobId": null
                     }
                 }),
             ),
@@ -506,7 +508,10 @@ mod tests {
         .expect("media job list must be JSON");
         assert_eq!(list["schemaVersion"], 1);
         assert_eq!(list["jobs"][0]["id"], job_id);
+        assert_eq!(list["unsettledParentCount"], 0);
         assert!(list["latestEventId"].as_u64().unwrap_or_default() >= 3);
+        assert_eq!(list["nextBeforeUpdatedAt"], Value::Null);
+        assert_eq!(list["nextBeforeJobId"], Value::Null);
         let serialized_list = serde_json::to_string(&list).expect("media job list must serialize");
         assert!(!serialized_list.contains("privatePayload"));
         assert!(!serialized_list.contains("ownerLabel"));
@@ -531,6 +536,42 @@ mod tests {
             serde_json::to_string(&events).expect("media job events must serialize");
         assert!(!serialized_events.contains("privatePayload"));
         assert!(!serialized_events.contains(OWNER));
+
+        let half_cursor = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_list_media_jobs",
+                json!({
+                    "request": {
+                        "limit": 100,
+                        "includeSettled": true,
+                        "projectId": null,
+                        "beforeUpdatedAt": "2026-07-28T00:00:00.000Z",
+                        "beforeJobId": null
+                    }
+                }),
+            ),
+        )
+        .expect_err("half of a media-job cursor must be rejected");
+        assert_eq!(half_cursor["code"], "project_io");
+
+        let reverse_half_cursor = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_list_media_jobs",
+                json!({
+                    "request": {
+                        "limit": 100,
+                        "includeSettled": true,
+                        "projectId": null,
+                        "beforeUpdatedAt": null,
+                        "beforeJobId": "00000000-0000-4000-8000-000000000007"
+                    }
+                }),
+            ),
+        )
+        .expect_err("the other half of a media-job cursor must also be rejected");
+        assert_eq!(reverse_half_cursor["code"], "project_io");
 
         let malformed = get_ipc_response(
             &webview,
@@ -1060,17 +1101,60 @@ mod tests {
     const PACKAGED_CANCEL_PLAN_ID: &str = "66666666-6666-4666-8666-666666666666";
 
     #[cfg(windows)]
-    struct RemoveDirectoryOnDrop(PathBuf);
+    struct PackagedMediaApp {
+        app: Option<tauri::App<tauri::test::MockRuntime>>,
+        local_data_root: PathBuf,
+        cache_root: PathBuf,
+    }
 
     #[cfg(windows)]
-    impl Drop for RemoveDirectoryOnDrop {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+    impl std::ops::Deref for PackagedMediaApp {
+        type Target = tauri::App<tauri::test::MockRuntime>;
+
+        fn deref(&self) -> &Self::Target {
+            self.app
+                .as_ref()
+                .expect("packaged media app must remain available until cleanup")
         }
     }
 
     #[cfg(windows)]
-    fn packaged_media_app(cache_suffix: &str) -> tauri::App<tauri::test::MockRuntime> {
+    impl PackagedMediaApp {
+        fn cache_root(&self) -> &Path {
+            &self.cache_root
+        }
+
+        fn cleanup(mut self) {
+            self.shutdown_and_clean(true);
+        }
+
+        fn shutdown_and_clean(&mut self, fail_on_cleanup_error: bool) {
+            if let Some(app) = self.app.take() {
+                clean_up_video_state_on_exit(app.handle(), &RunEvent::Exit);
+                drop(app);
+            }
+            for root in [&self.local_data_root, &self.cache_root] {
+                if let Err(error) = fs::remove_dir_all(root) {
+                    if error.kind() != std::io::ErrorKind::NotFound && fail_on_cleanup_error {
+                        panic!(
+                            "packaged media test root {} must be removed: {error}",
+                            root.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for PackagedMediaApp {
+        fn drop(&mut self) {
+            self.shutdown_and_clean(false);
+        }
+    }
+
+    #[cfg(windows)]
+    fn packaged_media_app(cache_suffix: &str) -> PackagedMediaApp {
         let resource_root = std::env::var_os(PACKAGED_MEDIA_RESOURCE_ROOT_ENV)
             .map(PathBuf::from)
             .expect("SVP_MEDIA_RESOURCE_ROOT must identify the assembled Tauri resource root");
@@ -1078,13 +1162,13 @@ mod tests {
             video::toolchain::MediaToolchain::resolve_from_resource_root(&resource_root);
         let mut context = mock_context(noop_assets());
         context.config_mut().identifier = format!(
-            "com.supavideo.producer.packaged-media-test.{}.{}",
+            "com.supavideo.producer.packaged-media-test.{}.{}.{}",
             std::process::id(),
-            cache_suffix
+            cache_suffix,
+            uuid::Uuid::new_v4()
         );
-        mock_builder()
+        let app = mock_builder()
             .manage(video::VideoPathGrants::default())
-            .manage(test_media_jobs("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(toolchain))
             .invoke_handler(tauri::generate_handler![
@@ -1093,13 +1177,40 @@ mod tests {
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::jobs::ipc::video_reauthorize_media_job_output,
+                video::jobs::ipc::video_get_media_cache_status,
+                video::jobs::ipc::video_clear_legacy_media_cache,
                 video::project::ipc::video_create_project,
                 video::project::ipc::video_execute_project_group,
                 video::project::ipc::video_project_inspector,
                 video::project::ipc::video_close_project,
             ])
             .build(context)
-            .expect("packaged media IPC app must build")
+            .expect("packaged media IPC app must build");
+        let local_data_root = app
+            .path()
+            .app_local_data_dir()
+            .expect("packaged media local-data root must resolve");
+        let cache_root = app
+            .path()
+            .app_cache_dir()
+            .expect("packaged media cache root must resolve");
+        let jobs = tauri::async_runtime::block_on(video::jobs::MediaJobService::initialize(
+            local_data_root.clone(),
+            cache_root.clone(),
+        ))
+        .expect("packaged media job service must initialize from the mock app roots");
+        assert!(
+            jobs.store().database_path().starts_with(&local_data_root),
+            "packaged media database must stay under the mock app local-data root"
+        );
+        app.manage(jobs);
+
+        PackagedMediaApp {
+            app: Some(app),
+            local_data_root,
+            cache_root,
+        }
     }
 
     #[cfg(windows)]
@@ -1313,12 +1424,8 @@ mod tests {
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_media_ipc_status_probe_prepare_and_render_complete() {
         let app = packaged_media_app("complete");
-        let cache_root = app
-            .path()
-            .app_cache_dir()
-            .expect("packaged test cache root must resolve");
-        let _cache_cleanup = RemoveDirectoryOnDrop(cache_root);
-        let webview = WebviewWindowBuilder::new(&app, "packaged-complete", Default::default())
+        let cache_root = app.cache_root().to_owned();
+        let webview = WebviewWindowBuilder::new(&*app, "packaged-complete", Default::default())
             .build()
             .expect("packaged complete test webview must build");
         let source = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1423,6 +1530,18 @@ mod tests {
         );
         assert!(proxy_path.is_file(), "packaged proxy must exist");
         assert!(thumbnail_path.is_file(), "packaged thumbnail must exist");
+        let managed_cache_root = cache_root
+            .join("supa-video-media-v1")
+            .canonicalize()
+            .expect("packaged managed-cache root must canonicalize");
+        assert!(
+            proxy_path.starts_with(&managed_cache_root),
+            "packaged proxy must stay under the mock app cache root"
+        );
+        assert!(
+            thumbnail_path.starts_with(&managed_cache_root),
+            "packaged thumbnail must stay under the mock app cache root"
+        );
         assert_eq!(prepared["proxyProbe"]["videoCodecName"], "h264");
         assert_eq!(prepared["proxyProbe"]["width"], 320);
         assert_eq!(prepared["proxyProbe"]["height"], 180);
@@ -1615,6 +1734,8 @@ mod tests {
                 .exists(),
             "completed packaged render must remove its partial"
         );
+        drop(webview);
+        app.cleanup();
     }
 
     #[cfg(windows)]
@@ -1622,12 +1743,7 @@ mod tests {
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_media_ipc_render_cancel_cleans_partial() {
         let app = packaged_media_app("cancel");
-        let cache_root = app
-            .path()
-            .app_cache_dir()
-            .expect("packaged cancellation cache root must resolve");
-        let _cache_cleanup = RemoveDirectoryOnDrop(cache_root);
-        let webview = WebviewWindowBuilder::new(&app, "packaged-cancel", Default::default())
+        let webview = WebviewWindowBuilder::new(&*app, "packaged-cancel", Default::default())
             .build()
             .expect("packaged cancellation test webview must build");
         let source = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1697,6 +1813,8 @@ mod tests {
             events.len(),
             "no event may follow the packaged cancelled terminal event"
         );
+        drop(webview);
+        app.cleanup();
     }
 
     #[test]

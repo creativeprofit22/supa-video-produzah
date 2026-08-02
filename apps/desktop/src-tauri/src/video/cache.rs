@@ -1021,7 +1021,7 @@ fn timestamp_string(timestamp_ms: i64) -> Result<String, MediaStateStoreError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::video::{jobs::store::MediaJobStore, media_store::acquire_artifact};
 
@@ -1083,6 +1083,83 @@ mod tests {
             toolchain_id: None,
             recipe_id: None,
         }
+    }
+
+    pub(crate) async fn assert_packaged_cache_lease_lru_and_legacy_policy() {
+        let root = tempfile::tempdir().unwrap();
+        let (store, cache) = service(root.path()).await;
+        let first_key = format!("00{}", "1".repeat(62));
+        let second_key = format!("00{}", "2".repeat(62));
+        let first = create_artifact(root.path(), CacheArtifactKind::Proxy, &first_key, 8);
+        let second = create_artifact(root.path(), CacheArtifactKind::Proxy, &second_key, 8);
+        cache
+            .register(registration(
+                first.clone(),
+                CacheArtifactKind::Proxy,
+                &first_key,
+            ))
+            .await
+            .unwrap();
+        cache
+            .register(registration(
+                second.clone(),
+                CacheArtifactKind::Proxy,
+                &second_key,
+            ))
+            .await
+            .unwrap();
+        cache
+            .lease(
+                "packaged-cache-owner".to_owned(),
+                Some(Uuid::new_v4().to_string()),
+                first_key.clone(),
+            )
+            .await
+            .unwrap();
+
+        let report = cache.enforce_test_budget(8).await.unwrap();
+        assert_eq!(report.evicted_artifacts, 1);
+        assert!(
+            first.exists(),
+            "an active lease must protect playback media"
+        );
+        assert!(
+            !second.exists(),
+            "the deterministic unleased LRU entry must evict"
+        );
+        let pinned = cache.enforce_test_budget(0).await.unwrap();
+        assert!(pinned.pinned_pressure);
+        assert_eq!(pinned.remaining_bytes, 8);
+        cache
+            .release_owner("packaged-cache-owner".to_owned())
+            .await
+            .unwrap();
+        let released = cache.enforce_test_budget(0).await.unwrap();
+        assert!(!released.pinned_pressure);
+        assert!(!first.exists());
+        drop(cache);
+        drop(store);
+
+        let legacy = root.path().join("cache").join(LEGACY_CACHE_NAMESPACE);
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("preview.bin"), b"legacy").unwrap();
+        let active_preview = legacy
+            .join(ACTIVE_RENDER_PREVIEW_DIRECTORY)
+            .join("render-job")
+            .join("preview.mp4");
+        fs::create_dir_all(active_preview.parent().unwrap()).unwrap();
+        fs::write(&active_preview, b"active-preview").unwrap();
+
+        let (_reopened_store, reopened_cache) = service(root.path()).await;
+        let before = reopened_cache.status().await.unwrap();
+        assert_eq!(before.legacy_bytes, 6);
+        assert!(before.legacy_clear_available);
+        assert!(legacy.join("preview.bin").exists());
+        let report = reopened_cache.clear_legacy().await.unwrap();
+        assert_eq!(report.cleared_bytes, 6);
+        assert!(!legacy.join("preview.bin").exists());
+        assert!(active_preview.exists());
+        assert_eq!(reopened_cache.status().await.unwrap().legacy_bytes, 0);
     }
 
     #[tokio::test(flavor = "current_thread")]
