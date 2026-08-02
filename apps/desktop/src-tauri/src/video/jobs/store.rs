@@ -6,7 +6,9 @@ use std::{
 };
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row, Transaction};
+use rusqlite::{
+    params, Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior,
+};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -72,6 +74,7 @@ impl MediaStateStore {
             path: local_data_dir.join(MEDIA_STATE_FILENAME),
         };
         let mut connection = store.open_connection()?;
+        connection.pragma_update(None, "journal_mode", "WAL")?;
         migrate(&mut connection)?;
         verify_integrity(&connection)?;
         Ok(store)
@@ -110,7 +113,6 @@ fn configure_connection(connection: &Connection) -> Result<(), MediaStateStoreEr
     connection.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
     connection.pragma_update(None, "foreign_keys", true)?;
     connection.pragma_update(None, "synchronous", "FULL")?;
-    connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.pragma_update(None, "wal_autocheckpoint", 1_000_i64)?;
     Ok(())
 }
@@ -621,7 +623,7 @@ fn enqueue_sync(
     validate_new_job(&request)?;
     let payload_json = bounded_json(&request.private_payload)?;
     let mut connection = state.open_connection()?;
-    let transaction = connection.transaction()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     if let Some(job) = find_deduplicated_job(&transaction, &request.dedupe_key)? {
         let refreshed = if job.kind == MediaJobKind::FinalRender
@@ -775,7 +777,7 @@ fn transition_sync(
     }
 
     let mut connection = state.open_connection()?;
-    let transaction = connection.transaction()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let current = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::NotFound)?;
     let terminal_reactivation = matches!(
         (current.state, transition.state),
@@ -882,7 +884,7 @@ fn request_cancellation_sync(
     occurred_at_ms: i64,
 ) -> Result<MediaJobRecord, MediaStateStoreError> {
     let mut connection = state.open_connection()?;
-    let transaction = connection.transaction()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let current = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::NotFound)?;
     if current.state.is_terminal() || current.cancellation_requested {
         return Ok(current);
@@ -993,7 +995,7 @@ fn recover_sync(
     now_ms: i64,
 ) -> Result<MediaJobRecoveryReport, MediaStateStoreError> {
     let mut connection = state.open_connection()?;
-    let transaction = connection.transaction()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let stale_lease_count = transaction.execute(
         "DELETE FROM cache_leases WHERE session_id <> ?1",
         [current_session_id],

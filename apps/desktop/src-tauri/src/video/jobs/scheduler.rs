@@ -124,6 +124,13 @@ pub(crate) enum SchedulerCancellation {
     Running,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartWorkDisposition {
+    Started,
+    Requeue,
+    Discard,
+}
+
 pub(crate) struct MediaJobScheduler {
     store: MediaJobStore,
     clock: Arc<dyn SchedulerClock>,
@@ -430,33 +437,16 @@ impl MediaJobScheduler {
         running_work: RunningWork,
     ) {
         let attempt = work.attempt.saturating_add(1);
-        let now = self.clock.now_millis();
-        let started = self
-            .store
-            .transition(
-                work.job_id.clone(),
-                MediaJobTransition {
-                    state: MediaJobState::Running,
-                    stage: "running".to_owned(),
-                    progress: MediaJobProgress {
-                        completed: 0,
-                        total: 0,
-                        unit: super::model::MediaJobProgressUnit::Items,
-                    },
-                    attempt: Some(attempt),
-                    error: None,
-                    retry_at_ms: None,
-                    result: None,
-                    cancellation_requested: false,
-                    event_type: MediaJobEventType::StateChanged,
-                    message: Some("Media job started.".to_owned()),
-                    occurred_at_ms: now,
-                },
-            )
-            .await;
-        if started.is_err() {
-            self.running.lock().await.remove(&work.job_id);
-            return;
+        match self.start_work(&work, attempt).await {
+            StartWorkDisposition::Started => {}
+            StartWorkDisposition::Requeue => {
+                self.requeue_after_start_failure(work, &running_work).await;
+                return;
+            }
+            StartWorkDisposition::Discard => {
+                self.running.lock().await.remove(&work.job_id);
+                return;
+            }
         }
 
         let job_id = work.job_id.clone();
@@ -466,6 +456,69 @@ impl MediaJobScheduler {
             .await;
         let _ = self.finish(work, attempt, running_work, outcome).await;
         self.running.lock().await.remove(&job_id);
+    }
+
+    async fn start_work(&self, work: &QueuedWork, attempt: u8) -> StartWorkDisposition {
+        const START_RETRY_DELAYS: [Duration; 3] = [
+            Duration::from_millis(10),
+            Duration::from_millis(50),
+            Duration::from_millis(100),
+        ];
+        for retry_delay in START_RETRY_DELAYS {
+            let current = match self.store.get_private(work.job_id.clone()).await {
+                Ok(stored) => stored.public,
+                Err(_) => return StartWorkDisposition::Requeue,
+            };
+            if current.state == MediaJobState::Running {
+                return StartWorkDisposition::Discard;
+            }
+            if current.state != MediaJobState::Queued || current.cancellation_requested {
+                return StartWorkDisposition::Discard;
+            }
+            let started = self
+                .store
+                .transition(
+                    work.job_id.clone(),
+                    MediaJobTransition {
+                        state: MediaJobState::Running,
+                        stage: "running".to_owned(),
+                        progress: current.progress,
+                        attempt: Some(attempt),
+                        error: None,
+                        retry_at_ms: None,
+                        result: None,
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: Some("Media job started.".to_owned()),
+                        occurred_at_ms: self.clock.now_millis(),
+                    },
+                )
+                .await;
+            if started.is_ok() {
+                return StartWorkDisposition::Started;
+            }
+            self.clock.sleep(retry_delay).await;
+        }
+        StartWorkDisposition::Requeue
+    }
+
+    async fn requeue_after_start_failure(&self, work: QueuedWork, running_work: &RunningWork) {
+        let job_id = work.job_id.clone();
+        let mut queue = self.queue.lock().await;
+        let mut running = self.running.lock().await;
+        let should_requeue = !self.shutting_down.load(Ordering::Acquire)
+            && !running_work.cancellation.is_cancelled()
+            && running.contains_key(&job_id)
+            && !queue.iter().any(|queued| queued.job_id == job_id);
+        if should_requeue {
+            queue.push(work);
+        }
+        running.remove(&job_id);
+        drop(running);
+        drop(queue);
+        if should_requeue {
+            self.notify.notify_one();
+        }
     }
 
     async fn finish(
@@ -1123,6 +1176,86 @@ mod tests {
         assert_eq!(
             queue_sort_key(&old_background, 250, Duration::from_millis(100)).0,
             0
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn transient_start_transition_failures_requeue_and_complete_once() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize(directory.path().to_path_buf())
+            .await
+            .unwrap();
+        let clock = TestClock::at(15_000);
+        let scheduler = MediaJobScheduler::new(
+            store.clone(),
+            MediaSchedulerConfig::default(),
+            clock.clone(),
+        )
+        .unwrap();
+        let id = queued_job(
+            &store,
+            "transient-start-transition",
+            MediaJobPriority::Interactive,
+            15_000,
+        )
+        .await;
+        let order = Arc::new(StdMutex::new(Vec::new()));
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        scheduler
+            .submit(
+                id.clone(),
+                MediaJobPriority::Interactive,
+                0,
+                3,
+                SchedulerResource::Ffmpeg,
+                Arc::new(RecordingWorker {
+                    name: "start-transition",
+                    order: order.clone(),
+                    active,
+                    peak,
+                    delay: Duration::ZERO,
+                }),
+            )
+            .await
+            .unwrap();
+
+        let blocker = rusqlite::Connection::open(store.database_path()).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let loop_handle = scheduler.start();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if clock.sleeps.lock().unwrap().len() >= 3 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            store.get_private(id.clone()).await.unwrap().public.state,
+            MediaJobState::Queued
+        );
+
+        blocker.execute_batch("ROLLBACK").unwrap();
+        tokio::time::timeout(Duration::from_secs(5), scheduler.wait_idle())
+            .await
+            .unwrap();
+        scheduler.shutdown().await;
+        loop_handle.await.unwrap();
+
+        let job = store.get_private(id.clone()).await.unwrap().public;
+        assert_eq!(job.state, MediaJobState::Complete);
+        assert_eq!(job.attempt, 1);
+        assert_eq!(*order.lock().unwrap(), vec!["start-transition"]);
+        let events = store.events(Some(id), 0, 20).await.unwrap().events;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.state == MediaJobState::Running)
+                .count(),
+            1
         );
     }
 
