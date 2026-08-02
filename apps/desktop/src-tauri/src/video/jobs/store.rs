@@ -301,6 +301,13 @@ pub(crate) struct MediaJobEventPage {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct MediaJobListPage {
+    pub(crate) jobs: Vec<MediaJobRecord>,
+    pub(crate) unsettled_parent_count: u64,
+    pub(crate) has_more: bool,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct StoredPrivateJob {
     pub(crate) public: MediaJobRecord,
     pub(crate) payload_version: u32,
@@ -514,29 +521,45 @@ impl MediaJobStore {
         limit: usize,
         include_settled: bool,
         project_id: Option<String>,
-        before_updated_at_ms: Option<i64>,
-    ) -> Result<Vec<MediaJobRecord>, MediaStateStoreError> {
+        cursor: Option<(i64, String)>,
+    ) -> Result<MediaJobListPage, MediaStateStoreError> {
         if limit == 0 || limit > MAX_PUBLIC_JOBS {
             return Err(MediaStateStoreError::JobLimit);
         }
+        let query_limit = limit.checked_add(1).ok_or(MediaStateStoreError::JobLimit)?;
         let state = self.state.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            list_sync(
+        let (mut jobs, unsettled_parent_count) = tauri::async_runtime::spawn_blocking(move || {
+            let (before_updated_at_ms, before_job_id) = cursor
+                .as_ref()
+                .map(|(timestamp, job_id)| (Some(*timestamp), Some(job_id.as_str())))
+                .unwrap_or((None, None));
+            let jobs = list_sync(
                 &state,
-                limit,
+                query_limit,
                 include_settled,
                 project_id.as_deref(),
                 before_updated_at_ms,
-            )
+                before_job_id,
+            )?;
+            let unsettled_parent_count =
+                unsettled_parent_count_sync(&state, project_id.as_deref())?;
+            Ok::<_, MediaStateStoreError>((jobs, unsettled_parent_count))
         })
         .await
-        .map_err(|_| MediaStateStoreError::WorkerStopped)?
+        .map_err(|_| MediaStateStoreError::WorkerStopped)??;
+        let has_more = jobs.len() > limit;
+        jobs.truncate(limit);
+        Ok(MediaJobListPage {
+            jobs,
+            unsettled_parent_count,
+            has_more,
+        })
     }
 
     pub(crate) async fn recovery_jobs(&self) -> Result<Vec<MediaJobRecord>, MediaStateStoreError> {
         let state = self.state.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            list_sync(&state, MAX_UNSETTLED_JOBS, false, None, None)
+            list_sync(&state, MAX_UNSETTLED_JOBS, false, None, None, None)
         })
         .await
         .map_err(|_| MediaStateStoreError::WorkerStopped)?
@@ -912,19 +935,28 @@ fn list_sync(
     include_settled: bool,
     project_id: Option<&str>,
     before_updated_at_ms: Option<i64>,
+    before_job_id: Option<&str>,
 ) -> Result<Vec<MediaJobRecord>, MediaStateStoreError> {
+    if before_updated_at_ms.is_some() != before_job_id.is_some() {
+        return Err(MediaStateStoreError::InvalidTransition);
+    }
     let connection = state.open_connection()?;
     let mut statement = connection.prepare(&format!(
         "SELECT {JOB_COLUMNS} FROM media_jobs
          WHERE (?1 OR state NOT IN ('cancelled', 'failed', 'complete'))
            AND (?2 IS NULL OR project_id = ?2)
-           AND (?3 IS NULL OR updated_at_ms < ?3)
-         ORDER BY updated_at_ms DESC, id DESC LIMIT ?4"
+           AND (
+             ?3 IS NULL
+             OR updated_at_ms < ?3
+             OR (updated_at_ms = ?3 AND id < ?4)
+           )
+         ORDER BY updated_at_ms DESC, id DESC LIMIT ?5"
     ))?;
     let mut rows = statement.query(params![
         include_settled,
         project_id,
         before_updated_at_ms,
+        before_job_id,
         i64::try_from(limit).map_err(|_| MediaStateStoreError::JobLimit)?
     ])?;
     let mut jobs = Vec::new();
@@ -934,6 +966,21 @@ fn list_sync(
         jobs.push(job);
     }
     Ok(jobs)
+}
+
+fn unsettled_parent_count_sync(
+    state: &MediaStateStore,
+    project_id: Option<&str>,
+) -> Result<u64, MediaStateStoreError> {
+    let connection = state.open_connection()?;
+    sql_u64(connection.query_row::<i64, _, _>(
+        "SELECT COUNT(*) FROM media_jobs
+         WHERE parent_id IS NULL
+           AND state NOT IN ('cancelled', 'failed', 'complete')
+           AND (?1 IS NULL OR project_id = ?1)",
+        [project_id],
+        |row| row.get(0),
+    )?)
 }
 
 fn children_sync(
@@ -1696,7 +1743,7 @@ mod tests {
         seed_performance_fixture(&state);
 
         let started = Instant::now();
-        let jobs = list_sync(&state, MAX_PUBLIC_JOBS, true, None, None).unwrap();
+        let jobs = list_sync(&state, MAX_PUBLIC_JOBS, true, None, None, None).unwrap();
         let elapsed = started.elapsed();
         println!(
             "media job list 100 recent across {PERFORMANCE_FIXTURE_JOB_COUNT} jobs: {elapsed:?} ({} returned)",
@@ -1711,6 +1758,192 @@ mod tests {
                 "release media job list 100 recent took {elapsed:?} with budget {budget:?}"
             );
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn composite_cursor_lists_equal_timestamp_jobs_once_without_stalling() {
+        const JOB_COUNT: usize = 205;
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        let timestamp = 1_900_000_000_000_i64;
+        let mut expected_ids = Vec::with_capacity(JOB_COUNT);
+        for index in 0..JOB_COUNT {
+            let outcome = store
+                .enqueue(new_job(
+                    &format!("equal-timestamp:{index:03}"),
+                    MediaJobKind::Proxy,
+                    timestamp,
+                ))
+                .await
+                .unwrap();
+            expected_ids.push(outcome.job.id);
+        }
+        expected_ids.sort_by(|left, right| right.cmp(left));
+
+        let mut observed_ids = Vec::with_capacity(JOB_COUNT);
+        let mut cursor = None;
+        let mut page_count = 0;
+        loop {
+            let page = store
+                .list(MAX_PUBLIC_JOBS, true, None, cursor.clone())
+                .await
+                .unwrap();
+            page_count += 1;
+            assert_eq!(page.unsettled_parent_count, JOB_COUNT as u64);
+            assert!(!page.jobs.is_empty(), "a has-more cursor must advance");
+            assert!(page.jobs.len() <= MAX_PUBLIC_JOBS);
+            observed_ids.extend(page.jobs.iter().map(|job| job.id.clone()));
+            if !page.has_more {
+                break;
+            }
+            let last = page.jobs.last().unwrap();
+            let next = (
+                parse_timestamp_millis(&last.updated_at).unwrap(),
+                last.id.clone(),
+            );
+            assert_ne!(cursor, Some(next.clone()), "the composite cursor stalled");
+            cursor = Some(next);
+        }
+
+        assert_eq!(page_count, 3);
+        assert_eq!(observed_ids, expected_ids);
+        let unique = observed_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(), JOB_COUNT);
+        assert!(matches!(
+            list_sync(&store.state, 10, true, None, Some(timestamp), None),
+            Err(MediaStateStoreError::InvalidTransition)
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_reports_unpaginated_unsettled_parent_count_across_children_and_settled_rows() {
+        const TARGET_UNSETTLED_PARENT_COUNT: usize = 105;
+        const CHILD_COUNT: usize = 8;
+        const SETTLED_PARENT_COUNT: usize = 4;
+        const OTHER_PROJECT_PARENT_COUNT: usize = 2;
+        const TARGET_PROJECT_ID: &str = "10000000-0000-4000-8000-000000000001";
+        const OTHER_PROJECT_ID: &str = "10000000-0000-4000-8000-000000000002";
+        const BASE_TIMESTAMP: i64 = 2_000_000_000_000;
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        let mut first_parent_id = None;
+
+        for index in 0..TARGET_UNSETTLED_PARENT_COUNT {
+            let parent = store
+                .enqueue(new_job(
+                    &format!("count-parent:{index:03}"),
+                    MediaJobKind::Proxy,
+                    BASE_TIMESTAMP + i64::try_from(index).unwrap(),
+                ))
+                .await
+                .unwrap()
+                .job;
+            first_parent_id.get_or_insert(parent.id);
+        }
+        let first_parent_id = first_parent_id.unwrap();
+
+        for index in 0..CHILD_COUNT {
+            let mut child = new_job(
+                &format!("count-child:{index:03}"),
+                MediaJobKind::ThumbnailTile,
+                BASE_TIMESTAMP + 200 + i64::try_from(index).unwrap(),
+            );
+            child.parent_id = Some(first_parent_id.clone());
+            store.enqueue(child).await.unwrap();
+        }
+
+        for index in 0..SETTLED_PARENT_COUNT {
+            let created_at_ms = BASE_TIMESTAMP + 300 + i64::try_from(index).unwrap();
+            let settled = store
+                .enqueue(new_job(
+                    &format!("count-settled:{index:03}"),
+                    MediaJobKind::Proxy,
+                    created_at_ms,
+                ))
+                .await
+                .unwrap()
+                .job;
+            store
+                .transition(
+                    settled.id,
+                    MediaJobTransition {
+                        state: MediaJobState::Cancelled,
+                        stage: "cancelled".to_owned(),
+                        progress: settled.progress,
+                        attempt: None,
+                        error: None,
+                        retry_at_ms: None,
+                        result: None,
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: Some("Fixture job cancelled.".to_owned()),
+                        occurred_at_ms: created_at_ms + 1,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        for index in 0..OTHER_PROJECT_PARENT_COUNT {
+            let mut parent = new_job(
+                &format!("count-other-project:{index:03}"),
+                MediaJobKind::Proxy,
+                BASE_TIMESTAMP + 400 + i64::try_from(index).unwrap(),
+            );
+            parent.project_id = Some(OTHER_PROJECT_ID.to_owned());
+            store.enqueue(parent).await.unwrap();
+        }
+
+        let global_page = store.list(MAX_PUBLIC_JOBS, true, None, None).await.unwrap();
+        assert_eq!(global_page.jobs.len(), MAX_PUBLIC_JOBS);
+        assert!(global_page.has_more);
+        assert_eq!(
+            global_page.unsettled_parent_count,
+            (TARGET_UNSETTLED_PARENT_COUNT + OTHER_PROJECT_PARENT_COUNT) as u64
+        );
+        assert!(global_page.jobs.iter().any(|job| job.parent_id.is_some()));
+        assert!(global_page
+            .jobs
+            .iter()
+            .any(|job| job.state == MediaJobState::Cancelled));
+
+        let scoped_page = store
+            .list(
+                MAX_PUBLIC_JOBS,
+                false,
+                Some(TARGET_PROJECT_ID.to_owned()),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            scoped_page.unsettled_parent_count,
+            TARGET_UNSETTLED_PARENT_COUNT as u64
+        );
+        assert!(scoped_page.has_more);
+        let last = scoped_page.jobs.last().unwrap();
+        let cursor = Some((
+            parse_timestamp_millis(&last.updated_at).unwrap(),
+            last.id.clone(),
+        ));
+        let older_page = store
+            .list(
+                MAX_PUBLIC_JOBS,
+                false,
+                Some(TARGET_PROJECT_ID.to_owned()),
+                cursor,
+            )
+            .await
+            .unwrap();
+        assert_eq!(older_page.jobs.len(), 13);
+        assert!(!older_page.has_more);
+        assert_eq!(
+            older_page.unsettled_parent_count,
+            TARGET_UNSETTLED_PARENT_COUNT as u64
+        );
     }
 
     #[test]
@@ -1846,7 +2079,7 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
-        let jobs = store.list(10, true, None, None).await.unwrap();
+        let jobs = store.list(10, true, None, None).await.unwrap().jobs;
         assert_eq!(jobs[0].state, MediaJobState::Queued);
         assert!(jobs[0].error.is_none());
         assert_eq!(
@@ -1888,7 +2121,7 @@ mod tests {
             .unwrap();
         assert_eq!(report.requeued_count, 1);
         assert_eq!(report.blocked_count, 1);
-        let jobs = reopened.list(10, true, None, None).await.unwrap();
+        let jobs = reopened.list(10, true, None, None).await.unwrap().jobs;
         assert_eq!(
             jobs.iter().find(|job| job.id == proxy.id).unwrap().state,
             MediaJobState::Queued

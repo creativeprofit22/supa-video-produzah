@@ -20,16 +20,23 @@ pub(crate) struct ListMediaJobsRequest {
     include_settled: bool,
     project_id: Option<String>,
     before_updated_at: Option<String>,
+    before_job_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaJobListResponse {
     schema_version: u8,
     jobs: Vec<MediaJobRecord>,
+    unsettled_parent_count: u64,
     next_before_updated_at: Option<String>,
+    next_before_job_id: Option<String>,
     latest_event_id: u64,
     recovery: Option<MediaJobRecoveryReport>,
+}
+
+fn cursor_pair_is_complete<T, U>(timestamp: &Option<T>, job_id: &Option<U>) -> bool {
+    timestamp.is_some() == job_id.is_some()
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,32 +91,51 @@ pub(crate) async fn video_list_media_jobs(
     request: ListMediaJobsRequest,
 ) -> Result<MediaJobListResponse, VideoCommandError> {
     let limit = usize::try_from(request.limit).map_err(|_| job_error("list_limit"))?;
-    let before = request
-        .before_updated_at
-        .as_deref()
-        .map(parse_timestamp)
-        .transpose()?;
-    let records = jobs
+    if !cursor_pair_is_complete(&request.before_updated_at, &request.before_job_id) {
+        return Err(job_error("cursor_pair"));
+    }
+    let cursor = match (request.before_updated_at, request.before_job_id) {
+        (None, None) => None,
+        (Some(timestamp), Some(job_id)) => {
+            let timestamp = parse_timestamp(&timestamp)?;
+            let job_id = uuid::Uuid::parse_str(&job_id)
+                .map_err(|_| job_error("cursor_job_id"))?
+                .to_string();
+            Some((timestamp, job_id))
+        }
+        _ => unreachable!("the composite cursor was validated above"),
+    };
+    let page = jobs
         .store()
-        .list(limit, request.include_settled, request.project_id, before)
+        .list(limit, request.include_settled, request.project_id, cursor)
         .await
         .map_err(map_store_error)?;
-    let next_before_updated_at = (records.len() == limit)
-        .then(|| records.last().map(|record| record.updated_at.clone()))
-        .flatten();
+    let (next_before_updated_at, next_before_job_id) = if page.has_more {
+        let last = page.jobs.last().ok_or_else(|| job_error("cursor_empty"))?;
+        (Some(last.updated_at.clone()), Some(last.id.clone()))
+    } else {
+        (None, None)
+    };
     let latest_event_id = jobs
         .store()
         .events(None, 0, 1)
         .await
         .map_err(map_store_error)?
         .latest_event_id;
-    Ok(MediaJobListResponse {
+    let response = MediaJobListResponse {
         schema_version: 1,
-        jobs: records,
+        jobs: page.jobs,
+        unsettled_parent_count: page.unsettled_parent_count,
         next_before_updated_at,
+        next_before_job_id,
         latest_event_id,
         recovery: Some(jobs.recovery()),
-    })
+    };
+    debug_assert!(cursor_pair_is_complete(
+        &response.next_before_updated_at,
+        &response.next_before_job_id
+    ));
+    Ok(response)
 }
 
 #[tauri::command]
@@ -229,4 +255,63 @@ fn map_store_error(_error: MediaStateStoreError) -> VideoCommandError {
 
 fn job_error(category: &'static str) -> VideoCommandError {
     VideoCommandError::project_io("media_jobs", category)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_list_fixture_has_strict_ipc_dto_parity_and_rejects_half_cursors() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packages/video-media/fixtures/media-state-v1/public-contracts.json");
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let envelopes = fixture["listEnvelopes"].as_array().unwrap();
+        assert_eq!(envelopes.len(), 2);
+
+        for envelope in envelopes {
+            let request: ListMediaJobsRequest =
+                serde_json::from_value(envelope["listRequest"].clone()).unwrap();
+            assert!(cursor_pair_is_complete(
+                &request.before_updated_at,
+                &request.before_job_id
+            ));
+
+            let response: MediaJobListResponse =
+                serde_json::from_value(envelope["listResponse"].clone()).unwrap();
+            assert!(cursor_pair_is_complete(
+                &response.next_before_updated_at,
+                &response.next_before_job_id
+            ));
+            assert_eq!(
+                serde_json::to_value(response).unwrap(),
+                envelope["listResponse"]
+            );
+        }
+
+        for missing_field in ["beforeUpdatedAt", "beforeJobId"] {
+            let mut half_request = envelopes[1]["listRequest"].clone();
+            half_request[missing_field] = serde_json::Value::Null;
+            let request: ListMediaJobsRequest = serde_json::from_value(half_request).unwrap();
+            assert!(!cursor_pair_is_complete(
+                &request.before_updated_at,
+                &request.before_job_id
+            ));
+        }
+
+        for missing_field in ["nextBeforeUpdatedAt", "nextBeforeJobId"] {
+            let mut half_response = envelopes[0]["listResponse"].clone();
+            half_response[missing_field] = serde_json::Value::Null;
+            let response: MediaJobListResponse = serde_json::from_value(half_response).unwrap();
+            assert!(!cursor_pair_is_complete(
+                &response.next_before_updated_at,
+                &response.next_before_job_id
+            ));
+        }
+
+        let mut unknown_response = envelopes[0]["listResponse"].clone();
+        unknown_response["next_before_job_id"] = serde_json::json!(null);
+        assert!(serde_json::from_value::<MediaJobListResponse>(unknown_response).is_err());
+    }
 }

@@ -168,6 +168,23 @@ describe("media job contracts", () => {
     ).toThrow("Unix epoch");
   });
 
+  it("requires an unsettled-parent count that is a JavaScript-safe nonnegative integer", () => {
+    const envelope = {
+      schemaVersion: 1,
+      jobs: [],
+      unsettledParentCount: 123,
+      nextBeforeUpdatedAt: null,
+      nextBeforeJobId: null,
+      latestEventId: 0,
+      recovery: null,
+    };
+
+    expect(mediaJobListSchema.parse(envelope).unsettledParentCount).toBe(123);
+    for (const unsettledParentCount of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => mediaJobListSchema.parse({ ...envelope, unsettledParentCount })).toThrow();
+    }
+  });
+
   it("rejects unknown fields and private native details", () => {
     for (const privateField of [
       "privatePayload",
@@ -202,7 +219,9 @@ describe("media job contracts", () => {
       mediaJobListSchema.parse({
         schemaVersion: 1,
         jobs: [job],
-        nextBeforeUpdatedAt: null,
+        unsettledParentCount: 0,
+        nextBeforeUpdatedAt: laterTimestamp,
+        nextBeforeJobId: jobId,
         latestEventId: 9,
         recovery,
       }).jobs,
@@ -212,6 +231,30 @@ describe("media job contracts", () => {
       includeSettled: true,
       projectId: null,
       beforeUpdatedAt: null,
+      beforeJobId: null,
     });
+  });
+
+  it("requires both parts of every composite list cursor", () => {
+    expect(
+      listMediaJobsRequestSchema.parse({ beforeUpdatedAt: laterTimestamp, beforeJobId: jobId }),
+    ).toMatchObject({ beforeUpdatedAt: laterTimestamp, beforeJobId: jobId });
+    expect(() => listMediaJobsRequestSchema.parse({ beforeUpdatedAt: laterTimestamp })).toThrow(
+      "provided together",
+    );
+    expect(() => listMediaJobsRequestSchema.parse({ beforeJobId: jobId })).toThrow(
+      "provided together",
+    );
+    expect(() =>
+      mediaJobListSchema.parse({
+        schemaVersion: 1,
+        jobs: [],
+        unsettledParentCount: 0,
+        nextBeforeUpdatedAt: laterTimestamp,
+        nextBeforeJobId: null,
+        latestEventId: 0,
+        recovery: null,
+      }),
+    ).toThrow("provided together");
   });
 });

@@ -1,4 +1,5 @@
 import type { CommandGroupRequest, ProjectProjection, RecoveryReport } from "@supa-video/contracts";
+import { listMediaJobsRequestSchema } from "@supa-video/media";
 import type {
   MediaCacheStatus,
   MediaJobEvent,
@@ -353,19 +354,45 @@ export function createMockVideoService(
       };
     }
     if (command === "video_list_media_jobs") {
-      const request = (
-        args as {
-          request: { includeSettled: boolean; projectId: string | null };
-        }
-      ).request;
+      const request = listMediaJobsRequestSchema.parse((args as { request?: unknown })?.request);
+      const terminalStates = new Set<MediaJobRecord["state"]>(["cancelled", "failed", "complete"]);
+      const filtered = mediaJobs.filter(
+        (job) =>
+          (request.includeSettled || !terminalStates.has(job.state)) &&
+          (request.projectId === null || job.projectId === request.projectId),
+      );
+      const unsettledParentCount = mediaJobs.filter(
+        (job) =>
+          job.parentId === null &&
+          !terminalStates.has(job.state) &&
+          (request.projectId === null || job.projectId === request.projectId),
+      ).length;
+      const beforeUpdatedAt =
+        request.beforeUpdatedAt === null ? null : Date.parse(request.beforeUpdatedAt);
+      const matching = filtered
+        .filter((job) => {
+          if (beforeUpdatedAt === null || request.beforeJobId === null) return true;
+          const updatedAt = Date.parse(job.updatedAt);
+          return (
+            updatedAt < beforeUpdatedAt ||
+            (updatedAt === beforeUpdatedAt && job.id < request.beforeJobId)
+          );
+        })
+        .sort((left, right) => {
+          const updatedAtOrder = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+          if (updatedAtOrder !== 0) return updatedAtOrder;
+          return left.id < right.id ? 1 : left.id > right.id ? -1 : 0;
+        });
+      const fetched = matching.slice(0, request.limit + 1);
+      const hasMore = fetched.length > request.limit;
+      const jobs = fetched.slice(0, request.limit);
+      const lastJob = hasMore ? jobs.at(-1) : undefined;
       return {
         schemaVersion: 1,
-        jobs: mediaJobs.filter(
-          (job) =>
-            (request.includeSettled || !["cancelled", "failed", "complete"].includes(job.state)) &&
-            (request.projectId === null || job.projectId === request.projectId),
-        ),
-        nextBeforeUpdatedAt: null,
+        jobs,
+        unsettledParentCount,
+        nextBeforeUpdatedAt: lastJob?.updatedAt ?? null,
+        nextBeforeJobId: lastJob?.id ?? null,
         latestEventId: mediaEvents.at(-1)?.eventId ?? 0,
         recovery: mediaRecovery,
       };

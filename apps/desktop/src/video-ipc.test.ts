@@ -289,7 +289,9 @@ describe("strict V2 video IPC adapter", () => {
       .mockResolvedValueOnce({
         schemaVersion: 1,
         jobs: [testMediaJob],
+        unsettledParentCount: 1,
         nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
         latestEventId: 1,
         recovery: null,
       })
@@ -302,13 +304,17 @@ describe("strict V2 video IPC adapter", () => {
       .mockResolvedValueOnce({ schemaVersion: 1, job: testMediaJob })
       .mockResolvedValueOnce({ schemaVersion: 1, job: testMediaJob });
 
-    await expect(listMediaJobs()).resolves.toMatchObject({ jobs: [testMediaJob] });
+    await expect(listMediaJobs()).resolves.toMatchObject({
+      jobs: [testMediaJob],
+      unsettledParentCount: 1,
+    });
     expect(invokeMock).toHaveBeenNthCalledWith(1, "video_list_media_jobs", {
       request: {
         limit: 100,
         includeSettled: true,
         projectId: null,
         beforeUpdatedAt: null,
+        beforeJobId: null,
       },
     });
     await expect(getMediaJobEvents()).resolves.toMatchObject({ events: [event] });
@@ -383,11 +389,28 @@ describe("strict V2 video IPC adapter", () => {
     expect(unlisten).toHaveBeenCalledOnce();
   });
 
+  it("rejects an unsafe unsettled-parent count from native authority", async () => {
+    invokeMock.mockResolvedValueOnce({
+      schemaVersion: 1,
+      jobs: [],
+      unsettledParentCount: Number.MAX_SAFE_INTEGER + 1,
+      nextBeforeUpdatedAt: null,
+      nextBeforeJobId: null,
+      latestEventId: 0,
+      recovery: null,
+    });
+
+    const error = await listMediaJobs().catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(VideoIpcResponseError);
+  });
+
   it("rejects malformed media authority responses without exposing native fields", async () => {
     invokeMock.mockResolvedValueOnce({
       schemaVersion: 1,
       jobs: [{ ...testMediaJob, privatePayload: { sourcePath: "C:\\private\\clip.mp4" } }],
+      unsettledParentCount: 1,
       nextBeforeUpdatedAt: null,
+      nextBeforeJobId: null,
       latestEventId: 1,
       recovery: null,
     });

@@ -217,7 +217,9 @@ function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
     listMediaJobs: vi.fn(async () => ({
       schemaVersion: 1 as const,
       jobs: [],
+      unsettledParentCount: 0,
       nextBeforeUpdatedAt: null,
+      nextBeforeJobId: null,
       latestEventId: 0,
       recovery: null,
     })),

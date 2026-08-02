@@ -211,6 +211,44 @@
       "resultAvailable": true
     }
   ],
+  "listEnvelopes": [
+    {
+      "listRequest": {
+        "limit": 2,
+        "includeSettled": true,
+        "projectId": null,
+        "beforeUpdatedAt": null,
+        "beforeJobId": null
+      },
+      "listResponse": {
+        "schemaVersion": 1,
+        "jobs": [],
+        "unsettledParentCount": 3,
+        "nextBeforeUpdatedAt": "2026-07-27T12:00:14.000Z",
+        "nextBeforeJobId": "00000000-0000-4000-8000-000000000007",
+        "latestEventId": 8,
+        "recovery": null
+      }
+    },
+    {
+      "listRequest": {
+        "limit": 2,
+        "includeSettled": true,
+        "projectId": null,
+        "beforeUpdatedAt": "2026-07-27T12:00:14.000Z",
+        "beforeJobId": "00000000-0000-4000-8000-000000000007"
+      },
+      "listResponse": {
+        "schemaVersion": 1,
+        "jobs": [],
+        "unsettledParentCount": 3,
+        "nextBeforeUpdatedAt": null,
+        "nextBeforeJobId": null,
+        "latestEventId": 8,
+        "recovery": null
+      }
+    }
+  ],
   "events": [
     {
       "schemaVersion": 1,

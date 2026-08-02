@@ -478,11 +478,20 @@ fn require(condition: bool) -> Result<(), MediaJobModelError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::video::jobs::ipc::{ListMediaJobsRequest, MediaJobListResponse};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct PublicListEnvelope {
+        list_request: ListMediaJobsRequest,
+        list_response: MediaJobListResponse,
+    }
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct PublicFixture {
         jobs: Vec<MediaJobRecord>,
+        list_envelopes: Vec<PublicListEnvelope>,
         events: Vec<MediaJobEvent>,
         cache_status: MediaCacheStatus,
         recovery: MediaJobRecoveryReport,
@@ -495,7 +504,12 @@ mod tests {
         let bytes = std::fs::read(path).unwrap();
         let fixture: PublicFixture = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(fixture.jobs.len(), 8);
+        assert_eq!(fixture.list_envelopes.len(), 2);
         assert_eq!(fixture.events.len(), 8);
+        for envelope in &fixture.list_envelopes {
+            let _ = &envelope.list_request;
+            serde_json::to_value(&envelope.list_response).unwrap();
+        }
         for job in &fixture.jobs {
             job.validate().unwrap();
         }

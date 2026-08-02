@@ -269,19 +269,40 @@ export const listMediaJobsRequestSchema = z
     includeSettled: z.boolean().default(true),
     projectId: projectUuidSchema.nullable().default(null),
     beforeUpdatedAt: mediaJobTimestampSchema.nullable().default(null),
+    beforeJobId: projectUuidSchema.nullable().default(null),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if ((request.beforeUpdatedAt === null) !== (request.beforeJobId === null)) {
+      context.addIssue({
+        code: "custom",
+        path: [request.beforeUpdatedAt === null ? "beforeUpdatedAt" : "beforeJobId"],
+        message: "beforeUpdatedAt and beforeJobId must be provided together",
+      });
+    }
+  });
 export type ListMediaJobsRequest = z.input<typeof listMediaJobsRequestSchema>;
 
 export const mediaJobListSchema = z
   .object({
     schemaVersion: z.literal(1),
     jobs: z.array(mediaJobRecordSchema).max(100),
+    unsettledParentCount: safeNonNegativeIntegerSchema,
     nextBeforeUpdatedAt: mediaJobTimestampSchema.nullable(),
+    nextBeforeJobId: projectUuidSchema.nullable(),
     latestEventId: safeNonNegativeIntegerSchema,
     recovery: mediaJobRecoveryReportSchema.nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((page, context) => {
+    if ((page.nextBeforeUpdatedAt === null) !== (page.nextBeforeJobId === null)) {
+      context.addIssue({
+        code: "custom",
+        path: [page.nextBeforeUpdatedAt === null ? "nextBeforeUpdatedAt" : "nextBeforeJobId"],
+        message: "nextBeforeUpdatedAt and nextBeforeJobId must be provided together",
+      });
+    }
+  });
 export type MediaJobList = z.infer<typeof mediaJobListSchema>;
 
 export const getMediaJobEventsRequestSchema = z
