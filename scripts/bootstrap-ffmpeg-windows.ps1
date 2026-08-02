@@ -261,7 +261,27 @@ function Read-StrictManifest {
 
 function Get-LowerSha256 {
     param([string]$Path)
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $stream = [System.IO.File]::Open(
+        $resolvedPath,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::Read
+    )
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hash = $sha256.ComputeHash($stream)
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+    return [System.BitConverter]::ToString($hash).Replace("-", "").ToLowerInvariant()
 }
 
 function Test-ExactBinary {

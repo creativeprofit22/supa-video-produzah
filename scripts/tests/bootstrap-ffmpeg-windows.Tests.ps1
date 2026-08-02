@@ -104,11 +104,11 @@ function New-TestTarget {
         binaries = [pscustomobject]@{
             ffmpeg = [pscustomobject]@{
                 byteLength = (Get-Item -LiteralPath $FfmpegPath).Length
-                sha256 = (Get-FileHash -LiteralPath $FfmpegPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                sha256 = Get-LowerSha256 $FfmpegPath
             }
             ffprobe = [pscustomobject]@{
                 byteLength = (Get-Item -LiteralPath $FfprobePath).Length
-                sha256 = (Get-FileHash -LiteralPath $FfprobePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                sha256 = Get-LowerSha256 $FfprobePath
             }
         }
     }

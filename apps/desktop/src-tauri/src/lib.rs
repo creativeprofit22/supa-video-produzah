@@ -146,11 +146,13 @@ pub fn run() {
 
 #[cfg(all(test, feature = "tauri-ipc-test"))]
 mod tests {
+    #[cfg(windows)]
+    use std::time::Instant;
     use std::{
         fs,
         path::{Path, PathBuf},
         sync::{mpsc, Arc, Mutex},
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     use serde_json::{json, Value};
