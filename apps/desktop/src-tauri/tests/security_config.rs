@@ -158,11 +158,39 @@ fn production_command(source: &str, command_name: &str) -> String {
         .find(&marker)
         .unwrap_or_else(|| panic!("production command {command_name} must exist"));
     let remaining = &source[start..];
-    let end = remaining
-        .find("\n}\n")
-        .map(|offset| offset + 3)
+    let closing_line = remaining
+        .lines()
+        .position(|line| line == "}")
         .expect("production command must have a bounded body");
-    remaining[..end].to_owned()
+    remaining
+        .lines()
+        .take(closing_line + 1)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn production_command_normalizes_lf_and_crlf() {
+    let lf_source = concat!(
+        "fn helper() {}\n",
+        "pub async fn video_test() {\n",
+        "    if true {\n",
+        "        println!(\"managed toolchain\");\n",
+        "    }\n",
+        "}\n",
+        "pub async fn trailing_command() {}\n",
+    );
+    let expected = concat!(
+        "pub async fn video_test() {\n",
+        "    if true {\n",
+        "        println!(\"managed toolchain\");\n",
+        "    }\n",
+        "}",
+    );
+    let crlf_source = lf_source.replace('\n', "\r\n");
+
+    assert_eq!(production_command(lf_source, "video_test"), expected);
+    assert_eq!(production_command(&crlf_source, "video_test"), expected);
 }
 
 #[test]
