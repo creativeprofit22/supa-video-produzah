@@ -12,6 +12,12 @@ target/
 .gg/*.js
 .gg/*.png
 .gg/edge-profile/
+.gg/current-phase3b-runtime-path
+.gg/phase3b-dump.txt
+.gg/phase3b-jobs-private.json
+.gg/phase3b-runtime/
+.gg/phase3b-runtime-20260729-002744/
+.gg/uploads/
 *.tsbuildinfo
 
 # Local state, logs, and environment
@@ -51,6 +57,11 @@ apps/desktop/evidence/phase-3/assembled-export-panel-complete.png
 apps/desktop/evidence/phase-3/assembled-export-reauthorization-blocked.png
 apps/desktop/evidence/phase-3/assembled-export-retry-complete.png
 apps/desktop/evidence/phase-3/assembled-export-running-before-restart.png
+apps/desktop/evidence/phase-3/assembled-restart-proxy-failed.png
+apps/desktop/evidence/phase-3/job-center-child-only-pagination-320px-200-percent-text.png
+apps/desktop/evidence/phase-3/job-center-pagination-failure-480x360.png
+apps/desktop/evidence/phase-3/job-center-pagination-no-more-320px-200-percent-text.png
+apps/desktop/evidence/phase-3/job-center-pagination-pending-1280x800.png
 
 # IDE and OS
 .vscode/*
