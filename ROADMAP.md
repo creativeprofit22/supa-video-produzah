@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1 and 2, the Phase 3 FFmpeg distribution baseline, and Phase 3A are complete; Phase 3B is next
+- **Status:** Active implementation; Phases 1 and 2, the Phase 3 FFmpeg distribution baseline, and Phase 3A are complete; Phase 3B implementation is present and verification closure is in progress
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 27 July 2026
+- **Implementation audit:** 28 July 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -370,40 +370,27 @@ Runtime: decoders, GPU textures, file handles
 
 **Depends on:** Phase 2
 
-## Implementation checkpoint - re-audited 27 July 2026
+## Implementation checkpoint - re-audited 28 July 2026
 
-Phase 3A is implemented and locally verified at exact audited HEAD `19c747d9c91bb68dd6188fab27e5775a43121450`, built on the Phase 2 engine and pinned Gyan FFmpeg 8.1.2 distribution baseline. Phase 3B is the next implementation checkpoint.
+Phase 3B implementation is present through the ordered local closure series, built on the Phase 2 engine, Phase 3A content-addressed ingest, and pinned Gyan FFmpeg 8.1.2 distribution baseline. Phase 3B remains **in verification/closure** and Phase 4 is blocked.
 
-The Phase 3A audit prerequisite is closed: grouped import and relink consume `MediaToolchainState`, verify bundled FFprobe, ingest authorized source bytes, and probe the canonical object copy. Source guards and an assembled packaged test with an empty `PATH` cover create/import/prepare/relink/reopen as well as status, standalone probe, render, executable tamper rejection, and cancellation cleanup.
+The audited implementation includes strict TypeScript/Rust job contracts, SQLite job/event/cache state, hierarchical preparation jobs, durable final-render jobs, priority scheduling, retries, cancellation, restart recovery, cache leases and deterministic LRU eviction, explicit legacy-cache policy, production IPC/event reconciliation, and the app-level Job Center.
 
-`packages/video-media` owns strict browser-safe preparation, source-fingerprint, profile, recipe, and derived-identity contracts. Shared vectors pin UTF-8 domains, u32 length delimiters, raw digest bytes, little-endian safe integers, field order, and expected SHA-256 outputs across TypeScript `crypto.subtle` and Rust.
+The 28 July closure worktree passes frozen install; root build/check/test/lint/format; 204 TypeScript/Vitest tests; 13 Chromium responsive/accessibility tests; Rustfmt; all-target/all-feature Clippy with warnings denied; 171 non-ignored Rust tests; all 11 explicit real-FFmpeg tests; staged FFmpeg verification; all three original stripped-`PATH` packaged gates; three Phase 3B bundled-resource wrappers; release performance tests; Windows no-bundle assembly; and `git diff --check`. Latest release measurements were: generated 10,000-record project journal scan `699.8438 ms`; durable command acknowledgment p95 `4.8993 ms`; media-job enqueue plus durable event p95 `11.5919 ms`; list 100 recent jobs `4.6878 ms`; recovery selection across 10,000 jobs `2.6108 ms`.
 
-The native store streams exact bytes into `$APPCACHE/supa-video-media-v1/objects/sha256`, converges duplicate bytes under different names on one verified object, and independently validates/repairs proxy and thumbnail artifacts under deterministic per-key locks. Source, toolchain, profile/color/HDR, stream, rate, geometry, sampling, validation policy, and argv-order changes invalidate the expected keys. Traversal, malformed components, non-directories, symlink/reparse escapes, changed-during-read input, lock contention, corruption, concurrency, and read/write/flush/sync/promotion failpoints are covered without recursive sweeps or surviving partials.
+The packaged test service now uses each mock Tauri app's resolved local-data/cache roots and cleans both. Render cancellation uses the generated durable UUID while preserving the distinct `planId`. Composite `(updated_at_ms, id)` pagination is lossless across equal timestamps, and Job Center exposes pending, retry, no-more, loaded-depth refresh, focus, polite-status, and responsive states.
 
-New import and relink operations persist strict `MediaContentIdentityV1`; caller probe/identity tampering fails before journal mutation. Relink keeps the asset UUID and restores locator, probe, and identity together through semantic inverse, undo, redo, replay, close, and reopen. Existing V1/V2 fixtures without identity remain valid and readable.
+The literal assembled Windows gate now passes with stripped `PATH` and bundled FFmpeg: an interrupted long proxy recovered with stable parent/child IDs and one terminal event; ExportPanel and Job Center reconciled cancellation, native save-picker reauthorization, same-job retry, and completion; active leases survived deterministic test-budget LRU eviction; a cache miss regenerated without identity drift; and legacy inventory survived restart until visible confirmation. Independent checks found no final FFmpeg/FFprobe descendant or owned partial residue. Sanitized commands, IDs, hashes, probes, event counts, totals, and screenshots are recorded in `apps/desktop/evidence/phase-3/assembled-windows-runtime-closure.md`.
 
-The 27 July audit passed frozen install; root build/check/test/lint/format; 156 TypeScript tests; 3 Chromium responsive/accessibility checks; Rustfmt; all-target/all-feature Clippy with warnings denied; all 8 explicit system-FFmpeg integrations; packaged-resource checks; release performance checks; Windows no-bundle assembly; staged-media verification; and `git diff --check`. The release 10,000-record journal scan passed in `705.876 ms`, and durable command acknowledgment passed at `7.9254 ms` p95.
-
-The full parallel debug all-feature Rust run twice exceeded its debug-only 5-second journal benchmark, including `5.4347 s` in the isolated final full-suite run, while the same test passed alone in debug at `3.5443 s`. This is a benchmark-isolation defect, not evidence of a release performance regression. Phase 3B will separate functional scan verification from the authoritative release-only wall-clock gate.
-
-Exact-HEAD GitHub Actions run [`30243539199`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30243539199) executed no steps because the account is blocked by a billing/spending limit. The prior Phase 3 baseline run was blocked for the same external reason; Phase 2 exact-SHA CI remains the last completed successful run. The working tree remained clean after the audit/build commands.
+Exact-SHA Actions run [`30320315684`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30320315684) created TypeScript, Rust, and Windows jobs for baseline HEAD `3fd99757c16e9932c042400dab9c946b47718ddd` but executed zero steps because of the external account billing/spending block. The Phase 2 exact-SHA CI run remains the last completed successful run.
 
 Public distribution review remains explicitly pending for GPL/source-offer and codec-patent obligations.
 
 ### Next implementation item
 
-Implement **Phase 3B - durable media jobs and cache lifecycle**: persistent job/event records, scheduling and priority, retry/resume, restart recovery, cache budgets/leases/eviction, and an app-level Job Center. Phase 3B ends before audio intermediates, waveform pyramids, keyframe indexes, transcription, embeddings, semantic search, or stock acquisition.
+Close **Phase 3B verification** without expanding into Phase 4, audio intermediates, transcription, or an editor redesign.
 
-## Completed Phase 3A deliverables
-
-- Pinned, verified FFmpeg and FFprobe distribution baseline
-- Content-addressed source ingest with exact source fingerprints
-- Strict proxy profiles and deterministic derived-media keys
-- Independently validated proxy and thumbnail generation and repair
-- Relink workflow preserving stable asset IDs and content identity
-- Path, link, toolchain, process, promotion, and partial-file security guarantees
-
-## Remaining Phase 3B deliverables
+## Implemented Phase 3B deliverables
 
 - Persistent hierarchical `MediaJob` and atomic `MediaJobEvent` records for preparation, proxy, thumbnail, and final render work
 - Bounded priority scheduler with deterministic FIFO aging, cancellation, automatic/manual retry, and restart recovery
@@ -412,7 +399,11 @@ Implement **Phase 3B - durable media jobs and cache lifecycle**: persistent job/
 - Explicit legacy `$APPCACHE/video-phase1` inventory and confirmed clear action; no automatic migration or deletion
 - Strict native and TypeScript list/event/cancel/retry/cache contracts with sanitized public DTOs
 - App-level accessible Job Center available with or without an open project
-- Stable functional/performance benchmark separation and exact-SHA verification evidence
+- Functional/release-performance benchmark separation and local measurement coverage
+
+## Remaining Phase 3B verification/closure items
+
+- Obtain an exact-SHA GitHub Actions run whose TypeScript, Rust, and Windows jobs actually execute and pass
 
 ## Phase 3B scope
 

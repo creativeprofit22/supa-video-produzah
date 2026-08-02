@@ -46,6 +46,11 @@ screenshots/
 !apps/desktop/evidence/
 !apps/desktop/evidence/**
 apps/desktop/evidence/phase-2/browser-runtime.png
+# Superseded local Phase 3B diagnostic captures
+apps/desktop/evidence/phase-3/assembled-export-panel-complete.png
+apps/desktop/evidence/phase-3/assembled-export-reauthorization-blocked.png
+apps/desktop/evidence/phase-3/assembled-export-retry-complete.png
+apps/desktop/evidence/phase-3/assembled-export-running-before-restart.png
 
 # IDE and OS
 .vscode/*
