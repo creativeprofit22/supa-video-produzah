@@ -53,7 +53,7 @@ impl MediaJobService {
             .await?;
         cache.rebuild_owned_inventory().await?;
         cache
-            .cleanup_stale_builds(std::time::Duration::from_secs(24 * 60 * 60))
+            .cleanup_stale_builds(std::time::Duration::from_secs(60))
             .await?;
         drop(cache_io_permit);
         let scheduler_task = scheduler.start();

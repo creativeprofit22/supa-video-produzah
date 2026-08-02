@@ -14,7 +14,10 @@ use super::{
         model::{MediaCachePressure, MediaCacheStatus, MEDIA_JOB_SCHEMA_VERSION},
         store::{MediaJobStore, MediaStateStore, MediaStateStoreError},
     },
-    media_store::MEDIA_STORE_NAMESPACE,
+    media_store::{
+        artifact_key_from_temporary_name, try_lock_artifact_nonblocking, ArtifactStoreKind,
+        MEDIA_STORE_NAMESPACE,
+    },
 };
 
 const LEGACY_CACHE_NAMESPACE: &str = "video-phase1";
@@ -334,10 +337,15 @@ impl MediaCacheService {
             return Ok(0);
         };
         let mut removed = 0_u64;
-        for kind_root in [
-            root.join("derived").join("proxy"),
-            root.join("derived").join("thumbnail_tile"),
+        for (kind, store_kind, extension) in [
+            (CacheArtifactKind::Proxy, ArtifactStoreKind::Proxy, "mp4"),
+            (
+                CacheArtifactKind::ThumbnailTile,
+                ArtifactStoreKind::ThumbnailTile,
+                "jpg",
+            ),
         ] {
+            let kind_root = root.join("derived").join(kind.database_value());
             if !kind_root.exists() {
                 continue;
             }
@@ -346,9 +354,10 @@ impl MediaCacheService {
                 let prefix_entry = prefix_entry?;
                 let prefix_path = prefix_entry.path();
                 let prefix_metadata = fs::symlink_metadata(&prefix_path)?;
+                let prefix = prefix_entry.file_name().to_string_lossy().into_owned();
                 if !prefix_metadata.is_dir()
                     || is_reparse_or_symlink(&prefix_metadata)
-                    || !is_hex_prefix(&prefix_entry.file_name().to_string_lossy())
+                    || !is_hex_prefix(&prefix)
                 {
                     continue;
                 }
@@ -357,19 +366,30 @@ impl MediaCacheService {
                     let path = entry.path();
                     let metadata = fs::symlink_metadata(&path)?;
                     let name = entry.file_name().to_string_lossy().into_owned();
-                    if metadata.is_file()
-                        && !is_reparse_or_symlink(&metadata)
-                        && name.starts_with(".derive-")
-                        && name.contains(".part.")
-                        && metadata
+                    if !metadata.is_file()
+                        || is_reparse_or_symlink(&metadata)
+                        || !metadata
                             .modified()
                             .ok()
                             .and_then(|modified| modified.elapsed().ok())
                             .is_some_and(|age| age >= minimum_age)
                     {
-                        fs::remove_file(path)?;
-                        removed += 1;
+                        continue;
                     }
+                    let Some(key) = artifact_key_from_temporary_name(&name, extension) else {
+                        continue;
+                    };
+                    if key[..2] != prefix {
+                        continue;
+                    }
+                    let Some(_lock) =
+                        try_lock_artifact_nonblocking(&self.app_cache_root, store_kind, key)
+                            .map_err(|_| MediaStateStoreError::UnsafeDirectory)?
+                    else {
+                        continue;
+                    };
+                    fs::remove_file(path)?;
+                    removed += 1;
                 }
             }
         }
@@ -1003,7 +1023,7 @@ fn timestamp_string(timestamp_ms: i64) -> Result<String, MediaStateStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::video::jobs::store::MediaJobStore;
+    use crate::video::{jobs::store::MediaJobStore, media_store::acquire_artifact};
 
     async fn service(root: &Path) -> (MediaJobStore, MediaCacheService) {
         let local = root.join("local");
@@ -1012,6 +1032,29 @@ mod tests {
         let store = MediaJobStore::initialize(local).await.unwrap();
         let service = MediaCacheService::new(&store, cache, "session-test".to_owned());
         (store, service)
+    }
+
+    #[cfg(unix)]
+    fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!(
+                "mklink /J failed with status {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )))
+        }
     }
 
     fn create_artifact(root: &Path, kind: CacheArtifactKind, key: &str, bytes: usize) -> PathBuf {
@@ -1145,9 +1188,12 @@ mod tests {
     async fn safe_inventory_rebuilds_catalog_and_stale_partials_are_removed() {
         let root = tempfile::tempdir().unwrap();
         let (_store, cache) = service(root.path()).await;
-        let key = "d".repeat(64);
+        let key = "ab".repeat(32);
         let artifact = create_artifact(root.path(), CacheArtifactKind::Proxy, &key, 14);
-        let partial = artifact.parent().unwrap().join(".derive-stale.part.mp4");
+        let partial = artifact
+            .parent()
+            .unwrap()
+            .join(format!(".derive-{key}-ABC123.part.mp4"));
         fs::write(&partial, b"partial").unwrap();
 
         assert_eq!(cache.rebuild_owned_inventory().await.unwrap(), 1);
@@ -1155,6 +1201,123 @@ mod tests {
         assert_eq!(cache.cleanup_stale_builds(Duration::ZERO).await.unwrap(), 1);
         assert!(!partial.exists());
         assert!(artifact.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stale_cleanup_skips_held_artifact_lock_then_removes_after_release() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "ab".repeat(32);
+        let cache_root = root.path().join("cache");
+        let guard = acquire_artifact(&cache_root, ArtifactStoreKind::Proxy, &key)
+            .await
+            .unwrap();
+        let partial = guard
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!(".derive-{key}-ABC123.part.mp4"));
+        fs::write(&partial, b"active-build").unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&partial)
+            .unwrap()
+            .set_modified(UNIX_EPOCH)
+            .unwrap();
+
+        let removed_while_locked = tokio::time::timeout(
+            Duration::from_secs(1),
+            cache.cleanup_stale_builds(Duration::from_secs(60)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(removed_while_locked, 0);
+        assert!(partial.exists());
+
+        drop(guard);
+        assert_eq!(
+            cache
+                .cleanup_stale_builds(Duration::from_secs(60))
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(!partial.exists());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn stale_cleanup_rejects_redirected_lock_prefix_without_touching_outside() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "ab".to_owned() + &"1".repeat(62);
+        let artifact = create_artifact(root.path(), CacheArtifactKind::Proxy, &key, 1);
+        let partial = artifact
+            .parent()
+            .unwrap()
+            .join(format!(".derive-{key}-ABC123.part.mp4"));
+        fs::write(&partial, b"stale-build").unwrap();
+
+        let managed = root.path().join("cache").join(MEDIA_STORE_NAMESPACE);
+        let lock_prefix = managed.join("locks").join("proxy").join(&key[..2]);
+        fs::remove_file(lock_prefix.join(format!("{key}.lock"))).unwrap();
+        fs::remove_dir(&lock_prefix).unwrap();
+
+        let outside = root.path().join("outside-lock-target");
+        fs::create_dir(&outside).unwrap();
+        let sentinel = outside.join("sentinel.bin");
+        fs::write(&sentinel, b"outside-must-stay-unchanged").unwrap();
+
+        create_directory_redirect(&outside, &lock_prefix)
+            .expect("redirected lock-prefix setup must succeed");
+        let redirect_metadata = fs::symlink_metadata(&lock_prefix).unwrap();
+        assert!(
+            is_reparse_or_symlink(&redirect_metadata),
+            "lock-prefix redirect must be a symlink or reparse point"
+        );
+
+        let outside_entries_before = fs::read_dir(&outside)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        let error = cache
+            .cleanup_stale_builds(Duration::ZERO)
+            .await
+            .expect_err("a redirected lock-prefix directory must fail closed");
+
+        assert!(matches!(error, MediaStateStoreError::UnsafeDirectory));
+        assert!(partial.exists(), "cleanup must preserve the stale build");
+        assert_eq!(fs::read(&sentinel).unwrap(), b"outside-must-stay-unchanged");
+        let outside_entries_after = fs::read_dir(&outside)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(outside_entries_after, outside_entries_before);
+        assert!(!outside.join(format!("{key}.lock")).exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stale_cleanup_leaves_malformed_and_unrelated_files_untouched() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "ab".repeat(32);
+        let other_key = "cd".repeat(32);
+        let artifact = create_artifact(root.path(), CacheArtifactKind::Proxy, &key, 1);
+        let directory = artifact.parent().unwrap();
+        let malformed_key = directory.join(".derive-short-ABC123.part.mp4");
+        let malformed_random = directory.join(format!(".derive-{key}-short.part.mp4"));
+        let wrong_prefix = directory.join(format!(".derive-{other_key}-ABC123.part.mp4"));
+        let unrelated = directory.join("notes.part.mp4");
+        for path in [&malformed_key, &malformed_random, &wrong_prefix, &unrelated] {
+            fs::write(path, b"keep").unwrap();
+        }
+
+        assert_eq!(cache.cleanup_stale_builds(Duration::ZERO).await.unwrap(), 0);
+        assert!(malformed_key.exists());
+        assert!(malformed_random.exists());
+        assert!(wrong_prefix.exists());
+        assert!(unrelated.exists());
     }
 
     #[tokio::test(flavor = "current_thread")]
