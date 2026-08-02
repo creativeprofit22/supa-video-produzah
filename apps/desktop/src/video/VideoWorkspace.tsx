@@ -87,10 +87,22 @@ export function VideoWorkspace({
     [asset?.id, controller.projection?.projectId, controller.source?.assetId, mediaJobs],
   );
   const renderJobId = "jobId" in controller.render ? controller.render.jobId : null;
-  const renderJob = useMemo(
-    () => mediaJobs.find((job) => job.id === renderJobId && job.parentId === null) ?? null,
-    [mediaJobs, renderJobId],
-  );
+  const currentRevisionId = controller.projection?.revision.id ?? null;
+  const renderJob = useMemo(() => {
+    if (renderJobId !== null)
+      return mediaJobs.find((job) => job.id === renderJobId && job.parentId === null) ?? null;
+    if (currentRevisionId === null) return null;
+    return (
+      mediaJobs
+        .filter(
+          (job) =>
+            job.parentId === null &&
+            job.kind === "final_render" &&
+            job.revisionId === currentRevisionId,
+        )
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null
+    );
+  }, [currentRevisionId, mediaJobs, renderJobId]);
   const finalPreviewPath =
     controller.render.phase === "completed" &&
     (renderJob === null || renderJob.state === "complete")

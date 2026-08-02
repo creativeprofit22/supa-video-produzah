@@ -52,7 +52,7 @@ const blockedJob = job({
     code: "output_grant_required",
     category: "output_authorization_required",
     message: "Choose the export destination again.",
-    retryable: true,
+    retryable: false,
     action: "reauthorize_output",
   },
   attempt: 1,
@@ -107,6 +107,7 @@ function controller(overrides: Partial<MediaJobsController> = {}): MediaJobsCont
     canClearLegacyCache: true,
     canCancelJob: vi.fn(() => true),
     canRetryJob: vi.fn(() => true),
+    canReauthorizeJobOutput: vi.fn(() => true),
     refresh: vi.fn(async () => undefined),
     refreshMediaJobs: vi.fn(async () => undefined),
     refreshCache: vi.fn(async () => undefined),
@@ -114,6 +115,8 @@ function controller(overrides: Partial<MediaJobsController> = {}): MediaJobsCont
     cancelMediaJob: vi.fn(async () => null),
     retryJob: vi.fn(async () => null),
     retryMediaJob: vi.fn(async () => null),
+    reauthorizeJobOutput: vi.fn(async () => null),
+    reauthorizeMediaJobOutput: vi.fn(async () => null),
     clearLegacyCache: vi.fn(async () => ({
       schemaVersion: 1,
       clearedBytes: cacheStatus.legacyBytes,
@@ -145,7 +148,8 @@ describe("JobCenter", () => {
     expect(screen.getByText("Thumbnail strip")).toBeTruthy();
     expect(screen.getByText("Pinned pressure")).toBeTruthy();
     expect(screen.getByText("Job database recovered")).toBeTruthy();
-    expect(screen.getByText("Choose the export destination again, then retry.")).toBeTruthy();
+    expect(screen.getByText("Choose the export destination again to continue.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Choose destination and retry" })).toBeTruthy();
     expect(screen.getAllByRole("progressbar").length).toBeGreaterThanOrEqual(4);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
 
@@ -158,17 +162,32 @@ describe("JobCenter", () => {
   it("exposes only lifecycle-valid actions and disables duplicate requests", () => {
     const cancelJob = vi.fn(async () => null);
     const retryJob = vi.fn(async () => null);
-    const value = controller({ pendingJobIds: [blockedJob.id], cancelJob, retryJob });
+    const reauthorizeJobOutput = vi.fn(async () => null);
+    const value = controller({
+      pendingJobIds: [blockedJob.id],
+      cancelJob,
+      retryJob,
+      reauthorizeJobOutput,
+    });
     render(<JobCenter controller={value} onClose={vi.fn()} />);
 
-    const retryButtons = screen.getAllByRole("button", { name: /Retry/ });
-    expect(retryButtons).toHaveLength(1);
-    expect((retryButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    const reauthorizeButton = screen.getByRole("button", { name: "Reauthorizing export" });
+    expect((reauthorizeButton as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: /^Cancel$/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
     expect(cancelJob).toHaveBeenCalledWith(testMediaJob);
     expect(retryJob).not.toHaveBeenCalled();
+    expect(reauthorizeJobOutput).not.toHaveBeenCalled();
+  });
+
+  it("starts output reauthorization from the blocked durable job", () => {
+    const reauthorizeJobOutput = vi.fn(async () => null);
+    render(<JobCenter controller={controller({ reauthorizeJobOutput })} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose destination and retry" }));
+
+    expect(reauthorizeJobOutput).toHaveBeenCalledWith(blockedJob);
   });
 
   it("keeps older pagination reachable when the loaded page contains only child jobs", () => {

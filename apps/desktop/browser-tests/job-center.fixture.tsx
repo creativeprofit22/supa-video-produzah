@@ -74,7 +74,7 @@ const jobs: readonly MediaJobRecord[] = [
       code: "output_grant_required",
       category: "output_authorization_required",
       message: "Fresh destination authorization is required after restart.",
-      retryable: true,
+      retryable: false,
       action: "reauthorize_output",
     },
   }),
@@ -206,6 +206,7 @@ function Fixture() {
     canClearLegacyCache: cacheStatus.legacyClearAvailable && !clearing,
     canCancelJob: () => true,
     canRetryJob: () => true,
+    canReauthorizeJobOutput: () => true,
     refresh: async () => undefined,
     refreshMediaJobs: async () => undefined,
     refreshCache: async () => undefined,
@@ -213,6 +214,25 @@ function Fixture() {
     cancelMediaJob: async () => null,
     retryJob: async () => null,
     retryMediaJob: async () => null,
+    reauthorizeJobOutput: async (job: MediaJobRecord | string) => {
+      const jobId = typeof job === "string" ? job : job.id;
+      let updated: MediaJobRecord | null = null;
+      setVisibleJobs((current) =>
+        current.map((candidate) => {
+          if (candidate.id !== jobId) return candidate;
+          updated = {
+            ...candidate,
+            state: "queued",
+            stage: "queued",
+            error: null,
+            updatedAt: new Date(Date.parse(candidate.updatedAt) + 1_000).toISOString(),
+          } as MediaJobRecord;
+          return updated;
+        }),
+      );
+      return updated;
+    },
+    reauthorizeMediaJobOutput: async () => null,
     clearLegacyCache: async () => {
       setClearing(true);
       await new Promise((resolve) => setTimeout(resolve, 30));

@@ -235,6 +235,9 @@ function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
     retryMediaJob: vi.fn(async () => {
       throw new Error("unexpected media job retry");
     }),
+    reauthorizeMediaJobOutput: vi.fn(async () => {
+      throw new Error("unexpected media job output reauthorization");
+    }),
     getMediaCacheStatus: vi.fn(async () => ({
       schemaVersion: 1 as const,
       budgetBytes: 1_000_000,

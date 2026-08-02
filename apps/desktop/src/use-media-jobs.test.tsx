@@ -60,6 +60,10 @@ function mediaBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
       schemaVersion: 1,
       job: testMediaJob,
     })),
+    reauthorizeMediaJobOutput: vi.fn<VideoBackend["reauthorizeMediaJobOutput"]>(async () => ({
+      schemaVersion: 1,
+      job: testMediaJob,
+    })),
     getMediaCacheStatus: vi.fn(async () => testMediaCacheStatus),
     clearLegacyMediaCache: vi.fn<VideoBackend["clearLegacyMediaCache"]>(async () => ({
       schemaVersion: 1,
@@ -216,6 +220,64 @@ describe("durable media jobs controller", () => {
     act(() => onEvent?.(recoveredEvent));
     await waitFor(() => expect(result.current.jobs[0]?.state).toBe("complete"));
     expect(result.current.latestEventId).toBe(2);
+  });
+
+  it("picks a fresh destination and reauthorizes the same blocked render UUID", async () => {
+    const blocked = {
+      ...testMediaJob,
+      kind: "final_render",
+      state: "blocked",
+      stage: "authorization",
+      error: {
+        code: "output_authorization_required",
+        category: "output_authorization_required",
+        message: "Choose the export destination again to continue.",
+        retryable: false,
+        action: "reauthorize_output",
+      },
+    } as MediaJobRecord;
+    const queued = {
+      ...blocked,
+      state: "queued",
+      stage: "queued",
+      error: null,
+      updatedAt: timestamp,
+    } as MediaJobRecord;
+    let current = blocked;
+    const pickVideoExportPath = vi.fn(async () => "C:\\Exports\\launch.mp4");
+    const reauthorizeMediaJobOutput = vi.fn<VideoBackend["reauthorizeMediaJobOutput"]>(
+      async (request) => {
+        expect(request).toEqual({
+          jobId: blocked.id,
+          outputPath: "C:\\Exports\\launch.mp4",
+        });
+        current = queued;
+        return { schemaVersion: 1, job: queued };
+      },
+    );
+    const backend = mediaBackend({
+      pickVideoExportPath,
+      reauthorizeMediaJobOutput,
+      listMediaJobs: vi.fn<VideoBackend["listMediaJobs"]>(async () => ({
+        schemaVersion: 1,
+        jobs: [current],
+        unsettledParentCount: 1,
+        nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
+        latestEventId: 1,
+        recovery: null,
+      })),
+    });
+    const { result } = renderHook(() => useMediaJobs(backend));
+    await waitFor(() => expect(result.current.jobs[0]?.state).toBe("blocked"));
+
+    await act(() => result.current.reauthorizeJobOutput(blocked));
+
+    expect(pickVideoExportPath).toHaveBeenCalledWith("export.mp4");
+    expect(reauthorizeMediaJobOutput).toHaveBeenCalledOnce();
+    expect(result.current.jobs[0]).toMatchObject({ id: blocked.id, state: "queued" });
+    expect(result.current.pendingJobIds).toEqual([]);
+    expect(backend.retryMediaJob).not.toHaveBeenCalled();
   });
 
   it("falls back to snapshots after listener failure and refreshes again on resume", async () => {

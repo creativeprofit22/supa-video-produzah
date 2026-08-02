@@ -396,6 +396,84 @@ describe("complete mocked Phase 2 workflow", () => {
     ).toBeTruthy();
   });
 
+  it("reauthorizes a restarted final render as one durable lifecycle in ExportPanel and Job Center", async () => {
+    const durableJobId = "70000000-0000-4000-8000-000000000095";
+    const persistedPlanId = "70000000-0000-4000-8000-000000000096";
+    const blocked = {
+      ...testMediaJob,
+      id: durableJobId,
+      kind: "final_render",
+      projectId: null,
+      assetId: null,
+      revisionId: "70000000-0000-4000-8000-000000000101",
+      priority: "export",
+      state: "blocked",
+      stage: "authorization",
+      progress: { completed: 0, total: 1_800_000, unit: "microseconds" },
+      error: {
+        code: "output_authorization_required",
+        category: "output_authorization_required",
+        message: "Choose the export destination again to continue.",
+        retryable: false,
+        action: "reauthorize_output",
+      },
+      updatedAt: "2026-07-26T12:00:01.000Z",
+    } as MediaJobRecord;
+    const service = createMockVideoService({ mediaJobs: [blocked] });
+    let reauthorizedPlanId: string | null = null;
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "video_reauthorize_media_job_output") {
+        reauthorizedPlanId = persistedPlanId;
+        expect(args).toEqual({
+          request: { jobId: durableJobId, outputPath: service.outputPath },
+        });
+      }
+      return service.invoke(command, args);
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const exportPanel = screen.getByRole("region", { name: "Export MP4" });
+    expect(await within(exportPanel).findByText("Final export: Needs attention")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    const jobCenter = await screen.findByRole("region", { name: "Job Center" });
+    fireEvent.click(
+      within(jobCenter).getByRole("button", { name: "Choose destination and retry" }),
+    );
+
+    expect(await within(exportPanel).findByText("Final export: Queued")).toBeTruthy();
+    expect(within(jobCenter).getByText("Queued", { exact: true })).toBeTruthy();
+    expect(reauthorizedPlanId).toBe(persistedPlanId);
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_start_render"),
+    ).toHaveLength(0);
+    expect(
+      within(jobCenter)
+        .getAllByRole("article")
+        .filter((article) => article.getAttribute("aria-labelledby")?.includes(durableJobId)),
+    ).toHaveLength(1);
+
+    const complete = {
+      ...blocked,
+      state: "complete",
+      stage: "complete",
+      progress: { completed: 1_800_000, total: 1_800_000, unit: "microseconds" },
+      error: null,
+      settledAt: "2026-07-26T12:00:03.000Z",
+      updatedAt: "2026-07-26T12:00:03.000Z",
+      resultAvailable: true,
+    } as MediaJobRecord;
+    dispatchMediaJob(service.replaceMediaJobs([complete]));
+
+    expect(await within(exportPanel).findByText("Final export: Complete")).toBeTruthy();
+    expect(within(jobCenter).getByText("Complete", { exact: true })).toBeTruthy();
+  });
+
   it("uses one durable render lifecycle through retry and cancellation", async () => {
     const service = createMockVideoService({ mediaJobs: [] });
     invokeMock.mockImplementation(service.invoke);

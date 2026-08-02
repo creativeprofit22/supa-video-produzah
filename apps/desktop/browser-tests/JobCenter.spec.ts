@@ -75,6 +75,21 @@ for (const viewport of [
   });
 }
 
+test("blocked final export exposes a keyboard-operable destination reauthorization action", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await page.goto(fixturePath);
+  const action = page.getByRole("button", { name: "Choose destination and retry" });
+  await action.scrollIntoViewIfNeeded();
+  await action.focus();
+  await expect(action).toBeFocused();
+  await page.keyboard.press("Enter");
+  const finalExport = page.getByRole("article", { name: "Export current saved revision" });
+  await expect(finalExport.getByText("Queued", { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+});
 
 test("older-page loading preserves focus, merges equal timestamps once, and announces the count", async ({
   page,

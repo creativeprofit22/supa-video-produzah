@@ -2,6 +2,7 @@ import type { MediaCacheStatus, MediaJobRecord } from "@supa-video/media";
 import {
   AlertCircle,
   AlertTriangle,
+  FolderOutput,
   ListTodo,
   RefreshCw,
   RotateCcw,
@@ -11,7 +12,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { canCancelMediaJob, canRetryMediaJob, type MediaJobsController } from "../use-media-jobs";
+import {
+  canCancelMediaJob,
+  canReauthorizeMediaJobOutput,
+  canRetryMediaJob,
+  type MediaJobsController,
+} from "../use-media-jobs";
 import { MediaJobStateIcon, mediaJobStateLabels } from "./MediaJobStatus";
 interface JobCenterProps {
   readonly controller: MediaJobsController;
@@ -28,7 +34,7 @@ const kindLabels: Record<MediaJobRecord["kind"], string> = {
 };
 const recoveryActionLabels = {
   reauthorize_source: "Choose the source again, then retry.",
-  reauthorize_output: "Choose the export destination again, then retry.",
+  reauthorize_output: "Choose the export destination again to continue.",
   verify_toolchain: "Repair the bundled media tools, then retry.",
   free_cache: "Close media using the cache or clear available space, then retry.",
   retry: "Retry the job when the issue is resolved.",
@@ -117,8 +123,10 @@ function JobItem({
   const pending = controller.pendingJobIds.includes(job.id);
   const summary = jobSummary(job);
   const showCancel = !terminalStates.has(job.state);
+  const showReauthorize = canReauthorizeMediaJobOutput(job);
   const showRetry =
-    canRetryMediaJob(job) || (pending && (job.state === "blocked" || job.state === "failed"));
+    !showReauthorize &&
+    (canRetryMediaJob(job) || (pending && (job.state === "blocked" || job.state === "failed")));
   const error =
     job.state === "blocked" || job.state === "retrying" || job.state === "failed"
       ? job.error
@@ -181,8 +189,19 @@ function JobItem({
           </div>
         ) : null}
 
-        {showCancel || showRetry ? (
+        {showCancel || showRetry || showReauthorize ? (
           <div className="job-actions">
+            {showReauthorize ? (
+              <button
+                className="secondary-button compact-button"
+                type="button"
+                disabled={pending || !canReauthorizeMediaJobOutput(job)}
+                onClick={() => void controller.reauthorizeJobOutput(job)}
+              >
+                <FolderOutput size={16} aria-hidden />
+                {pending ? "Reauthorizing export" : "Choose destination and retry"}
+              </button>
+            ) : null}
             {showRetry ? (
               <button
                 className="secondary-button compact-button"

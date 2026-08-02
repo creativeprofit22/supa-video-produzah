@@ -60,6 +60,16 @@ export function canRetryMediaJob(job: MediaJobRecord): boolean {
   );
 }
 
+export function canReauthorizeMediaJobOutput(job: MediaJobRecord): boolean {
+  return (
+    job.kind === "final_render" &&
+    job.state === "blocked" &&
+    job.error?.category === "output_authorization_required" &&
+    job.error.action === "reauthorize_output" &&
+    !job.cancellationRequested
+  );
+}
+
 function mergeEvents(
   current: readonly MediaJobEvent[],
   incoming: readonly MediaJobEvent[],
@@ -485,13 +495,29 @@ export function useMediaJobs(
     [findJob],
   );
 
+  const canReauthorizeJobOutput = useCallback(
+    (jobOrId: MediaJobRecord | string) => {
+      const job = findJob(jobOrId);
+      return (
+        job !== undefined &&
+        !pendingJobIdsRef.current.has(job.id) &&
+        canReauthorizeMediaJobOutput(job)
+      );
+    },
+    [findJob],
+  );
+
   const runJobAction = useCallback(
-    async (kind: "cancel" | "retry", jobId: string) => {
+    async (kind: "cancel" | "retry" | "reauthorize-output", jobId: string) => {
       const job = jobsRef.current.find((candidate) => candidate.id === jobId);
       const allowed =
         job !== undefined &&
         !pendingJobIdsRef.current.has(jobId) &&
-        (kind === "cancel" ? canCancelMediaJob(job) : canRetryMediaJob(job));
+        (kind === "cancel"
+          ? canCancelMediaJob(job)
+          : kind === "retry"
+            ? canRetryMediaJob(job)
+            : canReauthorizeMediaJobOutput(job));
       if (!allowed) return null;
 
       const lifecycle = lifecycleRef.current;
@@ -501,9 +527,22 @@ export function useMediaJobs(
       setPendingJobIds([...pendingJobIdsRef.current]);
       setActionError(null);
       try {
-        const response = await (kind === "cancel"
-          ? backend.cancelMediaJob({ jobId })
-          : backend.retryMediaJob({ jobId }));
+        let response;
+        if (kind === "cancel") {
+          response = await backend.cancelMediaJob({ jobId });
+        } else if (kind === "retry") {
+          response = await backend.retryMediaJob({ jobId });
+        } else {
+          const outputPath = await backend.pickVideoExportPath("export.mp4");
+          if (
+            outputPath === null ||
+            !mountedRef.current ||
+            lifecycle !== lifecycleRef.current ||
+            actionOperationsRef.current.get(jobId) !== operation
+          )
+            return null;
+          response = await backend.reauthorizeMediaJobOutput({ jobId, outputPath });
+        }
         if (
           !mountedRef.current ||
           lifecycle !== lifecycleRef.current ||
@@ -547,6 +586,11 @@ export function useMediaJobs(
   const retryJob = useCallback(
     (jobOrId: MediaJobRecord | string) =>
       runJobAction("retry", typeof jobOrId === "string" ? jobOrId : jobOrId.id),
+    [runJobAction],
+  );
+  const reauthorizeJobOutput = useCallback(
+    (jobOrId: MediaJobRecord | string) =>
+      runJobAction("reauthorize-output", typeof jobOrId === "string" ? jobOrId : jobOrId.id),
     [runJobAction],
   );
 
@@ -610,6 +654,7 @@ export function useMediaJobs(
     canClearLegacyCache: cacheStatus?.legacyClearAvailable === true && !clearingLegacyCache,
     canCancelJob,
     canRetryJob,
+    canReauthorizeJobOutput,
     refresh,
     refreshMediaJobs: refresh,
     refreshCache,
@@ -617,6 +662,8 @@ export function useMediaJobs(
     cancelMediaJob: cancelJob,
     retryJob,
     retryMediaJob: retryJob,
+    reauthorizeJobOutput,
+    reauthorizeMediaJobOutput: reauthorizeJobOutput,
     clearLegacyCache,
     clearLegacyMediaCache: clearLegacyCache,
   } as const;
