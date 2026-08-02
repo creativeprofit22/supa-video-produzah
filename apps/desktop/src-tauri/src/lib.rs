@@ -1094,6 +1094,8 @@ mod tests {
     #[cfg(windows)]
     const PACKAGED_MEDIA_RESOURCE_ROOT_ENV: &str = "SVP_MEDIA_RESOURCE_ROOT";
     #[cfg(windows)]
+    const PACKAGED_CACHE_STAGE_DEADLINE: Duration = Duration::from_secs(120);
+    #[cfg(windows)]
     const PACKAGED_RENDER_REVISION_ID: &str = "44444444-4444-4444-8444-444444444444";
     #[cfg(windows)]
     const PACKAGED_COMPLETE_PLAN_ID: &str = "55555555-5555-4555-8555-555555555555";
@@ -1257,12 +1259,55 @@ mod tests {
     }
 
     #[cfg(windows)]
+    async fn run_packaged_cache_stage<T>(
+        label: &str,
+        stage: impl std::future::Future<Output = T>,
+    ) -> T {
+        tokio::time::timeout(PACKAGED_CACHE_STAGE_DEADLINE, stage)
+            .await
+            .unwrap_or_else(|_| {
+                panic!(
+                    "packaged cache stage `{label}` timed out after {} seconds",
+                    PACKAGED_CACHE_STAGE_DEADLINE.as_secs()
+                )
+            })
+    }
+
+    #[cfg(windows)]
     #[test]
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_phase3b_cache_lease_eviction_regeneration_and_legacy_policy() {
         tauri::async_runtime::block_on(async {
-            video::cache::tests::assert_packaged_cache_lease_lru_and_legacy_policy().await;
-            video::tests::assert_derived_media_reuse_repair(packaged_media_programs()).await;
+            let resource_root = std::env::var_os(PACKAGED_MEDIA_RESOURCE_ROOT_ENV)
+                .map(PathBuf::from)
+                .expect("SVP_MEDIA_RESOURCE_ROOT must identify the assembled Tauri resource root");
+            let toolchain =
+                video::toolchain::MediaToolchain::resolve_from_resource_root(&resource_root);
+            let toolchain_id = toolchain.toolchain_id().to_owned();
+            assert_eq!(toolchain_id, "ffmpeg-8.1.2-gyan-essentials-windows-x86_64");
+            let toolchain = video::toolchain::MediaToolchainState::from_ready(toolchain);
+            let verified = run_packaged_cache_stage(
+                "bundled-tool integrity verification",
+                toolchain.verified_programs(),
+            )
+            .await
+            .expect("packaged cache toolchain must pass explicit integrity verification");
+            let programs = video::derived::MediaPrograms::explicit_for_toolchain(
+                verified.ffmpeg().as_os_str().to_owned(),
+                verified.ffprobe().as_os_str().to_owned(),
+                toolchain_id,
+            );
+
+            run_packaged_cache_stage(
+                "cache lease, eviction, and low-level legacy policy",
+                video::cache::tests::assert_packaged_cache_lease_lru_and_legacy_policy(),
+            )
+            .await;
+            run_packaged_cache_stage(
+                "derived cache reuse and corruption repair",
+                video::tests::assert_derived_media_reuse_repair(programs),
+            )
+            .await;
         });
 
         let app = packaged_media_app("legacy-policy");

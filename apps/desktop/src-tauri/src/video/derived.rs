@@ -1056,6 +1056,7 @@ enum MediaProgramSource {
     Explicit {
         ffmpeg: OsString,
         ffprobe: OsString,
+        toolchain_id: String,
     },
 }
 
@@ -1068,8 +1069,21 @@ impl MediaPrograms {
 
     #[cfg(test)]
     pub(crate) fn explicit(ffmpeg: OsString, ffprobe: OsString) -> Self {
+        Self::explicit_for_toolchain(ffmpeg, ffprobe, "test-explicit-programs")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn explicit_for_toolchain(
+        ffmpeg: OsString,
+        ffprobe: OsString,
+        toolchain_id: impl Into<String>,
+    ) -> Self {
         Self {
-            source: MediaProgramSource::Explicit { ffmpeg, ffprobe },
+            source: MediaProgramSource::Explicit {
+                ffmpeg,
+                ffprobe,
+                toolchain_id: toolchain_id.into(),
+            },
         }
     }
 
@@ -1077,7 +1091,7 @@ impl MediaPrograms {
         match &self.source {
             MediaProgramSource::Bundled(toolchain) => toolchain.toolchain_id(),
             #[cfg(test)]
-            MediaProgramSource::Explicit { .. } => "test-explicit-programs",
+            MediaProgramSource::Explicit { toolchain_id, .. } => toolchain_id,
         }
     }
 
