@@ -15,6 +15,7 @@
     "media:bootstrap:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1",
     "media:verify:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1 -VerifyOnly",
     "media:test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/tests/bootstrap-ffmpeg-windows.Tests.ps1",
+    "startup:test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/tests/startup-benchmark-evaluation.Tests.ps1",
     "startup:benchmark:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/benchmark-packaged-startup-windows.ps1",
     "tauri": "tauri"
   },

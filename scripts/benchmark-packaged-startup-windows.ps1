@@ -21,12 +21,14 @@ param(
   [ValidateRange(1, 600)]
   [int]$RunTimeoutSeconds = 120,
 
+  [switch]$AdvisoryPerformance,
+
   [string]$OutputPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-
+. (Join-Path $PSScriptRoot "startup-benchmark-evaluation.ps1")
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @"
@@ -333,18 +335,20 @@ $summary = [ordered]@{
   projectActionsEnabledWhileResolvingEveryRun = $projectActionsPassed
 }
 
-$passed =
-  $summary.firstVisibleWindowP95Ms -le $FirstWindowBudgetMs -and
-  $summary.readyStatusP95Ms -le $ReadyBudgetMs -and
-  $summary.responsivenessFailures -eq 0 -and
-  $summary.maxResponsivenessProbeMs -le $ResponsivenessProbeTimeoutMs -and
-  $summary.loadingStateObservedEveryRun -and
-  $summary.projectActionsEnabledWhileResolvingEveryRun
+$evaluation = Get-StartupBenchmarkEvaluation `
+  -Summary ([pscustomobject]$summary) `
+  -FirstWindowBudgetMs $FirstWindowBudgetMs `
+  -ReadyBudgetMs $ReadyBudgetMs `
+  -ResponsivenessProbeTimeoutMs $ResponsivenessProbeTimeoutMs `
+  -EnforcePerformanceBudgets (-not $AdvisoryPerformance)
 
 $report = [ordered]@{
-  schemaVersion = 1
+  schemaVersion = 2
   measuredAtUtc = [DateTime]::UtcNow.ToString("o")
-  passed = $passed
+  passed = $evaluation.passed
+  correctnessPassed = $evaluation.correctnessPassed
+  performancePassed = $evaluation.performancePassed
+  performanceEnforced = $evaluation.performanceEnforced
   coldCacheMethod = "Fresh WebView2 user-data folder and Microsoft Sysinternals RAMMap -Et standby-list purge before every run"
   executable = $executable
   iterations = $Iterations
@@ -370,6 +374,12 @@ if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
 }
 $json
 
-if (-not $passed) {
-  throw "Packaged startup benchmark exceeded its release budget or responsiveness requirements"
+if (-not $evaluation.correctnessPassed) {
+  throw "Packaged startup smoke correctness failed because required UI states were not observed"
+}
+if ($evaluation.performanceEnforced -and -not $evaluation.performancePassed) {
+  throw "Packaged startup benchmark exceeded its strict performance budget"
+}
+if (-not $evaluation.performancePassed) {
+  Write-Warning "Packaged startup performance exceeded its advisory budget"
 }

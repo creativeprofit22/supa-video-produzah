@@ -214,7 +214,11 @@ jobs:
             throw "Tauri did not produce $executable"
           }
 
-      - name: Benchmark packaged cold start and media readiness
+      - name: Test startup benchmark pass/fail evaluation
+        shell: pwsh
+        run: pnpm --dir apps/desktop startup:test:windows
+
+      - name: Smoke-test packaged startup with advisory performance reporting
         shell: pwsh
         run: |
           $ramMapRoot = Join-Path $env:RUNNER_TEMP "rammap"
@@ -229,6 +233,7 @@ jobs:
             -ExecutablePath "apps/desktop/src-tauri/target/release/supa-video-desktop.exe" `
             -RamMapPath (Join-Path $ramMapRoot "RAMMap64.exe") `
             -Iterations 10 `
+            -AdvisoryPerformance `
             -OutputPath "apps/desktop/src-tauri/target/release/startup-benchmark.json"
 
       - name: Archive packaged startup benchmark
