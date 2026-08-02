@@ -143,6 +143,8 @@ pub(crate) struct MediaJobScheduler {
     sequence: AtomicU64,
     active_count: AtomicUsize,
     shutting_down: AtomicBool,
+    #[cfg(test)]
+    wait_barriers: std::sync::Mutex<Option<(Arc<tokio::sync::Barrier>, Arc<tokio::sync::Barrier>)>>,
 }
 
 impl MediaJobScheduler {
@@ -169,6 +171,8 @@ impl MediaJobScheduler {
             sequence: AtomicU64::new(0),
             active_count: AtomicUsize::new(0),
             shutting_down: AtomicBool::new(false),
+            #[cfg(test)]
+            wait_barriers: std::sync::Mutex::new(None),
         }))
     }
 
@@ -373,16 +377,22 @@ impl MediaJobScheduler {
     #[cfg(test)]
     pub(crate) async fn wait_idle(&self) {
         loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             if self.queue.lock().await.is_empty() && self.active_count.load(Ordering::Acquire) == 0
             {
                 return;
             }
-            self.notify.notified().await;
+            notified.await;
         }
     }
 
     async fn run_loop(self: Arc<Self>) {
         loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             if self.shutting_down.load(Ordering::Acquire)
                 && self.active_count.load(Ordering::Acquire) == 0
             {
@@ -397,7 +407,18 @@ impl MediaJobScheduler {
                 });
                 continue;
             }
-            self.notify.notified().await;
+            #[cfg(test)]
+            self.pause_before_wait().await;
+            notified.await;
+        }
+    }
+
+    #[cfg(test)]
+    async fn pause_before_wait(&self) {
+        let barriers = self.wait_barriers.lock().unwrap().take();
+        if let Some((reached, resume)) = barriers {
+            reached.wait().await;
+            resume.wait().await;
         }
     }
 
@@ -931,6 +952,25 @@ mod tests {
         }
     }
 
+    struct BarrierWorker {
+        name: &'static str,
+        order: Arc<StdMutex<Vec<&'static str>>>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    impl MediaJobWorker for BarrierWorker {
+        fn run(&self, _job_id: String, _cancellation: ProcessCancellation) -> MediaWorkerFuture {
+            let name = self.name;
+            let order = self.order.clone();
+            let release = self.release.clone();
+            Box::pin(async move {
+                order.lock().unwrap().push(name);
+                release.wait().await;
+                completed_worker_outcome()
+            })
+        }
+    }
+
     struct RetryWorker {
         calls: AtomicUsize,
     }
@@ -1176,6 +1216,109 @@ mod tests {
         assert_eq!(
             queue_sort_key(&old_background, 250, Duration::from_millis(100)).0,
             0
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn permit_release_between_failed_acquisition_and_wait_is_not_lost() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize(directory.path().to_path_buf())
+            .await
+            .unwrap();
+        let scheduler = MediaJobScheduler::new(
+            store.clone(),
+            MediaSchedulerConfig {
+                ffmpeg_permits: 1,
+                ..MediaSchedulerConfig::default()
+            },
+            TestClock::at(12_000),
+        )
+        .unwrap();
+        let failed_acquisition = Arc::new(tokio::sync::Barrier::new(2));
+        let resume_wait = Arc::new(tokio::sync::Barrier::new(2));
+        *scheduler.wait_barriers.lock().unwrap() =
+            Some((failed_acquisition.clone(), resume_wait.clone()));
+        let release_first = Arc::new(tokio::sync::Barrier::new(2));
+        let order = Arc::new(StdMutex::new(Vec::new()));
+        let first_id = queued_job(
+            &store,
+            "lost-wakeup-first",
+            MediaJobPriority::Interactive,
+            12_000,
+        )
+        .await;
+        scheduler
+            .submit(
+                first_id.clone(),
+                MediaJobPriority::Interactive,
+                0,
+                3,
+                SchedulerResource::Ffmpeg,
+                Arc::new(BarrierWorker {
+                    name: "first",
+                    order: order.clone(),
+                    release: release_first.clone(),
+                }),
+            )
+            .await
+            .unwrap();
+        let second_id = queued_job(
+            &store,
+            "lost-wakeup-second",
+            MediaJobPriority::Interactive,
+            12_000,
+        )
+        .await;
+        scheduler
+            .submit(
+                second_id.clone(),
+                MediaJobPriority::Interactive,
+                0,
+                3,
+                SchedulerResource::Ffmpeg,
+                Arc::new(RecordingWorker {
+                    name: "second",
+                    order: order.clone(),
+                    active: Arc::new(AtomicUsize::new(0)),
+                    peak: Arc::new(AtomicUsize::new(0)),
+                    delay: Duration::ZERO,
+                }),
+            )
+            .await
+            .unwrap();
+        // Leave the worker completion as the only notification capable of waking queued work.
+        scheduler.notify.notified().await;
+
+        let loop_handle = scheduler.start();
+        failed_acquisition.wait().await;
+        release_first.wait().await;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if scheduler.active_count.load(Ordering::Acquire) == 0
+                    && scheduler.ffmpeg_permits.available_permits() == 1
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        resume_wait.wait().await;
+
+        tokio::time::timeout(Duration::from_secs(2), scheduler.wait_idle())
+            .await
+            .unwrap();
+        scheduler.shutdown().await;
+        loop_handle.await.unwrap();
+        assert_eq!(*order.lock().unwrap(), vec!["first", "second"]);
+        assert_eq!(
+            store.get_private(first_id).await.unwrap().public.state,
+            MediaJobState::Complete
+        );
+        assert_eq!(
+            store.get_private(second_id).await.unwrap().public.state,
+            MediaJobState::Complete
         );
     }
 
