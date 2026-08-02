@@ -1259,6 +1259,58 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
+    fn packaged_phase3b_cache_lease_eviction_regeneration_and_legacy_policy() {
+        tauri::async_runtime::block_on(async {
+            video::cache::tests::assert_packaged_cache_lease_lru_and_legacy_policy().await;
+            video::tests::assert_derived_media_reuse_repair(packaged_media_programs()).await;
+        });
+
+        let app = packaged_media_app("legacy-policy");
+        let legacy_root = app.cache_root().join("video-phase1");
+        fs::create_dir_all(&legacy_root).expect("packaged legacy root must be created");
+        fs::write(legacy_root.join("preview.bin"), b"legacy")
+            .expect("packaged legacy fixture must be written");
+        let webview = WebviewWindowBuilder::new(&*app, "packaged-legacy", Default::default())
+            .build()
+            .expect("packaged legacy test webview must build");
+        let status = get_ipc_response(
+            &webview,
+            invoke_request("video_get_media_cache_status", json!({})),
+        )
+        .expect("packaged legacy status must load")
+        .deserialize::<Value>()
+        .expect("packaged legacy status must be JSON");
+        assert_eq!(status["legacyBytes"], 6);
+        assert_eq!(status["legacyClearAvailable"], true);
+        get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_clear_legacy_media_cache",
+                json!({ "request": { "confirmed": false } }),
+            ),
+        )
+        .expect_err("packaged legacy clear must reject missing confirmation");
+        assert!(legacy_root.join("preview.bin").exists());
+        let cleared = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_clear_legacy_media_cache",
+                json!({ "request": { "confirmed": true } }),
+            ),
+        )
+        .expect("confirmed packaged legacy clear must succeed")
+        .deserialize::<Value>()
+        .expect("packaged legacy clear result must be JSON");
+        assert_eq!(cleared["clearedBytes"], 6);
+        assert_eq!(cleared["status"]["legacyClearAvailable"], false);
+        assert!(!legacy_root.join("preview.bin").exists());
+        drop(webview);
+        app.cleanup();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_media_renamed_or_replaced_executable_fails_before_spawn() {
         use std::io::Write as _;
 

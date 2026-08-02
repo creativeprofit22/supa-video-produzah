@@ -322,6 +322,19 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Packaged Phase 3B render reauthorization, retry, and cancellation proof failed"
             }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_phase3b_cache_lease_eviction_regeneration_and_legacy_policy `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged Phase 3B cache lease, LRU, regeneration, and legacy-policy proof failed"
+            }
           }
           finally {
             $env:PATH = $originalPath
