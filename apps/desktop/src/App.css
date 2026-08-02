@@ -1226,6 +1226,34 @@ video {
   list-style: none;
   counter-reset: media-job;
 }
+.job-ledger-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-block-start: 14px;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--border);
+}
+.job-ledger-pagination-error {
+  flex: 1 0 100%;
+  margin: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--danger);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.job-ledger-pagination-status {
+  margin: 0;
+  color: var(--quiet);
+  font-size: 0.75rem;
+}
+.job-ledger-pagination-status:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
 .job-item {
   min-width: 0;
   border: 1px solid var(--border);
@@ -1634,8 +1662,14 @@ video {
     flex-direction: column;
   }
   .job-actions,
-  .job-actions button {
+  .job-actions button,
+  .job-ledger-pagination,
+  .job-ledger-pagination button {
     width: 100%;
+  }
+  .job-ledger-pagination {
+    align-items: stretch;
+    flex-direction: column;
   }
   .job-actions button {
     flex: 1;

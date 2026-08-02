@@ -11,6 +11,37 @@ import { tauriVideoBackend, type VideoBackend } from "./video-ipc";
 const TERMINAL_JOB_STATES = new Set<MediaJobRecord["state"]>(["cancelled", "failed", "complete"]);
 const RETRYABLE_JOB_STATES = new Set<MediaJobRecord["state"]>(["blocked", "failed"]);
 const MAX_RETAINED_EVENTS = 500;
+const MEDIA_JOB_PAGE_SIZE = 100;
+
+interface MediaJobCursor {
+  readonly beforeUpdatedAt: string;
+  readonly beforeJobId: string;
+}
+
+function compareDurableJobs(left: MediaJobRecord, right: MediaJobRecord): number {
+  const timestampOrder = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+  return timestampOrder === 0 ? right.id.localeCompare(left.id) : timestampOrder;
+}
+
+function mergeJobs(
+  current: readonly MediaJobRecord[],
+  incoming: readonly MediaJobRecord[],
+): MediaJobRecord[] {
+  const byId = new Map(current.map((job) => [job.id, job]));
+  for (const job of incoming) byId.set(job.id, newerJob(byId.get(job.id), job));
+  return [...byId.values()].sort(compareDurableJobs);
+}
+
+function reconcileAuthoritativeJobs(
+  current: readonly MediaJobRecord[],
+  incoming: readonly MediaJobRecord[],
+): MediaJobRecord[] {
+  const incomingIds = new Set(incoming.map((job) => job.id));
+  return mergeJobs(
+    current.filter((job) => incomingIds.has(job.id)),
+    incoming,
+  );
+}
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error("The desktop operation failed unexpectedly");
@@ -58,11 +89,17 @@ export function useMediaJobs(
   const projectId = options.projectId ?? null;
   const includeSettled = options.includeSettled ?? true;
   const [jobs, setJobs] = useState<readonly MediaJobRecord[]>([]);
+  const [unsettledParentCount, setUnsettledParentCount] = useState(0);
   const [events, setEvents] = useState<readonly MediaJobEvent[]>([]);
   const [latestEventId, setLatestEventId] = useState(0);
   const [recovery, setRecovery] = useState<MediaJobRecoveryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [nextCursor, setNextCursor] = useState<MediaJobCursor | null>(null);
+  const [loadedPageCount, setLoadedPageCount] = useState(0);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState<Error | null>(null);
+  const [olderResultAnnouncement, setOlderResultAnnouncement] = useState("");
   const [error, setError] = useState<Error | null>(null);
   const [listenerError, setListenerError] = useState<Error | null>(null);
   const [cacheStatus, setCacheStatus] = useState<MediaCacheStatus | null>(null);
@@ -79,6 +116,11 @@ export function useMediaJobs(
   const listenerConnectedRef = useRef(false);
   const lifecycleRef = useRef(0);
   const snapshotOperationRef = useRef(0);
+  const olderOperationRef = useRef(0);
+  const snapshotPendingRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const loadedPageCountRef = useRef(0);
+  const nextCursorRef = useRef<MediaJobCursor | null>(null);
   const eventOperationRef = useRef(0);
   const cacheOperationRef = useRef(0);
   const actionOperationRef = useRef(0);
@@ -87,8 +129,9 @@ export function useMediaJobs(
   const clearingLegacyCacheRef = useRef(false);
 
   const replaceJobs = useCallback((next: readonly MediaJobRecord[]) => {
-    jobsRef.current = next;
-    setJobs(next);
+    const ordered = [...next].sort(compareDurableJobs);
+    jobsRef.current = ordered;
+    setJobs(ordered);
   }, []);
 
   const commitEvents = useCallback((incoming: readonly MediaJobEvent[]) => {
@@ -96,6 +139,7 @@ export function useMediaJobs(
       .filter((event) => event.eventId > latestEventIdRef.current)
       .sort((left, right) => left.eventId - right.eventId);
     if (accepted.length === 0) return;
+    setOlderResultAnnouncement("");
     const nextLatest = accepted.at(-1)!.eventId;
     latestEventIdRef.current = nextLatest;
     setLatestEventId(nextLatest);
@@ -105,26 +149,71 @@ export function useMediaJobs(
   const refreshSnapshot = useCallback(async () => {
     const lifecycle = lifecycleRef.current;
     const operation = ++snapshotOperationRef.current;
+    const requestedPageCount = Math.max(1, loadedPageCountRef.current);
+    olderOperationRef.current += 1;
+    loadingOlderRef.current = false;
+    snapshotPendingRef.current = true;
+    setLoadingOlder(false);
     setRefreshing(true);
     try {
-      const snapshot = await backend.listMediaJobs({
-        limit: 100,
-        includeSettled,
-        projectId,
-        beforeUpdatedAt: null,
-      });
-      if (
-        !mountedRef.current ||
-        lifecycle !== lifecycleRef.current ||
-        operation !== snapshotOperationRef.current
-      )
-        return;
-      replaceJobs(snapshot.jobs);
-      setRecovery(snapshot.recovery);
-      if (snapshot.latestEventId > latestEventIdRef.current) {
-        latestEventIdRef.current = snapshot.latestEventId;
-        setLatestEventId(snapshot.latestEventId);
+      const incoming: MediaJobRecord[] = [];
+      let cursor: MediaJobCursor | null = null;
+      let latestSnapshotEventId = 0;
+      let snapshotRecovery: MediaJobRecoveryReport | null = null;
+      let snapshotUnsettledParentCount = 0;
+      for (let pageIndex = 0; pageIndex < requestedPageCount; pageIndex += 1) {
+        const requestedCursor = cursor;
+        const snapshot = await backend.listMediaJobs({
+          limit: MEDIA_JOB_PAGE_SIZE,
+          includeSettled,
+          projectId,
+          beforeUpdatedAt: requestedCursor?.beforeUpdatedAt ?? null,
+          beforeJobId: requestedCursor?.beforeJobId ?? null,
+        });
+        if (
+          !mountedRef.current ||
+          lifecycle !== lifecycleRef.current ||
+          operation !== snapshotOperationRef.current
+        )
+          return;
+        incoming.push(...snapshot.jobs);
+        snapshotUnsettledParentCount = snapshot.unsettledParentCount;
+        latestSnapshotEventId = Math.max(latestSnapshotEventId, snapshot.latestEventId);
+        snapshotRecovery ??= snapshot.recovery;
+        const returnedCursor =
+          snapshot.nextBeforeUpdatedAt === null
+            ? null
+            : {
+                beforeUpdatedAt: snapshot.nextBeforeUpdatedAt,
+                beforeJobId: snapshot.nextBeforeJobId!,
+              };
+        if (
+          returnedCursor !== null &&
+          requestedCursor !== null &&
+          returnedCursor.beforeUpdatedAt === requestedCursor.beforeUpdatedAt &&
+          returnedCursor.beforeJobId === requestedCursor.beforeJobId
+        ) {
+          throw new Error("The desktop service returned a stalled media job page");
+        }
+        if (returnedCursor !== null && snapshot.jobs.length === 0) {
+          throw new Error("The desktop service returned an empty media job page with a cursor");
+        }
+        cursor = returnedCursor;
+        if (cursor === null) break;
       }
+      const current = loadedPageCountRef.current === 0 ? [] : jobsRef.current;
+      replaceJobs(reconcileAuthoritativeJobs(current, incoming));
+      setUnsettledParentCount(snapshotUnsettledParentCount);
+      nextCursorRef.current = cursor;
+      setNextCursor(cursor);
+      loadedPageCountRef.current = requestedPageCount;
+      setLoadedPageCount(requestedPageCount);
+      setRecovery(snapshotRecovery);
+      if (latestSnapshotEventId > latestEventIdRef.current) {
+        latestEventIdRef.current = latestSnapshotEventId;
+        setLatestEventId(latestSnapshotEventId);
+      }
+      setOlderError(null);
       setError(null);
       setLoading(false);
     } catch (reason) {
@@ -137,12 +226,85 @@ export function useMediaJobs(
         setLoading(false);
       }
     } finally {
+      if (lifecycle === lifecycleRef.current && operation === snapshotOperationRef.current) {
+        snapshotPendingRef.current = false;
+        if (mountedRef.current) setRefreshing(false);
+      }
+    }
+  }, [backend, includeSettled, projectId, replaceJobs]);
+
+  const loadOlderJobs = useCallback(async () => {
+    const requestedCursor = nextCursorRef.current;
+    if (requestedCursor === null || loadingOlderRef.current || snapshotPendingRef.current) return 0;
+    const lifecycle = lifecycleRef.current;
+    const operation = ++olderOperationRef.current;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    setOlderError(null);
+    setOlderResultAnnouncement("");
+    try {
+      const page = await backend.listMediaJobs({
+        limit: MEDIA_JOB_PAGE_SIZE,
+        includeSettled,
+        projectId,
+        beforeUpdatedAt: requestedCursor.beforeUpdatedAt,
+        beforeJobId: requestedCursor.beforeJobId,
+      });
+      if (
+        !mountedRef.current ||
+        lifecycle !== lifecycleRef.current ||
+        operation !== olderOperationRef.current
+      )
+        return 0;
+      const returnedCursor =
+        page.nextBeforeUpdatedAt === null
+          ? null
+          : { beforeUpdatedAt: page.nextBeforeUpdatedAt, beforeJobId: page.nextBeforeJobId! };
+      if (
+        returnedCursor !== null &&
+        returnedCursor.beforeUpdatedAt === requestedCursor.beforeUpdatedAt &&
+        returnedCursor.beforeJobId === requestedCursor.beforeJobId
+      ) {
+        throw new Error("The desktop service returned a stalled media job page");
+      }
+      if (returnedCursor !== null && page.jobs.length === 0) {
+        throw new Error("The desktop service returned an empty media job page with a cursor");
+      }
+      const existingIds = new Set(jobsRef.current.map((job) => job.id));
+      const merged = mergeJobs(jobsRef.current, page.jobs);
+      const addedCount = merged.reduce(
+        (count, job) => count + (existingIds.has(job.id) ? 0 : 1),
+        0,
+      );
+      replaceJobs(merged);
+      setUnsettledParentCount(page.unsettledParentCount);
+      nextCursorRef.current = returnedCursor;
+      setNextCursor(returnedCursor);
+      const nextPageCount = loadedPageCountRef.current + 1;
+      loadedPageCountRef.current = nextPageCount;
+      setLoadedPageCount(nextPageCount);
+      if (page.recovery !== null) setRecovery(page.recovery);
+      if (page.latestEventId > latestEventIdRef.current) {
+        latestEventIdRef.current = page.latestEventId;
+        setLatestEventId(page.latestEventId);
+      }
+      setOlderResultAnnouncement(
+        `${addedCount.toLocaleString()} older ${addedCount === 1 ? "job" : "jobs"} loaded.${returnedCursor === null ? " All available jobs are shown." : ""}`,
+      );
+      return addedCount;
+    } catch (reason) {
       if (
         mountedRef.current &&
         lifecycle === lifecycleRef.current &&
-        operation === snapshotOperationRef.current
+        operation === olderOperationRef.current
       )
-        setRefreshing(false);
+        setOlderError(asError(reason));
+      return 0;
+    } finally {
+      if (lifecycle === lifecycleRef.current && operation === olderOperationRef.current) {
+        loadingOlderRef.current = false;
+        if (mountedRef.current) setLoadingOlder(false);
+      }
     }
   }, [backend, includeSettled, projectId, replaceJobs]);
 
@@ -227,8 +389,23 @@ export function useMediaJobs(
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     mountedRef.current = true;
+    snapshotPendingRef.current = false;
+    loadingOlderRef.current = false;
+    loadedPageCountRef.current = 0;
+    nextCursorRef.current = null;
+    latestEventIdRef.current = 0;
+    replaceJobs([]);
+    setUnsettledParentCount(0);
+    setEvents([]);
+    setLatestEventId(0);
+    setRecovery(null);
+    setNextCursor(null);
+    setLoadedPageCount(0);
+    setLoadingOlder(false);
+    setOlderError(null);
+    setOlderResultAnnouncement("");
+    setError(null);
     setLoading(true);
-
     const handleEvent = (event: MediaJobEvent) => {
       if (!mountedRef.current || lifecycle !== lifecycleRef.current) return;
       if (event.eventId <= latestEventIdRef.current) return;
@@ -272,9 +449,12 @@ export function useMediaJobs(
       mountedRef.current = false;
       lifecycleRef.current += 1;
       snapshotOperationRef.current += 1;
+      olderOperationRef.current += 1;
       eventOperationRef.current += 1;
       cacheOperationRef.current += 1;
       actionOperationRef.current += 1;
+      snapshotPendingRef.current = false;
+      loadingOlderRef.current = false;
       actionOperationsRef.current.clear();
       listenerRef.current?.();
       listenerRef.current = null;
@@ -282,15 +462,12 @@ export function useMediaJobs(
       window.removeEventListener("focus", handleResume);
       document.removeEventListener("visibilitychange", handleResume);
     };
-  }, [backend, reconcileDurableEvents, refresh, refreshCache, refreshSnapshot]);
+  }, [backend, reconcileDurableEvents, refresh, refreshCache, refreshSnapshot, replaceJobs]);
 
-  const findJob = useCallback(
-    (jobOrId: MediaJobRecord | string) =>
-      typeof jobOrId === "string"
-        ? jobsRef.current.find((job) => job.id === jobOrId)
-        : (jobsRef.current.find((job) => job.id === jobOrId.id) ?? jobOrId),
-    [],
-  );
+  const findJob = useCallback((jobOrId: MediaJobRecord | string) => {
+    const jobId = typeof jobOrId === "string" ? jobOrId : jobOrId.id;
+    return jobsRef.current.find((job) => job.id === jobId);
+  }, []);
 
   const canCancelJob = useCallback(
     (jobOrId: MediaJobRecord | string) => {
@@ -409,11 +586,19 @@ export function useMediaJobs(
 
   return {
     jobs,
+    unsettledParentCount,
     events,
     latestEventId,
     recovery,
     loading,
     refreshing,
+    nextCursor,
+    loadedPageCount,
+    loadingOlder,
+    olderError,
+    olderResultAnnouncement,
+    hasOlderJobs: nextCursor !== null,
+    loadOlderJobs,
     error,
     listenerError,
     cacheStatus,

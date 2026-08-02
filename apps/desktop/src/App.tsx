@@ -31,9 +31,7 @@ function App() {
 
   const controller = useVideoProject();
   const mediaJobs = useMediaJobs();
-  const unsettledJobCount = mediaJobs.jobs.filter(
-    (job) => job.parentId === null && !["cancelled", "failed", "complete"].includes(job.state),
-  ).length;
+  const unsettledJobCount = mediaJobs.unsettledParentCount;
   const toolUnavailableFailure = [
     controller.projectOperation.phase === "error" ? controller.projectOperation.error : null,
     controller.preparation.phase === "error" ? controller.preparation.error : null,

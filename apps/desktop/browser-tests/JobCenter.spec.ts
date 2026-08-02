@@ -75,6 +75,117 @@ for (const viewport of [
   });
 }
 
+
+test("older-page loading preserves focus, merges equal timestamps once, and announces the count", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${fixturePath}?pagination=pending`);
+  const loadOlder = page.getByRole("button", { name: "Load older jobs" });
+  await loadOlder.focus();
+  await expect(loadOlder).toBeFocused();
+  await page.keyboard.press("Enter");
+  const pending = page.getByRole("button", { name: "Loading older jobs" });
+  await expect(pending).toBeDisabled();
+  await page.screenshot({
+    path: "evidence/phase-3/job-center-pagination-pending-1280x800.png",
+    animations: "disabled",
+  });
+  const complete = page.getByRole("button", { name: "All jobs loaded" });
+  await expect(complete).toBeVisible();
+  await expect(complete).toBeDisabled();
+  await expect(page.getByText("All available jobs are shown.", { exact: true })).toBeFocused();
+  await expect(page.getByText("1 older job loaded. All available jobs are shown.")).toBeAttached();
+
+  const parentTitleIds = await page
+    .locator(".job-list > .job-item article")
+    .evaluateAll((articles) => articles.map((article) => article.getAttribute("aria-labelledby")));
+  expect(parentTitleIds).toEqual([
+    "job-70000000-0000-4000-8000-000000000084-title",
+    "job-70000000-0000-4000-8000-000000000080-title",
+    "job-70000000-0000-4000-8000-000000000079-title",
+  ]);
+  expect(new Set(parentTitleIds).size).toBe(parentTitleIds.length);
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+});
+
+test("older-page failure keeps the ledger and retries at 480x360", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await page.goto(`${fixturePath}?pagination=failure`);
+  await expect(page.locator(".job-list > .job-item")).toHaveCount(2);
+  await page.getByRole("button", { name: "Load older jobs" }).click();
+  await expect(page.getByText("Older jobs could not be loaded.")).toBeVisible();
+  await expect(page.locator(".job-list > .job-item")).toHaveCount(2);
+  await page.screenshot({
+    path: "evidence/phase-3/job-center-pagination-failure-480x360.png",
+    animations: "disabled",
+  });
+  const retry = page.getByRole("button", { name: "Retry loading older jobs" });
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "All jobs loaded" })).toBeVisible();
+  await expect(page.locator(".job-list > .job-item")).toHaveCount(3);
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+});
+
+test("child-only pages keep older parent jobs keyboard-reachable at 320px and 200% text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(`${fixturePath}?pagination=children-only`);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "32px";
+  });
+  await page.evaluate(() => document.fonts.ready);
+
+  await expect(page.getByText("No media jobs yet")).toHaveCount(0);
+  await expect(page.getByText("Parent jobs are not loaded yet")).toBeVisible();
+  const loadParentJobs = page.getByRole("button", {
+    name: "Load older work to show parent jobs",
+  });
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+  await loadParentJobs.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "evidence/phase-3/job-center-child-only-pagination-320px-200-percent-text.png",
+    animations: "disabled",
+  });
+
+  await loadParentJobs.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(
+    page.getByRole("heading", { name: /Prepare preview for launch-film/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "All jobs loaded" })).toBeDisabled();
+  await expect(page.getByText("All available jobs are shown.", { exact: true })).toBeFocused();
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+});
+
+test("empty and no-more pagination states remain explicit", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${fixturePath}?pagination=empty`);
+  await expect(page.getByText("No media jobs yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: /older jobs|All jobs loaded/ })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(`${fixturePath}?pagination=no-more`);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "32px";
+  });
+  await expect(page.getByRole("button", { name: "All jobs loaded" })).toBeDisabled();
+  await expect(page.getByText("All available jobs are shown.")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoAxeViolations(page);
+  await page.screenshot({
+    path: "evidence/phase-3/job-center-pagination-no-more-320px-200-percent-text.png",
+    animations: "disabled",
+  });
+});
+
 test("legacy cleanup keeps safe dialog focus and returns focus", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 360 });
   await page.goto(fixturePath);

@@ -7,7 +7,7 @@ import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { createMockVideoService } from "./test-video-service";
+import { createMockVideoService, testMediaJob } from "./test-video-service";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset:${path}`),
@@ -60,6 +60,27 @@ describe("App Phase 3B durable workspace", () => {
       ready: true,
     });
     expect(await screen.findByRole("heading", { name: "Ready for video work" })).toBeTruthy();
+  });
+
+  it("reports the native unsettled-parent total before older job pages load", async () => {
+    const mediaJobs = Array.from({ length: 101 }, (_, index) => ({
+      ...testMediaJob,
+      id: `70000000-0000-4000-8000-${(index + 200).toString().padStart(12, "0")}`,
+      summary: `Queued media job ${index + 1}`,
+    }));
+    const service = createMockVideoService({ mediaJobs });
+    invokeMock.mockImplementation(service.invoke);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /101 unsettled jobs/ })).toBeTruthy();
+    const listCalls = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_list_media_jobs",
+    );
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0]?.[1]).toMatchObject({
+      request: { beforeUpdatedAt: null, beforeJobId: null, limit: 100 },
+    });
   });
 
   it("recovers workspace media actions after repair and a repeated tool check", async () => {

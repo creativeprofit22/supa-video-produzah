@@ -80,6 +80,18 @@ const jobs: readonly MediaJobRecord[] = [
   }),
 ];
 
+const olderJob = record({
+  id: "70000000-0000-4000-8000-000000000079",
+  kind: "final_render",
+  priority: "export",
+  state: "complete",
+  stage: "complete",
+  progress: { completed: 240, total: 240, unit: "frames" },
+  summary: `Archived export ${"with-a-long-localized-title-".repeat(5)}`,
+  settledAt: later,
+  resultAvailable: true,
+});
+
 const initialCache: MediaCacheStatus = {
   schemaVersion: 1,
   budgetBytes: 20 * 1_024 ** 3,
@@ -101,14 +113,67 @@ function Fixture() {
   const [open, setOpen] = useState(true);
   const [cacheStatus, setCacheStatus] = useState(initialCache);
   const [clearing, setClearing] = useState(false);
+  const paginationModeRef = useRef(
+    new URLSearchParams(window.location.search).get("pagination") ?? "ready",
+  );
+  const paginationMode = paginationModeRef.current;
+  const [visibleJobs, setVisibleJobs] = useState<readonly MediaJobRecord[]>(
+    paginationMode === "empty"
+      ? []
+      : paginationMode === "children-only"
+        ? jobs.filter((job) => job.parentId !== null)
+        : jobs,
+  );
+  const [hasOlderJobs, setHasOlderJobs] = useState(
+    paginationMode !== "empty" && paginationMode !== "no-more",
+  );
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState<Error | null>(null);
+  const [olderResultAnnouncement, setOlderResultAnnouncement] = useState("");
+  const [loadedPageCount, setLoadedPageCount] = useState(1);
+  const olderAttemptRef = useRef(0);
+  const loadingOlderRef = useRef(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   const close = () => {
     setOpen(false);
     queueMicrotask(() => toggleRef.current?.focus());
   };
+  const loadOlderJobs = async () => {
+    if (!hasOlderJobs || loadingOlderRef.current) return 0;
+    loadingOlderRef.current = true;
+    olderAttemptRef.current += 1;
+    setLoadingOlder(true);
+    setOlderError(null);
+    setOlderResultAnnouncement("");
+    await new Promise((resolve) => setTimeout(resolve, paginationMode === "pending" ? 300 : 60));
+    if (paginationMode === "failure" && olderAttemptRef.current === 1) {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+      setOlderError(new Error("Older fixture page unavailable"));
+      return 0;
+    }
+    const fetchedJobs =
+      paginationMode === "children-only" ? jobs.filter((job) => job.id === parentId) : [olderJob];
+    setVisibleJobs((current) =>
+      [...new Map([...current, ...fetchedJobs].map((job) => [job.id, job])).values()].sort(
+        (left, right) => {
+          const timestampOrder = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+          return timestampOrder === 0 ? right.id.localeCompare(left.id) : timestampOrder;
+        },
+      ),
+    );
+    setHasOlderJobs(false);
+    setLoadedPageCount((count) => count + 1);
+    setOlderResultAnnouncement("1 older job loaded. All available jobs are shown.");
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+    return 1;
+  };
+
   const controller = {
-    jobs,
+    jobs: visibleJobs,
+    unsettledParentCount: 2,
     events: [],
     latestEventId: 4,
     recovery: {
@@ -123,6 +188,13 @@ function Fixture() {
     },
     loading: false,
     refreshing: false,
+    nextCursor: hasOlderJobs ? { beforeUpdatedAt: later, beforeJobId: parentId } : null,
+    loadedPageCount,
+    loadingOlder,
+    olderError,
+    olderResultAnnouncement,
+    hasOlderJobs,
+    loadOlderJobs,
     error: null,
     listenerError: null,
     cacheStatus,

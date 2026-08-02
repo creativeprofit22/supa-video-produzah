@@ -349,6 +349,9 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
   const dialogRef = useRef<HTMLDialogElement>(null);
   const keepCacheRef = useRef<HTMLButtonElement>(null);
   const legacyButtonRef = useRef<HTMLElement | null>(null);
+  const paginationStatusRef = useRef<HTMLParagraphElement>(null);
+  const paginationKeyboardActivationRef = useRef(false);
+  const previousLoadingOlderRef = useRef(controller.loadingOlder);
   const [legacyDialogOpen, setLegacyDialogOpen] = useState(false);
 
   const parentJobs = useMemo(
@@ -365,15 +368,17 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
     }
     return children;
   }, [controller.jobs]);
+  const hasOnlyChildJobs = parentJobs.length === 0 && controller.jobs.length > 0;
 
   const announcement = useMemo(() => {
+    if (controller.olderResultAnnouncement !== "") return controller.olderResultAnnouncement;
     const event = [...controller.events]
       .reverse()
       .find((candidate) => candidate.eventType !== "progress");
     if (event === undefined) return "";
     const job = controller.jobs.find((candidate) => candidate.id === event.jobId);
     return `${job === undefined ? "Media job" : jobSummary(job)}: ${mediaJobStateLabels[event.state]}.`;
-  }, [controller.events, controller.jobs]);
+  }, [controller.events, controller.jobs, controller.olderResultAnnouncement]);
 
   useEffect(() => {
     focusAppliedRef.current = false;
@@ -390,6 +395,21 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
     (focusedJobRef.current ?? closeRef.current)?.focus();
     focusAppliedRef.current = true;
   }, [controller.loading, focusJobId, parentJobs]);
+
+  useEffect(() => {
+    const wasLoadingOlder = previousLoadingOlderRef.current;
+    previousLoadingOlderRef.current = controller.loadingOlder;
+    if (
+      wasLoadingOlder &&
+      !controller.loadingOlder &&
+      !controller.hasOlderJobs &&
+      controller.olderError === null &&
+      paginationKeyboardActivationRef.current
+    ) {
+      queueMicrotask(() => paginationStatusRef.current?.focus());
+    }
+    if (!controller.loadingOlder) paginationKeyboardActivationRef.current = false;
+  }, [controller.hasOlderJobs, controller.loadingOlder, controller.olderError]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -432,7 +452,7 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
       id="job-center"
       className="job-center"
       aria-labelledby="job-center-title"
-      aria-busy={controller.loading || controller.refreshing}
+      aria-busy={controller.loading || controller.refreshing || controller.loadingOlder}
     >
       <div className="job-center-inner shared-rail">
         <div className="job-center-heading">
@@ -535,6 +555,20 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
                 <strong>Loading durable jobs</strong>
                 <p>Connecting to the local media ledger.</p>
               </div>
+            ) : hasOnlyChildJobs ? (
+              <div className="job-center-empty">
+                <ListTodo size={22} aria-hidden />
+                <strong>
+                  {controller.hasOlderJobs
+                    ? "Parent jobs are not loaded yet"
+                    : "Parent jobs are unavailable"}
+                </strong>
+                <p>
+                  {controller.hasOlderJobs
+                    ? "This page contains preparation stages."
+                    : "Preparation stages are loaded, but their parent jobs are not available."}
+                </p>
+              </div>
             ) : parentJobs.length === 0 ? (
               <div className="job-center-empty">
                 <ListTodo size={22} aria-hidden />
@@ -557,6 +591,45 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
                 ))}
               </ol>
             )}
+
+            {!controller.loading && (parentJobs.length > 0 || controller.hasOlderJobs) ? (
+              <div className="job-ledger-pagination">
+                {controller.olderError !== null ? (
+                  <p id="older-jobs-error" className="job-ledger-pagination-error" role="alert">
+                    Older jobs could not be loaded. The jobs already shown are unchanged.
+                  </p>
+                ) : null}
+                <button
+                  className="secondary-button compact-button"
+                  type="button"
+                  disabled={controller.loadingOlder || !controller.hasOlderJobs}
+                  aria-describedby={controller.olderError === null ? undefined : "older-jobs-error"}
+                  onClick={(event) => {
+                    paginationKeyboardActivationRef.current = event.detail === 0;
+                    void controller.loadOlderJobs();
+                  }}
+                >
+                  {controller.loadingOlder
+                    ? "Loading older jobs"
+                    : controller.hasOlderJobs
+                      ? controller.olderError === null
+                        ? hasOnlyChildJobs
+                          ? "Load older work to show parent jobs"
+                          : "Load older jobs"
+                        : "Retry loading older jobs"
+                      : "All jobs loaded"}
+                </button>
+                {!controller.hasOlderJobs ? (
+                  <p
+                    ref={paginationStatusRef}
+                    className="job-ledger-pagination-status"
+                    tabIndex={-1}
+                  >
+                    All available jobs are shown.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <CacheHealth

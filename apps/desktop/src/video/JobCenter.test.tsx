@@ -89,6 +89,13 @@ function controller(overrides: Partial<MediaJobsController> = {}): MediaJobsCont
     recovery,
     loading: false,
     refreshing: false,
+    nextCursor: null,
+    loadedPageCount: 1,
+    loadingOlder: false,
+    olderError: null,
+    olderResultAnnouncement: "",
+    hasOlderJobs: false,
+    loadOlderJobs: vi.fn(async () => 0),
     error: null,
     listenerError: null,
     cacheStatus,
@@ -162,6 +169,91 @@ describe("JobCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
     expect(cancelJob).toHaveBeenCalledWith(testMediaJob);
     expect(retryJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps older pagination reachable when the loaded page contains only child jobs", () => {
+    const loadOlderJobs = vi.fn(async () => 1);
+    render(
+      <JobCenter
+        controller={controller({
+          jobs: [proxyChild, thumbnailChild],
+          hasOlderJobs: true,
+          nextCursor: { beforeUpdatedAt: later, beforeJobId: thumbnailChild.id },
+          loadOlderJobs,
+        })}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("No media jobs yet")).toBeNull();
+    expect(screen.getByText("Parent jobs are not loaded yet")).toBeTruthy();
+    const loadButton = screen.getByRole("button", {
+      name: "Load older work to show parent jobs",
+    });
+    loadButton.focus();
+    fireEvent.click(loadButton);
+    expect(loadOlderJobs).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(loadButton);
+  });
+
+  it("exposes pending, retry, and no-more pagination states without losing button focus", () => {
+    const loadOlderJobs = vi.fn(async () => 1);
+    const value = controller({
+      hasOlderJobs: true,
+      nextCursor: { beforeUpdatedAt: later, beforeJobId: blockedJob.id },
+      loadOlderJobs,
+    });
+    const { rerender } = render(<JobCenter controller={value} onClose={vi.fn()} />);
+    const loadButton = screen.getByRole("button", { name: "Load older jobs" });
+    loadButton.focus();
+    fireEvent.click(loadButton);
+    expect(loadOlderJobs).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(loadButton);
+
+    rerender(
+      <JobCenter
+        controller={controller({
+          hasOlderJobs: true,
+          nextCursor: { beforeUpdatedAt: later, beforeJobId: blockedJob.id },
+          loadingOlder: true,
+        })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      (screen.getByRole("button", { name: "Loading older jobs" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    rerender(
+      <JobCenter
+        controller={controller({
+          hasOlderJobs: true,
+          nextCursor: { beforeUpdatedAt: later, beforeJobId: blockedJob.id },
+          olderError: new Error("unavailable"),
+          loadOlderJobs,
+        })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("jobs already shown are unchanged");
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading older jobs" }));
+    expect(loadOlderJobs).toHaveBeenCalledTimes(2);
+
+    rerender(<JobCenter controller={controller()} onClose={vi.fn()} />);
+    expect(
+      (screen.getByRole("button", { name: "All jobs loaded" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText("All available jobs are shown.")).toBeTruthy();
+  });
+
+  it("announces only the added older-job count through the polite status", () => {
+    render(
+      <JobCenter
+        controller={controller({ olderResultAnnouncement: "2 older jobs loaded." })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("2 older jobs loaded.").getAttribute("aria-live")).toBe("polite");
   });
 
   it("uses safe dialog focus, confirms legacy cleanup, and returns focus", async () => {

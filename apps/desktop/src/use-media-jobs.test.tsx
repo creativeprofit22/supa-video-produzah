@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import type { MediaCacheStatus, MediaJobEvent, MediaJobRecord } from "@supa-video/media";
+import type {
+  MediaCacheStatus,
+  MediaJobEvent,
+  MediaJobList,
+  MediaJobRecord,
+} from "@supa-video/media";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,6 +14,10 @@ import { useMediaJobs } from "./use-media-jobs";
 import { tauriVideoBackend, type VideoBackend } from "./video-ipc";
 
 const timestamp = "2026-07-26T12:00:01.000Z";
+
+function pagedJob(id: string): MediaJobRecord {
+  return { ...testMediaJob, id, updatedAt: timestamp };
+}
 
 function event(eventId: number, state: MediaJobEvent["state"] = "running"): MediaJobEvent {
   return {
@@ -31,7 +40,9 @@ function mediaBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
     listMediaJobs: vi.fn<VideoBackend["listMediaJobs"]>(async () => ({
       schemaVersion: 1,
       jobs: [testMediaJob],
+      unsettledParentCount: 1,
       nextBeforeUpdatedAt: null,
+      nextBeforeJobId: null,
       latestEventId: 1,
       recovery: null,
     })),
@@ -88,7 +99,9 @@ describe("durable media jobs controller", () => {
         return {
           schemaVersion: 1,
           jobs: [testMediaJob],
+          unsettledParentCount: 1,
           nextBeforeUpdatedAt: null,
+          nextBeforeJobId: null,
           latestEventId: 1,
           recovery: null,
         };
@@ -96,7 +109,9 @@ describe("durable media jobs controller", () => {
       .mockResolvedValue({
         schemaVersion: 1,
         jobs: [runningJob],
+        unsettledParentCount: 1,
         nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
         latestEventId: 3,
         recovery: null,
       });
@@ -170,7 +185,9 @@ describe("durable media jobs controller", () => {
       listMediaJobs: vi.fn<VideoBackend["listMediaJobs"]>(async () => ({
         schemaVersion: 1,
         jobs: [current],
+        unsettledParentCount: current.state === "complete" ? 0 : 1,
         nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
         latestEventId: current.state === "complete" ? 2 : 1,
         recovery: null,
       })),
@@ -216,6 +233,211 @@ describe("durable media jobs controller", () => {
     act(() => window.dispatchEvent(new Event("focus")));
     await waitFor(() => expect(backend.listMediaJobs).toHaveBeenCalledTimes(2));
     expect(backend.getMediaCacheStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads equal-timestamp pages once, guards duplicate requests, and refreshes the exposed depth", async () => {
+    const newest = pagedJob("70000000-0000-4000-8000-000000000093");
+    const boundary = pagedJob("70000000-0000-4000-8000-000000000092");
+    const oldest = pagedJob("70000000-0000-4000-8000-000000000091");
+    let resolveOlder!: (page: MediaJobList) => void;
+    let olderPending = true;
+    const listMediaJobs = vi.fn<VideoBackend["listMediaJobs"]>((request = {}) => {
+      if (request.beforeUpdatedAt === null || request.beforeUpdatedAt === undefined) {
+        return Promise.resolve({
+          schemaVersion: 1,
+          jobs: [newest, boundary],
+          unsettledParentCount: 3,
+          nextBeforeUpdatedAt: timestamp,
+          nextBeforeJobId: boundary.id,
+          latestEventId: 1,
+          recovery: null,
+        });
+      }
+      if (olderPending) {
+        return new Promise<MediaJobList>((resolve) => {
+          resolveOlder = resolve;
+        });
+      }
+      return Promise.resolve({
+        schemaVersion: 1,
+        jobs: [boundary, oldest],
+        unsettledParentCount: 3,
+        nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
+        latestEventId: 1,
+        recovery: null,
+      });
+    });
+    const backend = mediaBackend({ listMediaJobs });
+    const { result } = renderHook(() => useMediaJobs(backend));
+    await waitFor(() => expect(result.current.hasOlderJobs).toBe(true));
+    expect(result.current.loadedPageCount).toBe(1);
+    expect(result.current.unsettledParentCount).toBe(3);
+
+    let firstLoad!: ReturnType<typeof result.current.loadOlderJobs>;
+    act(() => {
+      firstLoad = result.current.loadOlderJobs();
+      void result.current.loadOlderJobs();
+    });
+    expect(result.current.loadingOlder).toBe(true);
+    expect(listMediaJobs).toHaveBeenCalledTimes(2);
+    olderPending = false;
+    await act(async () => {
+      resolveOlder({
+        schemaVersion: 1,
+        jobs: [boundary, oldest],
+        unsettledParentCount: 3,
+        nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
+        latestEventId: 1,
+        recovery: null,
+      });
+      await firstLoad;
+    });
+
+    expect(result.current.jobs.map(({ id }) => id)).toEqual([newest.id, boundary.id, oldest.id]);
+    expect(result.current.unsettledParentCount).toBe(3);
+    expect(result.current.loadedPageCount).toBe(2);
+    expect(result.current.hasOlderJobs).toBe(false);
+    expect(result.current.olderResultAnnouncement).toBe(
+      "1 older job loaded. All available jobs are shown.",
+    );
+    expect(listMediaJobs.mock.calls[1]?.[0]).toMatchObject({
+      beforeUpdatedAt: timestamp,
+      beforeJobId: boundary.id,
+    });
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(listMediaJobs).toHaveBeenCalledTimes(4));
+    expect(listMediaJobs.mock.calls[2]?.[0]).toMatchObject({
+      beforeUpdatedAt: null,
+      beforeJobId: null,
+    });
+    expect(listMediaJobs.mock.calls[3]?.[0]).toMatchObject({
+      beforeUpdatedAt: timestamp,
+      beforeJobId: boundary.id,
+    });
+    expect(result.current.jobs.map(({ id }) => id)).toEqual([newest.id, boundary.id, oldest.id]);
+  });
+
+  it("drops jobs absent from an authoritative loaded-depth refresh and disables stale actions", async () => {
+    const newest = pagedJob("70000000-0000-4000-8000-000000000099");
+    const boundary = pagedJob("70000000-0000-4000-8000-000000000098");
+    const removed = {
+      ...pagedJob("70000000-0000-4000-8000-000000000097"),
+      state: "blocked",
+      stage: "blocked",
+      error: {
+        code: "temporary_preview_failure",
+        category: "transient_io",
+        message: "Preview preparation needs attention.",
+        retryable: true,
+        action: "retry",
+      },
+    } as MediaJobRecord;
+    const oldest = pagedJob("70000000-0000-4000-8000-000000000096");
+    const replacement = pagedJob("70000000-0000-4000-8000-000000000095");
+    let refreshed = false;
+    const listMediaJobs = vi.fn<VideoBackend["listMediaJobs"]>((request = {}) => {
+      if (request.beforeUpdatedAt === null || request.beforeUpdatedAt === undefined) {
+        return Promise.resolve({
+          schemaVersion: 1,
+          jobs: [newest, boundary],
+          unsettledParentCount: 4,
+          nextBeforeUpdatedAt: timestamp,
+          nextBeforeJobId: boundary.id,
+          latestEventId: refreshed ? 2 : 1,
+          recovery: null,
+        });
+      }
+      const jobs = refreshed ? [oldest, replacement] : [removed, oldest];
+      const pageBoundary = jobs.at(-1)!;
+      return Promise.resolve({
+        schemaVersion: 1,
+        jobs,
+        unsettledParentCount: 4,
+        nextBeforeUpdatedAt: timestamp,
+        nextBeforeJobId: pageBoundary.id,
+        latestEventId: refreshed ? 2 : 1,
+        recovery: null,
+      });
+    });
+    const backend = mediaBackend({ listMediaJobs });
+    const { result } = renderHook(() => useMediaJobs(backend));
+    await waitFor(() => expect(result.current.hasOlderJobs).toBe(true));
+    await act(() => result.current.loadOlderJobs());
+
+    expect(result.current.loadedPageCount).toBe(2);
+    expect(result.current.canCancelJob(removed)).toBe(true);
+    expect(result.current.canRetryJob(removed)).toBe(true);
+
+    refreshed = true;
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(result.current.jobs.map(({ id }) => id)).toEqual([
+        newest.id,
+        boundary.id,
+        oldest.id,
+        replacement.id,
+      ]),
+    );
+
+    expect(result.current.loadedPageCount).toBe(2);
+    expect(result.current.nextCursor).toEqual({
+      beforeUpdatedAt: timestamp,
+      beforeJobId: replacement.id,
+    });
+    expect(result.current.canCancelJob(removed)).toBe(false);
+    expect(result.current.canCancelJob(removed.id)).toBe(false);
+    expect(result.current.canRetryJob(removed)).toBe(false);
+    expect(result.current.canRetryJob(removed.id)).toBe(false);
+    await expect(result.current.cancelJob(removed)).resolves.toBeNull();
+    await expect(result.current.retryJob(removed)).resolves.toBeNull();
+    expect(backend.cancelMediaJob).not.toHaveBeenCalled();
+    expect(backend.retryMediaJob).not.toHaveBeenCalled();
+  });
+
+  it("preserves loaded jobs and retries the same cursor after an older-page failure", async () => {
+    const newest = pagedJob("70000000-0000-4000-8000-000000000096");
+    const oldest = pagedJob("70000000-0000-4000-8000-000000000095");
+    let olderAttempt = 0;
+    const listMediaJobs = vi.fn<VideoBackend["listMediaJobs"]>((request = {}) => {
+      if (request.beforeUpdatedAt === null || request.beforeUpdatedAt === undefined) {
+        return Promise.resolve({
+          schemaVersion: 1,
+          jobs: [newest],
+          unsettledParentCount: 2,
+          nextBeforeUpdatedAt: timestamp,
+          nextBeforeJobId: newest.id,
+          latestEventId: 1,
+          recovery: null,
+        });
+      }
+      olderAttempt += 1;
+      if (olderAttempt === 1) return Promise.reject(new Error("older page unavailable"));
+      return Promise.resolve({
+        schemaVersion: 1,
+        jobs: [oldest],
+        unsettledParentCount: 2,
+        nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
+        latestEventId: 1,
+        recovery: null,
+      });
+    });
+    const backend = mediaBackend({ listMediaJobs });
+    const { result } = renderHook(() => useMediaJobs(backend));
+    await waitFor(() => expect(result.current.hasOlderJobs).toBe(true));
+
+    await act(() => result.current.loadOlderJobs());
+    expect(result.current.olderError?.message).toBe("older page unavailable");
+    expect(result.current.jobs.map(({ id }) => id)).toEqual([newest.id]);
+    expect(result.current.hasOlderJobs).toBe(true);
+
+    await act(() => result.current.loadOlderJobs());
+    expect(result.current.olderError).toBeNull();
+    expect(result.current.jobs.map(({ id }) => id)).toEqual([newest.id, oldest.id]);
+    expect(listMediaJobs.mock.calls[1]?.[0]).toEqual(listMediaJobs.mock.calls[2]?.[0]);
   });
 
   it("guards invalid and duplicate actions while refreshing jobs and cache", async () => {

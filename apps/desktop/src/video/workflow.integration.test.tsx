@@ -107,6 +107,68 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
   });
 
+  it("loads equal-timestamp media jobs across composite cursor pages without gaps", async () => {
+    const jobs: MediaJobRecord[] = Array.from({ length: 101 }, (_, index) => {
+      const number = index + 1;
+      return {
+        ...testMediaJob,
+        id: `70000000-0000-4000-8000-${number.toString().padStart(12, "0")}`,
+        summary: `Pagination job ${number.toString().padStart(3, "0")}`,
+      };
+    });
+    const expectedSummaries = [...jobs]
+      .sort((left, right) => (left.id < right.id ? 1 : left.id > right.id ? -1 : 0))
+      .map((job) => job.summary);
+    const service = createMockVideoService({ mediaJobs: jobs });
+    invokeMock.mockImplementation(service.invoke);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    const jobCenter = await screen.findByRole("region", { name: "Job Center" });
+    const loadOlder = await within(jobCenter).findByRole("button", { name: "Load older jobs" });
+    const visibleSummaries = () =>
+      within(jobCenter)
+        .getAllByRole("article")
+        .map((article) => within(article).getByRole("heading", { level: 3 }).textContent);
+
+    expect(visibleSummaries()).toEqual(expectedSummaries.slice(0, 100));
+    expect(within(jobCenter).queryByRole("heading", { name: "Pagination job 001" })).toBeNull();
+    await waitFor(() => expect(jobCenter.getAttribute("aria-busy")).toBe("false"));
+
+    fireEvent.click(loadOlder);
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "video_list_media_jobs"),
+      ).toHaveLength(2),
+    );
+    const requests = invokeMock.mock.calls
+      .filter(([command]) => command === "video_list_media_jobs")
+      .map(([, args]) => (args as { request: Record<string, unknown> }).request);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      limit: 100,
+      beforeUpdatedAt: testMediaJob.updatedAt,
+      beforeJobId: jobs[1]!.id,
+    });
+    await waitFor(() => expect(visibleSummaries()).toEqual(expectedSummaries));
+    expect(
+      within(jobCenter).getByText("1 older job loaded. All available jobs are shown."),
+    ).toBeTruthy();
+    await expect(
+      service.invoke("video_list_media_jobs", {
+        request: {
+          limit: 100,
+          includeSettled: true,
+          projectId: null,
+          beforeUpdatedAt: testMediaJob.updatedAt,
+          beforeJobId: null,
+        },
+      }),
+    ).rejects.toThrow("beforeUpdatedAt and beforeJobId must be provided together");
+  });
+
   it.each(["video_prepare_asset", "video_start_render"] as const)(
     "refreshes and disables media actions after %s reports tool_unavailable",
     async (failedCommand) => {
