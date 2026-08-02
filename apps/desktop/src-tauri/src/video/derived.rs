@@ -1205,7 +1205,7 @@ pub(crate) async fn prepare_asset_durable(
     if parent.reused {
         match parent.job.state {
             MediaJobState::Complete => {
-                match completed_prepared_asset_result(jobs, &parent.job.id).await? {
+                match completed_prepared_asset_result(jobs, &parent.job.id, &programs).await? {
                     CompletedPreparationReuse::Ready(prepared) => return Ok(*prepared),
                     CompletedPreparationReuse::Rebuild => {
                         jobs.store()
@@ -1552,6 +1552,7 @@ enum CompletedPreparationReuse {
 async fn completed_prepared_asset_result(
     jobs: &MediaJobService,
     job_id: &str,
+    programs: &MediaPrograms,
 ) -> Result<CompletedPreparationReuse, VideoCommandError> {
     let stored = jobs
         .store()
@@ -1592,6 +1593,27 @@ async fn completed_prepared_asset_result(
                 .map(ToOwned::to_owned)
         })
         .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_project"))?;
+    let cancellation = ProcessCancellation::new();
+    let proxy_expectation = ProxyValidationExpectation {
+        dimensions: plan.dimensions,
+        sequence_rate: &plan.sequence_rate,
+        source_duration_microseconds: plan.source_probe.duration_microseconds,
+        source_has_audio: plan.source_has_audio,
+    };
+    let proxy_is_valid = cached_proxy_probe(
+        Path::new(&prepared.proxy_path),
+        proxy_expectation,
+        programs,
+        cancellation.clone(),
+    )
+    .await?
+    .is_some();
+    let thumbnail_is_valid =
+        cached_thumbnail_is_valid(Path::new(&prepared.thumbnail_path), programs, cancellation)
+            .await?;
+    if !proxy_is_valid || !thumbnail_is_valid {
+        return Ok(CompletedPreparationReuse::Rebuild);
+    }
     let registrations = [
         CacheArtifactRegistration {
             key: plan.source_identity.digest.clone(),
