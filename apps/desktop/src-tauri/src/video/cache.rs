@@ -1085,6 +1085,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) async fn assert_packaged_cache_lease_lru_and_legacy_policy() {
         let root = tempfile::tempdir().unwrap();
         let (store, cache) = service(root.path()).await;
