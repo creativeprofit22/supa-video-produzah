@@ -1214,6 +1214,49 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn packaged_media_programs() -> video::derived::MediaPrograms {
+        let resource_root = std::env::var_os(PACKAGED_MEDIA_RESOURCE_ROOT_ENV)
+            .map(PathBuf::from)
+            .expect("SVP_MEDIA_RESOURCE_ROOT must identify the assembled Tauri resource root");
+        let toolchain =
+            video::toolchain::MediaToolchain::resolve_from_resource_root(&resource_root);
+        assert_eq!(
+            toolchain.toolchain_id(),
+            "ffmpeg-8.1.2-gyan-essentials-windows-x86_64"
+        );
+        toolchain
+            .programs()
+            .expect("packaged Phase 3B toolchain must verify before media work");
+        video::derived::MediaPrograms::bundled(video::toolchain::MediaToolchainState::from_ready(
+            toolchain,
+        ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
+    fn packaged_phase3b_hierarchical_preparation_and_restart_boundaries() {
+        tauri::async_runtime::block_on(async {
+            video::tests::assert_durable_preparation_records(packaged_media_programs()).await;
+            video::tests::assert_durable_preparation_restart_boundaries(packaged_media_programs())
+                .await;
+        });
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
+    fn packaged_phase3b_final_render_reauthorization_retry_and_cancellation() {
+        tauri::async_runtime::block_on(async {
+            video::tests::assert_final_render_restart_reauthorization(packaged_media_programs())
+                .await;
+            video::tests::assert_render_worker_exports(packaged_media_programs()).await;
+            video::tests::assert_render_worker_collision(packaged_media_programs()).await;
+            video::tests::assert_render_worker_cancellation(packaged_media_programs()).await;
+        });
+    }
+
+    #[cfg(windows)]
     #[test]
     #[ignore = "requires the assembled Windows Tauri media resource overlay"]
     fn packaged_media_renamed_or_replaced_executable_fails_before_spawn() {
@@ -1349,7 +1392,12 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn assert_render_event_order(events: &[Value], plan_id: &str, terminal_type: &str) {
+    fn assert_render_event_order(
+        events: &[Value],
+        job_id: &str,
+        plan_id: &str,
+        terminal_type: &str,
+    ) {
         assert_eq!(
             events.first().and_then(|event| event["type"].as_str()),
             Some("started")
@@ -1365,8 +1413,12 @@ mod tests {
             "only progress events may appear between started and terminal: {events:?}"
         );
         assert!(
-            events.iter().all(|event| event["jobId"] == plan_id),
-            "every render event must identify the requested job: {events:?}"
+            events.iter().all(|event| event["jobId"] == job_id),
+            "every render event must identify the durable job: {events:?}"
+        );
+        assert!(
+            events.iter().all(|event| event["planId"] == plan_id),
+            "every render event must preserve the requested plan identity: {events:?}"
         );
         assert_eq!(
             events
@@ -1418,37 +1470,6 @@ mod tests {
             ]
         })
     }
-
-    #[cfg(windows)]
-    fn packaged_media_programs() -> video::derived::MediaPrograms {
-        let resource_root = std::env::var_os(PACKAGED_MEDIA_RESOURCE_ROOT_ENV)
-            .map(PathBuf::from)
-            .expect("SVP_MEDIA_RESOURCE_ROOT must identify the assembled Tauri resource root");
-        let toolchain =
-            video::toolchain::MediaToolchain::resolve_from_resource_root(&resource_root);
-        assert_eq!(
-            toolchain.toolchain_id(),
-            "ffmpeg-8.1.2-gyan-essentials-windows-x86_64"
-        );
-        toolchain
-            .programs()
-            .expect("packaged Phase 3B toolchain must verify before media work");
-        video::derived::MediaPrograms::bundled(video::toolchain::MediaToolchainState::from_ready(
-            toolchain,
-        ))
-    }
-
-    #[cfg(windows)]
-    #[test]
-    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
-    fn packaged_phase3b_hierarchical_preparation_and_restart_boundaries() {
-        tauri::async_runtime::block_on(async {
-            video::tests::assert_durable_preparation_records(packaged_media_programs()).await;
-            video::tests::assert_durable_preparation_restart_boundaries(packaged_media_programs())
-                .await;
-        });
-    }
-
 
     #[cfg(windows)]
     #[test]
@@ -1733,14 +1754,20 @@ mod tests {
         .expect("packaged render start IPC must succeed")
         .deserialize::<Value>()
         .expect("packaged render start must be JSON");
-        assert_eq!(started["jobId"], PACKAGED_COMPLETE_PLAN_ID);
+        assert_eq!(started["planId"], PACKAGED_COMPLETE_PLAN_ID);
+        let job_id = started["jobId"]
+            .as_str()
+            .expect("packaged render start must return a durable job ID")
+            .to_owned();
+        uuid::Uuid::parse_str(&job_id).expect("packaged render job ID must be a UUID");
+        assert_ne!(job_id, PACKAGED_COMPLETE_PLAN_ID);
 
         let events = wait_for_render_terminal(&captured, Duration::from_secs(120));
         assert!(
             events.len() >= 3,
             "completed render must emit progress: {events:?}"
         );
-        assert_render_event_order(&events, PACKAGED_COMPLETE_PLAN_ID, "completed");
+        assert_render_event_order(&events, &job_id, PACKAGED_COMPLETE_PLAN_ID, "completed");
         let completed = events.last().expect("completed event must exist");
         assert_eq!(
             completed["output"]["outputPath"],
@@ -1814,18 +1841,21 @@ mod tests {
         .expect("packaged cancellation render start IPC must succeed")
         .deserialize::<Value>()
         .expect("packaged cancellation render start must be JSON");
-        assert_eq!(started["jobId"], PACKAGED_CANCEL_PLAN_ID);
+        assert_eq!(started["planId"], PACKAGED_CANCEL_PLAN_ID);
+        let job_id = started["jobId"]
+            .as_str()
+            .expect("packaged cancellation start must return a durable job ID")
+            .to_owned();
+        uuid::Uuid::parse_str(&job_id).expect("packaged cancellation job ID must be a UUID");
+        assert_ne!(job_id, PACKAGED_CANCEL_PLAN_ID);
         get_ipc_response(
             &webview,
-            invoke_request(
-                "video_cancel_render",
-                json!({ "jobId": PACKAGED_CANCEL_PLAN_ID }),
-            ),
+            invoke_request("video_cancel_render", json!({ "jobId": job_id.clone() })),
         )
         .expect("packaged render cancellation IPC must succeed");
 
         let events = wait_for_render_terminal(&captured, Duration::from_secs(60));
-        assert_render_event_order(&events, PACKAGED_CANCEL_PLAN_ID, "cancelled");
+        assert_render_event_order(&events, &job_id, PACKAGED_CANCEL_PLAN_ID, "cancelled");
         assert!(
             !output.exists(),
             "cancelled packaged render must not commit output"

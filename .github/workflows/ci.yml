@@ -309,6 +309,19 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Packaged Phase 3B hierarchical preparation and all restart-boundary proof failed"
             }
+            & $cargo test `
+              --locked `
+              --all-features `
+              --manifest-path apps/desktop/src-tauri/Cargo.toml `
+              tests::packaged_phase3b_final_render_reauthorization_retry_and_cancellation `
+              -- `
+              --ignored `
+              --exact `
+              --nocapture `
+              --test-threads=1
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged Phase 3B render reauthorization, retry, and cancellation proof failed"
+            }
           }
           finally {
             $env:PATH = $originalPath
