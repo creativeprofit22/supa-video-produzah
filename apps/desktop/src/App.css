@@ -662,74 +662,200 @@ video {
   font-size: 0.8rem;
 }
 
-.timeline-panel {
+.multitrack-panel,
+.clip-trim-panel {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .timeline-range {
   margin: 0;
   color: var(--text);
   font-family: "Geist Mono Variable", "Cascadia Code", monospace;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 .timeline-range span {
   color: var(--quiet);
 }
-.timeline-ruler {
-  display: flex;
-  justify-content: space-between;
-  color: var(--quiet);
-  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
-  font-size: 0.68rem;
+.multitrack-heading {
+  align-items: center;
 }
-.timeline-track {
-  position: relative;
-  overflow: hidden;
-  min-height: 82px;
+.multitrack-layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(96px, 124px) minmax(0, 1fr);
   border: 1px solid var(--border-strong);
   background: var(--surface-deep);
-  cursor: crosshair;
-  touch-action: none;
 }
-.timeline-track img {
+.multitrack-label-column {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border-inline-end: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+.multitrack-label-spacer,
+.multitrack-ruler {
+  height: 28px;
+  border-block-end: 1px solid var(--border);
+}
+.multitrack-visible-label {
+  display: grid;
+  height: var(--timeline-track-height, 72px);
+  min-width: 0;
+  align-content: center;
+  padding: 8px 10px;
+  border-block-end: 1px solid var(--border);
+}
+.multitrack-visible-label span,
+.multitrack-visible-label small {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.multitrack-visible-label strong {
+  overflow: hidden;
+  margin-block: 2px;
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multitrack-scroll-region {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  outline: none;
+  scrollbar-color: var(--border-strong) var(--surface-deep);
+  scrollbar-width: thin;
+}
+.multitrack-scroll-region:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.multitrack-canvas {
+  position: relative;
+  min-width: 100%;
+}
+.multitrack-ruler {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: 8px;
+  color: var(--quiet);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 0.64rem;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 79px,
+    var(--border) 79px,
+    var(--border) 80px
+  );
+}
+.multitrack-track-list,
+.multitrack-clip-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.multitrack-track-row {
+  position: relative;
+  height: var(--timeline-track-height, 72px);
+  border-block-end: 1px solid var(--border);
+  background-image: linear-gradient(90deg, transparent 99%, var(--border) 100%);
+  background-size: 80px 100%;
+}
+.multitrack-clip-list {
+  position: absolute;
+  inset: 0;
+}
+.multitrack-clip {
+  position: absolute;
+  inset-block: 8px;
+  overflow: hidden;
+  min-width: 2px;
+  border: 1px solid rgb(215 245 106 / 52%);
+  border-radius: 4px;
+  background: #252a1d;
+}
+.multitrack-clip-audio {
+  border-color: rgb(151 188 255 / 55%);
+  background: #1f2830;
+}
+.multitrack-clip article {
+  position: relative;
   width: 100%;
-  height: 82px;
+  height: 100%;
+  overflow: hidden;
+}
+.multitrack-clip img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  opacity: 0.62;
+  opacity: 0.58;
   user-select: none;
 }
-.timeline-missing-media {
+.multitrack-clip-fallback {
   display: flex;
-  min-height: 82px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  padding-inline: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.multitrack-clip-fallback svg {
+  flex: 0 0 auto;
+}
+.multitrack-clip-fallback span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multitrack-clip-copy {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 8px;
+  padding: 14px 7px 5px;
+  color: #f6f7ef;
+  font-size: 0.68rem;
+  background: linear-gradient(transparent, rgb(10 12 9 / 86%));
+}
+.multitrack-clip-copy strong {
+  overflow: hidden;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multitrack-clip-copy small {
+  flex: 0 0 auto;
+  color: #c8cbbe;
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+}
+.multitrack-empty,
+.multitrack-count {
+  margin: 0;
   color: var(--quiet);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
 }
-.timeline-kept-range {
-  position: absolute;
-  inset-block: 0;
-  border-inline: 2px solid var(--accent);
-  background: rgb(215 245 106 / 12%);
-  pointer-events: none;
+.multitrack-empty {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
-.timeline-playhead {
-  position: absolute;
-  inset-block: -4px;
-  width: 2px;
-  background: var(--text);
-  pointer-events: none;
-}
-.timeline-playhead::before {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 50%;
-  width: 8px;
-  height: 8px;
-  content: "";
-  background: var(--text);
-  transform: translateX(-50%) rotate(45deg);
+.multitrack-count {
+  text-align: end;
 }
 .timeline-ranges {
   display: grid;
@@ -1714,6 +1840,16 @@ video {
   .project-inspector-facts {
     grid-template-columns: 1fr;
   }
+  .multitrack-layout {
+    --timeline-track-height: 96px;
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+  .multitrack-visible-label {
+    padding-inline: 6px;
+  }
+  .multitrack-heading .timeline-range {
+    white-space: normal;
+  }
   .timeline-ranges,
   .trim-fields,
   .output-report dl,
@@ -1784,13 +1920,17 @@ video {
   .jobs-count {
     border-color: CanvasText;
   }
-  .timeline-kept-range {
-    border-color: Highlight;
-    background: transparent;
+  .multitrack-layout,
+  .multitrack-label-column,
+  .multitrack-track-row,
+  .multitrack-clip,
+  .multitrack-scroll-region:focus-visible {
+    border-color: CanvasText;
+    box-shadow: none;
   }
-  .timeline-playhead,
-  .timeline-playhead::before {
-    background: CanvasText;
+  .multitrack-scroll-region:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
   .segmented-control button[aria-pressed="true"],
   .jobs-toggle[aria-expanded="true"] {

@@ -5,11 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type useVideoProject } from "../use-video-project";
 import { AssetPanel } from "./AssetPanel";
+import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
+import { MultitrackTimeline } from "./MultitrackTimeline";
 import { ProgramMonitor } from "./ProgramMonitor";
 import { ProjectInspector } from "./ProjectInspector";
-import { SingleClipTimeline } from "./SingleClipTimeline";
 import { TrimInspector } from "./TrimInspector";
 import type { ReadinessState } from "./VideoProjectOpener";
 
@@ -73,6 +74,9 @@ export function VideoWorkspace({
   const sourceHasAudio = asset !== null && asset.probe.audio !== null;
   const sequence = revision.state.sequence;
   const clip = sequence?.videoTracks[0]?.clips[0];
+  const canonicalSequence = controller.projection?.state.sequences.find(
+    (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
+  );
   const draft = controller.trimDraft;
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
@@ -346,18 +350,21 @@ export function VideoWorkspace({
               </div>
             </section>
           )}
-          {sequence !== null && clip !== undefined && draft !== null ? (
-            <SingleClipTimeline
-              thumbnailPath={controller.preparedAsset?.thumbnailPath ?? null}
+          {controller.projection !== null && canonicalSequence !== undefined ? (
+            <MultitrackTimeline
+              projection={controller.projection}
+              preparedAsset={controller.preparedAsset}
               convertCachePath={controller.convertCachePath}
+            />
+          ) : null}
+          {sequence !== null && clip !== undefined && draft !== null ? (
+            <ClipTrimRanges
               durationFrames={durationFrames}
               trimIn={draft.inFrame}
               trimOut={draft.outFrame}
-              playhead={playhead}
               disabled={editPending}
               onTrimInChange={(inFrame) => controller.updateTrimDraft({ inFrame })}
               onTrimOutChange={(outFrame) => controller.updateTrimDraft({ outFrame })}
-              onSeek={setPlayhead}
             />
           ) : null}
         </div>

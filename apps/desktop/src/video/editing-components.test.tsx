@@ -3,54 +3,31 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SingleClipTimeline } from "./SingleClipTimeline";
+import { ClipTrimRanges } from "./ClipTrimRanges";
 import { TrimInspector } from "./TrimInspector";
 
 afterEach(cleanup);
 
 describe("timeline and trim inspector", () => {
-  it("uses the cache thumbnail, native range alternatives, and pointer seeking", () => {
-    const convertCachePath = vi.fn((path: string) => `asset:${path}`);
+  it("preserves native quick-trim ranges and callbacks", () => {
     const onTrimInChange = vi.fn();
     const onTrimOutChange = vi.fn();
-    const onSeek = vi.fn();
-    const { container } = render(
-      <SingleClipTimeline
-        thumbnailPath="/cache/thumb.jpg"
-        convertCachePath={convertCachePath}
+    render(
+      <ClipTrimRanges
         durationFrames={100}
         trimIn={10}
         trimOut={90}
-        playhead={50}
         disabled={false}
         onTrimInChange={onTrimInChange}
         onTrimOutChange={onTrimOutChange}
-        onSeek={onSeek}
       />,
     );
-    expect(convertCachePath).toHaveBeenCalledWith("/cache/thumb.jpg");
     expect(screen.getByRole("slider", { name: "Trim in" })).toBeTruthy();
     expect(screen.getByRole("slider", { name: "Trim out" })).toBeTruthy();
     fireEvent.change(screen.getByRole("slider", { name: "Trim in" }), { target: { value: "20" } });
     fireEvent.change(screen.getByRole("slider", { name: "Trim out" }), { target: { value: "80" } });
     expect(onTrimInChange).toHaveBeenCalledWith(20);
     expect(onTrimOutChange).toHaveBeenCalledWith(80);
-
-    const track = container.querySelector(".timeline-track");
-    if (!(track instanceof HTMLElement)) throw new Error("Expected timeline track");
-    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      right: 200,
-      top: 0,
-      bottom: 82,
-      width: 200,
-      height: 82,
-      toJSON: () => ({}),
-    });
-    fireEvent.pointerDown(track, { clientX: 100 });
-    expect(onSeek).toHaveBeenCalledWith(50);
   });
 
   it("blocks invalid, unchanged, and pending trim submissions", () => {
