@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1–3 are complete and Phase 4 is unblocked for private-use development
+- **Status:** Active implementation; Phases 1–3 are complete and Phase 4 timeline-foundation work is next for private-use development
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 2 August 2026
+- **Implementation audit:** 2 August 2026 (verified at HEAD `4965524`)
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -496,6 +496,26 @@ Separate waveform data caches from painted bitmap caches. **License:** GPL-3.0; 
 # Phase 4 — Functional multitrack editing UI
 
 **Depends on:** Phases 2 and 3
+
+## Implementation checkpoint — audited 2 August 2026
+
+Phases 1–3 remain complete for private-use development, and Phase 4 is the active phase. The audit found no missing prerequisite that should reopen an earlier phase.
+
+The Phase 2 foundation already provides strict multitrack entities and validated commands for track and clip insertion/removal, split, move, trim, transform, gain, markers, captions, command grouping, inverse history, persistence, and recovery. The Rust project service executes these commands canonically; this work must be reused rather than rebuilt in Phase 4.
+
+The production frontend remains intentionally at the Phase 3 single-clip boundary: `SingleClipTimeline.tsx` projects the first video clip, while `use-video-project.ts` exposes trim, undo, and redo as its editing operations. No timeline viewport geometry, visible-range virtualization, selection model, snapping engine, shared keyboard command registry, multitrack workspace, source/program monitor pair, or multiselect inspector is implemented yet.
+
+The 2 August audit passed frozen install; root build, type-check, 204 TypeScript/Vitest tests, lint, and format; 13 Chromium browser tests across six consecutive runs; Rustfmt; all-target/all-feature Clippy with warnings denied; 172 Rust unit tests plus 5 security tests across repeated runs; all 11 explicit system-FFmpeg integrations; and `git diff --check`. One transient Rust run reported two failures without retained test names, but six immediate full-suite reruns passed and did not reproduce it; treat recurrence as a test-isolation defect, not as evidence that Phase 4 has started.
+
+### Next implementation item
+
+Implement the browser-safe timeline viewport/projection foundation first:
+
+1. Add pure rational-time-to-pixel, pixel-to-rational-time, zoom, scroll, overscan, and visible-frame-range primitives with geometry tests across zoom and DPI scales.
+2. Add selection-independent multitrack view models that project only visible clips while preserving semantic DOM metadata and controls.
+3. Replace the single-clip timeline projection with a semantic multitrack read-only view, then wire single selection plus split, move, and trim through the existing validated command-group boundary.
+
+Do not begin with new persistence schemas or a second command engine; extend existing contracts only when a Phase 4 interaction requires a genuinely missing operation such as cross-track movement, ripple delete, or persisted track state.
 
 ## Scope
 
