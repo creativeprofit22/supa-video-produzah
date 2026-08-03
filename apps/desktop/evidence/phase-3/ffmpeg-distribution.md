@@ -95,8 +95,8 @@ Small-component quality-floor review scored **2/2** for hierarchy, consistency/f
 | Installed GUI launch with stripped `PATH`                     | Passed                                                                                                                                        |
 | `git diff --check`                                            | Passed                                                                                                                                        |
 
-## Legal gate
+## Public-distribution legal gate
 
 The selected static build is provider-declared GPLv3 and includes `libx264`, `libx265`, and other libraries. GPL/source availability and codec-patent clearance are separate questions. No legal approval is claimed.
 
-`distributionReview.status` remains `pending`, with reviewer/date/reference unset. GitHub release automation requires `approved` and all three evidence fields before importing signing material or building public installers.
+The current project scope is private use only. Legal review is deferred until public distribution and does not block Phase 4 development. `distributionReview.status` remains `pending`, with reviewer/date/reference unset, and GitHub release automation continues to require `approved` plus all three evidence fields before importing signing material or building public installers.

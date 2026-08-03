@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1 and 2, the Phase 3 FFmpeg distribution baseline, and Phase 3A are complete; Phase 3B implementation is present and verification closure is in progress
+- **Status:** Active implementation; Phases 1–3 are complete and Phase 4 is unblocked for private-use development
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 28 July 2026
+- **Implementation audit:** 2 August 2026
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -11,7 +11,7 @@
 
 ## Architecture decision
 
-Bootstrap a standalone **pnpm workspace** in this repository with a dedicated **Tauri v2 + React 19** desktop application, browser-safe TypeScript domain packages, and a Rust-owned native media boundary. Phase 1 uses system `ffmpeg` and `ffprobe` discovered on `PATH`; Phase 3 owns binary bundling and distribution review. Agent/model infrastructure is deferred until Phase 6 and, when added, is implemented as product-owned packages rather than imported from another product.
+Bootstrap a standalone **pnpm workspace** in this repository with a dedicated **Tauri v2 + React 19** desktop application, browser-safe TypeScript domain packages, and a Rust-owned native media boundary. Phase 1 uses system `ffmpeg` and `ffprobe` discovered on `PATH`; Phase 3 owns binary bundling and records the distribution-review gate, while legal approval is deferred until public distribution. Agent/model infrastructure is deferred until Phase 6 and, when added, is implemented as product-owned packages rather than imported from another product.
 
 ```text
 Supa Video Producer workspace
@@ -215,7 +215,7 @@ The transferable pattern is rendering from an immutable revision rather than liv
 project revision → validated inputs → filter/output plan → supervised process
 ```
 
-Use argument arrays and parsed `-progress pipe:1`; do not concatenate user/model strings. **License:** FFmpeg can be LGPL or GPL depending on build options and linked components; the exact shipped build configuration needs a dedicated distribution review.
+Use argument arrays and parsed `-progress pipe:1`; do not concatenate user/model strings. **License:** FFmpeg can be LGPL or GPL depending on build options and linked components; public distribution of the exact bundled build requires a dedicated GPL/source-offer and codec-patent review.
 
 ### OpenTimelineIO — rational time concepts
 
@@ -370,9 +370,9 @@ Runtime: decoders, GPU textures, file handles
 
 **Depends on:** Phase 2
 
-## Implementation checkpoint - re-audited 28 July 2026
+## Implementation checkpoint - re-audited 2 August 2026
 
-Phase 3B implementation is present through the ordered local closure series, built on the Phase 2 engine, Phase 3A content-addressed ingest, and pinned Gyan FFmpeg 8.1.2 distribution baseline. Phase 3B remains **in verification/closure** and Phase 4 is blocked.
+Phase 3B implementation and verification are complete through the ordered local closure series, built on the Phase 2 engine, Phase 3A content-addressed ingest, and pinned Gyan FFmpeg 8.1.2 distribution baseline. Phase 4 is unblocked for private-use development.
 
 The audited implementation includes strict TypeScript/Rust job contracts, SQLite job/event/cache state, hierarchical preparation jobs, durable final-render jobs, priority scheduling, retries, cancellation, restart recovery, cache leases and deterministic LRU eviction, explicit legacy-cache policy, production IPC/event reconciliation, and the app-level Job Center.
 
@@ -382,13 +382,13 @@ The packaged test service now uses each mock Tauri app's resolved local-data/cac
 
 The literal assembled Windows gate now passes with stripped `PATH` and bundled FFmpeg: an interrupted long proxy recovered with stable parent/child IDs and one terminal event; ExportPanel and Job Center reconciled cancellation, native save-picker reauthorization, same-job retry, and completion; active leases survived deterministic test-budget LRU eviction; a cache miss regenerated without identity drift; and legacy inventory survived restart until visible confirmation. Independent checks found no final FFmpeg/FFprobe descendant or owned partial residue. Sanitized commands, IDs, hashes, probes, event counts, totals, and screenshots are recorded in `apps/desktop/evidence/phase-3/assembled-windows-runtime-closure.md`.
 
-Exact-SHA Actions run [`30320315684`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30320315684) created TypeScript, Rust, and Windows jobs for baseline HEAD `3fd99757c16e9932c042400dab9c946b47718ddd` but executed zero steps because of the external account billing/spending block. The Phase 2 exact-SHA CI run remains the last completed successful run.
+Exact-SHA Actions run [`30764490903`](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/30764490903) passed at HEAD `dbcb519eb2f562834d7ea7086219f87f5d7fbf2f`: the TypeScript, Rust, and Windows jobs all executed successfully. The signed-installer job was correctly skipped because this was a push rather than a published release.
 
-Public distribution review remains explicitly pending for GPL/source-offer and codec-patent obligations.
+Public distribution review remains explicitly pending for GPL/source-offer and codec-patent obligations. The project is private-use-only at this checkpoint; legal approval is deferred until public distribution and does not block Phase 4.
 
 ### Next implementation item
 
-Close **Phase 3B verification** without expanding into Phase 4, audio intermediates, transcription, or an editor redesign.
+Begin **Phase 4 functional multitrack editing UI** without starting public release work.
 
 ## Implemented Phase 3B deliverables
 
@@ -401,9 +401,9 @@ Close **Phase 3B verification** without expanding into Phase 4, audio intermedia
 - App-level accessible Job Center available with or without an open project
 - Functional/release-performance benchmark separation and local measurement coverage
 
-## Remaining Phase 3B verification/closure items
+## Phase 3B verification/closure result
 
-- Obtain an exact-SHA GitHub Actions run whose TypeScript, Rust, and Windows jobs actually execute and pass
+- Complete: exact-SHA GitHub Actions run `30764490903` executed and passed the TypeScript, Rust, and Windows jobs at HEAD `dbcb519eb2f562834d7ea7086219f87f5d7fbf2f`
 
 ## Phase 3B scope
 
@@ -442,11 +442,11 @@ Close **Phase 3B verification** without expanding into Phase 4, audio intermedia
 - Eviction can race playback/build unless session leases, exact locks, and post-lock rechecks all agree
 - Stale filesystem grants must never be persisted or silently restored
 - Progress can flood disk/UI unless writes and announcements are coalesced
-- Exact-SHA CI remains externally blocked until the account owner restores billing/spending access
+- Public distribution remains unavailable until documented GPL/source-offer and codec-patent legal approval is recorded; this deferred release gate does not block private-use Phase 4 development
 
 ## Phase 3B hard completion gate
 
-Phase 3B is complete only when every proxy, thumbnail, and final-render operation has one strict durable lifecycle; a terminated real app resumes the same deduplicated proxy job from its canonical object without stale processes or partials; deterministic tests prove bounded priority, cancellation, retry, blocked authorization, and recovery; managed usage is bounded by lease-aware safe LRU eviction and cache misses regenerate without changing project identity; the legacy cache has a visible confirmed policy; the existing single-clip workflow and all path/toolchain guarantees still pass; the Job Center passes keyboard, required reflow, forced-color, reduced-motion, Axe, and redaction checks; every local TypeScript, browser, Rust, FFmpeg, packaged-resource, performance, Tauri, staged-media, and diff gate passes; and an exact-SHA GitHub Actions run actually executes and passes. Until the external billing block is removed and that run succeeds, this checkpoint remains **in progress: exact-SHA CI externally blocked**.
+Phase 3B is complete: every proxy, thumbnail, and final-render operation has one strict durable lifecycle; a terminated real app resumes the same deduplicated proxy job from its canonical object without stale processes or partials; deterministic tests prove bounded priority, cancellation, retry, blocked authorization, and recovery; managed usage is bounded by lease-aware safe LRU eviction and cache misses regenerate without changing project identity; the legacy cache has a visible confirmed policy; the existing single-clip workflow and all path/toolchain guarantees pass; the Job Center passes keyboard, required reflow, forced-color, reduced-motion, Axe, and redaction checks; every local TypeScript, browser, Rust, FFmpeg, packaged-resource, performance, Tauri, staged-media, and diff gate passes; and exact-SHA Actions run `30764490903` executed and passed. Phase 4 may proceed under the private-use-only scope; public distribution remains separately fail-closed pending legal approval.
 
 ## Proven References
 
@@ -1275,7 +1275,7 @@ Phases 9–10 complete where profiling requires Phase 9: preview, QC, delivery, 
 # Unresolved decisions
 
 1. **Product license:** proprietary, source-available, permissive open source, or copyleft; this determines whether GPL/AGPL implementation code may ever be reused
-2. **FFmpeg distribution profile:** LGPL-focused build versus GPL-enabled build; codec patent and platform distribution review remains separate
+2. **FFmpeg public-distribution profile:** LGPL-focused build versus the current GPL-enabled build; GPL/source-offer, codec-patent, and platform review is deferred until public distribution and does not block private-use implementation phases
 3. **Phase 1 target platforms:** recommend Windows-first, then macOS, then Linux after the project/render boundaries stabilize
 4. **Project storage container:** directory project with JSON/journal/assets versus a packaged archive; default recommendation is an inspectable directory during early phases
 5. **Rust boundary:** Tauri process versus dedicated local engine process; default to a project service boundary that can later move out-of-process without changing contracts
