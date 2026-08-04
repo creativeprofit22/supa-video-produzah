@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
 import { createMockVideoService, testMediaJob } from "../test-video-service";
-
+import { useVideoProject } from "../use-video-project";
+import { VideoWorkspace } from "./VideoWorkspace";
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset:${path}`),
   invoke: vi.fn(),
@@ -45,6 +46,73 @@ class TestResizeObserver implements ResizeObserver {
   }
   unobserve() {}
   disconnect() {}
+}
+function RippleWorkflowHarness() {
+  const controller = useVideoProject();
+  const sequence = controller.projection?.state.sequences.find(
+    ({ id }) => id === controller.projection?.state.activeSequenceId,
+  );
+  const firstClip = sequence?.tracks.find((track) => track.kind !== "caption")?.clips[0];
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          void controller
+            .newProject()
+            .then(() => controller.prepareImportedSource("C:\\Neutral\\Media\\clip.mp4"))
+        }
+      >
+        Initialize ripple workflow
+      </button>
+      <button
+        type="button"
+        disabled={firstClip === undefined}
+        onClick={() =>
+          firstClip === undefined
+            ? undefined
+            : void controller.splitTimelineClip({
+                clipId: firstClip.id,
+                sourceFrame: firstClip.sourceIn.value + 10,
+              })
+        }
+      >
+        Split ripple fixture
+      </button>
+      <button
+        type="button"
+        disabled={firstClip === undefined}
+        onClick={() =>
+          firstClip === undefined
+            ? undefined
+            : void controller.rippleDeleteTimelineClip({ clipId: firstClip.id })
+        }
+      >
+        Delete ripple fixture
+      </button>
+      {controller.project === null ? null : (
+        <VideoWorkspace
+          controller={controller}
+          mediaJobs={[]}
+          project={controller.project}
+          readiness={{
+            phase: "loaded",
+            value: {
+              source: "bundled",
+              toolchainId: "ffmpeg-test-v1",
+              ffmpeg: { available: true, version: "test" },
+              ffprobe: { available: true, version: "test" },
+              ready: true,
+            },
+          }}
+          onCheckTools={() => undefined}
+          onOpenJobCenter={() => undefined}
+          onNewProject={() => undefined}
+          onOpenProject={() => undefined}
+        />
+      )}
+    </>
+  );
 }
 afterEach(() => {
   cleanup();
@@ -212,6 +280,72 @@ describe("complete mocked Phase 2 workflow", () => {
       ).toBe("true"),
     );
     expect(screen.queryByRole("button", { name: /clip\.mp4, frames 10 through 100/ })).toBeNull();
+  });
+
+  it("ripple deletes one revision, selects the survivor, and round-trips undo and redo", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<RippleWorkflowHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Initialize ripple workflow" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const originalClip = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 100/,
+    });
+    expect(originalClip.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Split ripple fixture" }));
+    await screen.findByRole("button", { name: /clip\.mp4, frames 10 through 100/ });
+    const splitTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (splitTrack.kind === "caption") throw new Error("Expected mock clip track");
+    const survivorId = splitTrack.clips[1]!.id;
+    expect(splitTrack.clips.map((clip) => clip.timelineStart.value)).toEqual([0, 10]);
+    expect(service.projection.revision.number).toBe(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete ripple fixture" }));
+
+    await waitFor(() => expect(service.projection.revision.number).toBe(3));
+    const rippleTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (rippleTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(rippleTrack.clips.map((clip) => [clip.id, clip.timelineStart.value])).toEqual([
+      [survivorId, 0],
+    ]);
+    const executeCalls = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_execute_project_group",
+    );
+    const rippleRequest = executeCalls.at(-1)?.[1] as {
+      request: { baseRevision: number; commands: Array<Record<string, unknown>> };
+    };
+    expect(rippleRequest.request.baseRevision).toBe(2);
+    expect(rippleRequest.request.commands).toEqual([
+      expect.objectContaining({ type: "RippleDeleteClip" }),
+    ]);
+    const selectedSurvivor = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 90/,
+    });
+    await waitFor(() => expect(selectedSurvivor.getAttribute("aria-pressed")).toBe("true"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(service.projection.revision.number).toBe(4));
+    const undoTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (undoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(undoTrack.clips.map((clip) => clip.timelineStart.value)).toEqual([0, 10]);
+    expect(service.projection.lastCommand?.summary).toBe("Undid Ripple deleted clip");
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(service.projection.revision.number).toBe(5));
+    const redoTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (redoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(redoTrack.clips.map((clip) => [clip.id, clip.timelineStart.value])).toEqual([
+      [survivorId, 0],
+    ]);
+    expect(service.projection.lastCommand?.summary).toBe("Redid Ripple deleted clip");
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: /clip\.mp4, frames 0 through 90/ })
+          .getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
   });
 
   it("routes timeline move and grouped left trim through one group per gesture", async () => {

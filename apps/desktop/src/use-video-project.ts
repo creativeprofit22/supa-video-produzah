@@ -32,7 +32,7 @@ export interface TrimDraft {
   readonly inFrame: number;
   readonly outFrame: number;
 }
-export type TimelineEditOperation = "split" | "move" | "trim";
+export type TimelineEditOperation = "split" | "move" | "trim" | "ripple-delete";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -46,6 +46,9 @@ export interface TrimTimelineClipInput {
   readonly sourceInFrame: number;
   readonly sourceOutFrame: number;
   readonly timelineStartFrame: number;
+}
+export interface RippleDeleteTimelineClipInput {
+  readonly clipId: string;
 }
 export type EditOperationState =
   | { readonly phase: "idle" }
@@ -963,6 +966,23 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const rippleDeleteTimelineClip = useCallback(
+    async ({ clipId }: RippleDeleteTimelineClipInput) => {
+      const base = stateRef.current.projection;
+      const selection = timelineClip(base, clipId);
+      if (base === null || selection === null) return;
+      await executeTimelineCommandGroup(base, "ripple-delete", [
+        {
+          type: "RippleDeleteClip",
+          commandId: newId(),
+          sequenceId: selection.sequence.id,
+          trackId: selection.track.id,
+          clipId: selection.clip.id,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
@@ -1130,6 +1150,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     splitTimelineClip,
     moveTimelineClip,
     trimTimelineClip,
+    rippleDeleteTimelineClip,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

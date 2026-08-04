@@ -145,6 +145,21 @@ function clipProjection(revision = 1, sourceIn = 0, sourceOut = 60): ProjectProj
   };
 }
 
+function rippleProjection(revision = 1): ProjectProjection {
+  const projection = clipProjection(revision, 0, 20);
+  const track = projection.state.sequences[0]!.tracks[0]!;
+  if (track.kind === "caption") throw new Error("Expected clip track fixture");
+  const successor = {
+    ...structuredClone(track.clips[0]!),
+    id: id(6),
+    timelineStart: { value: 30, rateNumerator: 30, rateDenominator: 1 },
+    sourceIn: { value: 20, rateNumerator: 30, rateDenominator: 1 },
+    sourceOut: { value: 50, rateNumerator: 30, rateDenominator: 1 },
+  };
+  track.clips.push(successor);
+  return projection;
+}
+
 function commandResult(
   prior: ProjectProjection,
   next: ProjectProjection,
@@ -516,6 +531,104 @@ describe("canonical project controller", () => {
       }),
     );
     expect(result.current.projection?.revision.number).toBe(5);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("ripple deletes through one command and one revision with exact undo and redo", async () => {
+    const opened = rippleProjection(1);
+    const deleted = structuredClone(opened);
+    const deletedTrack = deleted.state.sequences[0]!.tracks[0]!;
+    if (deletedTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    deletedTrack.clips.splice(0, 1);
+    deletedTrack.clips[0]!.timelineStart.value = 10;
+    deleted.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+    deleted.canUndo = true;
+    deleted.canRedo = false;
+    deleted.lastCommand = {
+      operationId: id(202),
+      groupId: id(202),
+      summary: "Ripple deleted clip",
+    };
+    const undone = structuredClone(opened);
+    undone.revision = { ...emptyProjection(3).revision, parentId: deleted.revision.id };
+    undone.canUndo = false;
+    undone.canRedo = true;
+    const redone = structuredClone(deleted);
+    redone.revision = { ...emptyProjection(4).revision, parentId: undone.revision.id };
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      return commandResult(opened, deleted, request.groupId);
+    });
+    const undo = vi.fn(async (_projectId: string, _base: number, operationId: string) =>
+      commandResult(deleted, undone, operationId),
+    );
+    const redo = vi.fn(async (_projectId: string, _base: number, operationId: string) =>
+      commandResult(undone, redone, operationId),
+    );
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+      undoVideoProject: undo,
+      redoVideoProject: redo,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.rippleDeleteTimelineClip({ clipId: id(5) }));
+
+    const request = execute.mock.calls[0]![0];
+    expect(request.baseRevision).toBe(1);
+    expect(request.commands).toEqual([
+      expect.objectContaining({
+        type: "RippleDeleteClip",
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+      }),
+    ]);
+    expect(result.current.projection?.revision.number).toBe(2);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips.map((clip) => [
+            clip.id,
+            clip.timelineStart.value,
+          ])
+        : null,
+    ).toEqual([[id(6), 10]]);
+
+    await act(() => result.current.undoEdit());
+    expect(result.current.projection?.revision.number).toBe(3);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips.map(
+            (clip) => clip.timelineStart.value,
+          )
+        : null,
+    ).toEqual([0, 30]);
+
+    await act(() => result.current.redoEdit());
+    expect(result.current.projection?.revision.number).toBe(4);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips.map((clip) => [
+            clip.id,
+            clip.timelineStart.value,
+          ])
+        : null,
+    ).toEqual([[id(6), 10]]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(undo).toHaveBeenCalledOnce();
+    expect(redo).toHaveBeenCalledOnce();
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 

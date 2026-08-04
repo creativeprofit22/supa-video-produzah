@@ -170,9 +170,33 @@ function commandSummary(command: ProjectCommandV2): string {
       return "Moved clip";
     case "TrimClip":
       return "Applied trim";
+    case "RippleDeleteClip":
+      return "Ripple deleted clip";
     default:
       return "Updated project";
   }
+}
+function exactTimelineDuration(clip: {
+  readonly timelineStart: { readonly rateNumerator: number; readonly rateDenominator: number };
+  readonly sourceIn: {
+    readonly value: number;
+    readonly rateNumerator: number;
+    readonly rateDenominator: number;
+  };
+  readonly sourceOut: { readonly value: number };
+}): number {
+  const scaledNumerator =
+    BigInt(clip.sourceOut.value - clip.sourceIn.value) *
+    BigInt(clip.timelineStart.rateNumerator) *
+    BigInt(clip.sourceIn.rateDenominator);
+  const scaledDenominator =
+    BigInt(clip.sourceIn.rateNumerator) * BigInt(clip.timelineStart.rateDenominator);
+  if (scaledNumerator % scaledDenominator !== 0n)
+    throw new Error("Mock ripple duration must rescale exactly");
+  const duration = Number(scaledNumerator / scaledDenominator);
+  if (!Number.isSafeInteger(duration) || duration <= 0)
+    throw new Error("Mock ripple duration is invalid");
+  return duration;
 }
 
 export function createMockVideoService(
@@ -302,6 +326,21 @@ export function createMockVideoService(
             if (clip) {
               clip.sourceIn = item.sourceIn;
               clip.sourceOut = item.sourceOut;
+            }
+          }
+        } else if (item.type === "RippleDeleteClip") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
+          const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
+          if (track.kind !== "caption") {
+            const clipIndex = track.clips.findIndex(({ id }) => id === item.clipId);
+            if (clipIndex < 0) throw new Error("Unknown mock ripple clip");
+            const [removed] = track.clips.splice(clipIndex, 1);
+            if (removed === undefined) throw new Error("Missing mock ripple clip");
+            const duration = exactTimelineDuration(removed);
+            for (const clip of track.clips.slice(clipIndex)) {
+              const value = clip.timelineStart.value - duration;
+              if (value < 0) throw new Error("Mock ripple move underflowed");
+              clip.timelineStart = { ...clip.timelineStart, value };
             }
           }
         }
