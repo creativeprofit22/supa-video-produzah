@@ -297,6 +297,31 @@ describe("MultitrackTimeline", () => {
     expect(materializedClipIds(rendered.container).length).toBeLessThan(1_000);
   });
 
+  it("clamps a move before frame zero and commits the clamped start", () => {
+    const projection = interactionProjection();
+    const firstId = id(100_000);
+    const firstTrack = projection.state.sequences[0]!.tracks[0]!;
+    if (firstTrack.kind === "caption") throw new Error("Expected a video track");
+    firstTrack.clips[0]!.timelineStart = time(4);
+    const onMoveClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline
+        {...timelineProps({ projection, selectedClipId: firstId, onMoveClip })}
+      />,
+    );
+    const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 4 through 6/ });
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 11, clientX: 20 });
+    fireEvent.pointerMove(body, { pointerId: 11, clientX: -20 });
+    expect(element.dataset.startFrame).toBe("0");
+    expect(element.dataset.endFrameExclusive).toBe("2");
+    fireEvent.pointerUp(body, { pointerId: 11, clientX: -20 });
+
+    expect(onMoveClip).toHaveBeenCalledOnce();
+    expect(onMoveClip).toHaveBeenCalledWith(firstId, 0);
+  });
+
   it("previews both trim handles and emits one canonical trim on release", () => {
     const firstId = id(100_000);
     const onTrimClip = vi.fn();
@@ -321,5 +346,24 @@ describe("MultitrackTimeline", () => {
     fireEvent.pointerCancel(left, { pointerId: 10 });
     expect(onTrimClip).toHaveBeenCalledOnce();
     expect(element.dataset.startFrame).toBe("0");
+  });
+
+  it("clamps an inward trim to the one-frame minimum before committing", () => {
+    const firstId = id(100_000);
+    const onTrimClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline {...timelineProps({ selectedClipId: firstId, onTrimClip })} />,
+    );
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+    const right = screen.getByRole("button", { name: "Trim end of camera-a.mp4" });
+
+    fireEvent.pointerDown(right, { button: 0, pointerId: 12, clientX: 20 });
+    fireEvent.pointerMove(right, { pointerId: 12, clientX: -20 });
+    expect(element.dataset.startFrame).toBe("0");
+    expect(element.dataset.endFrameExclusive).toBe("1");
+    fireEvent.pointerUp(right, { pointerId: 12, clientX: -20 });
+
+    expect(onTrimClip).toHaveBeenCalledOnce();
+    expect(onTrimClip).toHaveBeenCalledWith(firstId, 0, 1, 0);
   });
 });

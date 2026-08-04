@@ -184,6 +184,36 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "video_redo_project")).toBe(true);
   });
 
+  it("falls back to the first clip when undo removes the selected clip", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split at playhead" }));
+    const rightClip = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 10 through 100/,
+    });
+    fireEvent.click(rightClip);
+    expect(rightClip.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: /clip\.mp4, frames 0 through 100/ })
+          .getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    expect(screen.queryByRole("button", { name: /clip\.mp4, frames 10 through 100/ })).toBeNull();
+  });
+
   it("routes timeline move and grouped left trim through one group per gesture", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
       this: HTMLElement,
