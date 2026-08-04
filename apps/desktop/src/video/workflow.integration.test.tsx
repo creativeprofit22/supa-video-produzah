@@ -35,12 +35,28 @@ function dispatchRender(payload: unknown) {
 function dispatchMediaJob(payload: unknown) {
   dispatchTauriEvent("video:media-job-event", payload);
 }
-afterEach(cleanup);
+class TestResizeObserver implements ResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+  observe(target: Element) {
+    this.callback(
+      [{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry],
+      this,
+    );
+  }
+  unobserve() {}
+  disconnect() {}
+}
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("complete mocked Phase 2 workflow", () => {
   beforeEach(() => {
     invokeMock.mockReset();
     listenMock.mockReset().mockResolvedValue(vi.fn());
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
   });
 
   it("creates, grouped-imports, trims, monotonic-undoes/redoes, exports, and reopens", async () => {
@@ -61,7 +77,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply trim" }));
     await waitFor(() => expect(screen.getByText("5–50")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    await waitFor(() => expect(screen.getByText("0–100")).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText("0–100").length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole("button", { name: "Redo" }));
     await waitFor(() => expect(screen.getByText("5–50")).toBeTruthy());
     expect(service.projection.revision.number).toBe(4);
@@ -105,6 +121,145 @@ describe("complete mocked Phase 2 workflow", () => {
       ).toBe(5),
     );
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
+  });
+
+  it("routes timeline split through mock IPC and exposes precise undo and redo labels", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const split = screen.getByRole("button", { name: "Split at playhead" });
+    expect((split as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    expect((split as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(split);
+
+    await waitFor(() =>
+      expect(service.projection.state.sequences[0]!.tracks[0]!.kind).toBe("video"),
+    );
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+      ).toHaveLength(2),
+    );
+    const splitRequest = invokeMock.mock.calls
+      .filter(([command]) => command === "video_execute_project_group")
+      .at(-1)?.[1] as { request: { commands: Array<Record<string, unknown>> } };
+    expect(splitRequest.request.commands).toEqual([
+      expect.objectContaining({
+        type: "SplitClip",
+        splitAt: expect.objectContaining({ value: 10 }),
+      }),
+    ]);
+
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    const inspector = (await screen.findByRole("heading", { name: "Project inspector" })).closest(
+      "section",
+    )!;
+    expect(within(inspector).getByText("Split clip")).toBeTruthy();
+    fireEvent.click(within(inspector).getByRole("button", { name: "Close" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Undid Split clip"));
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    const undoInspector = screen
+      .getByRole("heading", { name: "Project inspector" })
+      .closest("section")!;
+    expect(await within(undoInspector).findByText("Undid Split clip")).toBeTruthy();
+    fireEvent.click(within(undoInspector).getByRole("button", { name: "Close" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Redid Split clip"));
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    const redoInspector = screen
+      .getByRole("heading", { name: "Project inspector" })
+      .closest("section")!;
+    expect(await within(redoInspector).findByText("Redid Split clip")).toBeTruthy();
+    expect(invokeMock.mock.calls.some(([command]) => command === "video_undo_project")).toBe(true);
+    expect(invokeMock.mock.calls.some(([command]) => command === "video_redo_project")).toBe(true);
+  });
+
+  it("routes timeline move and grouped left trim through one group per gesture", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("multitrack-scroll-region") ? 320 : 0;
+    });
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const initialBody = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 100/,
+    });
+    expect(initialBody.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.pointerDown(initialBody, { button: 0, pointerId: 21, clientX: 12 });
+    fireEvent.pointerMove(initialBody, { pointerId: 21, clientX: 20 });
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+    ).toHaveLength(1);
+    fireEvent.pointerUp(initialBody, { pointerId: 21, clientX: 20 });
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+      ).toHaveLength(2),
+    );
+    const moveRequest = invokeMock.mock.calls
+      .filter(([command]) => command === "video_execute_project_group")
+      .at(-1)?.[1] as { request: { commands: Array<Record<string, unknown>> } };
+    const moveCommand = moveRequest.request.commands[0] as {
+      type: string;
+      timelineStart: { value: number };
+    };
+    expect(moveRequest.request.commands).toHaveLength(1);
+    expect(moveCommand.type).toBe("MoveClip");
+    expect(moveCommand.timelineStart.value).toBeGreaterThan(0);
+    expect(service.projection.lastCommand?.summary).toBe("Moved clip");
+
+    const leftHandle = await screen.findByRole("button", { name: "Trim start of clip.mp4" });
+    fireEvent.pointerDown(leftHandle, { button: 0, pointerId: 22, clientX: 8 });
+    fireEvent.pointerMove(leftHandle, { pointerId: 22, clientX: 12 });
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+    ).toHaveLength(2);
+    fireEvent.pointerUp(leftHandle, { pointerId: 22, clientX: 12 });
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+      ).toHaveLength(3),
+    );
+    const trimRequest = invokeMock.mock.calls
+      .filter(([command]) => command === "video_execute_project_group")
+      .at(-1)?.[1] as { request: { commands: Array<Record<string, unknown>> } };
+    expect(trimRequest.request.commands.map(({ type }) => type)).toEqual(["TrimClip", "MoveClip"]);
+    const trimCommand = trimRequest.request.commands[0] as { sourceIn: { value: number } };
+    const trimMoveCommand = trimRequest.request.commands[1] as { timelineStart: { value: number } };
+    expect(trimCommand.sourceIn.value).toBeGreaterThan(0);
+    expect(trimMoveCommand.timelineStart.value).toBe(
+      moveCommand.timelineStart.value + trimCommand.sourceIn.value,
+    );
+    expect(service.projection.lastCommand?.summary).toBe("Applied trim, Moved clip");
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(service.projection.lastCommand?.summary).toBe("Undid Applied trim, Moved clip"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() =>
+      expect(service.projection.lastCommand?.summary).toBe("Redid Applied trim, Moved clip"),
+    );
   });
 
   it("loads equal-timestamp media jobs across composite cursor pages without gaps", async () => {

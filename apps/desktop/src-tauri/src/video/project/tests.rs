@@ -566,6 +566,200 @@ fn mixed_rate_undo_and_journal_replay_preserve_exact_state_hashes() {
     );
 }
 
+#[test]
+fn service_split_move_trim_groups_persist_and_recover_exact_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("split-move-trim.svpvideo");
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    fs::copy(&fixture_path, &project_path).unwrap();
+
+    let fixture: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(&fixture_path).unwrap()).unwrap();
+    let base_state = fixture.state;
+    let base_hash = state_hash(&base_state).unwrap();
+    let split = ProjectCommand::SplitClip {
+        command_id: "15000000-0000-4000-8000-000000000001".to_owned(),
+        sequence_id: "10000000-0000-4000-8000-000000000006".to_owned(),
+        track_id: "10000000-0000-4000-8000-000000000007".to_owned(),
+        clip_id: "10000000-0000-4000-8000-000000000008".to_owned(),
+        split_at: RationalTime {
+            value: 10,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+        right_clip_id: "15000000-0000-4000-8000-000000000002".to_owned(),
+    };
+    let moved = ProjectCommand::MoveClip {
+        command_id: "15000000-0000-4000-8000-000000000003".to_owned(),
+        sequence_id: "10000000-0000-4000-8000-000000000006".to_owned(),
+        track_id: "10000000-0000-4000-8000-000000000007".to_owned(),
+        clip_id: "15000000-0000-4000-8000-000000000002".to_owned(),
+        timeline_start: RationalTime {
+            value: 40,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+    };
+    let trimmed = ProjectCommand::TrimClip {
+        command_id: "15000000-0000-4000-8000-000000000004".to_owned(),
+        sequence_id: "10000000-0000-4000-8000-000000000006".to_owned(),
+        track_id: "10000000-0000-4000-8000-000000000007".to_owned(),
+        clip_id: "15000000-0000-4000-8000-000000000002".to_owned(),
+        source_in: RationalTime {
+            value: 12,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+        source_out: RationalTime {
+            value: 25,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+    };
+
+    let split_state = apply_group(&base_state, std::slice::from_ref(&split))
+        .unwrap()
+        .state;
+    let split_hash = state_hash(&split_state).unwrap();
+    let moved_state = apply_group(&split_state, std::slice::from_ref(&moved))
+        .unwrap()
+        .state;
+    let moved_hash = state_hash(&moved_state).unwrap();
+    let trimmed_state = apply_group(&moved_state, std::slice::from_ref(&trimmed))
+        .unwrap()
+        .state;
+    let trimmed_hash = state_hash(&trimmed_state).unwrap();
+
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("persistence-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id;
+
+    let groups = [
+        (
+            "15000000-0000-4000-8000-000000000011",
+            split,
+            "Split clip",
+            &split_state,
+            &split_hash,
+        ),
+        (
+            "15000000-0000-4000-8000-000000000012",
+            moved,
+            "Moved clip",
+            &moved_state,
+            &moved_hash,
+        ),
+        (
+            "15000000-0000-4000-8000-000000000013",
+            trimmed,
+            "Applied trim",
+            &trimmed_state,
+            &trimmed_hash,
+        ),
+    ];
+    for (index, (group_id, command, summary, expected_state, expected_hash)) in
+        groups.into_iter().enumerate()
+    {
+        let result = service
+            .execute(
+                "persistence-owner",
+                CommandGroupRequest {
+                    group_id: group_id.to_owned(),
+                    project_id: project_id.clone(),
+                    base_revision: index as u64,
+                    commands: vec![command],
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(result.prior_revision.number, index as u64);
+        assert_eq!(result.new_revision.number, index as u64 + 1);
+        assert_eq!(result.projection.state, *expected_state);
+        assert_eq!(result.state_hash, *expected_hash);
+        assert_eq!(result.new_revision.state_hash, *expected_hash);
+        assert_eq!(
+            result.projection.last_command.as_ref().unwrap().summary,
+            summary
+        );
+    }
+
+    service.close("persistence-owner", &project_id).unwrap();
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("recovery-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.projection.revision.number, 3);
+    assert_eq!(reopened.projection.state, trimmed_state);
+    assert_eq!(reopened.projection.revision.state_hash, trimmed_hash);
+    assert_eq!(
+        state_hash(&reopened.projection.state).unwrap(),
+        trimmed_hash
+    );
+
+    let undo_expectations = [
+        ("Applied trim", &moved_state, &moved_hash),
+        ("Moved clip", &split_state, &split_hash),
+        ("Split clip", &base_state, &base_hash),
+    ];
+    for (index, (originating_summary, expected_state, expected_hash)) in
+        undo_expectations.into_iter().enumerate()
+    {
+        let base_revision = 3 + index as u64;
+        let result = reopened_service
+            .undo(
+                "recovery-owner",
+                &project_id,
+                base_revision,
+                &format!("15000000-0000-4000-8000-00000000002{}", index + 1),
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(result.prior_revision.number, base_revision);
+        assert_eq!(result.new_revision.number, base_revision + 1);
+        assert_eq!(result.projection.state, *expected_state);
+        assert_eq!(result.state_hash, *expected_hash);
+        assert_eq!(result.new_revision.state_hash, *expected_hash);
+        assert_eq!(
+            result.projection.last_command.as_ref().unwrap().summary,
+            format!("Undid {originating_summary}")
+        );
+    }
+
+    let redo_expectations = [
+        ("Split clip", &split_state, &split_hash),
+        ("Moved clip", &moved_state, &moved_hash),
+        ("Applied trim", &trimmed_state, &trimmed_hash),
+    ];
+    for (index, (originating_summary, expected_state, expected_hash)) in
+        redo_expectations.into_iter().enumerate()
+    {
+        let base_revision = 6 + index as u64;
+        let result = reopened_service
+            .redo(
+                "recovery-owner",
+                &project_id,
+                base_revision,
+                &format!("15000000-0000-4000-8000-00000000003{}", index + 1),
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(result.prior_revision.number, base_revision);
+        assert_eq!(result.new_revision.number, base_revision + 1);
+        assert_eq!(result.projection.state, *expected_state);
+        assert_eq!(result.state_hash, *expected_hash);
+        assert_eq!(result.new_revision.state_hash, *expected_hash);
+        assert_eq!(
+            result.projection.last_command.as_ref().unwrap().summary,
+            format!("Redid {originating_summary}")
+        );
+    }
+}
+
 proptest! {
     #[test]
     fn arbitrary_valid_trim_inverse_round_trips(start in 0_u64..30, length in 1_u64..=30) {

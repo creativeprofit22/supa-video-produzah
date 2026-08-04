@@ -1,7 +1,7 @@
 import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
-import React from "react";
+import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
@@ -37,7 +37,7 @@ const clip = (
 const assetId = id(1);
 const nestedSequenceId = id(3);
 
-const projection: ProjectProjection = {
+const initialProjection: ProjectProjection = {
   projectId: id(900_001),
   name: "Timeline visual fixture",
   revision: {
@@ -113,14 +113,118 @@ const projection: ProjectProjection = {
   replayedRecordCount: 0,
 };
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <main className="video-workspace shared-rail">
+function ControlledTimelineFixture() {
+  const [currentProjection, setCurrentProjection] = useState(initialProjection);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+
+  const updateClip = (clipId: string, update: (clip: ProjectClip) => ProjectClip) => {
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) =>
+            track.kind === "caption"
+              ? track
+              : {
+                  ...track,
+                  clips: track.clips.map((candidate) =>
+                    candidate.id === clipId ? update(candidate) : candidate,
+                  ),
+                },
+          ),
+        })),
+      },
+    }));
+  };
+
+  const splitClip = (clipId: string, sourceFrame: number) => {
+    const rightClipId = id(300);
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) =>
+            track.kind === "caption"
+              ? track
+              : {
+                  ...track,
+                  clips: track.clips.flatMap((candidate) => {
+                    if (candidate.id !== clipId) return [candidate];
+                    const offset = sourceFrame - candidate.sourceIn.value;
+                    return [
+                      { ...candidate, sourceOut: time(sourceFrame) },
+                      {
+                        ...candidate,
+                        id: rightClipId,
+                        timelineStart: time(candidate.timelineStart.value + offset),
+                        sourceIn: time(sourceFrame),
+                      },
+                    ];
+                  }),
+                },
+          ),
+        })),
+      },
+    }));
+    setSelectedClipId(rightClipId);
+  };
+
+  return (
+    <main
+      className="video-workspace shared-rail timeline-browser-fixture"
+      style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
+    >
+      <style>{`
+        .timeline-browser-fixture .multitrack-panel { min-width: 0; }
+        @media (max-width: 479px) {
+          .timeline-browser-fixture .multitrack-heading {
+            align-items: stretch;
+            flex-direction: column;
+          }
+          .timeline-browser-fixture .multitrack-actions {
+            align-items: stretch;
+          }
+          .timeline-browser-fixture .multitrack-actions .compact-button {
+            width: 100%;
+            white-space: normal;
+          }
+        }
+      `}</style>
       <MultitrackTimeline
-        projection={projection}
+        projection={currentProjection}
         preparedAsset={null}
         convertCachePath={(path) => path}
+        selectedClipId={selectedClipId}
+        playheadFrame={10}
+        editPending={false}
+        editError={null}
+        onSelectClip={setSelectedClipId}
+        onSplitClip={splitClip}
+        onMoveClip={(clipId, timelineStartFrame) =>
+          updateClip(clipId, (candidate) => ({
+            ...candidate,
+            timelineStart: time(timelineStartFrame),
+          }))
+        }
+        onTrimClip={(clipId, sourceInFrame, sourceOutFrame, timelineStartFrame) =>
+          updateClip(clipId, (candidate) => ({
+            ...candidate,
+            timelineStart: time(timelineStartFrame),
+            sourceIn: time(sourceInFrame),
+            sourceOut: time(sourceOutFrame),
+          }))
+        }
       />
     </main>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <ControlledTimelineFixture />
   </React.StrictMode>,
 );

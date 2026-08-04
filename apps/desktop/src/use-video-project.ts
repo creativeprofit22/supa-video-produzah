@@ -2,6 +2,7 @@ import {
   createRationalTime,
   microsecondsToSourceFrames,
   type CommandResult,
+  type ProjectCommandV2,
   type ProjectProjection,
   type RecoveryReport,
   type RenderPlanV1,
@@ -11,7 +12,7 @@ import {
   videoProjectFileV1Schema,
 } from "@supa-video/contracts";
 import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
-import { buildCommandGroup } from "@supa-video/project";
+import { buildCommandGroup, buildProjectCommand } from "@supa-video/project";
 import { compileSingleClipRenderPlan } from "@supa-video/render";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -31,12 +32,27 @@ export interface TrimDraft {
   readonly inFrame: number;
   readonly outFrame: number;
 }
+export type TimelineEditOperation = "split" | "move" | "trim";
+export interface SplitTimelineClipInput {
+  readonly clipId: string;
+  readonly sourceFrame: number;
+}
+export interface MoveTimelineClipInput {
+  readonly clipId: string;
+  readonly timelineStartFrame: number;
+}
+export interface TrimTimelineClipInput {
+  readonly clipId: string;
+  readonly sourceInFrame: number;
+  readonly sourceOutFrame: number;
+  readonly timelineStartFrame: number;
+}
 export type EditOperationState =
   | { readonly phase: "idle" }
-  | { readonly phase: "saving"; readonly operation: "trim" | "undo" | "redo" }
+  | { readonly phase: "saving"; readonly operation: TimelineEditOperation | "undo" | "redo" }
   | {
       readonly phase: "error";
-      readonly operation: "trim" | "undo" | "redo";
+      readonly operation: TimelineEditOperation | "undo" | "redo";
       readonly error: Error;
     };
 
@@ -142,6 +158,16 @@ function activeSequence(projection: ProjectProjection | null) {
     ) ?? null
   );
 }
+function timelineClip(projection: ProjectProjection | null, clipId: string) {
+  const sequence = activeSequence(projection);
+  if (sequence === null) return null;
+  for (const track of sequence.tracks) {
+    if (track.kind === "caption") continue;
+    const clip = track.clips.find((candidate) => candidate.id === clipId);
+    if (clip !== undefined) return { sequence, track, clip };
+  }
+  return null;
+}
 function activeClip(projection: ProjectProjection | null) {
   const sequence = activeSequence(projection);
   if (sequence === null) return null;
@@ -174,7 +200,7 @@ function projectionToLegacyProject(projection: ProjectProjection): Readonly<Vide
                       {
                         id: selection.clip.id,
                         assetId: selection.clip.source.assetId,
-                        timelineStart: selection.clip.timelineStart,
+                        timelineStart: { ...selection.clip.timelineStart, value: 0 },
                         sourceIn: selection.clip.sourceIn,
                         sourceOut: selection.clip.sourceOut,
                       },
@@ -798,13 +824,151 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [activateProjection, cancelRenderForProjectSwitch],
   );
+  const executeTimelineCommandGroup = useCallback(
+    async (
+      base: ProjectProjection,
+      operationKind: TimelineEditOperation,
+      commands: readonly ProjectCommandV2[],
+    ) => {
+      const operation = ++editOperationRef.current;
+      setEditOperation({ phase: "saving", operation: operationKind });
+      const request = buildCommandGroup({
+        groupId: newId(),
+        projectId: base.projectId,
+        baseRevision: base.revision.number,
+        commands: commands.map((command) => buildProjectCommand(command)),
+      });
+      try {
+        const result = await backend.executeVideoProjectGroup(request);
+        if (result.groupId !== request.groupId)
+          throw new Error("The desktop service returned a mismatched edit");
+        if (activateEditResult(base, result, operation)) setEditOperation({ phase: "idle" });
+      } catch (error) {
+        if (operation === editOperationRef.current)
+          setEditOperation({ phase: "error", operation: operationKind, error: asError(error) });
+      }
+    },
+    [activateEditResult, backend],
+  );
+  const splitTimelineClip = useCallback(
+    async ({ clipId, sourceFrame }: SplitTimelineClipInput) => {
+      const base = stateRef.current.projection;
+      const selection = timelineClip(base, clipId);
+      if (
+        base === null ||
+        selection === null ||
+        !Number.isSafeInteger(sourceFrame) ||
+        sourceFrame <= selection.clip.sourceIn.value ||
+        sourceFrame >= selection.clip.sourceOut.value
+      )
+        return;
+      await executeTimelineCommandGroup(base, "split", [
+        {
+          type: "SplitClip",
+          commandId: newId(),
+          sequenceId: selection.sequence.id,
+          trackId: selection.track.id,
+          clipId: selection.clip.id,
+          splitAt: createRationalTime(sourceFrame, {
+            numerator: selection.clip.sourceIn.rateNumerator,
+            denominator: selection.clip.sourceIn.rateDenominator,
+          }),
+          rightClipId: newId(),
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
+  const moveTimelineClip = useCallback(
+    async ({ clipId, timelineStartFrame }: MoveTimelineClipInput) => {
+      const base = stateRef.current.projection;
+      const selection = timelineClip(base, clipId);
+      if (
+        base === null ||
+        selection === null ||
+        !Number.isSafeInteger(timelineStartFrame) ||
+        timelineStartFrame < 0 ||
+        timelineStartFrame === selection.clip.timelineStart.value
+      )
+        return;
+      await executeTimelineCommandGroup(base, "move", [
+        {
+          type: "MoveClip",
+          commandId: newId(),
+          sequenceId: selection.sequence.id,
+          trackId: selection.track.id,
+          clipId: selection.clip.id,
+          timelineStart: createRationalTime(timelineStartFrame, {
+            numerator: selection.clip.timelineStart.rateNumerator,
+            denominator: selection.clip.timelineStart.rateDenominator,
+          }),
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
+  const trimTimelineClip = useCallback(
+    async ({
+      clipId,
+      sourceInFrame,
+      sourceOutFrame,
+      timelineStartFrame,
+    }: TrimTimelineClipInput) => {
+      const base = stateRef.current.projection;
+      const selection = timelineClip(base, clipId);
+      if (
+        base === null ||
+        selection === null ||
+        !Number.isSafeInteger(sourceInFrame) ||
+        !Number.isSafeInteger(sourceOutFrame) ||
+        !Number.isSafeInteger(timelineStartFrame) ||
+        sourceInFrame < 0 ||
+        sourceInFrame >= sourceOutFrame ||
+        timelineStartFrame < 0 ||
+        (sourceInFrame === selection.clip.sourceIn.value &&
+          sourceOutFrame === selection.clip.sourceOut.value &&
+          timelineStartFrame === selection.clip.timelineStart.value)
+      )
+        return;
+      const commands: ProjectCommandV2[] = [
+        {
+          type: "TrimClip",
+          commandId: newId(),
+          sequenceId: selection.sequence.id,
+          trackId: selection.track.id,
+          clipId: selection.clip.id,
+          sourceIn: createRationalTime(sourceInFrame, {
+            numerator: selection.clip.sourceIn.rateNumerator,
+            denominator: selection.clip.sourceIn.rateDenominator,
+          }),
+          sourceOut: createRationalTime(sourceOutFrame, {
+            numerator: selection.clip.sourceOut.rateNumerator,
+            denominator: selection.clip.sourceOut.rateDenominator,
+          }),
+        },
+      ];
+      if (timelineStartFrame !== selection.clip.timelineStart.value)
+        commands.push({
+          type: "MoveClip",
+          commandId: newId(),
+          sequenceId: selection.sequence.id,
+          trackId: selection.track.id,
+          clipId: selection.clip.id,
+          timelineStart: createRationalTime(timelineStartFrame, {
+            numerator: selection.clip.timelineStart.rateNumerator,
+            denominator: selection.clip.timelineStart.rateDenominator,
+          }),
+        });
+      await executeTimelineCommandGroup(base, "trim", commands);
+    },
+    [executeTimelineCommandGroup],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
     const draft = trimDraft;
     const duration = sourceDurationFrames(base);
     if (
-      base === null ||
       selection === null ||
       draft === null ||
       duration === null ||
@@ -817,34 +981,13 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         draft.outFrame === selection.clip.sourceOut.value)
     )
       return;
-    const operation = ++editOperationRef.current;
-    setEditOperation({ phase: "saving", operation: "trim" });
-    const request = buildCommandGroup({
-      groupId: newId(),
-      projectId: base.projectId,
-      baseRevision: base.revision.number,
-      commands: [
-        {
-          type: "TrimClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-          sourceIn: createRationalTime(draft.inFrame, selection.sequence.rate),
-          sourceOut: createRationalTime(draft.outFrame, selection.sequence.rate),
-        },
-      ],
+    await trimTimelineClip({
+      clipId: selection.clip.id,
+      sourceInFrame: draft.inFrame,
+      sourceOutFrame: draft.outFrame,
+      timelineStartFrame: selection.clip.timelineStart.value,
     });
-    try {
-      const result = await backend.executeVideoProjectGroup(request);
-      if (result.groupId !== request.groupId)
-        throw new Error("The desktop service returned a mismatched edit");
-      if (activateEditResult(base, result, operation)) setEditOperation({ phase: "idle" });
-    } catch (error) {
-      if (operation === editOperationRef.current)
-        setEditOperation({ phase: "error", operation: "trim", error: asError(error) });
-    }
-  }, [activateEditResult, backend, trimDraft]);
+  }, [trimDraft, trimTimelineClip]);
   const historyEdit = useCallback(
     async (kind: "undo" | "redo") => {
       const base = stateRef.current.projection;
@@ -984,6 +1127,9 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     retryPreparation,
     updateTrimDraft,
     applyTrim,
+    splitTimelineClip,
+    moveTimelineClip,
+    trimTimelineClip,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

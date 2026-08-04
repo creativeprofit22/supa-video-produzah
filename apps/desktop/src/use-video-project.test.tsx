@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { commandGroupRequestSchema } from "@supa-video/contracts";
 import type { CommandGroupRequest, CommandResult, ProjectProjection } from "@supa-video/contracts";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -435,6 +436,87 @@ describe("canonical project controller", () => {
     });
     expect(result.current.projection?.state.assets[0]?.probe).toEqual(canonicalProbe);
     expect(result.current.projection?.state.sequences[0]?.rate).toEqual(canonicalRate);
+  });
+
+  it("emits validated split, move, and grouped trim commands at the active revision", async () => {
+    let active = clipProjection(1);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const next = structuredClone(active);
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      active = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.splitTimelineClip({ clipId: id(5), sourceFrame: 20 }));
+    await act(() => result.current.moveTimelineClip({ clipId: id(5), timelineStartFrame: 4 }));
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 0,
+        sourceOutFrame: 55,
+        timelineStartFrame: 0,
+      }),
+    );
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 10,
+        sourceOutFrame: 55,
+        timelineStartFrame: 10,
+      }),
+    );
+
+    const requests = execute.mock.calls.map(([request]) => request);
+    expect(requests.map(({ baseRevision }) => baseRevision)).toEqual([1, 2, 3, 4]);
+    expect(new Set(requests.map(({ groupId }) => groupId))).toHaveLength(4);
+    expect(requests[0]!.commands).toEqual([
+      expect.objectContaining({
+        type: "SplitClip",
+        clipId: id(5),
+        splitAt: { value: 20, rateNumerator: 30, rateDenominator: 1 },
+      }),
+    ]);
+    expect(requests[0]!.commands[0]).toEqual(
+      expect.objectContaining({ rightClipId: expect.any(String) }),
+    );
+    expect(requests[1]!.commands).toEqual([
+      expect.objectContaining({
+        type: "MoveClip",
+        clipId: id(5),
+        timelineStart: { value: 4, rateNumerator: 30, rateDenominator: 1 },
+      }),
+    ]);
+    expect(requests[2]!.commands.map(({ type }) => type)).toEqual(["TrimClip"]);
+    expect(requests[3]!.commands.map(({ type }) => type)).toEqual(["TrimClip", "MoveClip"]);
+    expect(requests[3]!.commands[1]).toEqual(
+      expect.objectContaining({
+        timelineStart: { value: 10, rateNumerator: 30, rateDenominator: 1 },
+      }),
+    );
+    expect(result.current.projection?.revision.number).toBe(5);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
   it("sets and clears checkpoint warnings across trim, undo, and redo results", async () => {

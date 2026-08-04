@@ -1,4 +1,9 @@
-import type { CommandGroupRequest, ProjectProjection, RecoveryReport } from "@supa-video/contracts";
+import type {
+  CommandGroupRequest,
+  ProjectCommandV2,
+  ProjectProjection,
+  RecoveryReport,
+} from "@supa-video/contracts";
 import {
   listMediaJobsRequestSchema,
   reauthorizeMediaJobOutputRequestSchema,
@@ -151,6 +156,25 @@ function nextProjection(base: ProjectProjection, operationId: string): ProjectPr
   };
 }
 
+function commandSummary(command: ProjectCommandV2): string {
+  switch (command.type) {
+    case "ImportAsset":
+      return "Imported asset";
+    case "CreateSequence":
+      return "Created sequence";
+    case "InsertClip":
+      return "Inserted clip";
+    case "SplitClip":
+      return "Split clip";
+    case "MoveClip":
+      return "Moved clip";
+    case "TrimClip":
+      return "Applied trim";
+    default:
+      return "Updated project";
+  }
+}
+
 export function createMockVideoService(
   options: {
     recoveryStatus?: ProjectProjection["recoveryStatus"];
@@ -246,16 +270,40 @@ export function createMockVideoService(
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
           if (track.kind !== "caption") track.clips.push(item.clip);
+        } else if (item.type === "SplitClip") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
+          const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
+          if (track.kind !== "caption") {
+            const clipIndex = track.clips.findIndex(({ id }) => id === item.clipId);
+            const leftClip = track.clips[clipIndex]!;
+            const originalSourceIn = leftClip.sourceIn.value;
+            const rightClip = structuredClone(leftClip);
+            rightClip.id = item.rightClipId;
+            rightClip.sourceIn = item.splitAt;
+            rightClip.timelineStart = {
+              ...leftClip.timelineStart,
+              value: leftClip.timelineStart.value + item.splitAt.value - originalSourceIn,
+            };
+            leftClip.sourceOut = item.splitAt;
+            track.clips.splice(clipIndex + 1, 0, rightClip);
+          }
+        } else if (item.type === "MoveClip") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
+          const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
+          if (track.kind !== "caption") {
+            const clip = track.clips.find(({ id }) => id === item.clipId);
+            if (clip) clip.timelineStart = item.timelineStart;
+          }
         } else if (item.type === "TrimClip") {
-          for (const sequence of next.state.sequences)
-            for (const track of sequence.tracks)
-              if (track.kind !== "caption") {
-                const clip = track.clips.find(({ id }) => id === item.clipId);
-                if (clip) {
-                  clip.sourceIn = item.sourceIn;
-                  clip.sourceOut = item.sourceOut;
-                }
-              }
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
+          const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
+          if (track.kind !== "caption") {
+            const clip = track.clips.find(({ id }) => id === item.clipId);
+            if (clip) {
+              clip.sourceIn = item.sourceIn;
+              clip.sourceOut = item.sourceOut;
+            }
+          }
         }
       }
       next.canUndo = true;
@@ -268,9 +316,7 @@ export function createMockVideoService(
       next.lastCommand = {
         operationId: request.groupId,
         groupId: request.groupId,
-        summary: request.commands.some(({ type }) => type === "TrimClip")
-          ? "Applied trim"
-          : "Imported source",
+        summary: request.commands.map(commandSummary).join(", "),
       };
       const events = checkpointEvents(next);
       projection = next;
@@ -298,6 +344,11 @@ export function createMockVideoService(
           revision: nextProjection(prior, operationId).revision,
           canUndo: undo.length > 0,
           canRedo: true,
+          lastCommand: {
+            operationId,
+            groupId: operationId,
+            summary: `Undid ${prior.lastCommand?.summary ?? "project edit"}`,
+          },
         };
       } else {
         const target = redo.pop()!;
@@ -307,6 +358,11 @@ export function createMockVideoService(
           revision: nextProjection(prior, operationId).revision,
           canUndo: true,
           canRedo: redo.length > 0,
+          lastCommand: {
+            operationId,
+            groupId: operationId,
+            summary: `Redid ${target.lastCommand?.summary ?? "project edit"}`,
+          },
         };
       }
       const events = checkpointEvents(projection);

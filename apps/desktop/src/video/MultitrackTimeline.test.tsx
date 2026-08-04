@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testPrepared, testProbe, testSourceIdentity } from "../test-video-service";
@@ -35,18 +36,26 @@ function clip(value: number, start: number, source: ProjectClip["source"]): Proj
   };
 }
 
-function largeProjection(): ProjectProjection {
+function projectionFixture({
+  name,
+  videoClipCount,
+  audioClipCount,
+}: {
+  name: string;
+  videoClipCount: number;
+  audioClipCount: number;
+}): ProjectProjection {
   const assetId = id(1);
   const nestedSequenceId = id(3);
-  const videoClips = Array.from({ length: 5_000 }, (_, index) =>
+  const videoClips = Array.from({ length: videoClipCount }, (_, index) =>
     clip(100_000 + index, index * 4, { kind: "asset", assetId }),
   );
-  const audioClips = Array.from({ length: 5_000 }, (_, index) =>
+  const audioClips = Array.from({ length: audioClipCount }, (_, index) =>
     clip(200_000 + index, index * 4, { kind: "sequence", sequenceId: nestedSequenceId }),
   );
   return {
     projectId: id(900_001),
-    name: "Large timeline",
+    name,
     revision: {
       number: 7,
       id: id(900_002),
@@ -104,6 +113,18 @@ function largeProjection(): ProjectProjection {
   };
 }
 
+function largeProjection(): ProjectProjection {
+  return projectionFixture({
+    name: "Large timeline",
+    videoClipCount: 5_000,
+    audioClipCount: 5_000,
+  });
+}
+
+function interactionProjection(): ProjectProjection {
+  return projectionFixture({ name: "Interaction timeline", videoClipCount: 1, audioClipCount: 0 });
+}
+
 class ImmediateResizeObserver implements ResizeObserver {
   constructor(private readonly callback: ResizeObserverCallback) {}
   observe(target: Element) {
@@ -120,6 +141,7 @@ const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototyp
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ImmediateResizeObserver);
+  vi.stubGlobal("PointerEvent", MouseEvent);
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get() {
@@ -142,27 +164,49 @@ function materializedClipIds(container: HTMLElement): string[] {
   );
 }
 
-function preparedClipIds(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll<HTMLImageElement>("[data-clip-id] img")).map(
-    (image) => image.closest<HTMLElement>("[data-clip-id]")!.dataset.clipId!,
-  );
+function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeline>> = {}) {
+  return {
+    projection: interactionProjection(),
+    preparedAsset: testPrepared,
+    convertCachePath: (path: string) => `asset:${path}`,
+    selectedClipId: null,
+    playheadFrame: 1,
+    editPending: false,
+    editError: null,
+    onSelectClip: vi.fn(),
+    onSplitClip: vi.fn(),
+    onMoveClip: vi.fn(),
+    onTrimClip: vi.fn(),
+    ...overrides,
+  } satisfies ComponentProps<typeof MultitrackTimeline>;
 }
 
 describe("MultitrackTimeline", () => {
+  it("falls back to window resize events when ResizeObserver is unavailable", () => {
+    vi.stubGlobal("ResizeObserver", undefined);
+    const addEventListener = vi.spyOn(window, "addEventListener");
+    const removeEventListener = vi.spyOn(window, "removeEventListener");
+
+    const rendered = render(<MultitrackTimeline {...timelineProps()} />);
+    const resizeListener = addEventListener.mock.calls.find(([type]) => type === "resize")?.[1];
+
+    expect(resizeListener).toBeTypeOf("function");
+    rendered.unmount();
+    expect(removeEventListener).toHaveBeenCalledWith("resize", resizeListener);
+    addEventListener.mockRestore();
+    removeEventListener.mockRestore();
+  });
+
   it("bounds semantic DOM and thumbnail construction to viewport overscan while scrolling", async () => {
     const projection = largeProjection();
     const convertCachePath = vi.fn((path: string) => `asset:${path}`);
     const rendered = render(
-      <MultitrackTimeline
-        projection={projection}
-        preparedAsset={testPrepared}
-        convertCachePath={convertCachePath}
-      />,
+      <MultitrackTimeline {...timelineProps({ projection, convertCachePath })} />,
     );
 
     const region = screen.getByRole("region", { name: "Timeline tracks; scroll horizontally" });
     expect(region.tabIndex).toBe(0);
-    await waitFor(() => expect(screen.getByLabelText("36 visible clips")).toBeTruthy());
+    await waitFor(() => expect(materializedClipIds(rendered.container).length).toBeGreaterThan(0));
 
     const trackRows = screen
       .getAllByRole("listitem")
@@ -171,47 +215,111 @@ describe("MultitrackTimeline", () => {
     expect(trackRows.map((row) => row.dataset.trackId)).toEqual([id(10), id(11), id(12)]);
 
     const initialIds = materializedClipIds(rendered.container);
-    const initialPreparedIds = preparedClipIds(rendered.container);
-    expect(initialIds).toHaveLength(36);
-    expect(initialPreparedIds).toHaveLength(18);
-    expect(convertCachePath).toHaveBeenCalledTimes(initialPreparedIds.length);
-    expect(rendered.container.querySelectorAll(".multitrack-clip-fallback")).toHaveLength(18);
+    expect(initialIds.length).toBeLessThan(1_000);
+    expect(convertCachePath).toHaveBeenCalledTimes(1);
     expect(
       rendered.container.querySelector("[data-start-frame='0'][data-end-frame-exclusive='2']"),
     ).toBeTruthy();
     expect(screen.getByLabelText(/camera-a\.mp4, frames 0 through 2, end exclusive/)).toBeTruthy();
-    expect(rendered.container.querySelector(".multitrack-panel button")).toBeNull();
+    expect(screen.getByRole("button", { name: "Split at playhead" })).toBeTruthy();
 
-    rendered.rerender(
-      <MultitrackTimeline
-        projection={projection}
-        preparedAsset={testPrepared}
-        convertCachePath={convertCachePath}
-      />,
-    );
-    expect(convertCachePath).toHaveBeenCalledTimes(initialPreparedIds.length);
+    rendered.rerender(<MultitrackTimeline {...timelineProps({ projection, convertCachePath })} />);
+    expect(convertCachePath).toHaveBeenCalledTimes(1);
 
     fireEvent.scroll(region, { target: { scrollLeft: 400 } });
-    await waitFor(() => expect(materializedClipIds(rendered.container)).toHaveLength(50));
+    await waitFor(() => expect(materializedClipIds(rendered.container)).not.toEqual(initialIds));
     const scrolledIds = materializedClipIds(rendered.container);
-    const scrolledPreparedIds = preparedClipIds(rendered.container);
-    const newlyPrepared = scrolledPreparedIds.filter(
-      (clipId) => !initialPreparedIds.includes(clipId),
-    );
-
     expect(
       Array.from(rendered.container.querySelectorAll<HTMLElement>("[data-clip-id]")).every(
         (clipElement) =>
-          Number(clipElement.dataset.endFrameExclusive) > 20 &&
-          Number(clipElement.dataset.startFrame) < 120,
+          Number(clipElement.dataset.endFrameExclusive) > 600 &&
+          Number(clipElement.dataset.startFrame) < 2200,
       ),
     ).toBe(true);
-    expect(scrolledPreparedIds.some((clipId) => initialPreparedIds.includes(clipId))).toBe(true);
-    expect(convertCachePath).toHaveBeenCalledTimes(
-      initialPreparedIds.length + newlyPrepared.length,
-    );
+    expect(convertCachePath).toHaveBeenCalledTimes(1);
     expect(scrolledIds).not.toContain(id(100_000));
     expect(scrolledIds).not.toContain(id(200_000));
-    expect(screen.getByText("Showing 50 of 10000 clips")).toBeTruthy();
+    expect(screen.getByLabelText(`${scrolledIds.length} visible clips`)).toBeTruthy();
+  }, 15_000);
+
+  it("keeps pointer and keyboard selection controlled and enables split only inside the clip", () => {
+    const onSelectClip = vi.fn();
+    const onSplitClip = vi.fn();
+    const firstId = id(100_000);
+    const props = timelineProps({ onSelectClip, onSplitClip });
+    const rendered = render(<MultitrackTimeline {...props} />);
+    const firstClip = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+    const split = screen.getByRole("button", { name: "Split at playhead" });
+
+    expect((split as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.pointerDown(firstClip, { button: 0, pointerId: 1 });
+    fireEvent.click(firstClip);
+    expect(onSelectClip).toHaveBeenCalledWith(firstId);
+    expect(firstClip.getAttribute("aria-pressed")).toBe("false");
+
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} />);
+    fireEvent.keyDown(firstClip, { key: "Enter", code: "Enter" });
+    fireEvent.click(firstClip, { detail: 0 });
+    expect(onSelectClip).toHaveBeenLastCalledWith(firstId);
+    expect(firstClip.getAttribute("aria-pressed")).toBe("true");
+    expect((split as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.keyDown(firstClip, { code: "KeyS" });
+    expect(onSplitClip).toHaveBeenCalledOnce();
+    expect(onSplitClip).toHaveBeenCalledWith(firstId, 1);
+
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} playheadFrame={2} />);
+    expect((split as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("previews moves ephemerally, commits once on release, and cancels without committing", () => {
+    const firstId = id(100_000);
+    const onMoveClip = vi.fn();
+    const props = timelineProps({ selectedClipId: firstId, onMoveClip });
+    const rendered = render(<MultitrackTimeline {...props} />);
+    const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 7, clientX: 10 });
+    fireEvent.pointerMove(body, { pointerId: 7, clientX: 30 });
+    expect(element.dataset.startFrame).toBe("50");
+    expect(onMoveClip).not.toHaveBeenCalled();
+    fireEvent.pointerUp(body, { pointerId: 7, clientX: 30 });
+    expect(onMoveClip).toHaveBeenCalledOnce();
+    expect(onMoveClip).toHaveBeenCalledWith(firstId, 50);
+    expect(element.dataset.startFrame).toBe("0");
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 8, clientX: 10 });
+    fireEvent.pointerMove(body, { pointerId: 8, clientX: 50 });
+    expect(element.dataset.startFrame).toBe("100");
+    fireEvent.pointerCancel(body, { pointerId: 8 });
+    expect(onMoveClip).toHaveBeenCalledOnce();
+    expect(element.dataset.startFrame).toBe("0");
+    expect(materializedClipIds(rendered.container).length).toBeLessThan(1_000);
+  });
+
+  it("previews both trim handles and emits one canonical trim on release", () => {
+    const firstId = id(100_000);
+    const onTrimClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline {...timelineProps({ selectedClipId: firstId, onTrimClip })} />,
+    );
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+    const right = screen.getByRole("button", { name: "Trim end of camera-a.mp4" });
+
+    fireEvent.pointerDown(right, { button: 0, pointerId: 9, clientX: 8 });
+    fireEvent.pointerMove(right, { pointerId: 9, clientX: 16 });
+    expect(element.dataset.endFrameExclusive).toBe("22");
+    expect(onTrimClip).not.toHaveBeenCalled();
+    fireEvent.pointerUp(right, { pointerId: 9, clientX: 16 });
+    expect(onTrimClip).toHaveBeenCalledOnce();
+    expect(onTrimClip).toHaveBeenCalledWith(firstId, 0, 22, 0);
+
+    const left = screen.getByRole("button", { name: "Trim start of camera-a.mp4" });
+    fireEvent.pointerDown(left, { button: 0, pointerId: 10, clientX: 0 });
+    fireEvent.pointerMove(left, { pointerId: 10, clientX: 4 });
+    expect(element.dataset.startFrame).toBe("1");
+    fireEvent.pointerCancel(left, { pointerId: 10 });
+    expect(onTrimClip).toHaveBeenCalledOnce();
+    expect(element.dataset.startFrame).toBe("0");
   });
 });

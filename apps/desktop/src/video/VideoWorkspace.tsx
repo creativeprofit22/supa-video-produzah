@@ -55,6 +55,17 @@ function editableOwnsShortcut(target: EventTarget | null): boolean {
   );
 }
 
+function selectableClipIds(
+  sequence:
+    | NonNullable<ReturnType<typeof useVideoProject>["projection"]>["state"]["sequences"][number]
+    | undefined,
+): readonly string[] {
+  if (sequence === undefined) return [];
+  return sequence.tracks.flatMap((track) =>
+    track.kind === "caption" ? [] : track.clips.map((clip) => clip.id),
+  );
+}
+
 export function VideoWorkspace({
   controller,
   mediaJobs,
@@ -66,6 +77,7 @@ export function VideoWorkspace({
   onOpenProject,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
   const reconciledPreparationJobs = useRef(new Set<string>());
@@ -119,6 +131,13 @@ export function VideoWorkspace({
       setPlayhead(draft.inFrame);
     }
   }, [draft, playhead]);
+
+  useEffect(() => {
+    const clipIds = selectableClipIds(canonicalSequence);
+    setSelectedClipId((current) =>
+      current !== null && clipIds.includes(current) ? current : (clipIds[0] ?? null),
+    );
+  }, [canonicalSequence]);
 
   useEffect(() => {
     if (preparationJob?.state !== "complete" || controller.preparation.phase === "success") return;
@@ -355,6 +374,27 @@ export function VideoWorkspace({
               projection={controller.projection}
               preparedAsset={controller.preparedAsset}
               convertCachePath={controller.convertCachePath}
+              selectedClipId={selectedClipId}
+              playheadFrame={playhead}
+              editPending={editPending}
+              editError={
+                controller.editOperation.phase === "error" ? controller.editOperation.error : null
+              }
+              onSelectClip={setSelectedClipId}
+              onSplitClip={(clipId, sourceFrame) =>
+                void controller.splitTimelineClip({ clipId, sourceFrame })
+              }
+              onMoveClip={(clipId, timelineStartFrame) =>
+                void controller.moveTimelineClip({ clipId, timelineStartFrame })
+              }
+              onTrimClip={(clipId, sourceInFrame, sourceOutFrame, timelineStartFrame) =>
+                void controller.trimTimelineClip({
+                  clipId,
+                  sourceInFrame,
+                  sourceOutFrame,
+                  timelineStartFrame,
+                })
+              }
             />
           ) : null}
           {sequence !== null && clip !== undefined && draft !== null ? (
