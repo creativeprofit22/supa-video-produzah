@@ -379,9 +379,9 @@ describe("MultitrackTimeline", () => {
       name: /Nested interview, frames 0 through 2/,
     });
     fireEvent.pointerDown(unaffectedClip, { button: 0, pointerId: 33, clientX: 8 });
-    fireEvent.pointerMove(unaffectedClip, { pointerId: 33, clientX: 16 });
-    fireEvent.pointerUp(unaffectedClip, { pointerId: 33, clientX: 16 });
-    expect(onMoveClip).toHaveBeenCalledWith(unaffectedClipId, 20);
+    fireEvent.pointerMove(unaffectedClip, { pointerId: 33, clientX: 28 });
+    fireEvent.pointerUp(unaffectedClip, { pointerId: 33, clientX: 28 });
+    expect(onMoveClip).toHaveBeenCalledWith(unaffectedClipId, 50);
     expect(
       screen.getByRole("button", { name: "Nested audio track lock" }).getAttribute("aria-pressed"),
     ).toBe("false");
@@ -413,6 +413,85 @@ describe("MultitrackTimeline", () => {
     expect(materializedClipIds(rendered.container).length).toBeLessThan(1_000);
   });
 
+  it("snaps a trailing edge to a clip edge with one ephemeral guide and one release commit", () => {
+    const projection = projectionFixture({
+      name: "Clip edge snap timeline",
+      videoClipCount: 2,
+      audioClipCount: 0,
+    });
+    const firstId = id(100_000);
+    const videoTrack = projection.state.sequences[0]!.tracks[0]!;
+    if (videoTrack.kind === "caption") throw new Error("Expected a video track");
+    videoTrack.clips[1]!.timelineStart = time(40);
+    const onMoveClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline
+        {...timelineProps({
+          projection,
+          selectedClipId: firstId,
+          playheadFrame: 100,
+          onMoveClip,
+        })}
+      />,
+    );
+    const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 41, clientX: 10 });
+    fireEvent.pointerMove(body, { pointerId: 41, clientX: 24 });
+
+    expect(element.dataset.startFrame).toBe("38");
+    expect(element.dataset.endFrameExclusive).toBe("40");
+    expect(onMoveClip).not.toHaveBeenCalled();
+    const guides = rendered.container.querySelectorAll<HTMLElement>(".multitrack-snap-guide");
+    expect(guides).toHaveLength(1);
+    expect(guides[0]!.dataset.snapFrame).toBe("40");
+    expect(guides[0]!.dataset.snapTargetKind).toBe("clip-start");
+    expect(guides[0]!.dataset.movingEdge).toBe("end");
+
+    fireEvent.pointerUp(body, { pointerId: 41, clientX: 24 });
+
+    expect(onMoveClip).toHaveBeenCalledOnce();
+    expect(onMoveClip).toHaveBeenCalledWith(firstId, 38);
+    expect(element.dataset.startFrame).toBe("0");
+    expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
+  });
+
+  it("previews a playhead snap ephemerally and clears its guide on cancel", () => {
+    const firstId = id(100_000);
+    const onMoveClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline
+        {...timelineProps({ selectedClipId: firstId, playheadFrame: 1, onMoveClip })}
+      />,
+    );
+    const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+    const element = rendered.container.querySelector<HTMLElement>(`[data-clip-id='${firstId}']`)!;
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 42, clientX: 10 });
+    fireEvent.pointerMove(body, { pointerId: 42, clientX: 14 });
+
+    expect(element.dataset.startFrame).toBe("1");
+    expect(element.dataset.endFrameExclusive).toBe("3");
+    const guide = rendered.container.querySelector<HTMLElement>(".multitrack-snap-guide");
+    expect(guide?.dataset.snapFrame).toBe("1");
+    expect(guide?.dataset.snapTargetKind).toBe("playhead");
+    expect(guide?.dataset.movingEdge).toBe("start");
+    expect(onMoveClip).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(body, { pointerId: 42, clientX: 50 });
+
+    expect(element.dataset.startFrame).toBe("100");
+    expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
+    expect(onMoveClip).not.toHaveBeenCalled();
+
+    fireEvent.pointerCancel(body, { pointerId: 42 });
+
+    expect(onMoveClip).not.toHaveBeenCalled();
+    expect(element.dataset.startFrame).toBe("0");
+    expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
+  });
+
   it("clamps a move before frame zero and commits the clamped start", () => {
     const projection = interactionProjection();
     const firstId = id(100_000);
@@ -422,7 +501,12 @@ describe("MultitrackTimeline", () => {
     const onMoveClip = vi.fn();
     const rendered = render(
       <MultitrackTimeline
-        {...timelineProps({ projection, selectedClipId: firstId, onMoveClip })}
+        {...timelineProps({
+          projection,
+          selectedClipId: firstId,
+          playheadFrame: 100,
+          onMoveClip,
+        })}
       />,
     );
     const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 4 through 6/ });

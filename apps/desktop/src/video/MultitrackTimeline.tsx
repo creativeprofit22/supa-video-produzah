@@ -21,6 +21,14 @@ import {
   type UIEvent,
 } from "react";
 
+import {
+  createTimelineMoveSnapContext,
+  resolveTimelineMoveSnap,
+  timelineFrameForClipSourceFrame,
+  type TimelineMoveSnapContext,
+  type TimelineMoveSnapGuide,
+} from "./timeline-move-snap";
+
 interface MultitrackTimelineProps {
   readonly projection: ProjectProjection;
   readonly preparedAsset: PreparedVideoAsset | null;
@@ -62,11 +70,14 @@ interface PointerSession {
   readonly draftEndFrameExclusive: number;
   readonly draftSourceInFrame: number;
   readonly draftSourceOutFrame: number;
+  readonly moveSnapContext: TimelineMoveSnapContext | null;
+  readonly snapGuide: TimelineMoveSnapGuide | null;
 }
 
 const MIN_PIXELS_PER_FRAME = 4;
 const MAX_TIMELINE_WIDTH = 2_000_000;
 const VIEWPORT_OVERSCAN_PIXELS = 160;
+const MOVE_SNAP_DISTANCE_PIXELS = 8;
 const MIN_VIEWPORT_WIDTH = 1;
 
 function positiveWidth(width: number): number {
@@ -259,6 +270,9 @@ export function MultitrackTimeline({
     event.preventDefault();
     event.stopPropagation();
     pointerCaptureTarget(event.currentTarget).setPointerCapture?.(event.pointerId);
+    const sequence = projection.state.sequences.find(
+      (candidate) => candidate.id === projection.state.activeSequenceId,
+    );
     updatePointerSession({
       pointerId: event.pointerId,
       clipId,
@@ -272,6 +286,14 @@ export function MultitrackTimeline({
       draftEndFrameExclusive: endFrameExclusive,
       draftSourceInFrame: canonical.clip.sourceIn.value,
       draftSourceOutFrame: canonical.clip.sourceOut.value,
+      moveSnapContext:
+        mode === "move" && sequence !== undefined
+          ? createTimelineMoveSnapContext(
+              sequence,
+              timelineFrameForClipSourceFrame(canonical.clip, playheadFrame),
+            )
+          : null,
+      snapGuide: null,
     });
   };
 
@@ -291,11 +313,22 @@ export function MultitrackTimeline({
     let next: PointerSession;
     if (current.mode === "move") {
       const duration = current.originEndFrameExclusive - current.originStartFrame;
-      const draftStartFrame = Math.max(0, current.originStartFrame + frameDelta);
+      const proposedStartFrame = Math.max(0, current.originStartFrame + frameDelta);
+      const resolution =
+        current.moveSnapContext === null
+          ? { startFrame: proposedStartFrame, guide: null }
+          : resolveTimelineMoveSnap(current.moveSnapContext, {
+              movingClipId: current.clipId,
+              proposedStartFrame,
+              durationFrames: duration,
+              zoomScale: geometryViewport.zoomScale,
+              maximumSnapDistancePixels: MOVE_SNAP_DISTANCE_PIXELS,
+            });
       next = {
         ...current,
-        draftStartFrame,
-        draftEndFrameExclusive: draftStartFrame + duration,
+        draftStartFrame: resolution.startFrame,
+        draftEndFrameExclusive: resolution.startFrame + duration,
+        snapGuide: resolution.guide,
       };
     } else if (current.mode === "trim-left") {
       const minimumStart = Math.max(0, current.originStartFrame - current.originSourceInFrame);
@@ -463,6 +496,19 @@ export function MultitrackTimeline({
           onScroll={onScroll}
         >
           <div className="multitrack-canvas" style={{ width: `${contentWidth}px` }}>
+            {pointerSession?.snapGuide === null ||
+            pointerSession?.snapGuide === undefined ? null : (
+              <div
+                className="multitrack-snap-guide"
+                data-snap-frame={pointerSession.snapGuide.frame}
+                data-snap-target-kind={pointerSession.snapGuide.targetKind}
+                data-moving-edge={pointerSession.snapGuide.movingEdge}
+                aria-hidden="true"
+                style={{
+                  left: `${frameToPixel(pointerSession.snapGuide.frame, geometryViewport)}px`,
+                }}
+              />
+            )}
             <div className="multitrack-ruler" aria-hidden="true">
               <span>{timeline.materializedRange.startFrame}</span>
               <span>{timeline.materializedRange.endFrameExclusive}</span>

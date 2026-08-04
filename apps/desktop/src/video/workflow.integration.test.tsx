@@ -429,11 +429,11 @@ describe("complete mocked Phase 2 workflow", () => {
     });
     expect(initialBody.getAttribute("aria-pressed")).toBe("true");
     fireEvent.pointerDown(initialBody, { button: 0, pointerId: 21, clientX: 12 });
-    fireEvent.pointerMove(initialBody, { pointerId: 21, clientX: 20 });
+    fireEvent.pointerMove(initialBody, { pointerId: 21, clientX: 24 });
     expect(
       invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
     ).toHaveLength(1);
-    fireEvent.pointerUp(initialBody, { pointerId: 21, clientX: 20 });
+    fireEvent.pointerUp(initialBody, { pointerId: 21, clientX: 24 });
 
     await waitFor(() =>
       expect(

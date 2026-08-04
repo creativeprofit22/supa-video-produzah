@@ -180,6 +180,50 @@ for (const viewport of [
   });
 }
 
+test("snaps a dragged clip to a visible clip edge and commits on release", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => document.fonts.ready);
+
+  const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+  const draggedClip = primaryRow.locator(".multitrack-clip").first();
+  const draggedClipBody = draggedClip.locator(".multitrack-clip-body");
+  const targetClip = primaryRow.locator(".multitrack-clip").nth(1);
+  await expect(targetClip).toBeVisible();
+  await draggedClipBody.click();
+
+  const clipBox = await draggedClipBody.boundingBox();
+  expect(clipBox).not.toBeNull();
+  const pointer = {
+    pointerId: 1,
+    button: 0,
+    clientX: clipBox!.x + clipBox!.width / 2,
+    clientY: clipBox!.y + clipBox!.height / 2,
+  };
+  await draggedClipBody.dispatchEvent("pointerdown", pointer);
+  await expect(draggedClip).toHaveClass(/is-dragging/);
+  await draggedClipBody.dispatchEvent("pointermove", {
+    ...pointer,
+    clientX: pointer.clientX + 2.4,
+  });
+
+  const snapGuide = page.locator(".multitrack-snap-guide");
+  await expect(snapGuide).toBeVisible();
+  await expect(snapGuide).toHaveAttribute("data-snap-frame", "34");
+  await expect(snapGuide).toHaveAttribute("data-snap-target-kind", "clip-start");
+  await expect(snapGuide).toHaveAttribute("data-moving-edge", "end");
+  await expect(draggedClip).toHaveAttribute("data-start-frame", "6");
+
+  await draggedClipBody.dispatchEvent("pointerup", {
+    ...pointer,
+    clientX: pointer.clientX + 2.4,
+  });
+
+  await expect(snapGuide).toHaveCount(0);
+  await expect(draggedClip).not.toHaveClass(/is-dragging/);
+  await expect(draggedClip).toHaveAttribute("data-start-frame", "6");
+});
+
 test("locks one track without blocking selection or edits on other tracks", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(fixturePath);

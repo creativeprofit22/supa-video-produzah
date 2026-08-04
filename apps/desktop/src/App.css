@@ -826,6 +826,16 @@ video {
   position: relative;
   min-width: 100%;
 }
+.multitrack-snap-guide {
+  position: absolute;
+  z-index: 4;
+  inset-block: 0;
+  width: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgb(215 245 106 / 22%);
+  pointer-events: none;
+  transform: translateX(-0.5px);
+}
 .multitrack-ruler {
   display: flex;
   align-items: center;
@@ -2116,6 +2126,12 @@ video {
   .multitrack-track-row.is-locked {
     outline: 1px dashed GrayText;
     outline-offset: -2px;
+  }
+  .multitrack-snap-guide {
+    width: 2px;
+    background: Highlight;
+    box-shadow: none;
+    forced-color-adjust: none;
   }
   .multitrack-lock-toggle[aria-pressed="true"] {
     color: HighlightText;
