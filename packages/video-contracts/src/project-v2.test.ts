@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseVideoProjectFile } from "./migrations.js";
 import { commandGroupRequestSchema, projectCommandSchemaV2 } from "./project-commands-v2.js";
-import { videoProjectSnapshotV2Schema } from "./project-v2.js";
+import { projectHistoryEntryV2Schema, videoProjectSnapshotV2Schema } from "./project-v2.js";
 import { projectProjectionSchema, recoveryReportSchema } from "./project-service.js";
 
 const ids = {
@@ -168,6 +168,71 @@ describe("V2 project contracts", () => {
     expect(commandGroupRequestSchema.parse(request)).toEqual(request);
     expect(() => commandGroupRequestSchema.parse({ ...request, committedAt: timestamp })).toThrow();
     expect(() => projectCommandSchemaV2.parse({ ...command, summary: "caller owned" })).toThrow();
+  });
+
+  it("accepts ripple delete while keeping its restore command private to history", async () => {
+    const fixtureUrl = new URL(
+      "../fixtures/project-v2/valid-relative-source.svpvideo",
+      import.meta.url,
+    );
+    const fixture = videoProjectSnapshotV2Schema.parse(
+      JSON.parse(await readFile(fixtureUrl, "utf8")) as unknown,
+    );
+    const sequence = fixture.state.sequences[0]!;
+    const track = sequence.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected clip track fixture");
+    const clip = track.clips[0]!;
+    const rippleDelete = {
+      type: "RippleDeleteClip" as const,
+      commandId: ids.command,
+      sequenceId: sequence.id,
+      trackId: track.id,
+      clipId: clip.id,
+    };
+    const restore = {
+      type: "RestoreRippleDeletedClip" as const,
+      commandId: ids.command,
+      sequenceId: sequence.id,
+      trackId: track.id,
+      index: 0,
+      clip,
+    };
+
+    expect(projectCommandSchemaV2.parse(rippleDelete)).toEqual(rippleDelete);
+    expect(projectCommandSchemaV2.parse(restore)).toEqual(restore);
+    const historyEntry = {
+      groupId: ids.group,
+      summary: "Ripple deleted clip",
+      forwardCommands: [rippleDelete],
+      inverseCommands: [restore],
+      affectedRanges: [],
+      cacheInvalidations: ["timeline" as const],
+    };
+    expect(projectHistoryEntryV2Schema.parse(historyEntry)).toEqual(historyEntry);
+    expect(
+      projectHistoryEntryV2Schema.safeParse({
+        ...historyEntry,
+        forwardCommands: [restore],
+        inverseCommands: [rippleDelete],
+      }).success,
+    ).toBe(false);
+    expect(
+      commandGroupRequestSchema.safeParse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [rippleDelete],
+      }).success,
+    ).toBe(true);
+    expect(
+      commandGroupRequestSchema.safeParse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [restore],
+      }).success,
+    ).toBe(false);
+    expect(() => projectCommandSchemaV2.parse({ ...restore, index: -1 })).toThrow();
   });
 
   it("requires content identity only for live import groups", async () => {

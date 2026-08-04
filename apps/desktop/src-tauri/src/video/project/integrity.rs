@@ -599,10 +599,28 @@ fn valid_command(command: &ProjectCommand) -> bool {
             track_id,
             clip_id,
             ..
+        }
+        | ProjectCommand::RippleDeleteClip {
+            sequence_id,
+            track_id,
+            clip_id,
+            ..
         } => {
             is_canonical_uuid(sequence_id)
                 && is_canonical_uuid(track_id)
                 && is_canonical_uuid(clip_id)
+        }
+        ProjectCommand::RestoreRippleDeletedClip {
+            sequence_id,
+            track_id,
+            index,
+            clip,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && *index <= MAX_SAFE_INTEGER
+                && valid_clip_shape(clip)
         }
         ProjectCommand::SplitClip {
             sequence_id,
@@ -733,7 +751,10 @@ fn valid_history_entry(entry: &ProjectHistoryEntryV2) -> bool {
         && valid_non_blank(&entry.summary)
         && (1..=MAX_GROUP_COMMANDS).contains(&entry.forward_commands.len())
         && (1..=MAX_GROUP_COMMANDS).contains(&entry.inverse_commands.len())
-        && entry.forward_commands.iter().all(valid_command)
+        && entry
+            .forward_commands
+            .iter()
+            .all(|command| valid_command(command) && !command.is_private_inverse())
         && entry.inverse_commands.iter().all(valid_command)
         && entry.affected_ranges.len() <= MAX_AFFECTED_RANGES
         && entry.affected_ranges.iter().all(valid_affected_range)

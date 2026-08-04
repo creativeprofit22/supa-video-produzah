@@ -50,7 +50,12 @@ export const projectHistoryEntryV2Schema = z
     affectedRanges: z.array(affectedRangeSchema).max(10_000),
     cacheInvalidations: z.array(cacheInvalidationSchema).max(6),
   })
-  .strict();
+  .strict()
+  .refine(
+    (entry) =>
+      entry.forwardCommands.every((command) => command.type !== "RestoreRippleDeletedClip"),
+    { message: "Private inverse commands cannot be stored as forward history" },
+  );
 export type ProjectHistoryEntryV2 = z.infer<typeof projectHistoryEntryV2Schema>;
 
 export const projectHistoryV2Schema = z

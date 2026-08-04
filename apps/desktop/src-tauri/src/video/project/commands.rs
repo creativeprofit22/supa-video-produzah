@@ -223,6 +223,24 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
                 CacheInvalidation::RenderPlan,
             ],
         ),
+        ProjectCommand::RippleDeleteClip { .. } => (
+            "Ripple deleted clip",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::AudioMix,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::RestoreRippleDeletedClip { .. } => (
+            "Restored ripple-deleted clip",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::AudioMix,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
         ProjectCommand::SplitClip { .. } => (
             "Split clip",
             vec![
@@ -493,6 +511,95 @@ fn apply_one(
                     clip,
                 }],
                 vec![range],
+            ))
+        }
+        ProjectCommand::RippleDeleteClip {
+            sequence_id,
+            track_id,
+            clip_id,
+            ..
+        } => {
+            let clips = find_track_mut(state, sequence_id, track_id)?
+                .clips_mut()
+                .ok_or_else(|| invalid("caption_track"))?;
+            let index = clips
+                .iter()
+                .position(|clip| clip.id == *clip_id)
+                .ok_or_else(|| invalid("unknown_clip"))?;
+            let removed = clips[index].clone();
+            let duration = clip_duration_on_timeline(&removed)?;
+            let affected_end = clip_range(
+                sequence_id,
+                clips.last().ok_or_else(|| invalid("unknown_clip"))?,
+            )?
+            .end;
+            clips.remove(index);
+            for clip in &mut clips[index..] {
+                clip.timeline_start.value = clip
+                    .timeline_start
+                    .value
+                    .checked_sub(duration)
+                    .ok_or_else(|| invalid("ripple_underflow"))?;
+            }
+            Ok((
+                vec![ProjectCommand::RestoreRippleDeletedClip {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    index: index as u64,
+                    clip: removed.clone(),
+                }],
+                vec![AffectedRange {
+                    sequence_id: sequence_id.clone(),
+                    start: removed.timeline_start,
+                    end: affected_end,
+                }],
+            ))
+        }
+        ProjectCommand::RestoreRippleDeletedClip {
+            sequence_id,
+            track_id,
+            index,
+            clip,
+            ..
+        } => {
+            let duration = clip_duration_on_timeline(clip)?;
+            let clips = find_track_mut(state, sequence_id, track_id)?
+                .clips_mut()
+                .ok_or_else(|| invalid("caption_track"))?;
+            if clips.iter().any(|item| item.id == clip.id) {
+                return Err(invalid("duplicate_clip"));
+            }
+            let index = usize::try_from(*index).map_err(|_| invalid("clip_index"))?;
+            if index > clips.len() {
+                return Err(invalid("clip_index"));
+            }
+            for shifted in &mut clips[index..] {
+                shifted.timeline_start.value = shifted
+                    .timeline_start
+                    .value
+                    .checked_add(duration)
+                    .filter(|value| *value <= MAX_SAFE_INTEGER)
+                    .ok_or_else(|| invalid("ripple_overflow"))?;
+            }
+            clips.insert(index, clip.clone());
+            let affected_end = clip_range(
+                sequence_id,
+                clips.last().ok_or_else(|| invalid("unknown_clip"))?,
+            )?
+            .end;
+            Ok((
+                vec![ProjectCommand::RippleDeleteClip {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    clip_id: clip.id.clone(),
+                }],
+                vec![AffectedRange {
+                    sequence_id: sequence_id.clone(),
+                    start: clip.timeline_start.clone(),
+                    end: affected_end,
+                }],
             ))
         }
         ProjectCommand::SplitClip {

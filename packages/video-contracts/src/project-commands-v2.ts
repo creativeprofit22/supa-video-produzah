@@ -75,6 +75,23 @@ export const insertClipCommandSchemaV2 = z
 export const removeClipCommandSchemaV2 = z
   .object({ type: z.literal("RemoveClip"), ...commandId, ...target, clipId: projectUuidSchema })
   .strict();
+export const rippleDeleteClipCommandSchemaV2 = z
+  .object({
+    type: z.literal("RippleDeleteClip"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+  })
+  .strict();
+const restoreRippleDeletedClipCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreRippleDeletedClip"),
+    ...commandId,
+    ...target,
+    index: z.number().int().safe().nonnegative(),
+    clip: projectClipSchema,
+  })
+  .strict();
 export const splitClipCommandSchemaV2 = z
   .object({
     type: z.literal("SplitClip"),
@@ -178,6 +195,8 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   removeTrackCommandSchemaV2,
   insertClipCommandSchemaV2,
   removeClipCommandSchemaV2,
+  rippleDeleteClipCommandSchemaV2,
+  restoreRippleDeletedClipCommandSchemaV2,
   splitClipCommandSchemaV2,
   moveClipCommandSchemaV2,
   trimClipCommandSchemaV2,
@@ -202,6 +221,13 @@ export const commandGroupRequestSchema = z
   .strict()
   .superRefine((request, context) => {
     for (const [index, command] of request.commands.entries()) {
+      if (command.type === "RestoreRippleDeletedClip") {
+        context.addIssue({
+          code: "custom",
+          message: "Private inverse commands cannot be submitted directly",
+          path: ["commands", index, "type"],
+        });
+      }
       if (command.type === "ImportAsset" && command.asset.contentIdentity === undefined) {
         context.addIssue({
           code: "custom",

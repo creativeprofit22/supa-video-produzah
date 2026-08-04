@@ -6,8 +6,8 @@ use super::{
     hash::{canonical_hash, state_hash},
     integrity::{is_canonical_uuid, validate_snapshot},
     types::{
-        CommandGroupRequest, JournalRecordKind, ProjectHistoryEntryV2, ProjectRevisionDescriptorV2,
-        VideoProjectSnapshotV2, MAX_HISTORY_ENTRIES, MAX_SAFE_INTEGER,
+        CommandGroupRequest, JournalRecordKind, ProjectCommand, ProjectHistoryEntryV2,
+        ProjectRevisionDescriptorV2, VideoProjectSnapshotV2, MAX_HISTORY_ENTRIES, MAX_SAFE_INTEGER,
     },
 };
 use crate::video::error::{VideoCommandError, VideoErrorCode};
@@ -100,6 +100,13 @@ pub fn commit_transition(
     }
     if request.base_revision != snapshot.revision.number {
         return Err(error(VideoErrorCode::StaleRevision, "base_revision"));
+    }
+    if request
+        .commands
+        .iter()
+        .any(ProjectCommand::is_private_inverse)
+    {
+        return Err(error(VideoErrorCode::InvalidCommand, "private_inverse"));
     }
     let applied = apply_group(&snapshot.state, &request.commands)?;
     let history_group = ProjectHistoryEntryV2 {

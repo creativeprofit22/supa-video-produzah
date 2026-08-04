@@ -1029,6 +1029,350 @@ proptest! {
     }
 }
 
+const RIPPLE_SEQUENCE_ID: &str = "10000000-0000-4000-8000-000000000006";
+const RIPPLE_TRACK_ID: &str = "10000000-0000-4000-8000-000000000007";
+const RIPPLE_SELECTED_CLIP_ID: &str = "61000000-0000-4000-8000-000000000002";
+const RIPPLE_FIRST_SUCCESSOR_ID: &str = "61000000-0000-4000-8000-000000000100";
+
+fn ripple_clip(template: &ProjectClip, id: String, start: u64, duration: u64) -> ProjectClip {
+    let mut clip = template.clone();
+    clip.id = id;
+    clip.timeline_start.value = start;
+    clip.source_in.value = 0;
+    clip.source_out.value = duration;
+    clip
+}
+
+fn ripple_fixture(successor_count: usize) -> VideoProjectSnapshotV2 {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let mut snapshot: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
+    let sequence = &mut snapshot.state.sequences[0];
+    let ProjectTrack::Video { clips, .. } = &mut sequence.tracks[0] else {
+        unreachable!();
+    };
+    let template = clips[0].clone();
+    let mut ripple_clips = vec![
+        ripple_clip(
+            &template,
+            "61000000-0000-4000-8000-000000000001".to_owned(),
+            0,
+            1,
+        ),
+        ripple_clip(&template, RIPPLE_SELECTED_CLIP_ID.to_owned(), 10, 2),
+    ];
+    ripple_clips.extend((0..successor_count).map(|index| {
+        ripple_clip(
+            &template,
+            format!("61000000-0000-4000-8000-{:012}", 100_u64 + index as u64),
+            20 + index as u64 * 2,
+            1,
+        )
+    }));
+    *clips = ripple_clips;
+
+    let mut unaffected_track = sequence.tracks[0].clone();
+    let ProjectTrack::Video {
+        id, name, clips, ..
+    } = &mut unaffected_track
+    else {
+        unreachable!();
+    };
+    *id = "61000000-0000-4000-8000-000000000900".to_owned();
+    *name = "Unaffected video".to_owned();
+    *clips = vec![ripple_clip(
+        &template,
+        "61000000-0000-4000-8000-000000000901".to_owned(),
+        7,
+        3,
+    )];
+    sequence.tracks.push(unaffected_track);
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    validate_snapshot(&snapshot).unwrap();
+    snapshot
+}
+
+fn ripple_delete_command(command_id: &str) -> ProjectCommand {
+    ProjectCommand::RippleDeleteClip {
+        command_id: command_id.to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: RIPPLE_TRACK_ID.to_owned(),
+        clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+    }
+}
+
+#[test]
+fn ripple_delete_preserves_gaps_and_leaves_other_tracks_unchanged() {
+    let snapshot = ripple_fixture(2);
+    let unaffected_track = snapshot.state.sequences[0].tracks[1].clone();
+    let applied = apply_group(
+        &snapshot.state,
+        &[ripple_delete_command(
+            "62000000-0000-4000-8000-000000000001",
+        )],
+    )
+    .unwrap();
+    let ProjectTrack::Video { clips, .. } = &applied.state.sequences[0].tracks[0] else {
+        unreachable!();
+    };
+
+    assert_eq!(
+        clips
+            .iter()
+            .map(|clip| (clip.id.as_str(), clip.timeline_start.value))
+            .collect::<Vec<_>>(),
+        vec![
+            ("61000000-0000-4000-8000-000000000001", 0),
+            (RIPPLE_FIRST_SUCCESSOR_ID, 18),
+            ("61000000-0000-4000-8000-000000000101", 20),
+        ]
+    );
+    assert_eq!(18 - (clips[0].timeline_start.value + 1), 17);
+    assert_eq!(
+        clips[2].timeline_start.value - clips[1].timeline_start.value,
+        2
+    );
+    assert_eq!(applied.state.sequences[0].tracks[1], unaffected_track);
+    assert_eq!(applied.summary, "Ripple deleted clip");
+    assert_eq!(
+        applied.affected_ranges,
+        vec![AffectedRange {
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            start: RationalTime {
+                value: 10,
+                rate_numerator: 30,
+                rate_denominator: 1
+            },
+            end: RationalTime {
+                value: 23,
+                rate_numerator: 30,
+                rate_denominator: 1
+            },
+        }]
+    );
+    assert!(matches!(
+        applied.inverse_commands.as_slice(),
+        [ProjectCommand::RestoreRippleDeletedClip { index: 1, .. }]
+    ));
+    let restored = apply_group(&applied.state, &applied.inverse_commands).unwrap();
+    assert_eq!(restored.state, snapshot.state);
+}
+
+#[test]
+fn ripple_delete_uses_exact_rational_timeline_duration() {
+    let mut snapshot = mixed_rate_fixture();
+    let sequence = &mut snapshot.state.sequences[0];
+    let ProjectTrack::Video { clips, .. } = &mut sequence.tracks[0] else {
+        unreachable!();
+    };
+    let make_clip = |id: &str, start: u64, source_in: u64, source_out: u64| ProjectClip {
+        id: id.to_owned(),
+        source: ClipSource::Asset {
+            asset_id: MIXED_RATE_ASSET_ID.to_owned(),
+        },
+        timeline_start: timeline_time(start),
+        source_in: source_time(source_in),
+        source_out: source_time(source_out),
+        transform: ClipTransform::default(),
+        gain_milli_decibels: 0,
+    };
+    *clips = vec![
+        make_clip("63000000-0000-4000-8000-000000000001", 0, 0, 8),
+        make_clip(RIPPLE_SELECTED_CLIP_ID, 20, 8, 24),
+        make_clip(RIPPLE_FIRST_SUCCESSOR_ID, 55, 24, 32),
+    ];
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    validate_snapshot(&snapshot).unwrap();
+
+    let applied = apply_group(
+        &snapshot.state,
+        &[ProjectCommand::RippleDeleteClip {
+            command_id: "63000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: MIXED_RATE_SEQUENCE_ID.to_owned(),
+            track_id: MIXED_RATE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+        }],
+    )
+    .unwrap();
+    let ProjectTrack::Video { clips, .. } = &applied.state.sequences[0].tracks[0] else {
+        unreachable!();
+    };
+    assert_eq!(clips[1].timeline_start, timeline_time(35));
+    assert_eq!(
+        applied.affected_ranges,
+        vec![AffectedRange {
+            sequence_id: MIXED_RATE_SEQUENCE_ID.to_owned(),
+            start: timeline_time(20),
+            end: timeline_time(65),
+        }]
+    );
+    assert_eq!(
+        apply_group(&applied.state, &applied.inverse_commands)
+            .unwrap()
+            .state,
+        snapshot.state
+    );
+}
+
+#[test]
+fn ripple_delete_handles_more_than_ninety_nine_successors_with_one_inverse() {
+    let snapshot = ripple_fixture(120);
+    let applied = apply_group(
+        &snapshot.state,
+        &[ripple_delete_command(
+            "64000000-0000-4000-8000-000000000001",
+        )],
+    )
+    .unwrap();
+    let ProjectTrack::Video { clips, .. } = &applied.state.sequences[0].tracks[0] else {
+        unreachable!();
+    };
+    assert_eq!(clips.len(), 121);
+    for (index, clip) in clips.iter().skip(1).enumerate() {
+        assert_eq!(clip.timeline_start.value, 18 + index as u64 * 2);
+    }
+    assert_eq!(applied.inverse_commands.len(), 1);
+    assert_eq!(applied.affected_ranges.len(), 1);
+    assert_eq!(
+        apply_group(&applied.state, &applied.inverse_commands)
+            .unwrap()
+            .state,
+        snapshot.state
+    );
+}
+
+#[test]
+fn ripple_delete_failure_is_atomic() {
+    let mut snapshot = ripple_fixture(1);
+    let ProjectTrack::Video { clips, .. } = &mut snapshot.state.sequences[0].tracks[0] else {
+        unreachable!();
+    };
+    clips.remove(0);
+    let original = snapshot.state.clone();
+    let commands = vec![
+        ProjectCommand::MoveClip {
+            command_id: "65000000-0000-4000-8000-000000000001".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            timeline_start: RationalTime {
+                value: 0,
+                rate_numerator: 30,
+                rate_denominator: 1,
+            },
+        },
+        ProjectCommand::MoveClip {
+            command_id: "65000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_FIRST_SUCCESSOR_ID.to_owned(),
+            timeline_start: RationalTime {
+                value: 1,
+                rate_numerator: 30,
+                rate_denominator: 1,
+            },
+        },
+        ripple_delete_command("65000000-0000-4000-8000-000000000003"),
+    ];
+
+    let error = apply_group(&snapshot.state, &commands).unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::InvalidCommand
+    );
+    assert_eq!(snapshot.state, original);
+}
+
+#[test]
+fn ripple_delete_commit_undo_redo_are_monotonic_and_have_readable_labels() {
+    let snapshot = ripple_fixture(2);
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("ripple.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("ripple-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let original_state = opened.projection.state.clone();
+    let request = CommandGroupRequest {
+        group_id: "66000000-0000-4000-8000-000000000001".to_owned(),
+        project_id: project_id.clone(),
+        base_revision: 0,
+        commands: vec![ripple_delete_command(
+            "66000000-0000-4000-8000-000000000002",
+        )],
+    };
+
+    let committed = service.execute("ripple-owner", request, &grants).unwrap();
+    assert_eq!(committed.new_revision.number, 1);
+    assert_eq!(
+        committed.projection.last_command.as_ref().unwrap().summary,
+        "Ripple deleted clip"
+    );
+    assert!(committed.projection.can_undo);
+    let committed_state = committed.projection.state.clone();
+
+    let undone = service
+        .undo(
+            "ripple-owner",
+            &project_id,
+            1,
+            "66000000-0000-4000-8000-000000000003",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.new_revision.number, 2);
+    assert_eq!(undone.projection.state, original_state);
+    assert_eq!(
+        undone.projection.last_command.as_ref().unwrap().summary,
+        "Undid Ripple deleted clip"
+    );
+    assert!(undone.projection.can_redo);
+
+    let redone = service
+        .redo(
+            "ripple-owner",
+            &project_id,
+            2,
+            "66000000-0000-4000-8000-000000000004",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(redone.new_revision.number, 3);
+    assert_eq!(redone.projection.state, committed_state);
+    assert_eq!(
+        redone.projection.last_command.as_ref().unwrap().summary,
+        "Redid Ripple deleted clip"
+    );
+}
+
+#[test]
+fn private_ripple_restore_is_rejected_as_a_forward_commit() {
+    let snapshot = ripple_fixture(1);
+    let applied = apply_group(
+        &snapshot.state,
+        &[ripple_delete_command(
+            "67000000-0000-4000-8000-000000000001",
+        )],
+    )
+    .unwrap();
+    let request = CommandGroupRequest {
+        group_id: "67000000-0000-4000-8000-000000000002".to_owned(),
+        project_id: snapshot.id.clone(),
+        base_revision: 0,
+        commands: applied.inverse_commands,
+    };
+    let error = commit_transition(&snapshot, &request, "2026-08-04T12:00:00Z").unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::InvalidCommand
+    );
+}
+
 #[test]
 fn trim_command_and_semantic_inverse_round_trip() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(

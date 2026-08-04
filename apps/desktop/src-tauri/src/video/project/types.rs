@@ -264,6 +264,26 @@ pub enum ProjectCommand {
         #[serde(rename = "clipId")]
         clip_id: String,
     },
+    RippleDeleteClip {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+    },
+    RestoreRippleDeletedClip {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        index: u64,
+        clip: ProjectClip,
+    },
     SplitClip {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -398,6 +418,8 @@ impl ProjectCommand {
             | Self::RemoveTrack { command_id, .. }
             | Self::InsertClip { command_id, .. }
             | Self::RemoveClip { command_id, .. }
+            | Self::RippleDeleteClip { command_id, .. }
+            | Self::RestoreRippleDeletedClip { command_id, .. }
             | Self::SplitClip { command_id, .. }
             | Self::MoveClip { command_id, .. }
             | Self::TrimClip { command_id, .. }
@@ -410,6 +432,10 @@ impl ProjectCommand {
             | Self::RelinkAsset { command_id, .. }
             | Self::RemoveAsset { command_id, .. } => command_id,
         }
+    }
+
+    pub(crate) fn is_private_inverse(&self) -> bool {
+        matches!(self, Self::RestoreRippleDeletedClip { .. })
     }
 }
 
