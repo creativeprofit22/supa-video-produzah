@@ -334,6 +334,26 @@ fn fixture_state_hashes_are_deterministic() {
     );
 }
 
+#[test]
+fn missing_track_lock_defaults_to_unlocked_without_changing_legacy_hash_or_json() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let bytes = fs::read(fixture).unwrap();
+    let legacy_json: Value = serde_json::from_slice(&bytes).unwrap();
+    let snapshot: VideoProjectSnapshotV2 = serde_json::from_slice(&bytes).unwrap();
+
+    assert!(snapshot.state.sequences[0]
+        .tracks
+        .iter()
+        .all(|track| !track.is_locked()));
+    assert_eq!(
+        state_hash(&snapshot.state).unwrap(),
+        snapshot.revision.state_hash
+    );
+    assert_eq!(serde_json::to_value(&snapshot).unwrap(), legacy_json);
+}
+
 const MIXED_RATE_ASSET_ID: &str = "12000000-0000-4000-8000-000000000005";
 const MIXED_RATE_SEQUENCE_ID: &str = "12000000-0000-4000-8000-000000000006";
 const MIXED_RATE_TRACK_ID: &str = "12000000-0000-4000-8000-000000000007";
@@ -860,12 +880,14 @@ fn indexed_removal_fixture() -> VideoProjectStateV2 {
         ProjectTrack::Caption {
             id: "90000000-0000-4000-8000-000000000501".to_owned(),
             name: "Captions".to_owned(),
+            locked: false,
             captions,
         },
     );
     original_sequence.tracks.push(ProjectTrack::Audio {
         id: "90000000-0000-4000-8000-000000000502".to_owned(),
         name: "Audio".to_owned(),
+        locked: false,
         clips: vec![],
     });
 
@@ -1101,6 +1123,275 @@ fn ripple_delete_command(command_id: &str) -> ProjectCommand {
         track_id: RIPPLE_TRACK_ID.to_owned(),
         clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
     }
+}
+
+#[test]
+fn locked_tracks_reject_every_clip_and_caption_mutation() {
+    let mut snapshot = ripple_fixture(1);
+    let sequence = &mut snapshot.state.sequences[0];
+    let ProjectTrack::Video { clips, .. } = &sequence.tracks[0] else {
+        unreachable!();
+    };
+    let selected_clip = clips[1].clone();
+    let timeline_value = |value| RationalTime {
+        value,
+        rate_numerator: selected_clip.timeline_start.rate_numerator,
+        rate_denominator: selected_clip.timeline_start.rate_denominator,
+    };
+    let source_value = |value| RationalTime {
+        value,
+        rate_numerator: selected_clip.source_in.rate_numerator,
+        rate_denominator: selected_clip.source_in.rate_denominator,
+    };
+    sequence.tracks[0].set_locked(true);
+
+    let caption_track_id = "71000000-0000-4000-8000-000000000001".to_owned();
+    let caption = ProjectCaption {
+        id: "71000000-0000-4000-8000-000000000002".to_owned(),
+        start: timeline_value(0),
+        end: timeline_value(1),
+        text: "Locked caption".to_owned(),
+        language: None,
+    };
+    sequence.tracks.push(ProjectTrack::Caption {
+        id: caption_track_id.clone(),
+        name: "Locked captions".to_owned(),
+        locked: true,
+        captions: vec![caption.clone()],
+    });
+    let original = snapshot.state.clone();
+    let command_id = |suffix: u64| format!("71000000-0000-4000-8000-{suffix:012}");
+    let mut inserted_clip = selected_clip.clone();
+    inserted_clip.id = "71000000-0000-4000-8000-000000000003".to_owned();
+    inserted_clip.timeline_start = timeline_value(100);
+    let mut restored_clip = inserted_clip.clone();
+    restored_clip.id = "71000000-0000-4000-8000-000000000004".to_owned();
+    let mut added_caption = caption.clone();
+    added_caption.id = "71000000-0000-4000-8000-000000000005".to_owned();
+
+    let commands = vec![
+        ProjectCommand::InsertClip {
+            command_id: command_id(100),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            index: None,
+            clip: inserted_clip,
+        },
+        ProjectCommand::RemoveClip {
+            command_id: command_id(101),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+        },
+        ProjectCommand::RippleDeleteClip {
+            command_id: command_id(102),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+        },
+        ProjectCommand::RestoreRippleDeletedClip {
+            command_id: command_id(103),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            index: 0,
+            clip: restored_clip,
+        },
+        ProjectCommand::SplitClip {
+            command_id: command_id(104),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            split_at: source_value(1),
+            right_clip_id: "71000000-0000-4000-8000-000000000006".to_owned(),
+        },
+        ProjectCommand::MoveClip {
+            command_id: command_id(105),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            timeline_start: timeline_value(12),
+        },
+        ProjectCommand::TrimClip {
+            command_id: command_id(106),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            source_in: source_value(0),
+            source_out: source_value(1),
+        },
+        ProjectCommand::SetClipTransform {
+            command_id: command_id(107),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            transform: ClipTransform::default(),
+        },
+        ProjectCommand::SetClipGain {
+            command_id: command_id(108),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            gain_milli_decibels: -1_000,
+        },
+        ProjectCommand::AddCaption {
+            command_id: command_id(109),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: caption_track_id.clone(),
+            index: None,
+            caption: added_caption,
+        },
+        ProjectCommand::RemoveCaption {
+            command_id: command_id(110),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: caption_track_id,
+            caption_id: caption.id,
+        },
+    ];
+
+    for command in commands {
+        let error = apply_group(&snapshot.state, &[command]).unwrap_err();
+        assert_eq!(
+            error.code,
+            crate::video::error::VideoErrorCode::InvalidCommand
+        );
+        assert_eq!(error.details["category"], "track_locked");
+        assert_eq!(snapshot.state, original);
+    }
+}
+
+#[test]
+fn locked_track_does_not_block_mutations_on_an_unlocked_track_and_groups_stay_atomic() {
+    let mut snapshot = ripple_fixture(1);
+    snapshot.state.sequences[0].tracks[0].set_locked(true);
+    let locked_track = snapshot.state.sequences[0].tracks[0].clone();
+    let ProjectTrack::Video {
+        id: unaffected_track_id,
+        clips: unaffected_clips,
+        ..
+    } = &snapshot.state.sequences[0].tracks[1]
+    else {
+        unreachable!();
+    };
+    let unaffected_clip_id = unaffected_clips[0].id.clone();
+    let mut moved_start = unaffected_clips[0].timeline_start.clone();
+    moved_start.value = 9;
+    let move_unaffected = ProjectCommand::MoveClip {
+        command_id: "72000000-0000-4000-8000-000000000001".to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: unaffected_track_id.clone(),
+        clip_id: unaffected_clip_id.clone(),
+        timeline_start: moved_start.clone(),
+    };
+
+    let applied = apply_group(&snapshot.state, &[move_unaffected.clone()]).unwrap();
+    assert_eq!(applied.state.sequences[0].tracks[0], locked_track);
+    let ProjectTrack::Video { clips, .. } = &applied.state.sequences[0].tracks[1] else {
+        unreachable!();
+    };
+    assert_eq!(clips[0].timeline_start, moved_start);
+
+    let original = snapshot.state.clone();
+    let error = apply_group(
+        &snapshot.state,
+        &[
+            move_unaffected,
+            ProjectCommand::RemoveClip {
+                command_id: "72000000-0000-4000-8000-000000000002".to_owned(),
+                sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                track_id: RIPPLE_TRACK_ID.to_owned(),
+                clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            },
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(error.details["category"], "track_locked");
+    assert_eq!(snapshot.state, original);
+}
+
+#[test]
+fn set_track_locked_persists_and_has_exact_undo_redo_hashes_and_labels() {
+    let snapshot = ripple_fixture(1);
+    let original_hash = snapshot.revision.state_hash.clone();
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("track-lock.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("track-lock-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let request = CommandGroupRequest {
+        group_id: "73000000-0000-4000-8000-000000000001".to_owned(),
+        project_id: project_id.clone(),
+        base_revision: 0,
+        commands: vec![ProjectCommand::SetTrackLocked {
+            command_id: "73000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            locked: true,
+        }],
+    };
+
+    let committed = service
+        .execute("track-lock-owner", request, &grants)
+        .unwrap();
+    assert!(committed.projection.state.sequences[0].tracks[0].is_locked());
+    assert_eq!(
+        committed.projection.last_command.as_ref().unwrap().summary,
+        "Locked track"
+    );
+    assert_ne!(committed.state_hash, original_hash);
+    let unlocked = apply_group(
+        &committed.projection.state,
+        &[ProjectCommand::SetTrackLocked {
+            command_id: "73000000-0000-4000-8000-000000000003".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            locked: false,
+        }],
+    )
+    .unwrap();
+    assert_eq!(unlocked.summary, "Unlocked track");
+
+    let undone = service
+        .undo(
+            "track-lock-owner",
+            &project_id,
+            1,
+            "73000000-0000-4000-8000-000000000004",
+            &grants,
+        )
+        .unwrap();
+    assert!(!undone.projection.state.sequences[0].tracks[0].is_locked());
+    assert_eq!(undone.state_hash, original_hash);
+    assert_eq!(
+        undone.projection.last_command.as_ref().unwrap().summary,
+        "Undid Locked track"
+    );
+
+    let redone = service
+        .redo(
+            "track-lock-owner",
+            &project_id,
+            2,
+            "73000000-0000-4000-8000-000000000005",
+            &grants,
+        )
+        .unwrap();
+    assert!(redone.projection.state.sequences[0].tracks[0].is_locked());
+    assert_eq!(
+        redone.projection.last_command.as_ref().unwrap().summary,
+        "Redid Locked track"
+    );
+    let redone_hash = redone.state_hash;
+    service.close("track-lock-owner", &project_id).unwrap();
+
+    let reopened = service
+        .open("track-lock-owner", &project_path, &grants)
+        .unwrap();
+    assert!(reopened.projection.state.sequences[0].tracks[0].is_locked());
+    assert_eq!(reopened.projection.revision.state_hash, redone_hash);
 }
 
 #[test]
@@ -1646,6 +1937,14 @@ fn v1_migration_preserves_selected_state_and_resets_history() {
     assert_eq!(migrated.schema_version, 2);
     assert_eq!(migrated.state.assets.len(), 1);
     assert_eq!(migrated.state.sequences.len(), 1);
+    assert!(migrated.state.sequences[0]
+        .tracks
+        .iter()
+        .all(|track| !track.is_locked()));
+    assert!(serde_json::to_value(&migrated.state.sequences[0].tracks[0])
+        .unwrap()
+        .get("locked")
+        .is_none());
     assert!(migrated.history.undo_stack.is_empty());
     assert!(validate_snapshot(&migrated).is_ok());
 }

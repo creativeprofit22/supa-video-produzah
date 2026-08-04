@@ -65,13 +65,25 @@ fn find_track_mut<'a>(
         .ok_or_else(|| invalid("unknown_track"))
 }
 
+fn find_unlocked_track_mut<'a>(
+    state: &'a mut VideoProjectStateV2,
+    sequence_id: &str,
+    track_id: &str,
+) -> Result<&'a mut ProjectTrack, VideoCommandError> {
+    let track = find_track_mut(state, sequence_id, track_id)?;
+    if track.is_locked() {
+        return Err(invalid("track_locked"));
+    }
+    Ok(track)
+}
+
 fn find_clip_mut<'a>(
     state: &'a mut VideoProjectStateV2,
     sequence_id: &str,
     track_id: &str,
     clip_id: &str,
 ) -> Result<&'a mut ProjectClip, VideoCommandError> {
-    find_track_mut(state, sequence_id, track_id)?
+    find_unlocked_track_mut(state, sequence_id, track_id)?
         .clips_mut()
         .ok_or_else(|| invalid("caption_track"))?
         .iter_mut()
@@ -205,6 +217,14 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             "Removed track",
             vec![CacheInvalidation::Timeline, CacheInvalidation::RenderPlan],
         ),
+        ProjectCommand::SetTrackLocked { locked, .. } => (
+            if *locked {
+                "Locked track"
+            } else {
+                "Unlocked track"
+            },
+            vec![CacheInvalidation::Timeline],
+        ),
         ProjectCommand::InsertClip { .. } => (
             "Inserted clip",
             vec![
@@ -306,10 +326,77 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
     }
 }
 
+fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
+    match command {
+        ProjectCommand::InsertClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RemoveClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RippleDeleteClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RestoreRippleDeletedClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SplitClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::MoveClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::TrimClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetClipTransform {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetClipGain {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::AddCaption {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RemoveCaption {
+            sequence_id,
+            track_id,
+            ..
+        } => Some((sequence_id, track_id)),
+        _ => None,
+    }
+}
+
 fn apply_one(
     state: &mut VideoProjectStateV2,
     command: &ProjectCommand,
 ) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    if let Some((sequence_id, track_id)) = locked_mutation_target(command) {
+        let track = find_track_mut(state, sequence_id, track_id)?;
+        if track.is_locked() {
+            return Err(invalid("track_locked"));
+        }
+    }
     let id = command.command_id();
     match command {
         ProjectCommand::ImportAsset { index, asset, .. } => {
@@ -457,6 +544,23 @@ fn apply_one(
                 vec![],
             ))
         }
+        ProjectCommand::SetTrackLocked {
+            sequence_id,
+            track_id,
+            locked,
+            ..
+        } => {
+            let previous = find_track_mut(state, sequence_id, track_id)?.set_locked(*locked);
+            Ok((
+                vec![ProjectCommand::SetTrackLocked {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    locked: previous,
+                }],
+                vec![],
+            ))
+        }
         ProjectCommand::InsertClip {
             sequence_id,
             track_id,
@@ -465,7 +569,7 @@ fn apply_one(
             ..
         } => {
             let range = clip_range(sequence_id, clip)?;
-            let clips = find_track_mut(state, sequence_id, track_id)?
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .ok_or_else(|| invalid("caption_track"))?;
             if clips.iter().any(|item| item.id == clip.id) {
@@ -493,7 +597,7 @@ fn apply_one(
             clip_id,
             ..
         } => {
-            let clips = find_track_mut(state, sequence_id, track_id)?
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .ok_or_else(|| invalid("caption_track"))?;
             let index = clips
@@ -519,7 +623,7 @@ fn apply_one(
             clip_id,
             ..
         } => {
-            let clips = find_track_mut(state, sequence_id, track_id)?
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .ok_or_else(|| invalid("caption_track"))?;
             let index = clips
@@ -564,7 +668,7 @@ fn apply_one(
             ..
         } => {
             let duration = clip_duration_on_timeline(clip)?;
-            let clips = find_track_mut(state, sequence_id, track_id)?
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .ok_or_else(|| invalid("caption_track"))?;
             if clips.iter().any(|item| item.id == clip.id) {
@@ -613,7 +717,7 @@ fn apply_one(
             if !is_canonical_uuid(right_clip_id) {
                 return Err(invalid("right_clip_id"));
             }
-            let clips = find_track_mut(state, sequence_id, track_id)?
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .ok_or_else(|| invalid("caption_track"))?;
             if clips.iter().any(|clip| clip.id == *right_clip_id) {
@@ -687,7 +791,7 @@ fn apply_one(
             let previous = clip.timeline_start.clone();
             clip.timeline_start = timeline_start.clone();
             let after = clip_range(sequence_id, clip)?;
-            find_track_mut(state, sequence_id, track_id)?
+            find_unlocked_track_mut(state, sequence_id, track_id)?
                 .clips_mut()
                 .unwrap()
                 .sort_by_key(|item| item.timeline_start.value);
@@ -824,7 +928,7 @@ fn apply_one(
             ..
         } => {
             let ProjectTrack::Caption { captions, .. } =
-                find_track_mut(state, sequence_id, track_id)?
+                find_unlocked_track_mut(state, sequence_id, track_id)?
             else {
                 return Err(invalid("non_caption_track"));
             };
@@ -854,7 +958,7 @@ fn apply_one(
             ..
         } => {
             let ProjectTrack::Caption { captions, .. } =
-                find_track_mut(state, sequence_id, track_id)?
+                find_unlocked_track_mut(state, sequence_id, track_id)?
             else {
                 return Err(invalid("non_caption_track"));
             };

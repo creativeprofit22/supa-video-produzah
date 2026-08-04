@@ -101,22 +101,32 @@ pub struct ProjectCaption {
     pub language: Option<String>,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProjectTrack {
     Video {
         id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        locked: bool,
         clips: Vec<ProjectClip>,
     },
     Audio {
         id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        locked: bool,
         clips: Vec<ProjectClip>,
     },
     Caption {
         id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        locked: bool,
         captions: Vec<ProjectCaption>,
     },
 }
@@ -126,6 +136,21 @@ impl ProjectTrack {
         match self {
             Self::Video { id, .. } | Self::Audio { id, .. } | Self::Caption { id, .. } => id,
         }
+    }
+    pub fn is_locked(&self) -> bool {
+        match self {
+            Self::Video { locked, .. }
+            | Self::Audio { locked, .. }
+            | Self::Caption { locked, .. } => *locked,
+        }
+    }
+    pub fn set_locked(&mut self, value: bool) -> bool {
+        let locked = match self {
+            Self::Video { locked, .. }
+            | Self::Audio { locked, .. }
+            | Self::Caption { locked, .. } => locked,
+        };
+        std::mem::replace(locked, value)
     }
     pub fn clips(&self) -> Option<&[ProjectClip]> {
         match self {
@@ -242,6 +267,15 @@ pub enum ProjectCommand {
         sequence_id: String,
         #[serde(rename = "trackId")]
         track_id: String,
+    },
+    SetTrackLocked {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        locked: bool,
     },
     InsertClip {
         #[serde(rename = "commandId")]
@@ -416,6 +450,7 @@ impl ProjectCommand {
             | Self::RemoveSequence { command_id, .. }
             | Self::InsertTrack { command_id, .. }
             | Self::RemoveTrack { command_id, .. }
+            | Self::SetTrackLocked { command_id, .. }
             | Self::InsertClip { command_id, .. }
             | Self::RemoveClip { command_id, .. }
             | Self::RippleDeleteClip { command_id, .. }

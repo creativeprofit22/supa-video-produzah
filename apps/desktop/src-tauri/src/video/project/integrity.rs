@@ -302,13 +302,20 @@ fn valid_clip_shape(clip: &ProjectClip) -> bool {
 
 fn valid_track_shape(track: &ProjectTrack) -> bool {
     match track {
-        ProjectTrack::Video { id, name, clips } | ProjectTrack::Audio { id, name, clips } => {
+        ProjectTrack::Video {
+            id, name, clips, ..
+        }
+        | ProjectTrack::Audio {
+            id, name, clips, ..
+        } => {
             is_canonical_uuid(id)
                 && valid_non_blank(name)
                 && clips.len() <= MAX_TRACK_ITEMS
                 && clips.iter().all(valid_clip_shape)
         }
-        ProjectTrack::Caption { id, name, captions } => {
+        ProjectTrack::Caption {
+            id, name, captions, ..
+        } => {
             is_canonical_uuid(id)
                 && valid_non_blank(name)
                 && captions.len() <= MAX_TRACK_ITEMS
@@ -578,6 +585,11 @@ fn valid_command(command: &ProjectCommand) -> bool {
             is_canonical_uuid(sequence_id) && *index <= MAX_SAFE_INTEGER && valid_track_shape(track)
         }
         ProjectCommand::RemoveTrack {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetTrackLocked {
             sequence_id,
             track_id,
             ..

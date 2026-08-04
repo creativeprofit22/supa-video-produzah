@@ -3,8 +3,17 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import { parseVideoProjectFile } from "./migrations.js";
-import { commandGroupRequestSchema, projectCommandSchemaV2 } from "./project-commands-v2.js";
-import { projectHistoryEntryV2Schema, videoProjectSnapshotV2Schema } from "./project-v2.js";
+import {
+  commandGroupRequestSchema,
+  projectCommandSchemaV2,
+  setTrackLockedCommandSchemaV2,
+} from "./project-commands-v2.js";
+import {
+  isTrackLocked,
+  projectHistoryEntryV2Schema,
+  projectTrackSchema,
+  videoProjectSnapshotV2Schema,
+} from "./project-v2.js";
 import { projectProjectionSchema, recoveryReportSchema } from "./project-service.js";
 
 const ids = {
@@ -127,6 +136,28 @@ describe("V2 project contracts", () => {
     expect(() => parseVideoProjectFile({ schemaVersion: 3 })).toThrow("schema 3");
   });
 
+  it("preserves legacy tracks without a lock field while treating them as unlocked", () => {
+    const legacyTracks = [
+      { id: ids.project, name: "Video", kind: "video", clips: [] },
+      { id: ids.project, name: "Audio", kind: "audio", clips: [] },
+      { id: ids.project, name: "Captions", kind: "caption", captions: [] },
+    ] as const;
+
+    for (const legacyTrack of legacyTracks) {
+      const parsed = projectTrackSchema.parse(legacyTrack);
+      expect(parsed).toEqual(legacyTrack);
+      expect(Object.hasOwn(parsed, "locked")).toBe(false);
+      expect(JSON.parse(JSON.stringify(parsed))).toEqual(legacyTrack);
+      expect(isTrackLocked(parsed)).toBe(false);
+
+      for (const locked of [false, true]) {
+        const persisted = projectTrackSchema.parse({ ...legacyTrack, locked });
+        expect(persisted).toEqual({ ...legacyTrack, locked });
+        expect(isTrackLocked(persisted)).toBe(locked);
+      }
+    }
+  });
+
   it("rejects dangling clip asset and sequence references", async () => {
     const fixtureUrl = new URL(
       "../fixtures/project-v2/valid-relative-source.svpvideo",
@@ -168,6 +199,53 @@ describe("V2 project contracts", () => {
     expect(commandGroupRequestSchema.parse(request)).toEqual(request);
     expect(() => commandGroupRequestSchema.parse({ ...request, committedAt: timestamp })).toThrow();
     expect(() => projectCommandSchemaV2.parse({ ...command, summary: "caller owned" })).toThrow();
+  });
+
+  it("validates SetTrackLocked as a public command accepted by groups and history", () => {
+    const lockCommand = {
+      type: "SetTrackLocked" as const,
+      commandId: ids.command,
+      sequenceId: ids.project,
+      trackId: ids.operation,
+      locked: true,
+    };
+    const unlockCommand = { ...lockCommand, locked: false };
+
+    expect(setTrackLockedCommandSchemaV2.parse(lockCommand)).toEqual(lockCommand);
+    expect(projectCommandSchemaV2.parse(lockCommand)).toEqual(lockCommand);
+    expect(
+      commandGroupRequestSchema.parse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [lockCommand],
+      }).commands,
+    ).toEqual([lockCommand]);
+
+    const historyEntry = {
+      groupId: ids.group,
+      summary: "Locked track",
+      forwardCommands: [lockCommand],
+      inverseCommands: [unlockCommand],
+      affectedRanges: [],
+      cacheInvalidations: ["timeline" as const],
+    };
+    expect(projectHistoryEntryV2Schema.parse(historyEntry)).toEqual(historyEntry);
+
+    expect(
+      setTrackLockedCommandSchemaV2.safeParse({ ...lockCommand, locked: "true" }).success,
+    ).toBe(false);
+    expect(
+      setTrackLockedCommandSchemaV2.safeParse({ ...lockCommand, visible: false }).success,
+    ).toBe(false);
+    expect(
+      setTrackLockedCommandSchemaV2.safeParse({
+        type: "SetTrackLocked",
+        commandId: ids.command,
+        sequenceId: ids.project,
+        trackId: ids.operation,
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts ripple delete while keeping its restore command private to history", async () => {

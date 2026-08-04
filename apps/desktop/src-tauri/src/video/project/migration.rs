@@ -40,6 +40,7 @@ pub fn migrate_v1(
                 .map(|track| ProjectTrack::Video {
                     id: track.id.as_str().to_owned(),
                     name: "Video 1".to_owned(),
+                    locked: false,
                     clips: track
                         .clips
                         .iter()

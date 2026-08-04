@@ -67,7 +67,7 @@ export const projectCaptionSchema = z
   .refine((caption) => caption.end.value > caption.start.value, "Caption range must be nonempty");
 export type ProjectCaption = z.infer<typeof projectCaptionSchema>;
 
-const trackBase = { id: projectUuidSchema, name: nonBlankSchema };
+const trackBase = { id: projectUuidSchema, name: nonBlankSchema, locked: z.boolean().optional() };
 export const projectTrackSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -92,6 +92,11 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 export type ProjectTrack = z.infer<typeof projectTrackSchema>;
+
+/** Tracks persisted before locking was introduced are semantically unlocked. */
+export function isTrackLocked(track: ProjectTrack): boolean {
+  return track.locked ?? false;
+}
 
 export const videoSequenceV2Schema = z
   .object({
