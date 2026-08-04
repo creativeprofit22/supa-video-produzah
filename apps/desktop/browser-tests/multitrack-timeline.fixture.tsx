@@ -173,27 +173,48 @@ function ControlledTimelineFixture() {
     setSelectedClipId(rightClipId);
   };
 
+  const rippleDeleteClip = (clipId: string) => {
+    const nextSelectedClipId = currentProjection.state.sequences
+      .flatMap((sequence) => sequence.tracks)
+      .flatMap((track) => (track.kind === "caption" ? [] : track.clips))
+      .find((candidate) => candidate.id !== clipId)?.id;
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) => {
+            if (track.kind === "caption") return track;
+            const deleted = track.clips.find((candidate) => candidate.id === clipId);
+            if (deleted === undefined) return track;
+            const duration = deleted.sourceOut.value - deleted.sourceIn.value;
+            const deletedEnd = deleted.timelineStart.value + duration;
+            return {
+              ...track,
+              clips: track.clips
+                .filter((candidate) => candidate.id !== clipId)
+                .map((candidate) =>
+                  candidate.timelineStart.value >= deletedEnd
+                    ? {
+                        ...candidate,
+                        timelineStart: time(candidate.timelineStart.value - duration),
+                      }
+                    : candidate,
+                ),
+            };
+          }),
+        })),
+      },
+    }));
+    setSelectedClipId(nextSelectedClipId ?? null);
+  };
+
   return (
     <main
       className="video-workspace shared-rail timeline-browser-fixture"
       style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
     >
-      <style>{`
-        .timeline-browser-fixture .multitrack-panel { min-width: 0; }
-        @media (max-width: 479px) {
-          .timeline-browser-fixture .multitrack-heading {
-            align-items: stretch;
-            flex-direction: column;
-          }
-          .timeline-browser-fixture .multitrack-actions {
-            align-items: stretch;
-          }
-          .timeline-browser-fixture .multitrack-actions .compact-button {
-            width: 100%;
-            white-space: normal;
-          }
-        }
-      `}</style>
       <MultitrackTimeline
         projection={currentProjection}
         preparedAsset={null}
@@ -204,6 +225,7 @@ function ControlledTimelineFixture() {
         editError={null}
         onSelectClip={setSelectedClipId}
         onSplitClip={splitClip}
+        onRippleDeleteClip={rippleDeleteClip}
         onMoveClip={(clipId, timelineStartFrame) =>
           updateClip(clipId, (candidate) => ({
             ...candidate,

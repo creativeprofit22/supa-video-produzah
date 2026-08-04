@@ -9,14 +9,14 @@ import {
 } from "@supa-video/contracts";
 import { deriveActiveTimelineRange, projectVisibleTimeline } from "@supa-video/project";
 import type { PreparedVideoAsset } from "@supa-video/media";
-import { Film, Music2, Scissors } from "lucide-react";
+import { Film, Music2, Scissors, Trash2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type UIEvent,
 } from "react";
@@ -31,6 +31,7 @@ interface MultitrackTimelineProps {
   readonly editError: Error | null;
   readonly onSelectClip: (clipId: string) => void;
   readonly onSplitClip: (clipId: string, sourceFrame: number) => void;
+  readonly onRippleDeleteClip: (clipId: string) => void;
   readonly onMoveClip: (clipId: string, timelineStartFrame: number) => void;
   readonly onTrimClip: (
     clipId: string,
@@ -61,7 +62,6 @@ interface PointerSession {
   readonly draftSourceOutFrame: number;
 }
 
-const TRACK_HEIGHT = 72;
 const MIN_PIXELS_PER_FRAME = 4;
 const MAX_TIMELINE_WIDTH = 2_000_000;
 const VIEWPORT_OVERSCAN_PIXELS = 160;
@@ -144,11 +144,14 @@ export function MultitrackTimeline({
   editError,
   onSelectClip,
   onSplitClip,
+  onRippleDeleteClip,
   onMoveClip,
   onTrimClip,
 }: MultitrackTimelineProps) {
+  const panelRef = useRef<HTMLElement | null>(null);
   const scrollRegionRef = useRef<HTMLDivElement | null>(null);
   const pointerSessionRef = useRef<PointerSession | null>(null);
+  const restoreFocusAfterRippleDeleteRef = useRef(false);
   const [viewportWidth, setViewportWidth] = useState(960);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [pointerSession, setPointerSession] = useState<PointerSession | null>(null);
@@ -192,6 +195,25 @@ export function MultitrackTimeline({
     () => canonicalTimelineClip(projection, selectedClipId),
     [projection, selectedClipId],
   );
+
+  useEffect(() => {
+    if (!restoreFocusAfterRippleDeleteRef.current || editPending || panelRef.current === null) {
+      return;
+    }
+    if (selectedClipId === null) {
+      scrollRegionRef.current?.focus();
+      restoreFocusAfterRippleDeleteRef.current = false;
+      return;
+    }
+    if (selectedCanonicalClip === null) return;
+    const selectedClip = Array.from(
+      panelRef.current.querySelectorAll<HTMLElement>("[data-clip-id]"),
+    ).find((clip) => clip.dataset.clipId === selectedClipId);
+    const selectedClipBody = selectedClip?.querySelector<HTMLElement>(".multitrack-clip-body");
+    if (selectedClipBody === undefined || selectedClipBody === null) return;
+    selectedClipBody.focus();
+    restoreFocusAfterRippleDeleteRef.current = false;
+  }, [editPending, selectedCanonicalClip, selectedClipId]);
   const thumbnailSource = useMemo(
     () =>
       preparedAsset === null
@@ -210,12 +232,11 @@ export function MultitrackTimeline({
     viewportWidth,
     frameToPixel(Math.max(timeline.range.endFrameExclusive, draftTimelineEnd), geometryViewport),
   );
+  const canRippleDelete = selectedCanonicalClip !== null && !editPending;
   const canSplit =
-    selectedClipId !== null &&
-    selectedCanonicalClip !== null &&
+    canRippleDelete &&
     playheadFrame > selectedCanonicalClip.clip.sourceIn.value &&
-    playheadFrame < selectedCanonicalClip.clip.sourceOut.value &&
-    !editPending;
+    playheadFrame < selectedCanonicalClip.clip.sourceOut.value;
 
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollLeft(event.currentTarget.scrollLeft);
@@ -332,8 +353,33 @@ export function MultitrackTimeline({
     if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, playheadFrame);
   };
 
+  const rippleDeleteSelectedClip = () => {
+    if (canRippleDelete && selectedClipId !== null) onRippleDeleteClip(selectedClipId);
+  };
+
+  const handleTimelineKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (
+      event.code !== "Delete" ||
+      !event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      !canRippleDelete
+    ) {
+      return;
+    }
+    event.preventDefault();
+    restoreFocusAfterRippleDeleteRef.current = true;
+    rippleDeleteSelectedClip();
+  };
+
   return (
-    <section className="multitrack-panel" aria-labelledby="multitrack-heading">
+    <section
+      ref={panelRef}
+      className="multitrack-panel"
+      aria-labelledby="multitrack-heading"
+      onKeyDown={handleTimelineKeyDown}
+    >
       <div className="section-heading multitrack-heading">
         <div>
           <p className="eyebrow">Sequence timeline</p>
@@ -349,6 +395,16 @@ export function MultitrackTimeline({
             <Scissors size={14} aria-hidden="true" />
             Split at playhead
           </button>
+          <button
+            type="button"
+            className="compact-button"
+            aria-keyshortcuts="Shift+Delete"
+            disabled={!canRippleDelete}
+            onClick={rippleDeleteSelectedClip}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+            Ripple delete clip
+          </button>
           <p className="timeline-range" aria-label="Timeline frame range">
             <span>Frames </span>
             {timeline.range.startFrame}–{timeline.range.endFrameExclusive}
@@ -362,10 +418,7 @@ export function MultitrackTimeline({
         </p>
       )}
 
-      <div
-        className="multitrack-layout"
-        style={{ "--timeline-track-height": `${TRACK_HEIGHT}px` } as CSSProperties}
-      >
+      <div className="multitrack-layout">
         <div className="multitrack-label-column" aria-hidden="true">
           <div className="multitrack-label-spacer" />
           {timeline.tracks.map((track) => (
@@ -448,6 +501,7 @@ export function MultitrackTimeline({
                                 ) {
                                   event.preventDefault();
                                   splitSelectedClip();
+                                  return;
                                 }
                               }}
                               onPointerDown={(event) =>

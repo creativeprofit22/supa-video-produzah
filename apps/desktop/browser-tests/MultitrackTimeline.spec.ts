@@ -14,6 +14,49 @@ async function expectContained(inner: Locator, outer: Locator) {
   expect(innerBox!.y + innerBox!.height).toBeLessThanOrEqual(outerBox!.y + outerBox!.height + 1);
 }
 
+async function expectReadableAlignedTrackLabels(labels: Locator, rows: Locator) {
+  const [labelMetrics, rowHeights] = await Promise.all([
+    labels.evaluateAll((elements) =>
+      elements.map((label) => {
+        const labelRect = label.getBoundingClientRect();
+        const content = Array.from(label.querySelectorAll<HTMLElement>("span, strong, small"));
+        const clippedContent = content
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            return (
+              element.scrollWidth > element.clientWidth + 1 ||
+              rect.left < labelRect.left - 1 ||
+              rect.right > labelRect.right + 1 ||
+              rect.top < labelRect.top - 1 ||
+              rect.bottom > labelRect.bottom + 1
+            );
+          })
+          .map((element) => element.textContent?.trim() ?? "");
+        return {
+          label: label.textContent?.replace(/\s+/g, " ").trim() ?? "",
+          height: labelRect.height,
+          clippedContent,
+          containerClipped: label.scrollHeight > label.clientHeight + 1,
+        };
+      }),
+    ),
+    rows.evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().height),
+    ),
+  ]);
+
+  expect(
+    labelMetrics.flatMap(({ label, clippedContent, containerClipped }) =>
+      containerClipped || clippedContent.length > 0 ? [{ label, clippedContent }] : [],
+    ),
+    "Track label text must fit without clipping or overlap",
+  ).toEqual([]);
+  expect(
+    labelMetrics.map(({ height }) => height),
+    "Label and timeline rows must remain vertically aligned",
+  ).toEqual(rowHeights);
+}
+
 for (const viewport of [
   { name: "desktop", width: 1280, height: 800, rootFontSize: 16 },
   { name: "mobile", width: 390, height: 844, rootFontSize: 16 },
@@ -31,14 +74,27 @@ for (const viewport of [
     const region = page.getByRole("region", { name: "Timeline tracks; scroll horizontally" });
     await expect(timeline).toBeVisible();
     await expect(region).toBeVisible();
-    await expect(page.locator(".multitrack-visible-label")).toHaveCount(3);
-    await expect(page.locator(".multitrack-track-row")).toHaveCount(3);
+    const labels = page.locator(".multitrack-visible-label");
+    const rows = page.locator(".multitrack-track-row");
+    await expect(labels).toHaveCount(3);
+    await expect(rows).toHaveCount(3);
+    await expectReadableAlignedTrackLabels(labels, rows);
+
+    const actions = page.locator(".multitrack-actions");
+    const split = page.getByRole("button", { name: "Split at playhead" });
+    const rippleDelete = page.getByRole("button", { name: "Ripple delete clip" });
+    await expect(rippleDelete).toBeDisabled();
+    await expect(rippleDelete).toHaveAttribute("aria-keyshortcuts", "Shift+Delete");
+    await expectContained(actions, timeline);
+    await expectContained(split, timeline);
+    await expectContained(rippleDelete, timeline);
 
     const firstClipBody = page
       .getByRole("button", { name: /Interview A — wide camera\.mp4, frames 0 through 28/ })
       .first();
     await firstClipBody.click();
     await expect(firstClipBody).toHaveAttribute("aria-pressed", "true");
+    await expect(rippleDelete).toBeEnabled();
 
     const selectedClip = page.locator(".multitrack-clip.is-selected");
     await expect(selectedClip).toHaveCount(1);
@@ -62,7 +118,6 @@ for (const viewport of [
     await expectContained(trimStart, selectedClip);
     await expectContained(trimEnd, selectedClip);
 
-    const split = page.getByRole("button", { name: "Split at playhead" });
     await expect(split).toBeEnabled();
 
     const draggedClip = page.locator(".multitrack-clip.is-selected");
@@ -89,6 +144,15 @@ for (const viewport of [
     await expect(split).toBeEnabled();
     await split.click();
     await expect(page.locator("[data-clip-id]")).toHaveCount(6);
+
+    const splitSelection = page.locator(".multitrack-clip.is-selected .multitrack-clip-body");
+    await splitSelection.focus();
+    await page.keyboard.press("Delete");
+    await expect(page.locator("[data-clip-id]")).toHaveCount(6);
+    await page.keyboard.press("Shift+Delete");
+    await expect(page.locator("[data-clip-id]")).toHaveCount(5);
+    await expect(splitSelection).toBeFocused();
+    await expect(rippleDelete).toBeEnabled();
 
     const geometry = await page.evaluate(() => ({
       documentClientWidth: document.documentElement.clientWidth,

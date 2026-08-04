@@ -79,17 +79,6 @@ function RippleWorkflowHarness() {
       >
         Split ripple fixture
       </button>
-      <button
-        type="button"
-        disabled={firstClip === undefined}
-        onClick={() =>
-          firstClip === undefined
-            ? undefined
-            : void controller.rippleDeleteTimelineClip({ clipId: firstClip.id })
-        }
-      >
-        Delete ripple fixture
-      </button>
       {controller.project === null ? null : (
         <VideoWorkspace
           controller={controller}
@@ -301,7 +290,9 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(splitTrack.clips.map((clip) => clip.timelineStart.value)).toEqual([0, 10]);
     expect(service.projection.revision.number).toBe(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete ripple fixture" }));
+    const rippleDelete = screen.getByRole("button", { name: "Ripple delete clip" });
+    expect((rippleDelete as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(rippleDelete);
 
     await waitFor(() => expect(service.projection.revision.number).toBe(3));
     const rippleTrack = service.projection.state.sequences[0]!.tracks[0]!;

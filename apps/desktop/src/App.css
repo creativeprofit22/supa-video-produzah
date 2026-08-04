@@ -680,9 +680,14 @@ video {
 .multitrack-heading {
   align-items: center;
 }
+
+.multitrack-panel {
+  min-width: 0;
+}
 .multitrack-actions {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
@@ -703,6 +708,7 @@ video {
   font-size: 0.76rem;
 }
 .multitrack-layout {
+  --timeline-track-height: 72px;
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(96px, 124px) minmax(0, 1fr);
@@ -731,22 +737,23 @@ video {
 }
 .multitrack-visible-label span,
 .multitrack-visible-label small {
-  overflow: hidden;
+  overflow: visible;
   color: var(--quiet);
   font-size: 0.64rem;
   letter-spacing: 0.04em;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   text-transform: uppercase;
   white-space: nowrap;
 }
 .multitrack-visible-label strong {
-  overflow: hidden;
+  overflow: visible;
   margin-block: 2px;
   color: var(--text);
   font-size: 0.76rem;
   font-weight: 620;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  white-space: normal;
 }
 .multitrack-scroll-region {
   min-width: 0;
@@ -1919,15 +1926,23 @@ video {
     grid-template-columns: 1fr;
   }
   .multitrack-layout {
-    --timeline-track-height: 96px;
-    grid-template-columns: 92px minmax(0, 1fr);
+    --timeline-track-height: max(96px, 5.5rem);
+    grid-template-columns: max(92px, 6rem) minmax(0, 1fr);
   }
   .multitrack-visible-label {
     padding-inline: 6px;
   }
+  .multitrack-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .multitrack-actions {
-    align-items: flex-end;
+    align-items: stretch;
     flex-direction: column-reverse;
+  }
+  .multitrack-actions .compact-button {
+    width: 100%;
+    white-space: normal;
   }
   .multitrack-heading .timeline-range {
     white-space: normal;

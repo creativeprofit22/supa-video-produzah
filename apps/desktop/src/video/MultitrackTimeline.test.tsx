@@ -175,6 +175,7 @@ function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeli
     editError: null,
     onSelectClip: vi.fn(),
     onSplitClip: vi.fn(),
+    onRippleDeleteClip: vi.fn(),
     onMoveClip: vi.fn(),
     onTrimClip: vi.fn(),
     ...overrides,
@@ -269,6 +270,46 @@ describe("MultitrackTimeline", () => {
 
     rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} playheadFrame={2} />);
     expect((split as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("ripple deletes only an eligible selected clip by button or Shift+Delete", () => {
+    const firstId = id(100_000);
+    const onRippleDeleteClip = vi.fn();
+    const props = timelineProps({ onRippleDeleteClip });
+    const rendered = render(<MultitrackTimeline {...props} />);
+    const firstClip = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+    const rippleDelete = screen.getByRole("button", { name: "Ripple delete clip" });
+
+    expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
+    expect(rippleDelete.getAttribute("aria-keyshortcuts")).toBe("Shift+Delete");
+    expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete" })).toBe(true);
+    expect(onRippleDeleteClip).not.toHaveBeenCalled();
+
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} />);
+    expect((rippleDelete as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(rippleDelete);
+    expect(onRippleDeleteClip).toHaveBeenCalledOnce();
+    expect(onRippleDeleteClip).toHaveBeenLastCalledWith(firstId);
+
+    expect(fireEvent.keyDown(rippleDelete, { key: "Delete", code: "Delete", shiftKey: true })).toBe(
+      false,
+    );
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
+
+    expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete" })).toBe(true);
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
+    expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true })).toBe(
+      false,
+    );
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+    expect(onRippleDeleteClip).toHaveBeenLastCalledWith(firstId);
+
+    rendered.rerender(
+      <MultitrackTimeline {...props} selectedClipId={firstId} editPending={true} />,
+    );
+    expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true });
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
   });
 
   it("previews moves ephemerally, commits once on release, and cancels without committing", () => {

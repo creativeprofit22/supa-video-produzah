@@ -384,6 +384,7 @@ export function VideoWorkspace({
               onSplitClip={(clipId, sourceFrame) =>
                 void controller.splitTimelineClip({ clipId, sourceFrame })
               }
+              onRippleDeleteClip={(clipId) => void controller.rippleDeleteTimelineClip({ clipId })}
               onMoveClip={(clipId, timelineStartFrame) =>
                 void controller.moveTimelineClip({ clipId, timelineStartFrame })
               }
