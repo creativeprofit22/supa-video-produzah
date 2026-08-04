@@ -133,6 +133,7 @@ describe("visible timeline projection", () => {
           id: id(11),
           name: "Audio 1",
           kind: "audio",
+          locked: true,
           clips: [
             {
               ...clip(101, 10, 40),
@@ -147,10 +148,10 @@ describe("visible timeline projection", () => {
 
     expect(deriveActiveTimelineRange(value)).toEqual({ startFrame: 0, endFrameExclusive: 40 });
     const result = projectVisibleTimeline(value, viewportFor(value, 0, 40, 0));
-    expect(result?.tracks.map(({ trackId, kind }) => ({ trackId, kind }))).toEqual([
-      { trackId: id(10), kind: "video" },
-      { trackId: id(11), kind: "audio" },
-      { trackId: id(12), kind: "caption" },
+    expect(result?.tracks.map(({ trackId, kind, locked }) => ({ trackId, kind, locked }))).toEqual([
+      { trackId: id(10), kind: "video", locked: false },
+      { trackId: id(11), kind: "audio", locked: true },
+      { trackId: id(12), kind: "caption", locked: false },
     ]);
     expect(result?.tracks[0]?.clips[0]).toMatchObject({
       clipId: id(100),

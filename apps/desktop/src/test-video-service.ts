@@ -4,6 +4,7 @@ import type {
   ProjectProjection,
   RecoveryReport,
 } from "@supa-video/contracts";
+import { isTrackLocked } from "@supa-video/contracts";
 import {
   listMediaJobsRequestSchema,
   reauthorizeMediaJobOutputRequestSchema,
@@ -172,10 +173,32 @@ function commandSummary(command: ProjectCommandV2): string {
       return "Applied trim";
     case "RippleDeleteClip":
       return "Ripple deleted clip";
+    case "SetTrackLocked":
+      return command.locked ? "Locked track" : "Unlocked track";
     default:
       return "Updated project";
   }
 }
+
+function lockedMutationTarget(command: ProjectCommandV2) {
+  switch (command.type) {
+    case "InsertClip":
+    case "RemoveClip":
+    case "RippleDeleteClip":
+    case "RestoreRippleDeletedClip":
+    case "SplitClip":
+    case "MoveClip":
+    case "TrimClip":
+    case "SetClipTransform":
+    case "SetClipGain":
+    case "AddCaption":
+    case "RemoveCaption":
+      return { sequenceId: command.sequenceId, trackId: command.trackId };
+    default:
+      return null;
+  }
+}
+
 function exactTimelineDuration(clip: {
   readonly timelineStart: { readonly rateNumerator: number; readonly rateDenominator: number };
   readonly sourceIn: {
@@ -282,14 +305,22 @@ export function createMockVideoService(
     if (command === "video_execute_project_group") {
       const request = (args as { request: CommandGroupRequest }).request;
       const prior = structuredClone(projection);
-      undo.push(prior);
-      redo.length = 0;
       const next = nextProjection(projection, request.groupId);
       for (const item of request.commands) {
+        const lockedTarget = lockedMutationTarget(item);
+        if (lockedTarget !== null) {
+          const sequence = next.state.sequences.find(({ id }) => id === lockedTarget.sequenceId);
+          const track = sequence?.tracks.find(({ id }) => id === lockedTarget.trackId);
+          if (track !== undefined && isTrackLocked(track)) throw new Error("Track is locked");
+        }
         if (item.type === "ImportAsset") next.state.assets.push(item.asset);
         else if (item.type === "CreateSequence") {
           next.state.sequences.push(item.sequence);
           next.state.activeSequenceId = item.sequence.id;
+        } else if (item.type === "SetTrackLocked") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
+          const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
+          track.locked = item.locked;
         } else if (item.type === "InsertClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
@@ -345,6 +376,8 @@ export function createMockVideoService(
           }
         }
       }
+      undo.push(prior);
+      redo.length = 0;
       next.canUndo = true;
       next.canRedo = false;
       next.sources = next.state.assets.map((asset) => ({

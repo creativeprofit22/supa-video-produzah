@@ -1,5 +1,6 @@
 import {
   createRationalTime,
+  isTrackLocked,
   microsecondsToSourceFrames,
   type CommandResult,
   type ProjectCommandV2,
@@ -32,7 +33,7 @@ export interface TrimDraft {
   readonly inFrame: number;
   readonly outFrame: number;
 }
-export type TimelineEditOperation = "split" | "move" | "trim" | "ripple-delete";
+export type TimelineEditOperation = "split" | "move" | "trim" | "ripple-delete" | "track-lock";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -49,6 +50,10 @@ export interface TrimTimelineClipInput {
 }
 export interface RippleDeleteTimelineClipInput {
   readonly clipId: string;
+}
+export interface SetTimelineTrackLockedInput {
+  readonly trackId: string;
+  readonly locked: boolean;
 }
 export type EditOperationState =
   | { readonly phase: "idle" }
@@ -983,6 +988,30 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTimelineTrackLocked = useCallback(
+    async ({ trackId, locked }: SetTimelineTrackLockedInput) => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        track === undefined ||
+        isTrackLocked(track) === locked
+      )
+        return;
+      await executeTimelineCommandGroup(base, "track-lock", [
+        {
+          type: "SetTrackLocked",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          trackId: track.id,
+          locked,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
@@ -1151,6 +1180,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     moveTimelineClip,
     trimTimelineClip,
     rippleDeleteTimelineClip,
+    setTimelineTrackLocked,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

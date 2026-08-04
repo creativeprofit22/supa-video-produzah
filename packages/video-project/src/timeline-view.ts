@@ -1,6 +1,7 @@
 import {
   VideoDomainError,
   frameToPixel,
+  isTrackLocked,
   projectProjectionSchema,
   ratesEqual,
   timelineFrameRangesIntersect,
@@ -36,6 +37,7 @@ export interface TimelineTrackViewModel {
   readonly trackId: string;
   readonly name: string;
   readonly kind: ProjectTrack["kind"];
+  readonly locked: boolean;
   readonly range: TimelineRangeViewModel;
   readonly totalClipCount: number;
   readonly clips: readonly TimelineClipViewModel[];
@@ -332,6 +334,7 @@ export function projectVisibleTimeline(
         trackId: track.id,
         name: track.name,
         kind: track.kind,
+        locked: isTrackLocked(track),
         range: preparedTrack.range,
         totalClipCount: 0,
         clips: Object.freeze([]),
@@ -354,6 +357,7 @@ export function projectVisibleTimeline(
       trackId: track.id,
       name: track.name,
       kind: track.kind,
+      locked: isTrackLocked(track),
       range: preparedTrack.range,
       totalClipCount: preparedTrack.totalClipCount,
       clips,

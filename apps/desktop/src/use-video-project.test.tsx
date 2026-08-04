@@ -534,6 +534,59 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("locks and unlocks a timeline track through one revision per toggle", async () => {
+    let active = clipProjection(1);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const command = request.commands[0];
+      if (command?.type !== "SetTrackLocked") throw new Error("Expected track lock command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: trackId }) => trackId === command.trackId,
+      );
+      if (track === undefined) throw new Error("Expected track fixture");
+      track.locked = command.locked;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      active = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.setTimelineTrackLocked({ trackId: id(4), locked: true }));
+    await act(() => result.current.setTimelineTrackLocked({ trackId: id(4), locked: true }));
+    await act(() => result.current.setTimelineTrackLocked({ trackId: id(4), locked: false }));
+
+    const requests = execute.mock.calls.map(([request]) => request);
+    expect(requests.map(({ baseRevision }) => baseRevision)).toEqual([1, 2]);
+    expect(requests.map(({ commands }) => commands)).toEqual([
+      [expect.objectContaining({ type: "SetTrackLocked", trackId: id(4), locked: true })],
+      [expect.objectContaining({ type: "SetTrackLocked", trackId: id(4), locked: false })],
+    ]);
+    expect(result.current.projection?.revision.number).toBe(3);
+    expect(result.current.projection?.state.sequences[0]?.tracks[0]?.locked).toBe(false);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
   it("ripple deletes through one command and one revision with exact undo and redo", async () => {
     const opened = rippleProjection(1);
     const deleted = structuredClone(opened);
