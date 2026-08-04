@@ -9,5 +9,6 @@ export * from "./project-io.js";
 export * from "./render-plan.js";
 export * from "./source-content.js";
 export * from "./time.js";
+export * from "./timeline-snap.js";
 export * from "./timeline-viewport.js";
 export * from "./tools.js";
