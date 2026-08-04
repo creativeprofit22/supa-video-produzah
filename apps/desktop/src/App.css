@@ -708,10 +708,11 @@ video {
   font-size: 0.76rem;
 }
 .multitrack-layout {
-  --timeline-track-height: 72px;
+  --timeline-ruler-height: 1.75rem;
+  --timeline-track-height: 5.25rem;
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(96px, 124px) minmax(0, 1fr);
+  grid-template-columns: clamp(8rem, 16vw, 11rem) minmax(0, 1fr);
   border: 1px solid var(--border-strong);
   background: var(--surface-deep);
 }
@@ -724,26 +725,46 @@ video {
 }
 .multitrack-label-spacer,
 .multitrack-ruler {
-  height: 28px;
+  height: var(--timeline-ruler-height);
   border-block-end: 1px solid var(--border);
 }
 .multitrack-visible-label {
   display: grid;
-  height: var(--timeline-track-height, 72px);
+  height: var(--timeline-track-height);
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kind lock"
+    "name lock"
+    "status lock";
   align-content: center;
-  padding: 8px 10px;
+  column-gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
   border-block-end: 1px solid var(--border);
 }
-.multitrack-visible-label span,
-.multitrack-visible-label small {
+.multitrack-visible-label.is-locked {
+  background: color-mix(in srgb, var(--surface) 82%, var(--quiet));
+  box-shadow: inset 3px 0 0 var(--quiet);
+}
+.multitrack-visible-label > span {
+  grid-area: kind;
+}
+.multitrack-visible-label > strong {
+  grid-area: name;
+}
+.multitrack-visible-label > small {
+  grid-area: status;
+  line-height: 1.25;
+  white-space: normal;
+}
+.multitrack-visible-label > span,
+.multitrack-visible-label > small {
   overflow: visible;
   color: var(--quiet);
   font-size: 0.64rem;
   letter-spacing: 0.04em;
   text-overflow: clip;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 .multitrack-visible-label strong {
   overflow: visible;
@@ -754,6 +775,41 @@ video {
   overflow-wrap: break-word;
   text-overflow: clip;
   white-space: normal;
+}
+.multitrack-lock-toggle {
+  grid-area: lock;
+  display: inline-flex;
+  min-width: 3.75rem;
+  min-height: 2.75rem;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  background: var(--surface-deep);
+  cursor: pointer;
+}
+.multitrack-lock-toggle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.multitrack-lock-toggle[aria-pressed="true"] {
+  border-color: var(--quiet);
+  color: var(--text);
+  background: var(--surface-soft);
+}
+.multitrack-lock-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.multitrack-lock-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .multitrack-scroll-region {
   min-width: 0;
@@ -794,10 +850,16 @@ video {
 }
 .multitrack-track-row {
   position: relative;
-  height: var(--timeline-track-height, 72px);
+  height: var(--timeline-track-height);
   border-block-end: 1px solid var(--border);
   background-image: linear-gradient(90deg, transparent 99%, var(--border) 100%);
   background-size: 80px 100%;
+}
+.multitrack-track-row.is-locked {
+  background-color: color-mix(in srgb, var(--surface-deep) 82%, var(--quiet));
+  background-image:
+    repeating-linear-gradient(135deg, transparent 0 10px, rgb(255 255 255 / 3%) 10px 12px),
+    linear-gradient(90deg, transparent 99%, var(--border) 100%);
 }
 .multitrack-clip-list {
   position: absolute;
@@ -818,6 +880,10 @@ video {
 .multitrack-clip-audio {
   border-color: rgb(151 188 255 / 55%);
   background: #1f2830;
+}
+.multitrack-clip.is-locked {
+  border-color: var(--quiet);
+  filter: saturate(0.45);
 }
 .multitrack-clip.is-selected {
   z-index: 2;
@@ -843,6 +909,10 @@ video {
 }
 .multitrack-clip.is-selected .multitrack-clip-body {
   cursor: grab;
+}
+.multitrack-clip.is-locked .multitrack-clip-body,
+.multitrack-clip.is-locked.is-selected .multitrack-clip-body {
+  cursor: pointer;
 }
 .multitrack-clip.is-dragging .multitrack-clip-body {
   cursor: grabbing;
@@ -1926,11 +1996,23 @@ video {
     grid-template-columns: 1fr;
   }
   .multitrack-layout {
-    --timeline-track-height: max(96px, 5.5rem);
+    --timeline-track-height: max(128px, 7rem);
     grid-template-columns: max(92px, 6rem) minmax(0, 1fr);
   }
   .multitrack-visible-label {
-    padding-inline: 6px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "kind"
+      "name"
+      "status"
+      "lock";
+    padding: 0.35rem;
+  }
+  .multitrack-lock-toggle {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.25rem;
+    margin-block-start: 0.25rem;
   }
   .multitrack-heading {
     align-items: stretch;
@@ -2021,6 +2103,7 @@ video {
   .multitrack-label-column,
   .multitrack-track-row,
   .multitrack-clip,
+  .multitrack-lock-toggle,
   .multitrack-scroll-region:focus-visible {
     border-color: CanvasText;
     box-shadow: none;
@@ -2028,6 +2111,16 @@ video {
   .multitrack-scroll-region:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: -2px;
+  }
+  .multitrack-visible-label.is-locked,
+  .multitrack-track-row.is-locked {
+    outline: 1px dashed GrayText;
+    outline-offset: -2px;
+  }
+  .multitrack-lock-toggle[aria-pressed="true"] {
+    color: HighlightText;
+    background: Highlight;
+    forced-color-adjust: none;
   }
   .segmented-control button[aria-pressed="true"],
   .jobs-toggle[aria-expanded="true"] {

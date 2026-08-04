@@ -9,7 +9,7 @@ import {
 } from "@supa-video/contracts";
 import { deriveActiveTimelineRange, projectVisibleTimeline } from "@supa-video/project";
 import type { PreparedVideoAsset } from "@supa-video/media";
-import { Film, Music2, Scissors, Trash2 } from "lucide-react";
+import { Film, Lock, LockOpen, Music2, Scissors, Trash2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -30,6 +30,7 @@ interface MultitrackTimelineProps {
   readonly editPending: boolean;
   readonly editError: Error | null;
   readonly onSelectClip: (clipId: string) => void;
+  readonly onSetTrackLocked: (trackId: string, locked: boolean) => void;
   readonly onSplitClip: (clipId: string, sourceFrame: number) => void;
   readonly onRippleDeleteClip: (clipId: string) => void;
   readonly onMoveClip: (clipId: string, timelineStartFrame: number) => void;
@@ -43,6 +44,7 @@ interface MultitrackTimelineProps {
 
 interface CanonicalTimelineClip {
   readonly clip: ProjectClip;
+  readonly trackLocked: boolean;
 }
 
 type PointerMode = "move" | "trim-left" | "trim-right";
@@ -122,7 +124,7 @@ function canonicalTimelineClip(
   for (const track of sequence.tracks) {
     if (track.kind === "caption") continue;
     const clip = track.clips.find((candidate) => candidate.id === clipId);
-    if (clip !== undefined) return { clip };
+    if (clip !== undefined) return { clip, trackLocked: track.locked ?? false };
   }
   return null;
 }
@@ -143,6 +145,7 @@ export function MultitrackTimeline({
   editPending,
   editError,
   onSelectClip,
+  onSetTrackLocked,
   onSplitClip,
   onRippleDeleteClip,
   onMoveClip,
@@ -232,7 +235,8 @@ export function MultitrackTimeline({
     viewportWidth,
     frameToPixel(Math.max(timeline.range.endFrameExclusive, draftTimelineEnd), geometryViewport),
   );
-  const canRippleDelete = selectedCanonicalClip !== null && !editPending;
+  const canRippleDelete =
+    selectedCanonicalClip !== null && !selectedCanonicalClip.trackLocked && !editPending;
   const canSplit =
     canRippleDelete &&
     playheadFrame > selectedCanonicalClip.clip.sourceIn.value &&
@@ -251,7 +255,7 @@ export function MultitrackTimeline({
   ) => {
     if (event.button !== 0 || editPending || selectedClipId !== clipId) return;
     const canonical = canonicalTimelineClip(projection, clipId);
-    if (canonical === null) return;
+    if (canonical === null || canonical.trackLocked) return;
     event.preventDefault();
     event.stopPropagation();
     pointerCaptureTarget(event.currentTarget).setPointerCapture?.(event.pointerId);
@@ -419,13 +423,33 @@ export function MultitrackTimeline({
       )}
 
       <div className="multitrack-layout">
-        <div className="multitrack-label-column" aria-hidden="true">
-          <div className="multitrack-label-spacer" />
+        <div className="multitrack-label-column">
+          <div className="multitrack-label-spacer" aria-hidden="true" />
           {timeline.tracks.map((track) => (
-            <div className="multitrack-visible-label" key={track.trackId}>
+            <div
+              className={`multitrack-visible-label${track.locked ? " is-locked" : ""}`}
+              key={track.trackId}
+            >
               <span>{track.kind}</span>
               <strong>{track.name}</strong>
-              <small>{track.totalClipCount} clips</small>
+              <small>
+                {track.totalClipCount} clips · {track.locked ? "Locked" : "Editable"}
+              </small>
+              <button
+                type="button"
+                className="multitrack-lock-toggle"
+                aria-label={`${track.name} track lock`}
+                aria-pressed={track.locked}
+                disabled={editPending}
+                onClick={() => onSetTrackLocked(track.trackId, !track.locked)}
+              >
+                {track.locked ? (
+                  <LockOpen size={14} aria-hidden="true" />
+                ) : (
+                  <Lock size={14} aria-hidden="true" />
+                )}
+                <span>{track.locked ? "Unlock" : "Lock"}</span>
+              </button>
             </div>
           ))}
         </div>
@@ -446,11 +470,12 @@ export function MultitrackTimeline({
             <ol className="multitrack-track-list" aria-label={`${timeline.name} tracks`}>
               {timeline.tracks.map((track) => (
                 <li
-                  className="multitrack-track-row"
+                  className={`multitrack-track-row${track.locked ? " is-locked" : ""}`}
                   data-track-id={track.trackId}
                   data-track-kind={track.kind}
+                  data-track-locked={track.locked}
                   key={track.trackId}
-                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips`}
+                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}`}
                 >
                   {track.clips.length === 0 ? null : (
                     <ol className="multitrack-clip-list" aria-label={`${track.name} clips`}>
@@ -475,8 +500,9 @@ export function MultitrackTimeline({
                           <li
                             className={`multitrack-clip multitrack-clip-${track.kind}${
                               isSelected ? " is-selected" : ""
-                            }${isDragging ? " is-dragging" : ""}`}
+                            }${isDragging ? " is-dragging" : ""}${track.locked ? " is-locked" : ""}`}
                             data-clip-id={clip.clipId}
+                            data-track-locked={track.locked}
                             data-start-frame={startFrame}
                             data-end-frame-exclusive={endFrameExclusive}
                             data-drag-mode={draft?.mode}
@@ -486,7 +512,7 @@ export function MultitrackTimeline({
                             <button
                               type="button"
                               className="multitrack-clip-body"
-                              aria-label={`${clip.sourceLabel}, frames ${startFrame} through ${endFrameExclusive}, end exclusive`}
+                              aria-label={`${clip.sourceLabel}, frames ${startFrame} through ${endFrameExclusive}, end exclusive${track.locked ? ", locked track" : ""}`}
                               aria-pressed={isSelected}
                               onClick={() => onSelectClip(clip.clipId)}
                               onKeyDown={(event) => {
@@ -542,7 +568,7 @@ export function MultitrackTimeline({
                                   type="button"
                                   className="multitrack-trim-handle multitrack-trim-handle-left"
                                   aria-label={`Trim start of ${clip.sourceLabel}`}
-                                  disabled={editPending}
+                                  disabled={editPending || track.locked}
                                   onPointerDown={(event) =>
                                     startPointerSession(
                                       event,
@@ -560,7 +586,7 @@ export function MultitrackTimeline({
                                   type="button"
                                   className="multitrack-trim-handle multitrack-trim-handle-right"
                                   aria-label={`Trim end of ${clip.sourceLabel}`}
-                                  disabled={editPending}
+                                  disabled={editPending || track.locked}
                                   onPointerDown={(event) =>
                                     startPointerSession(
                                       event,

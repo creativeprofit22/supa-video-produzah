@@ -381,6 +381,9 @@ export function VideoWorkspace({
                 controller.editOperation.phase === "error" ? controller.editOperation.error : null
               }
               onSelectClip={setSelectedClipId}
+              onSetTrackLocked={(trackId, locked) =>
+                void controller.setTimelineTrackLocked({ trackId, locked })
+              }
               onSplitClip={(clipId, sourceFrame) =>
                 void controller.splitTimelineClip({ clipId, sourceFrame })
               }

@@ -19,7 +19,9 @@ async function expectReadableAlignedTrackLabels(labels: Locator, rows: Locator) 
     labels.evaluateAll((elements) =>
       elements.map((label) => {
         const labelRect = label.getBoundingClientRect();
-        const content = Array.from(label.querySelectorAll<HTMLElement>("span, strong, small"));
+        const content = Array.from(
+          label.querySelectorAll<HTMLElement>("span, strong, small, button"),
+        );
         const clippedContent = content
           .filter((element) => {
             const rect = element.getBoundingClientRect();
@@ -177,3 +179,76 @@ for (const viewport of [
     });
   });
 }
+
+test("locks one track without blocking selection or edits on other tracks", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => document.fonts.ready);
+
+  const primaryLock = page.getByRole("button", { name: "Primary camera track lock" });
+  const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+  const primaryClip = primaryRow.locator(".multitrack-clip-body").first();
+  await expect(primaryLock).toHaveAttribute("aria-pressed", "false");
+  await primaryClip.click();
+  await primaryLock.click();
+  await expect(primaryLock).toHaveAttribute("aria-pressed", "true");
+  await expect(primaryLock).toContainText("Unlock");
+  await expect(primaryRow).toHaveAttribute("data-track-locked", "true");
+  await expect(primaryRow).toHaveAccessibleName(/Primary camera.*locked/);
+  await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+
+  const split = page.getByRole("button", { name: "Split at playhead" });
+  const rippleDelete = page.getByRole("button", { name: "Ripple delete clip" });
+  const trimStart = page.getByRole("button", {
+    name: "Trim start of Interview A — wide camera.mp4",
+  });
+  await expect(split).toBeDisabled();
+  await expect(rippleDelete).toBeDisabled();
+  await expect(trimStart).toBeDisabled();
+  const primaryClipElement = primaryRow.locator(".multitrack-clip").first();
+  const primaryStart = await primaryClipElement.getAttribute("data-start-frame");
+  const primaryBox = await primaryClip.boundingBox();
+  expect(primaryBox).not.toBeNull();
+  const lockedPointer = {
+    pointerId: 8,
+    button: 0,
+    clientX: primaryBox!.x + primaryBox!.width / 2,
+    clientY: primaryBox!.y + primaryBox!.height / 2,
+  };
+  await primaryClip.dispatchEvent("pointerdown", lockedPointer);
+  await primaryClip.dispatchEvent("pointermove", {
+    ...lockedPointer,
+    clientX: lockedPointer.clientX + 40,
+  });
+  await primaryClip.dispatchEvent("pointerup", {
+    ...lockedPointer,
+    clientX: lockedPointer.clientX + 40,
+  });
+  await primaryClip.press("s");
+  await primaryClip.press("Shift+Delete");
+  await expect(primaryClipElement).toHaveAttribute("data-start-frame", primaryStart!);
+  await expect(page.locator("[data-clip-id]")).toHaveCount(5);
+
+  const audioRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000011"]`);
+  const audioClip = audioRow.locator(".multitrack-clip-body").first();
+  await audioClip.click();
+  await expect(audioClip).toHaveAttribute("aria-pressed", "true");
+  await expect(split).toBeEnabled();
+  await audioClip.press("s");
+  await expect(page.locator("[data-clip-id]")).toHaveCount(6);
+  await expect(primaryRow).toHaveAttribute("data-track-locked", "true");
+
+  await page.emulateMedia({ forcedColors: "active" });
+  expect(await page.evaluate(() => window.matchMedia("(forced-colors: active)").matches)).toBe(
+    true,
+  );
+  await expect(primaryLock).toHaveAttribute("aria-pressed", "true");
+  const geometry = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  await page.locator(".multitrack-panel").screenshot({
+    path: "../../evidence/phase-4/multitrack-timeline-forced-colors-locked.png",
+  });
+});

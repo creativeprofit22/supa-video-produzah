@@ -117,6 +117,21 @@ function ControlledTimelineFixture() {
   const [currentProjection, setCurrentProjection] = useState(initialProjection);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
+  const setTrackLocked = (trackId: string, locked: boolean) => {
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) =>
+            track.id === trackId ? { ...track, locked } : track,
+          ),
+        })),
+      },
+    }));
+  };
+
   const updateClip = (clipId: string, update: (clip: ProjectClip) => ProjectClip) => {
     setCurrentProjection((current) => ({
       ...current,
@@ -224,6 +239,7 @@ function ControlledTimelineFixture() {
         editPending={false}
         editError={null}
         onSelectClip={setSelectedClipId}
+        onSetTrackLocked={setTrackLocked}
         onSplitClip={splitClip}
         onRippleDeleteClip={rippleDeleteClip}
         onMoveClip={(clipId, timelineStartFrame) =>

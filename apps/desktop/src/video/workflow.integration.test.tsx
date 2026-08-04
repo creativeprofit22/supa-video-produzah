@@ -241,6 +241,76 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "video_redo_project")).toBe(true);
   });
 
+  it("locks a track through the controller and round-trips undo while blocking timeline edits", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("multitrack-scroll-region") ? 320 : 0;
+    });
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const lockToggle = screen.getByRole("button", { name: "Video 1 track lock" });
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(lockToggle);
+
+    await waitFor(() =>
+      expect(service.projection.state.sequences[0]!.tracks[0]!.locked).toBe(true),
+    );
+    expect(service.projection.revision.number).toBe(2);
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(lockToggle.textContent).toContain("Unlock");
+    const executeCallsAfterLock = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_execute_project_group",
+    );
+    expect(executeCallsAfterLock.at(-1)?.[1]).toMatchObject({
+      request: {
+        baseRevision: 1,
+        commands: [expect.objectContaining({ type: "SetTrackLocked", locked: true })],
+      },
+    });
+
+    const clip = screen.getByRole("button", {
+      name: /clip\.mp4, frames 0 through 100.*locked track/,
+    });
+    fireEvent.click(clip);
+    expect(clip.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      (screen.getByRole("button", { name: "Split at playhead" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Ripple delete clip" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Trim start of clip.mp4" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.keyDown(clip, { code: "KeyS" });
+    fireEvent.keyDown(clip, { code: "Delete", shiftKey: true });
+    fireEvent.pointerDown(clip, { button: 0, pointerId: 41, clientX: 8 });
+    fireEvent.pointerMove(clip, { pointerId: 41, clientX: 24 });
+    fireEvent.pointerUp(clip, { pointerId: 41, clientX: 24 });
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+    ).toHaveLength(executeCallsAfterLock.length);
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Undid Locked track"));
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(lockToggle.textContent).toContain("Lock");
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Redid Locked track"));
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("falls back to the first clip when undo removes the selected clip", async () => {
     const service = createMockVideoService();
     invokeMock.mockImplementation(service.invoke);

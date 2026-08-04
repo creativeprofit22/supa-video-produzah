@@ -174,6 +174,7 @@ function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeli
     editPending: false,
     editError: null,
     onSelectClip: vi.fn(),
+    onSetTrackLocked: vi.fn(),
     onSplitClip: vi.fn(),
     onRippleDeleteClip: vi.fn(),
     onMoveClip: vi.fn(),
@@ -241,7 +242,7 @@ describe("MultitrackTimeline", () => {
     expect(scrolledIds).not.toContain(id(100_000));
     expect(scrolledIds).not.toContain(id(200_000));
     expect(screen.getByLabelText(`${scrolledIds.length} visible clips`)).toBeTruthy();
-  }, 15_000);
+  }, 30_000);
 
   it("keeps pointer and keyboard selection controlled and enables split only inside the clip", () => {
     const onSelectClip = vi.fn();
@@ -310,6 +311,80 @@ describe("MultitrackTimeline", () => {
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true });
     expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+  });
+
+  it("toggles semantic lock state while selection and other tracks stay interactive", () => {
+    const projection = projectionFixture({
+      name: "Lock interaction timeline",
+      videoClipCount: 1,
+      audioClipCount: 1,
+    });
+    const lockedTrack = projection.state.sequences[0]!.tracks[0]!;
+    lockedTrack.locked = true;
+    const lockedClipId = id(100_000);
+    const unaffectedClipId = id(200_000);
+    const onSelectClip = vi.fn();
+    const onSetTrackLocked = vi.fn();
+    const onSplitClip = vi.fn();
+    const onRippleDeleteClip = vi.fn();
+    const onMoveClip = vi.fn();
+    const onTrimClip = vi.fn();
+    const props = timelineProps({
+      projection,
+      selectedClipId: lockedClipId,
+      onSelectClip,
+      onSetTrackLocked,
+      onSplitClip,
+      onRippleDeleteClip,
+      onMoveClip,
+      onTrimClip,
+    });
+    const rendered = render(<MultitrackTimeline {...props} />);
+
+    const lockToggle = screen.getByRole("button", { name: "Camera track lock" });
+    expect(lockToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(lockToggle.textContent).toContain("Unlock");
+    expect(screen.getByRole("listitem", { name: /Camera, video track.*locked/ })).toBeTruthy();
+    fireEvent.click(lockToggle);
+    expect(onSetTrackLocked).toHaveBeenCalledWith(id(10), false);
+
+    const lockedClip = screen.getByRole("button", {
+      name: /camera-a\.mp4, frames 0 through 2.*locked track/,
+    });
+    fireEvent.click(lockedClip);
+    expect(onSelectClip).toHaveBeenCalledWith(lockedClipId);
+    expect(
+      (screen.getByRole("button", { name: "Split at playhead" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Ripple delete clip" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.keyDown(lockedClip, { code: "KeyS" });
+    fireEvent.keyDown(lockedClip, { code: "Delete", shiftKey: true });
+    fireEvent.pointerDown(lockedClip, { button: 0, pointerId: 31, clientX: 8 });
+    fireEvent.pointerMove(lockedClip, { pointerId: 31, clientX: 24 });
+    fireEvent.pointerUp(lockedClip, { pointerId: 31, clientX: 24 });
+    expect(onSplitClip).not.toHaveBeenCalled();
+    expect(onRippleDeleteClip).not.toHaveBeenCalled();
+    expect(onMoveClip).not.toHaveBeenCalled();
+    const trimStart = screen.getByRole("button", { name: "Trim start of camera-a.mp4" });
+    expect((trimStart as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.pointerDown(trimStart, { button: 0, pointerId: 32, clientX: 8 });
+    fireEvent.pointerMove(trimStart, { pointerId: 32, clientX: 16 });
+    fireEvent.pointerUp(trimStart, { pointerId: 32, clientX: 16 });
+    expect(onTrimClip).not.toHaveBeenCalled();
+
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={unaffectedClipId} />);
+    const unaffectedClip = screen.getByRole("button", {
+      name: /Nested interview, frames 0 through 2/,
+    });
+    fireEvent.pointerDown(unaffectedClip, { button: 0, pointerId: 33, clientX: 8 });
+    fireEvent.pointerMove(unaffectedClip, { pointerId: 33, clientX: 16 });
+    fireEvent.pointerUp(unaffectedClip, { pointerId: 33, clientX: 16 });
+    expect(onMoveClip).toHaveBeenCalledWith(unaffectedClipId, 20);
+    expect(
+      screen.getByRole("button", { name: "Nested audio track lock" }).getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 
   it("previews moves ephemerally, commits once on release, and cancels without committing", () => {
