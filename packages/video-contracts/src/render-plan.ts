@@ -34,6 +34,7 @@ export const renderPlanV1Schema = z
         width: safePositiveIntegerSchema.refine((value) => value % 2 === 0, "Width must be even"),
         height: safePositiveIntegerSchema.refine((value) => value % 2 === 0, "Height must be even"),
         audio: z.boolean(),
+        videoHidden: z.boolean().optional(),
       })
       .strict(),
     argv: z.array(argumentSchema).min(1).max(128),

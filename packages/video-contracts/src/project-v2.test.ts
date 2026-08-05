@@ -6,10 +6,13 @@ import { parseVideoProjectFile } from "./migrations.js";
 import {
   commandGroupRequestSchema,
   projectCommandSchemaV2,
+  setTrackHiddenCommandSchemaV2,
   setTrackLockedCommandSchemaV2,
   setTrackMutedCommandSchemaV2,
 } from "./project-commands-v2.js";
 import {
+  canToggleTrackVisibility,
+  isTrackHidden,
   isTrackLocked,
   isTrackMuted,
   projectHistoryEntryV2Schema,
@@ -192,6 +195,40 @@ describe("V2 project contracts", () => {
     expect(projectTrackSchema.safeParse({ ...caption, muted: true }).success).toBe(false);
   });
 
+  it("preserves shown defaults and restricts visibility to visual tracks", () => {
+    const visualTracks = [
+      { id: ids.project, name: "Video", kind: "video" as const, clips: [] },
+      { id: ids.revision, name: "Captions", kind: "caption" as const, captions: [] },
+    ];
+
+    for (const legacyTrack of visualTracks) {
+      const parsed = projectTrackSchema.parse(legacyTrack);
+      expect(parsed).toEqual(legacyTrack);
+      expect(Object.hasOwn(parsed, "hidden")).toBe(false);
+      expect(JSON.parse(JSON.stringify(parsed))).toEqual(legacyTrack);
+      expect(isTrackHidden(parsed)).toBe(false);
+      expect(canToggleTrackVisibility(parsed)).toBe(true);
+
+      for (const hidden of [false, true]) {
+        const persisted = projectTrackSchema.parse({ ...legacyTrack, hidden });
+        expect(persisted).toEqual({ ...legacyTrack, hidden });
+        expect(isTrackHidden(persisted)).toBe(hidden);
+      }
+    }
+
+    const audio = {
+      id: ids.operation,
+      name: "Audio",
+      kind: "audio" as const,
+      clips: [],
+    };
+    const parsedAudio = projectTrackSchema.parse(audio);
+    expect(isTrackHidden(parsedAudio)).toBe(false);
+    expect(canToggleTrackVisibility(parsedAudio)).toBe(false);
+    expect(projectTrackSchema.safeParse({ ...audio, hidden: false }).success).toBe(false);
+    expect(projectTrackSchema.safeParse({ ...audio, hidden: true }).success).toBe(false);
+  });
+
   it("rejects dangling clip asset and sequence references", async () => {
     const fixtureUrl = new URL(
       "../fixtures/project-v2/valid-relative-source.svpvideo",
@@ -329,6 +366,61 @@ describe("V2 project contracts", () => {
     ).toBe(false);
     expect(
       setTrackMutedCommandSchemaV2.safeParse({ ...muteCommand, trackId: "not-a-uuid" }).success,
+    ).toBe(false);
+  });
+
+  it("validates strict SetTrackHidden commands in public groups and history", () => {
+    const hideCommand = {
+      type: "SetTrackHidden" as const,
+      commandId: ids.command,
+      sequenceId: ids.project,
+      trackId: ids.operation,
+      hidden: true,
+    };
+    const showCommand = { ...hideCommand, hidden: false };
+
+    expect(setTrackHiddenCommandSchemaV2.parse(hideCommand)).toEqual(hideCommand);
+    expect(projectCommandSchemaV2.parse(hideCommand)).toEqual(hideCommand);
+    expect(
+      commandGroupRequestSchema.parse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [hideCommand],
+      }).commands,
+    ).toEqual([hideCommand]);
+
+    const historyEntry = {
+      groupId: ids.group,
+      summary: "Hid track",
+      forwardCommands: [hideCommand],
+      inverseCommands: [showCommand],
+      affectedRanges: [],
+      cacheInvalidations: [
+        "timeline" as const,
+        "preview" as const,
+        "captions" as const,
+        "render_plan" as const,
+      ],
+    };
+    expect(projectHistoryEntryV2Schema.parse(historyEntry)).toEqual(historyEntry);
+
+    expect(
+      setTrackHiddenCommandSchemaV2.safeParse({ ...hideCommand, hidden: "true" }).success,
+    ).toBe(false);
+    expect(
+      setTrackHiddenCommandSchemaV2.safeParse({ ...hideCommand, visible: false }).success,
+    ).toBe(false);
+    expect(
+      setTrackHiddenCommandSchemaV2.safeParse({
+        type: "SetTrackHidden",
+        commandId: ids.command,
+        sequenceId: ids.project,
+        trackId: ids.operation,
+      }).success,
+    ).toBe(false);
+    expect(
+      setTrackHiddenCommandSchemaV2.safeParse({ ...hideCommand, trackId: "not-a-uuid" }).success,
     ).toBe(false);
   });
 

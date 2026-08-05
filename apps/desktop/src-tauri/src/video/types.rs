@@ -294,6 +294,10 @@ pub struct PreparedVideoAsset {
     pub thumbnail_path: String,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RenderExpectation {
@@ -302,6 +306,8 @@ pub struct RenderExpectation {
     pub width: u64,
     pub height: u64,
     pub audio: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub video_hidden: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

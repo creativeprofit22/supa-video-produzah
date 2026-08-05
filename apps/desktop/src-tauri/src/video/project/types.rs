@@ -115,6 +115,8 @@ pub enum ProjectTrack {
         locked: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         muted: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        hidden: bool,
         clips: Vec<ProjectClip>,
     },
     Audio {
@@ -131,12 +133,19 @@ pub enum ProjectTrack {
         name: String,
         #[serde(default, skip_serializing_if = "is_false")]
         locked: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        hidden: bool,
         captions: Vec<ProjectCaption>,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackMuteError {
+    InvalidTarget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackVisibilityError {
     InvalidTarget,
 }
 
@@ -173,6 +182,19 @@ impl ProjectTrack {
             Self::Caption { .. } => return Err(TrackMuteError::InvalidTarget),
         };
         Ok(std::mem::replace(muted, value))
+    }
+    pub fn is_hidden(&self) -> Result<bool, TrackVisibilityError> {
+        match self {
+            Self::Video { hidden, .. } | Self::Caption { hidden, .. } => Ok(*hidden),
+            Self::Audio { .. } => Err(TrackVisibilityError::InvalidTarget),
+        }
+    }
+    pub fn set_hidden(&mut self, value: bool) -> Result<bool, TrackVisibilityError> {
+        let hidden = match self {
+            Self::Video { hidden, .. } | Self::Caption { hidden, .. } => hidden,
+            Self::Audio { .. } => return Err(TrackVisibilityError::InvalidTarget),
+        };
+        Ok(std::mem::replace(hidden, value))
     }
     pub fn clips(&self) -> Option<&[ProjectClip]> {
         match self {
@@ -307,6 +329,15 @@ pub enum ProjectCommand {
         #[serde(rename = "trackId")]
         track_id: String,
         muted: bool,
+    },
+    SetTrackHidden {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        hidden: bool,
     },
     InsertClip {
         #[serde(rename = "commandId")]
@@ -483,6 +514,7 @@ impl ProjectCommand {
             | Self::RemoveTrack { command_id, .. }
             | Self::SetTrackLocked { command_id, .. }
             | Self::SetTrackMuted { command_id, .. }
+            | Self::SetTrackHidden { command_id, .. }
             | Self::InsertClip { command_id, .. }
             | Self::RemoveClip { command_id, .. }
             | Self::RippleDeleteClip { command_id, .. }

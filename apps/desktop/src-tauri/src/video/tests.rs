@@ -2728,6 +2728,31 @@ fn render_plan_value_for_profile(
     })
 }
 
+fn hidden_render_plan_value(input: &Path, output: &Path, audio: bool, plan_id: &str) -> Value {
+    let mut plan = render_plan_value(input, output, audio, plan_id);
+    plan["expected"]["videoHidden"] = Value::Bool(true);
+    let filter = plan["argv"]
+        .as_array_mut()
+        .and_then(|arguments| {
+            arguments.iter_mut().find(|argument| {
+                argument
+                    .as_str()
+                    .is_some_and(|value| value.starts_with("scale="))
+            })
+        })
+        .expect("test render filter must exist");
+    *filter = Value::String(
+        filter
+            .as_str()
+            .expect("test render filter must be text")
+            .replace(
+                ",fps=",
+                ",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill,fps=",
+            ),
+    );
+    plan
+}
+
 fn validated_render_fixture(
     directory: &Path,
     audio: bool,
@@ -2821,6 +2846,42 @@ fn render_plan_validation_accepts_exact_av_and_video_only_and_rejects_mutations(
             VideoErrorCode::InvalidRenderPlan
         );
     }
+}
+
+#[test]
+fn render_plan_visibility_accepts_only_the_exact_derived_black_filter() {
+    let directory = tempdir().expect("hidden render workspace must be created");
+    let source = directory.path().join("hidden-source.mp4");
+    let output = directory.path().join("hidden-output.mp4");
+    fs::write(&source, b"source").expect("source must be written");
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("output must grant");
+
+    let exact = hidden_render_plan_value(&source, &output, true, RENDER_PLAN_ID);
+    let validated = parse_and_validate_render_plan(exact.clone(), "owner", &grants)
+        .expect("exact hidden render plan must validate");
+    assert!(validated.plan.expected.video_hidden);
+
+    let mut mutated = exact;
+    let filter = mutated["argv"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| {
+            argument
+                .as_str()
+                .is_some_and(|value| value.starts_with("scale="))
+        })
+        .unwrap();
+    *filter = Value::String(filter.as_str().unwrap().replace("color=black", "color=red"));
+    let error = parse_and_validate_render_plan(mutated, "owner", &grants)
+        .expect_err("mutated hidden filter must fail");
+    assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
 }
 
 #[test]

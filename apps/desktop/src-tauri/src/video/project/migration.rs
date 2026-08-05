@@ -42,6 +42,7 @@ pub fn migrate_v1(
                     name: "Video 1".to_owned(),
                     locked: false,
                     muted: false,
+                    hidden: false,
                     clips: track
                         .clips
                         .iter()

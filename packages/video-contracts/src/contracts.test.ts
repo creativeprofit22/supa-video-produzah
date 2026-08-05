@@ -196,6 +196,15 @@ describe("project contracts", () => {
       argv: ["-i", inputPath, outputPath],
     } as const;
     expect(renderPlanV1Schema.parse(plan)).toEqual(plan);
+    expect(
+      renderPlanV1Schema.parse({ ...plan, expected: { ...plan.expected, videoHidden: true } }),
+    ).toEqual({ ...plan, expected: { ...plan.expected, videoHidden: true } });
+    expect(() =>
+      renderPlanV1Schema.parse({ ...plan, expected: { ...plan.expected, videoHidden: "true" } }),
+    ).toThrow();
+    expect(() =>
+      renderPlanV1Schema.parse({ ...plan, expected: { ...plan.expected, hidden: true } }),
+    ).toThrow();
     expect(() =>
       renderPlanV1Schema.parse({ ...plan, argv: [outputPath, "-i", inputPath] }),
     ).toThrow("final");

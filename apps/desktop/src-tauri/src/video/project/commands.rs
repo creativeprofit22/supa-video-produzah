@@ -7,7 +7,8 @@ use super::{
     integrity::{is_canonical_uuid, validate_state},
     types::{
         AffectedRange, CacheInvalidation, ProjectClip, ProjectCommand, ProjectTrack,
-        TrackMuteError, VideoProjectStateV2, MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER,
+        TrackMuteError, TrackVisibilityError, VideoProjectStateV2, MAX_NON_BLANK_UTF16,
+        MAX_SAFE_INTEGER,
     },
 };
 use crate::video::{
@@ -194,6 +195,36 @@ fn track_range(
         end,
     }])
 }
+fn visual_track_range(
+    sequence_id: &str,
+    track: &ProjectTrack,
+) -> Result<Vec<AffectedRange>, VideoCommandError> {
+    match track {
+        ProjectTrack::Video { .. } => track_range(sequence_id, track),
+        ProjectTrack::Caption { captions, .. } => {
+            let Some(first) = captions.first() else {
+                return Ok(vec![]);
+            };
+            let mut start = first.start.clone();
+            let mut end = first.end.clone();
+            for caption in &captions[1..] {
+                if caption.start.value < start.value {
+                    start = caption.start.clone();
+                }
+                if caption.end.value > end.value {
+                    end = caption.end.clone();
+                }
+            }
+            Ok(vec![AffectedRange {
+                sequence_id: sequence_id.to_owned(),
+                start,
+                end,
+            }])
+        }
+        ProjectTrack::Audio { .. } => Err(invalid("non_visual_track")),
+    }
+}
+
 fn insertion_index(
     requested: Option<u64>,
     collection_len: usize,
@@ -260,6 +291,15 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
                 CacheInvalidation::Timeline,
                 CacheInvalidation::Preview,
                 CacheInvalidation::AudioMix,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::SetTrackHidden { hidden, .. } => (
+            if *hidden { "Hid track" } else { "Showed track" },
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::Captions,
                 CacheInvalidation::RenderPlan,
             ],
         ),
@@ -616,6 +656,27 @@ fn apply_one(
                     sequence_id: sequence_id.clone(),
                     track_id: track_id.clone(),
                     muted: previous,
+                }],
+                affected_ranges,
+            ))
+        }
+        ProjectCommand::SetTrackHidden {
+            sequence_id,
+            track_id,
+            hidden,
+            ..
+        } => {
+            let track = find_track_mut(state, sequence_id, track_id)?;
+            let affected_ranges = visual_track_range(sequence_id, track)?;
+            let previous = track
+                .set_hidden(*hidden)
+                .map_err(|TrackVisibilityError::InvalidTarget| invalid("non_visual_track"))?;
+            Ok((
+                vec![ProjectCommand::SetTrackHidden {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    hidden: previous,
                 }],
                 affected_ranges,
             ))

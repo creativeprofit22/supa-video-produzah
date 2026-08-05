@@ -26,7 +26,7 @@ use super::{
         AffectedRange, CacheInvalidation, ClipSource, ClipTransform, CommandGroupRequest,
         JournalHeader, JournalRecord, JournalRecordKind, ProjectCaption, ProjectClip,
         ProjectCommand, ProjectHistoryEntryV2, ProjectMarker, ProjectTrack, RecoveryStatus,
-        TrackMuteError, VideoProjectSnapshotV2, VideoProjectStateV2,
+        TrackMuteError, TrackVisibilityError, VideoProjectSnapshotV2, VideoProjectStateV2,
     },
 };
 use crate::video::{
@@ -352,6 +352,20 @@ fn track_mute_serde_defaults_omit_false_and_rejects_caption_targets() {
     );
     assert_eq!(serde_json::to_value(&snapshot).unwrap(), legacy_json);
 
+    assert_eq!(track.is_hidden(), Ok(false));
+    assert!(serde_json::to_value(&track)
+        .unwrap()
+        .get("hidden")
+        .is_none());
+    assert_eq!(track.set_hidden(true), Ok(false));
+    assert_eq!(track.is_hidden(), Ok(true));
+    assert_eq!(serde_json::to_value(&track).unwrap()["hidden"], true);
+    assert_eq!(track.set_hidden(false), Ok(true));
+    assert!(serde_json::to_value(&track)
+        .unwrap()
+        .get("hidden")
+        .is_none());
+
     assert_eq!(track.set_muted(true), Ok(false));
     assert_eq!(track.is_muted(), Ok(true));
     assert_eq!(serde_json::to_value(&track).unwrap()["muted"], true);
@@ -362,10 +376,14 @@ fn track_mute_serde_defaults_omit_false_and_rejects_caption_targets() {
         id: "75000000-0000-4000-8000-000000000001".to_owned(),
         name: "Captions".to_owned(),
         locked: false,
+        hidden: false,
         captions: vec![],
     };
     assert_eq!(caption.is_muted(), Err(TrackMuteError::InvalidTarget));
     assert_eq!(caption.set_muted(true), Err(TrackMuteError::InvalidTarget));
+    assert_eq!(caption.is_hidden(), Ok(false));
+    assert_eq!(caption.set_hidden(true), Ok(false));
+    assert_eq!(caption.is_hidden(), Ok(true));
     assert!(serde_json::to_value(&caption)
         .unwrap()
         .get("muted")
@@ -899,6 +917,7 @@ fn indexed_removal_fixture() -> VideoProjectStateV2 {
             id: "90000000-0000-4000-8000-000000000501".to_owned(),
             name: "Captions".to_owned(),
             locked: false,
+            hidden: false,
             captions,
         },
     );
@@ -1180,6 +1199,7 @@ fn locked_tracks_reject_every_clip_and_caption_mutation() {
         id: caption_track_id.clone(),
         name: "Locked captions".to_owned(),
         locked: true,
+        hidden: false,
         captions: vec![caption.clone()],
     });
     let original = snapshot.state.clone();
@@ -1418,6 +1438,78 @@ fn set_track_locked_persists_and_has_exact_undo_redo_hashes_and_labels() {
 }
 
 #[test]
+fn set_track_hidden_executes_with_exact_inverse_metadata_and_rejects_audio() {
+    let mut snapshot = ripple_fixture(1);
+    snapshot.state.sequences[0].tracks[0].set_locked(true);
+    let original = snapshot.state.clone();
+    let hidden = apply_group(
+        &snapshot.state,
+        &[ProjectCommand::SetTrackHidden {
+            command_id: "73500000-0000-4000-8000-000000000001".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            hidden: true,
+        }],
+    )
+    .unwrap();
+    assert_eq!(hidden.summary, "Hid track");
+    assert_eq!(hidden.state.sequences[0].tracks[0].is_hidden(), Ok(true));
+    assert_eq!(hidden.affected_ranges.len(), 1);
+    assert_eq!(hidden.affected_ranges[0].start.value, 0);
+    assert_eq!(hidden.affected_ranges[0].end.value, 21);
+    assert_eq!(
+        hidden.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::Captions,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert!(matches!(
+        hidden.inverse_commands.as_slice(),
+        [ProjectCommand::SetTrackHidden { hidden: false, .. }]
+    ));
+    let restored = apply_group(&hidden.state, &hidden.inverse_commands).unwrap();
+    assert_eq!(restored.summary, "Showed track");
+    assert_eq!(restored.state, original);
+
+    let sequence = &mut snapshot.state.sequences[0];
+    let ProjectTrack::Video {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+        ..
+    } = sequence.tracks.remove(0)
+    else {
+        unreachable!();
+    };
+    sequence.tracks.insert(
+        0,
+        ProjectTrack::Audio {
+            id,
+            name,
+            locked,
+            muted,
+            clips,
+        },
+    );
+    let error = apply_group(
+        &snapshot.state,
+        &[ProjectCommand::SetTrackHidden {
+            command_id: "73500000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            hidden: true,
+        }],
+    )
+    .unwrap_err();
+    assert_eq!(error.details["category"], "non_visual_track");
+}
+
+#[test]
 fn set_track_muted_returns_no_affected_range_for_empty_track() {
     let mut snapshot = ripple_fixture(0);
     snapshot.state.sequences[0].tracks[0]
@@ -1450,6 +1542,7 @@ fn set_track_muted_supports_audio_tracks_and_exact_unmute_summary() {
         locked,
         muted,
         clips,
+        ..
     } = sequence.tracks.remove(0)
     else {
         unreachable!();
@@ -1463,6 +1556,10 @@ fn set_track_muted_supports_audio_tracks_and_exact_unmute_summary() {
             muted,
             clips,
         },
+    );
+    assert_eq!(
+        sequence.tracks[0].is_hidden(),
+        Err(TrackVisibilityError::InvalidTarget)
     );
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
     validate_snapshot(&snapshot).unwrap();
@@ -1676,6 +1773,7 @@ fn caption_track_mute_rejection_is_atomic_across_service_and_persistence() {
             id: caption_track_id.clone(),
             name: "Captions".to_owned(),
             locked: false,
+            hidden: false,
             captions: vec![],
         });
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();

@@ -822,12 +822,18 @@ fn expected_render_arguments(plan: &RenderPlanV1, duration_microseconds: u64) ->
         .filter(|value| is_canonical_fixed_six(value))
         .cloned()
         .unwrap_or_default();
+    let visibility_filter = if expected.video_hidden {
+        ",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill"
+    } else {
+        ""
+    };
     let filter = format!(
-        "scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black,fps={}/{}",
+        "scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black{},fps={}/{}",
         expected.width,
         expected.height,
         expected.width,
         expected.height,
+        visibility_filter,
         expected.rate.numerator,
         expected.rate.denominator
     );
