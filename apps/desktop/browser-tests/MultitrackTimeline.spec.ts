@@ -82,15 +82,20 @@ for (const viewport of [
     await expect(rows).toHaveCount(3);
     await expectReadableAlignedTrackLabels(labels, rows);
     if (viewport.width === 320) {
+      await expect(rows.first()).toHaveCSS("height", "224px");
       const controls = labels.first().locator(".multitrack-track-controls > button");
-      const [lockBox, muteBox] = await Promise.all([
+      const [muteBox, lockBox] = await Promise.all([
         controls.nth(0).boundingBox(),
         controls.nth(1).boundingBox(),
       ]);
-      expect(lockBox).not.toBeNull();
       expect(muteBox).not.toBeNull();
-      expect(Math.abs(muteBox!.x - lockBox!.x)).toBeLessThanOrEqual(1);
-      expect(muteBox!.y).toBeGreaterThanOrEqual(lockBox!.y + lockBox!.height);
+      expect(lockBox).not.toBeNull();
+      expect(muteBox!.width).toBeGreaterThanOrEqual(44);
+      expect(muteBox!.height).toBeGreaterThanOrEqual(44);
+      expect(lockBox!.width).toBeGreaterThanOrEqual(44);
+      expect(lockBox!.height).toBeGreaterThanOrEqual(44);
+      expect(Math.abs(lockBox!.x - muteBox!.x)).toBeLessThanOrEqual(1);
+      expect(lockBox!.y).toBeGreaterThanOrEqual(muteBox!.y + muteBox!.height);
     }
 
     const actions = page.locator(".multitrack-actions");
