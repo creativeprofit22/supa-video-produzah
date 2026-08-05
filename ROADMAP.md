@@ -497,19 +497,24 @@ Separate waveform data caches from painted bitmap caches. **License:** GPL-3.0; 
 
 **Depends on:** Phases 2 and 3
 
-## Implementation checkpoint — P4-S02 verified 3 August 2026
+## Implementation checkpoint — interaction slices through track mute verified 5 August 2026
 
-Phases 1–3 remain complete for private-use development, and Phase 4 is active. P4-S01 is committed at `4edea0b` with exact rational timeline viewport geometry; P4-S02 is implemented and verified on that baseline.
+Phases 1–3 remain complete for private-use development. Phase 4 is active and explicitly unfinished; committed work is verified through `7192db94c8cfc71c47deedbe5d184a5ee02ce17d`.
 
-P4-S02 replaces the legacy eager single-clip strip with a read-only semantic multitrack timeline sourced from the canonical V2 projection. The browser-safe project boundary now derives exact half-open clip, track, and sequence ranges, rejects mixed-rate geometry with typed domain errors, preserves canonical track order and source identity, and materializes only clips intersecting the viewport's bounded overscan range.
+- **Viewport and projection foundations (`4edea0b`–`7292335`):** exact rational viewport geometry and the canonical, ordered, virtualized multitrack projection remain the read-only base for interaction work.
+- **Selection and editing (`cc42d24`–`18aeb7c`):** ephemeral single-clip selection now drives split, move, and trim through the existing validated command-group controller; one completed action adopts one returned canonical revision, while drag/selection previews remain outside persisted project state.
+- **Ripple delete (`bd9bde5`–`fc4a604`):** track-local ripple deletion removes the selected clip, shifts only later clips on that track by the deleted duration, preserves unaffected tracks, round-trips through inverse history, and is exposed as an accessible timeline action.
+- **Track lock (`f1a30bf`–`43b5bfd`):** canonical lock state is persisted and projected, locked tracks reject clip/caption mutations, and one controller command powers accessible lock/unlock controls and disabled editing affordances.
+- **Exact snapping (`bd6be44`–`a6d41e5`):** the rational snap engine evaluates predecessor/successor candidates without floating-point conversion, excludes the moving clip, supports clip edges, playhead, markers, grid, and caption boundaries, and keeps mixed-rate move results exact.
+- **Track mute (`6896754`–`7192db9`):** video/audio mute is strict canonical state with inverse history, exact affected ranges and summaries, projection/controller/UI coverage, source-monitor and render-plan enforcement, active-render cancellation, persisted undo/redo proof, responsive controls, and focused browser interaction coverage; caption tracks remain invalid mute targets.
 
-The desktop timeline measures and horizontally scrolls an internal canvas without document overflow, keeps track labels in normal flow, creates prepared thumbnail URLs only for visible identity-matched clips, exposes stable semantic track/clip metadata, and retains the existing quick-trim inputs without adding selection or editing callbacks. The checked-in 10,000-clip tests prove bounded view-model and DOM construction.
+Verification at `7192db9` passes the targeted track-mute matrix with **87/87 tests**: 13 contracts, 6 projection, 52 desktop controller/timeline/monitor/workspace, 12 render compiler, 3 Rust `set_track_muted`, and 1 focused Chromium interaction. Root lint/format, desktop TypeScript checking, Rustfmt, all-target/all-feature Clippy with warnings denied, and `git diff --check` also pass; tracked Phase 4 desktop, mobile, 320px/200%-text, and forced-color evidence remains under `evidence/phase-4/`.
 
-Verification passed: 12 targeted `@supa-video/project` tests; 15 targeted desktop virtualization, quick-trim, and workflow tests; root lint, TypeScript check, and production build; Prettier and `git diff --check`; and three Chromium browser gates at 1280×800, 390×844, and 320×900 with 200% text. The browser command completed with 3/3 passing tests, zero scoped Axe WCAG A/AA/2.2 violations, no document-level overflow, and screenshots under `evidence/phase-4/`.
+The remaining Phase 4 scope—including track visibility, keyboard command registry/remapping, broader inspector controls, stress/runtime proof, and the Phase 4 hard completion gate—is not complete and is not claimed complete here.
 
 ### Next implementation item
 
-Add single selection and wire split, move, and trim through the existing validated command-group boundary. Keep viewport, selection, and drag previews ephemeral; do not add a second command engine or persistence schema.
+Implement **track visibility** through the same canonical command, projection, controller, accessible UI, monitor, and render boundaries before continuing to later unfinished Phase 4 scope.
 
 ## Scope
 
