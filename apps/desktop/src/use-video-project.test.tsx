@@ -663,6 +663,67 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("cancels an active render when track mute changes output", async () => {
+    let active = clipProjection(1);
+    const cancelVideoRender = vi.fn(async () => undefined);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const command = request.commands[0];
+      if (command?.type !== "SetTrackMuted") throw new Error("Expected track mute command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: trackId }) => trackId === command.trackId,
+      );
+      if (track === undefined || track.kind === "caption")
+        throw new Error("Expected mutable track fixture");
+      track.muted = command.muted;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      response.cacheInvalidations = ["timeline", "preview", "audio_mix", "render_plan"];
+      active = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender: vi.fn(async (plan) => ({
+        jobId: id(90),
+        planId: plan.planId,
+        revisionId: plan.revisionId,
+      })),
+      cancelVideoRender,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.exportVideo());
+    expect(result.current.render.phase).toBe("running");
+
+    await act(() => result.current.setTimelineTrackMuted({ trackId: id(4), muted: true }));
+
+    expect(cancelVideoRender).toHaveBeenCalledOnce();
+    expect(cancelVideoRender).toHaveBeenCalledWith(id(90));
+    expect(result.current.render).toEqual({ phase: "idle" });
+    expect(result.current.projection?.state.sequences[0]?.tracks[0]).toMatchObject({
+      kind: "video",
+      muted: true,
+    });
+  });
+
   it("rejects caption track mute requests without submitting or changing controller state", async () => {
     const opened = clipProjection(1);
     opened.state.sequences[0]!.tracks.push({

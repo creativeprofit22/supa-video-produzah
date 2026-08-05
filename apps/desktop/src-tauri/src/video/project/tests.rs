@@ -1418,6 +1418,130 @@ fn set_track_locked_persists_and_has_exact_undo_redo_hashes_and_labels() {
 }
 
 #[test]
+fn set_track_muted_returns_no_affected_range_for_empty_track() {
+    let mut snapshot = ripple_fixture(0);
+    snapshot.state.sequences[0].tracks[0]
+        .clips_mut()
+        .unwrap()
+        .clear();
+
+    let applied = apply_group(
+        &snapshot.state,
+        &[ProjectCommand::SetTrackMuted {
+            command_id: "74000000-0000-4000-8000-000000000010".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            muted: true,
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(applied.state.sequences[0].tracks[0].is_muted(), Ok(true));
+    assert!(applied.affected_ranges.is_empty());
+}
+
+#[test]
+fn set_track_muted_supports_audio_tracks_and_exact_unmute_summary() {
+    let mut snapshot = ripple_fixture(1);
+    let sequence = &mut snapshot.state.sequences[0];
+    let ProjectTrack::Video {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+    } = sequence.tracks.remove(0)
+    else {
+        unreachable!();
+    };
+    sequence.tracks.insert(
+        0,
+        ProjectTrack::Audio {
+            id,
+            name,
+            locked,
+            muted,
+            clips,
+        },
+    );
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    validate_snapshot(&snapshot).unwrap();
+
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("audio-track-mute.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("audio-track-mute-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let expected_range = AffectedRange {
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        start: RationalTime {
+            value: 0,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+        end: RationalTime {
+            value: 21,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+    };
+
+    let muted = service
+        .execute(
+            "audio-track-mute-owner",
+            CommandGroupRequest {
+                group_id: "74000000-0000-4000-8000-000000000011".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![ProjectCommand::SetTrackMuted {
+                    command_id: "74000000-0000-4000-8000-000000000012".to_owned(),
+                    sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                    track_id: RIPPLE_TRACK_ID.to_owned(),
+                    muted: true,
+                }],
+            },
+            &grants,
+        )
+        .unwrap();
+    assert!(matches!(
+        &muted.projection.state.sequences[0].tracks[0],
+        ProjectTrack::Audio { muted: true, .. }
+    ));
+    assert_eq!(muted.affected_ranges, vec![expected_range.clone()]);
+
+    let unmuted = service
+        .execute(
+            "audio-track-mute-owner",
+            CommandGroupRequest {
+                group_id: "74000000-0000-4000-8000-000000000013".to_owned(),
+                project_id,
+                base_revision: 1,
+                commands: vec![ProjectCommand::SetTrackMuted {
+                    command_id: "74000000-0000-4000-8000-000000000014".to_owned(),
+                    sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                    track_id: RIPPLE_TRACK_ID.to_owned(),
+                    muted: false,
+                }],
+            },
+            &grants,
+        )
+        .unwrap();
+    assert!(matches!(
+        &unmuted.projection.state.sequences[0].tracks[0],
+        ProjectTrack::Audio { muted: false, .. }
+    ));
+    assert_eq!(unmuted.affected_ranges, vec![expected_range]);
+    assert_eq!(
+        unmuted.projection.last_command.as_ref().unwrap().summary,
+        "Unmuted track"
+    );
+}
+
+#[test]
 fn set_track_muted_persists_with_exact_undo_redo_hashes_invalidations_and_range() {
     let mut snapshot = ripple_fixture(1);
     snapshot.state.sequences[0].tracks[0].set_locked(true);
