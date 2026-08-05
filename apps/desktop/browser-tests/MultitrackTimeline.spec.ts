@@ -81,6 +81,17 @@ for (const viewport of [
     await expect(labels).toHaveCount(3);
     await expect(rows).toHaveCount(3);
     await expectReadableAlignedTrackLabels(labels, rows);
+    if (viewport.width === 320) {
+      const controls = labels.first().locator(".multitrack-track-controls > button");
+      const [lockBox, muteBox] = await Promise.all([
+        controls.nth(0).boundingBox(),
+        controls.nth(1).boundingBox(),
+      ]);
+      expect(lockBox).not.toBeNull();
+      expect(muteBox).not.toBeNull();
+      expect(Math.abs(muteBox!.x - lockBox!.x)).toBeLessThanOrEqual(1);
+      expect(muteBox!.y).toBeGreaterThanOrEqual(lockBox!.y + lockBox!.height);
+    }
 
     const actions = page.locator(".multitrack-actions");
     const split = page.getByRole("button", { name: "Split at playhead" });
@@ -317,15 +328,28 @@ test("mutes an audio-bearing track while its clip remains selectable", async ({ 
 
   await primaryMute.click();
 
-  await expect(page.getByRole("button", { name: "Primary camera track unmute" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  const pressedMute = page.getByRole("button", { name: "Primary camera track unmute" });
+  await expect(pressedMute).toHaveAttribute("aria-pressed", "true");
   await expect(primaryRow).toHaveAccessibleName(/Primary camera.*muted/);
   await expect(primaryRow).toHaveAttribute("data-track-muted", "true");
 
   await primaryClip.click();
   await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+
+  const primaryLock = page.getByRole("button", { name: "Primary camera track lock" });
+  await primaryLock.click();
+  await expect(primaryLock).toHaveAttribute("aria-pressed", "true");
+  const [muteAccent, lockAccent] = await Promise.all([
+    pressedMute.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderColor, style.color, style.backgroundColor];
+    }),
+    primaryLock.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderColor, style.color, style.backgroundColor];
+    }),
+  ]);
+  expect(muteAccent).not.toEqual(lockAccent);
 });
 
 test("locks one track without blocking selection or edits on other tracks", async ({ page }) => {

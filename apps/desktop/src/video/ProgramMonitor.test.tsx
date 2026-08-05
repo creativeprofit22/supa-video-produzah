@@ -114,7 +114,7 @@ describe("ProgramMonitor", () => {
     restoreVideoFrameCallbacks();
   });
 
-  it("converts controlled paths and limits timeline mute to the source preview", () => {
+  it("enforces canonical source mute and uses rendered media state for final preview", () => {
     const convertCachePath = vi.fn((path: string) => `asset:${path}`);
     render(
       <ProgramMonitor
@@ -148,6 +148,11 @@ describe("ProgramMonitor", () => {
     expect(finalVideo.muted).toBe(false);
     expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
     expect(screen.queryByText("Audio muted by timeline track")).toBeNull();
+
+    finalVideo.muted = true;
+    fireEvent.volumeChange(finalVideo);
+    expect(finalVideo.muted).toBe(true);
+    expect(screen.getByRole("button", { name: "Unmute audio" })).toHaveProperty("disabled", false);
     expect(convertCachePath).toHaveBeenCalledTimes(2);
   });
 

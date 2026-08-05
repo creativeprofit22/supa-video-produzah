@@ -806,11 +806,15 @@ video {
   border-color: var(--accent);
   color: var(--text);
 }
-.multitrack-lock-toggle[aria-pressed="true"],
-.multitrack-mute-toggle[aria-pressed="true"] {
+.multitrack-lock-toggle[aria-pressed="true"] {
   border-color: var(--quiet);
   color: var(--text);
   background: var(--surface-soft);
+}
+.multitrack-mute-toggle[aria-pressed="true"] {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--surface-soft) 76%, var(--warning));
 }
 .multitrack-lock-toggle:focus-visible,
 .multitrack-mute-toggle:focus-visible {
@@ -2017,7 +2021,7 @@ video {
     grid-template-columns: 1fr;
   }
   .multitrack-layout {
-    --timeline-track-height: max(128px, 7rem);
+    --timeline-track-height: max(128px, 9rem);
     grid-template-columns: max(92px, 6rem) minmax(0, 1fr);
   }
   .multitrack-visible-label {
@@ -2042,7 +2046,7 @@ video {
   .multitrack-track-controls {
     display: grid;
     width: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     margin-block-start: 0.125rem;
   }
   .multitrack-track-controls > :only-child {
