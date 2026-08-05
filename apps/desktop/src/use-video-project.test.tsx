@@ -587,6 +587,118 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("mutes timeline tracks with strict one-command revisions, deduplication, and returned projection adoption", async () => {
+    let active = clipProjection(1);
+    const returnedProjections: ProjectProjection[] = [];
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const command = request.commands[0];
+      if (command?.type !== "SetTrackMuted") throw new Error("Expected track mute command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: trackId }) => trackId === command.trackId,
+      );
+      if (track === undefined || track.kind === "caption")
+        throw new Error("Expected mutable track fixture");
+      track.muted = command.muted;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      active = next;
+      returnedProjections.push(next);
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.setTimelineTrackMuted({ trackId: id(4), muted: true }));
+    await act(() => result.current.setTimelineTrackMuted({ trackId: id(4), muted: true }));
+    await act(() => result.current.setTimelineTrackMuted({ trackId: id(4), muted: false }));
+
+    const requests = execute.mock.calls.map(([request]) => request);
+    expect(requests.map(({ baseRevision }) => baseRevision)).toEqual([1, 2]);
+    expect(requests.map(({ commands }) => commands)).toEqual([
+      [
+        {
+          type: "SetTrackMuted",
+          commandId: expect.any(String),
+          sequenceId: id(3),
+          trackId: id(4),
+          muted: true,
+        },
+      ],
+      [
+        {
+          type: "SetTrackMuted",
+          commandId: expect.any(String),
+          sequenceId: id(3),
+          trackId: id(4),
+          muted: false,
+        },
+      ],
+    ]);
+    expect(result.current.projection).toBe(returnedProjections[1]);
+    expect(result.current.projection?.revision.number).toBe(3);
+    expect(result.current.projection?.state.sequences[0]?.tracks[0]).toMatchObject({
+      kind: "video",
+      muted: false,
+    });
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects caption track mute requests without submitting or changing controller state", async () => {
+    const opened = clipProjection(1);
+    opened.state.sequences[0]!.tracks.push({
+      id: id(7),
+      name: "Captions",
+      kind: "caption",
+      captions: [],
+    });
+    const execute = vi.fn(async () => {
+      throw new Error("unexpected caption mute submission");
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.setTimelineTrackMuted({ trackId: id(7), muted: true }));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.projection?.revision.number).toBe(1);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
   it("ripple deletes through one command and one revision with exact undo and redo", async () => {
     const opened = rippleProjection(1);
     const deleted = structuredClone(opened);

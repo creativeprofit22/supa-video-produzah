@@ -1,6 +1,7 @@
 import {
   createRationalTime,
   isTrackLocked,
+  isTrackMuted,
   microsecondsToSourceFrames,
   type CommandResult,
   type ProjectCommandV2,
@@ -33,7 +34,8 @@ export interface TrimDraft {
   readonly inFrame: number;
   readonly outFrame: number;
 }
-export type TimelineEditOperation = "split" | "move" | "trim" | "ripple-delete" | "track-lock";
+export type TimelineEditOperation =
+  "split" | "move" | "trim" | "ripple-delete" | "track-lock" | "track-mute";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -54,6 +56,10 @@ export interface RippleDeleteTimelineClipInput {
 export interface SetTimelineTrackLockedInput {
   readonly trackId: string;
   readonly locked: boolean;
+}
+export interface SetTimelineTrackMutedInput {
+  readonly trackId: string;
+  readonly muted: boolean;
 }
 export type EditOperationState =
   | { readonly phase: "idle" }
@@ -1012,6 +1018,31 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTimelineTrackMuted = useCallback(
+    async ({ trackId, muted }: SetTimelineTrackMutedInput) => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        track === undefined ||
+        track.kind === "caption" ||
+        isTrackMuted(track) === muted
+      )
+        return;
+      await executeTimelineCommandGroup(base, "track-mute", [
+        {
+          type: "SetTrackMuted",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          trackId: track.id,
+          muted,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
@@ -1181,6 +1212,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimTimelineClip,
     rippleDeleteTimelineClip,
     setTimelineTrackLocked,
+    setTimelineTrackMuted,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,
