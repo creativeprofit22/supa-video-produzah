@@ -301,6 +301,32 @@ test("moves a clip across its sibling and renders native canonical order", async
   expect(renderedStarts[2]).toBe(158);
 });
 
+test("mutes an audio-bearing track while its clip remains selectable", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => document.fonts.ready);
+
+  const primaryTrackId = "40000000-0000-4000-8000-000000000010";
+  const primaryRow = page.locator(`[data-track-id="${primaryTrackId}"]`);
+  const primaryClip = primaryRow.locator(".multitrack-clip-body").first();
+  const primaryMute = page.getByRole("button", { name: "Primary camera track mute" });
+
+  await expect(primaryMute).toHaveAttribute("aria-pressed", "false");
+  await expect(primaryRow).toHaveAccessibleName(/Primary camera.*audible/);
+  await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
+
+  await primaryMute.click();
+
+  await expect(
+    page.getByRole("button", { name: "Primary camera track unmute" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(primaryRow).toHaveAccessibleName(/Primary camera.*muted/);
+  await expect(primaryRow).toHaveAttribute("data-track-muted", "true");
+
+  await primaryClip.click();
+  await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+});
+
 test("locks one track without blocking selection or edits on other tracks", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(fixturePath);
