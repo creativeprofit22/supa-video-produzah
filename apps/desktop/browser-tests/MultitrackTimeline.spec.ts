@@ -317,9 +317,10 @@ test("mutes an audio-bearing track while its clip remains selectable", async ({ 
 
   await primaryMute.click();
 
-  await expect(
-    page.getByRole("button", { name: "Primary camera track unmute" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Primary camera track unmute" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(primaryRow).toHaveAccessibleName(/Primary camera.*muted/);
   await expect(primaryRow).toHaveAttribute("data-track-muted", "true");
 

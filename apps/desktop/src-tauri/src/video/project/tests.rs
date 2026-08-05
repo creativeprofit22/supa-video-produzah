@@ -1284,7 +1284,7 @@ fn locked_track_does_not_block_mutations_on_an_unlocked_track_and_groups_stay_at
         timeline_start: moved_start.clone(),
     };
 
-    let applied = apply_group(&snapshot.state, &[move_unaffected.clone()]).unwrap();
+    let applied = apply_group(&snapshot.state, std::slice::from_ref(&move_unaffected)).unwrap();
     assert_eq!(applied.state.sequences[0].tracks[0], locked_track);
     let ProjectTrack::Video { clips, .. } = &applied.state.sequences[0].tracks[1] else {
         unreachable!();
