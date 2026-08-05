@@ -156,6 +156,90 @@ describe("ProgramMonitor", () => {
     expect(convertCachePath).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps a black visibility overlay over mounted, clocking media in source and final modes", () => {
+    const frameCallbacks = installVideoFrameCallbacks();
+    const onPlayheadChange = vi.fn();
+    render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath="/cache/final-preview.mp4"
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+
+    const sourceVideo = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    const sourceOverlay = screen.getByText("Video track hidden").parentElement!;
+    expect(sourceOverlay.className).toBe("monitor-hidden-video");
+    expect(sourceOverlay.parentElement?.contains(sourceVideo)).toBe(true);
+
+    Object.defineProperty(sourceVideo, "paused", { configurable: true, value: false });
+    fireEvent.play(sourceVideo);
+    frameCallbacks.fireNext(10 / 25);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(10);
+
+    fireEvent.click(screen.getByRole("button", { name: "Final" }));
+
+    const finalVideo = screen.getByLabelText("Verified final video preview") as HTMLVideoElement;
+    const finalOverlay = screen.getByText("Video track hidden").parentElement!;
+    expect(finalVideo).toBe(sourceVideo);
+    expect(finalOverlay.className).toBe("monitor-hidden-video");
+    expect(finalOverlay.parentElement?.contains(finalVideo)).toBe(true);
+
+    fireEvent.play(finalVideo);
+    frameCallbacks.fireNext(12 / 25);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(12);
+  });
+
+  it("keeps video visibility independent from audio mute and volume state", () => {
+    const monitor = (timelineVideoHidden: boolean) => (
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={timelineVideoHidden}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={vi.fn()}
+      />
+    );
+    const rendered = render(monitor(true));
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    const volumeControl = screen.getByRole("slider", { name: "Volume" });
+
+    expect(video.muted).toBe(false);
+    expect(screen.getByText("Video track hidden").parentElement!).toBeTruthy();
+    fireEvent.change(volumeControl, { target: { value: "0.35" } });
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mute audio" }));
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(true);
+    expect(screen.getByText("Video track hidden").parentElement!).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute audio" }));
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(false);
+
+    rendered.rerender(monitor(false));
+    expect(screen.queryByText("Video track hidden")).toBeNull();
+    expect(screen.getByLabelText("Prepared source proxy")).toBe(video);
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(false);
+  });
+
   it("uses monotonic presented frames and stops at the exact half-open trim-out", () => {
     const frameCallbacks = installVideoFrameCallbacks();
     const onPlayheadChange = vi.fn();

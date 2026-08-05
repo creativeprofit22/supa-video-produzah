@@ -180,6 +180,7 @@ function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeli
     onSelectClip: vi.fn(),
     onSetTrackLocked: vi.fn(),
     onSetTrackMuted: vi.fn(),
+    onSetTrackHidden: vi.fn(),
     onSplitClip: vi.fn(),
     onRippleDeleteClip: vi.fn(),
     onMoveClip: vi.fn(),
@@ -318,6 +319,116 @@ describe("MultitrackTimeline", () => {
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true });
     expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+  });
+
+  it("exposes stable Eye toggles only for visual tracks without changing lock or selection semantics", () => {
+    const hiddenProjection = projectionFixture({
+      name: "Visibility interaction timeline",
+      videoClipCount: 1,
+      audioClipCount: 1,
+    });
+    const [videoTrack, audioTrack, captionTrack] = hiddenProjection.state.sequences[0]!.tracks;
+    if (videoTrack?.kind !== "video") throw new Error("Expected a video track");
+    if (audioTrack?.kind !== "audio") throw new Error("Expected an audio track");
+    if (captionTrack?.kind !== "caption") throw new Error("Expected a caption track");
+    videoTrack.locked = true;
+    videoTrack.hidden = true;
+    captionTrack.hidden = false;
+    const selectedClipId = id(100_000);
+    const onSelectClip = vi.fn();
+    const onSetTrackHidden = vi.fn();
+    const props = timelineProps({
+      projection: hiddenProjection,
+      selectedClipId,
+      onSelectClip,
+      onSetTrackHidden,
+    });
+    const rendered = render(<MultitrackTimeline {...props} />);
+
+    const videoVisibility = screen.getByRole("button", { name: "Camera video output" });
+    const captionVisibility = screen.getByRole("button", { name: "Captions caption output" });
+    const selectedClip = screen.getByRole("button", {
+      name: /camera-a\.mp4, frames 0 through 2.*locked track/,
+    });
+
+    expect(screen.queryByRole("button", { name: "Nested audio audio output" })).toBeNull();
+    expect(videoVisibility.className).toContain("multitrack-visibility-toggle");
+    expect(videoVisibility.querySelector(".lucide-eye-off")).toBeTruthy();
+    expect(videoVisibility.getAttribute("aria-pressed")).toBe("false");
+    expect(videoVisibility.getAttribute("title")).toBe("Show track output");
+    expect(videoVisibility.textContent).toContain("Show");
+    expect((videoVisibility as HTMLButtonElement).disabled).toBe(false);
+    expect(captionVisibility.querySelector(".lucide-eye")).toBeTruthy();
+    expect(captionVisibility.getAttribute("aria-pressed")).toBe("true");
+    expect(captionVisibility.getAttribute("title")).toBe("Hide track output");
+    expect(captionVisibility.textContent).toContain("Hide");
+    expect(
+      screen.getByRole("group", { name: "Camera track controls" }).parentElement?.textContent,
+    ).toContain("1 clips · Locked · Audible · Hidden");
+    expect(
+      screen.getByRole("group", { name: "Captions track controls" }).parentElement?.textContent,
+    ).toContain("0 clips · Editable · Shown");
+    expect(screen.getByRole("listitem", { name: /Camera, video track.*locked/ })).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", { name: /Captions, caption track.*editable/ }),
+    ).toBeTruthy();
+    expect(selectedClip.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(videoVisibility);
+    fireEvent.click(captionVisibility);
+
+    expect(onSetTrackHidden).toHaveBeenNthCalledWith(1, id(10), false);
+    expect(onSetTrackHidden).toHaveBeenNthCalledWith(2, id(12), true);
+    expect(selectedClip.getAttribute("aria-pressed")).toBe("true");
+    expect(onSelectClip).not.toHaveBeenCalled();
+
+    const shownProjection = projectionFixture({
+      name: "Visibility interaction timeline",
+      videoClipCount: 1,
+      audioClipCount: 1,
+    });
+    const shownVideoTrack = shownProjection.state.sequences[0]!.tracks[0]!;
+    const hiddenCaptionTrack = shownProjection.state.sequences[0]!.tracks[2]!;
+    if (shownVideoTrack.kind !== "video") throw new Error("Expected a video track");
+    if (hiddenCaptionTrack.kind !== "caption") throw new Error("Expected a caption track");
+    shownVideoTrack.locked = true;
+    shownVideoTrack.hidden = false;
+    hiddenCaptionTrack.hidden = true;
+    rendered.rerender(<MultitrackTimeline {...props} projection={shownProjection} />);
+
+    expect(screen.getByRole("button", { name: "Camera video output" })).toBe(videoVisibility);
+    expect(videoVisibility.querySelector(".lucide-eye")).toBeTruthy();
+    expect(videoVisibility.getAttribute("aria-pressed")).toBe("true");
+    expect(videoVisibility.getAttribute("title")).toBe("Hide track output");
+    expect(videoVisibility.textContent).toContain("Hide");
+    expect(screen.getByRole("button", { name: "Captions caption output" })).toBe(captionVisibility);
+    expect(captionVisibility.querySelector(".lucide-eye-off")).toBeTruthy();
+    expect(captionVisibility.getAttribute("aria-pressed")).toBe("false");
+    expect(captionVisibility.getAttribute("title")).toBe("Show track output");
+    expect(captionVisibility.textContent).toContain("Show");
+  });
+
+  it("disables visibility toggles only while a timeline edit is pending", () => {
+    const onSetTrackHidden = vi.fn();
+    const props = timelineProps({
+      editError: new Error("Previous edit failed"),
+      onSetTrackHidden,
+    });
+    const rendered = render(<MultitrackTimeline {...props} />);
+    const visibilityToggles = screen.getAllByRole("button", {
+      name: /(?:video|caption) output$/,
+    });
+
+    expect(visibilityToggles).toHaveLength(2);
+    expect(visibilityToggles.every((toggle) => !(toggle as HTMLButtonElement).disabled)).toBe(true);
+
+    rendered.rerender(<MultitrackTimeline {...props} editPending />);
+    expect(visibilityToggles.every((toggle) => (toggle as HTMLButtonElement).disabled)).toBe(true);
+    fireEvent.click(visibilityToggles[0]!);
+    expect(onSetTrackHidden).not.toHaveBeenCalled();
+
+    rendered.rerender(<MultitrackTimeline {...props} editPending={false} />);
+    expect(visibilityToggles.every((toggle) => !(toggle as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("exposes mute toggles only for AV tracks without changing clip selection", () => {
