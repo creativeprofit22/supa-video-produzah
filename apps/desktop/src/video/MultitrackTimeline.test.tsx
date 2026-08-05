@@ -179,6 +179,7 @@ function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeli
     editError: null,
     onSelectClip: vi.fn(),
     onSetTrackLocked: vi.fn(),
+    onSetTrackMuted: vi.fn(),
     onSplitClip: vi.fn(),
     onRippleDeleteClip: vi.fn(),
     onMoveClip: vi.fn(),
@@ -317,6 +318,84 @@ describe("MultitrackTimeline", () => {
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true });
     expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+  });
+
+  it("exposes mute toggles only for AV tracks without changing clip selection", () => {
+    const projection = projectionFixture({
+      name: "Mute interaction timeline",
+      videoClipCount: 1,
+      audioClipCount: 1,
+    });
+    const videoTrack = projection.state.sequences[0]!.tracks[0]!;
+    if (videoTrack.kind !== "video") throw new Error("Expected a video track");
+    videoTrack.locked = true;
+    videoTrack.muted = true;
+    const selectedClipId = id(100_000);
+    const onSelectClip = vi.fn();
+    const onSetTrackMuted = vi.fn();
+
+    const rendered = render(
+      <MultitrackTimeline
+        {...timelineProps({ projection, selectedClipId, onSelectClip, onSetTrackMuted })}
+      />,
+    );
+
+    const videoMute = screen.getByRole("button", { name: "Camera track unmute" });
+    const audioMute = screen.getByRole("button", { name: "Nested audio track mute" });
+    const selectedClip = screen.getByRole("button", {
+      name: /camera-a\.mp4, frames 0 through 2.*locked track/,
+    });
+
+    expect(videoMute.getAttribute("aria-pressed")).toBe("true");
+    expect(videoMute.textContent).toContain("Unmute");
+    expect((videoMute as HTMLButtonElement).disabled).toBe(false);
+    expect(audioMute.getAttribute("aria-pressed")).toBe("false");
+    expect(audioMute.textContent).toContain("Mute");
+    expect(screen.queryByRole("button", { name: /Captions track (?:unmute|mute)/ })).toBeNull();
+    expect(
+      screen.getByRole("listitem", { name: /Camera, video track.*locked, muted/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", { name: /Nested audio, audio track.*editable, audible/ }),
+    ).toBeTruthy();
+    expect(
+      rendered.container
+        .querySelector(`[data-track-id='${id(10)}']`)
+        ?.getAttribute("data-track-muted"),
+    ).toBe("true");
+    expect(
+      rendered.container
+        .querySelector(`[data-track-id='${id(11)}']`)
+        ?.getAttribute("data-track-muted"),
+    ).toBe("false");
+    expect(
+      rendered.container
+        .querySelector(`[data-track-id='${id(12)}']`)
+        ?.hasAttribute("data-track-muted"),
+    ).toBe(false);
+
+    fireEvent.click(videoMute);
+    fireEvent.click(audioMute);
+
+    expect(onSetTrackMuted).toHaveBeenNthCalledWith(1, id(10), false);
+    expect(onSetTrackMuted).toHaveBeenNthCalledWith(2, id(11), true);
+    expect(selectedClip.getAttribute("aria-pressed")).toBe("true");
+    expect(onSelectClip).not.toHaveBeenCalled();
+  });
+
+  it("disables mute toggles only while a timeline edit is pending", () => {
+    const props = timelineProps({ editError: new Error("Previous edit failed") });
+    const rendered = render(<MultitrackTimeline {...props} />);
+    const muteToggles = screen.getAllByRole("button", { name: /track mute$/ });
+
+    expect(muteToggles).toHaveLength(2);
+    expect(muteToggles.every((toggle) => !(toggle as HTMLButtonElement).disabled)).toBe(true);
+
+    rendered.rerender(<MultitrackTimeline {...props} editPending={true} />);
+    expect(muteToggles.every((toggle) => (toggle as HTMLButtonElement).disabled)).toBe(true);
+
+    rendered.rerender(<MultitrackTimeline {...props} editPending={false} />);
+    expect(muteToggles.every((toggle) => !(toggle as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("toggles semantic lock state while selection and other tracks stay interactive", () => {

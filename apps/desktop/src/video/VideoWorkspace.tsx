@@ -430,6 +430,9 @@ export function VideoWorkspace({
               onSetTrackLocked={(trackId, locked) =>
                 void controller.setTimelineTrackLocked({ trackId, locked })
               }
+              onSetTrackMuted={(trackId, muted) =>
+                void controller.setTimelineTrackMuted({ trackId, muted })
+              }
               onSplitClip={(clipId, sourceFrame) =>
                 void controller.splitTimelineClip({ clipId, sourceFrame })
               }

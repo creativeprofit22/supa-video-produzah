@@ -132,6 +132,21 @@ function ControlledTimelineFixture() {
     }));
   };
 
+  const setTrackMuted = (trackId: string, muted: boolean) => {
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) =>
+            track.id === trackId && track.kind !== "caption" ? { ...track, muted } : track,
+          ),
+        })),
+      },
+    }));
+  };
+
   const updateClip = (clipId: string, update: (clip: ProjectClip) => ProjectClip) => {
     setCurrentProjection((current) => ({
       ...current,
@@ -308,6 +323,7 @@ function ControlledTimelineFixture() {
         editError={editError}
         onSelectClip={setSelectedClipId}
         onSetTrackLocked={setTrackLocked}
+        onSetTrackMuted={setTrackMuted}
         onSplitClip={splitClip}
         onRippleDeleteClip={rippleDeleteClip}
         onMoveClip={moveClip}

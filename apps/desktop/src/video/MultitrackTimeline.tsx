@@ -9,7 +9,7 @@ import {
 } from "@supa-video/contracts";
 import { deriveActiveTimelineRange, projectVisibleTimeline } from "@supa-video/project";
 import type { PreparedVideoAsset } from "@supa-video/media";
-import { Film, Lock, LockOpen, Music2, Scissors, Trash2 } from "lucide-react";
+import { Film, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -39,6 +39,7 @@ interface MultitrackTimelineProps {
   readonly editError: Error | null;
   readonly onSelectClip: (clipId: string) => void;
   readonly onSetTrackLocked: (trackId: string, locked: boolean) => void;
+  readonly onSetTrackMuted: (trackId: string, muted: boolean) => void;
   readonly onSplitClip: (clipId: string, sourceFrame: number) => void;
   readonly onRippleDeleteClip: (clipId: string) => void;
   readonly onMoveClip: (clipId: string, timelineStartFrame: number) => void;
@@ -169,6 +170,7 @@ export function MultitrackTimeline({
   editError,
   onSelectClip,
   onSetTrackLocked,
+  onSetTrackMuted,
   onSplitClip,
   onRippleDeleteClip,
   onMoveClip,
@@ -477,28 +479,53 @@ export function MultitrackTimeline({
           {timeline.tracks.map((track) => (
             <div
               className={`multitrack-visible-label${track.locked ? " is-locked" : ""}`}
+              data-track-muted={track.canMute ? track.muted : undefined}
               key={track.trackId}
             >
               <span>{track.kind}</span>
               <strong>{track.name}</strong>
               <small>
                 {track.totalClipCount} clips · {track.locked ? "Locked" : "Editable"}
+                {track.canMute ? ` · ${track.muted ? "Muted" : "Audible"}` : ""}
               </small>
-              <button
-                type="button"
-                className="multitrack-lock-toggle"
-                aria-label={`${track.name} track lock`}
-                aria-pressed={track.locked}
-                disabled={editPending}
-                onClick={() => onSetTrackLocked(track.trackId, !track.locked)}
+              <div
+                className="multitrack-track-controls"
+                role="group"
+                aria-label={`${track.name} track controls`}
               >
-                {track.locked ? (
-                  <LockOpen size={14} aria-hidden="true" />
-                ) : (
-                  <Lock size={14} aria-hidden="true" />
-                )}
-                <span>{track.locked ? "Unlock" : "Lock"}</span>
-              </button>
+                {track.canMute ? (
+                  <button
+                    type="button"
+                    className="multitrack-mute-toggle"
+                    aria-label={`${track.name} track ${track.muted ? "unmute" : "mute"}`}
+                    aria-pressed={track.muted}
+                    disabled={editPending}
+                    onClick={() => onSetTrackMuted(track.trackId, !track.muted)}
+                  >
+                    {track.muted ? (
+                      <VolumeX size={14} aria-hidden="true" />
+                    ) : (
+                      <Volume2 size={14} aria-hidden="true" />
+                    )}
+                    <span>{track.muted ? "Unmute" : "Mute"}</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="multitrack-lock-toggle"
+                  aria-label={`${track.name} track lock`}
+                  aria-pressed={track.locked}
+                  disabled={editPending}
+                  onClick={() => onSetTrackLocked(track.trackId, !track.locked)}
+                >
+                  {track.locked ? (
+                    <LockOpen size={14} aria-hidden="true" />
+                  ) : (
+                    <Lock size={14} aria-hidden="true" />
+                  )}
+                  <span>{track.locked ? "Unlock" : "Lock"}</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -536,8 +563,9 @@ export function MultitrackTimeline({
                   data-track-id={track.trackId}
                   data-track-kind={track.kind}
                   data-track-locked={track.locked}
+                  data-track-muted={track.canMute ? track.muted : undefined}
                   key={track.trackId}
-                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}`}
+                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}`}
                 >
                   {track.clips.length === 0 ? null : (
                     <ol className="multitrack-clip-list" aria-label={`${track.name} clips`}>
