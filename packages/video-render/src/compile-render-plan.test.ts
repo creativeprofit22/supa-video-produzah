@@ -18,9 +18,14 @@ const ids = {
   track: "00000000-0000-4000-8000-000000000004",
   clip: "00000000-0000-4000-8000-000000000005",
   plan: "00000000-0000-4000-8000-000000000006",
+  captionTrack: "00000000-0000-4000-8000-000000000008",
 } as const;
 const inputPath = "C:\\Media Source\\single clip.mp4";
 const outputPath = "D:\\Rendered Output\\trim result.mp4";
+const shownVideoFilter =
+  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001";
+const hiddenVideoFilter =
+  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill,fps=30000/1001";
 const avArgv = [
   "-hide_banner",
   "-nostdin",
@@ -40,7 +45,7 @@ const avArgv = [
   "-map",
   "0:a:0",
   "-vf",
-  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
+  shownVideoFilter,
   "-c:v",
   "libx264",
   "-pix_fmt",
@@ -71,7 +76,7 @@ const videoOnlyArgv = [
   "0:v:0",
   "-an",
   "-vf",
-  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
+  shownVideoFilter,
   "-c:v",
   "libx264",
   "-pix_fmt",
@@ -80,14 +85,21 @@ const videoOnlyArgv = [
   "+faststart",
   outputPath,
 ] as const;
+const hiddenAvArgv = avArgv.map((argument) =>
+  argument === shownVideoFilter ? hiddenVideoFilter : argument,
+);
+const hiddenVideoOnlyArgv = videoOnlyArgv.map((argument) =>
+  argument === shownVideoFilter ? hiddenVideoFilter : argument,
+);
 
-function expectedMetadata(audio: boolean) {
+function expectedMetadata(audio: boolean, videoHidden = false) {
   return {
     durationFrames: 75,
     rate: { numerator: 30_000, denominator: 1_001 },
     width: 1_280,
     height: 720,
     audio,
+    ...(videoHidden ? { videoHidden: true } : {}),
   };
 }
 
@@ -97,6 +109,12 @@ interface RevisionOptions {
   readonly sourceOut?: number;
   readonly durationMicroseconds?: number;
   readonly audio?: boolean;
+}
+
+interface V2RevisionOptions {
+  readonly muted?: boolean;
+  readonly hidden?: boolean;
+  readonly captionHidden?: boolean;
 }
 
 function makeRevision(options: RevisionOptions = {}): ProjectRevision {
@@ -150,7 +168,7 @@ function makeRevision(options: RevisionOptions = {}): ProjectRevision {
   };
 }
 
-function makeV2Revision(muted?: boolean) {
+function makeV2Revision(options: V2RevisionOptions = {}) {
   const legacy = makeRevision();
   const asset = legacy.state.asset!;
   const sequence = legacy.state.sequence!;
@@ -181,7 +199,8 @@ function makeV2Revision(muted?: boolean) {
               id: sequence.videoTracks[0].id,
               name: "Video 1",
               kind: "video" as const,
-              ...(muted === undefined ? {} : { muted }),
+              ...(options.muted === undefined ? {} : { muted: options.muted }),
+              ...(options.hidden === undefined ? {} : { hidden: options.hidden }),
               clips: [
                 {
                   id: clip.id,
@@ -201,6 +220,17 @@ function makeV2Revision(muted?: boolean) {
                 },
               ],
             },
+            ...(options.captionHidden === undefined
+              ? []
+              : [
+                  {
+                    id: ids.captionTrack,
+                    name: "Captions 1",
+                    kind: "caption" as const,
+                    hidden: options.captionHidden,
+                    captions: [],
+                  },
+                ]),
           ],
         },
       ],
@@ -241,21 +271,25 @@ function malformedRevision(transform: (revision: ProjectRevision) => void): Proj
 }
 
 describe("compileSingleClipRenderPlan", () => {
-  it.each([
-    ["absent", makeV2Revision()],
-    ["false", makeV2Revision(false)],
-  ])("keeps exact AV argv and expected metadata when V2 mute is %s", (_label, revision) => {
-    const plan = compile(revision);
+  it("keeps exact AV argv and omits videoHidden when the V2 video track is shown", () => {
+    const plan = compile(makeV2Revision({ muted: false, hidden: false }));
 
     expect(plan.argv).toEqual(avArgv);
     expect(plan.expected).toEqual(expectedMetadata(true));
   });
 
-  it("uses exact video-only argv and expected metadata when the V2 video track is muted", () => {
-    const plan = compile(makeV2Revision(true));
+  it("adds the exact black drawbox while keeping hidden V2 video audible", () => {
+    const plan = compile(makeV2Revision({ hidden: true }));
 
-    expect(plan.argv).toEqual(videoOnlyArgv);
-    expect(plan.expected).toEqual(expectedMetadata(false));
+    expect(plan.argv).toEqual(hiddenAvArgv);
+    expect(plan.expected).toEqual(expectedMetadata(true, true));
+  });
+
+  it("adds the exact black drawbox while mute alone suppresses hidden V2 video audio", () => {
+    const plan = compile(makeV2Revision({ hidden: true, muted: true }));
+
+    expect(plan.argv).toEqual(hiddenVideoOnlyArgv);
+    expect(plan.expected).toEqual(expectedMetadata(false, true));
   });
 
   it("keeps exact legacy AV argv and expected metadata unchanged", () => {
@@ -272,6 +306,16 @@ describe("compileSingleClipRenderPlan", () => {
       outputPath,
     });
     expect(renderPlanV1Schema.parse(plan)).toEqual(plan);
+  });
+
+  it("keeps shown and hidden V2 caption visibility argv-neutral", () => {
+    const shownPlan = compile(makeV2Revision({ captionHidden: false }));
+    const hiddenPlan = compile(makeV2Revision({ captionHidden: true }));
+
+    expect(shownPlan.argv).toEqual(avArgv);
+    expect(hiddenPlan.argv).toEqual(avArgv);
+    expect(shownPlan.expected).toEqual(expectedMetadata(true));
+    expect(hiddenPlan.expected).toEqual(expectedMetadata(true));
   });
 
   it("compiles the exact video-only branch for sources without embedded audio", () => {

@@ -7,6 +7,7 @@ import {
   type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
+  isTrackHidden,
   isTrackMuted,
   microsecondsToSourceFrames,
   projectRevisionDescriptorV2Schema,
@@ -31,6 +32,7 @@ export interface CompileSingleClipRenderPlanInput {
 interface ValidatedSingleClipRevision {
   readonly revision: ProjectRevision;
   readonly audioSuppressed: boolean;
+  readonly videoHidden: boolean;
 }
 
 function invalidRenderPlan(
@@ -96,6 +98,7 @@ function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
   const sequence = state.data.sequences.find(
     (candidate) => candidate.id === state.data.activeSequenceId,
   );
+  // Caption tracks stay output-neutral until the single-clip renderer supports composition.
   const tracks = sequence?.tracks.filter((track) => track.kind === "video") ?? [];
   const track = tracks[0];
   const clip = track?.clips[0];
@@ -159,6 +162,7 @@ function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
       },
     }),
     audioSuppressed: isTrackMuted(track),
+    videoHidden: isTrackHidden(track),
   };
 }
 
@@ -238,6 +242,7 @@ function validateRevision(input: unknown): ValidatedSingleClipRevision {
   return {
     revision,
     audioSuppressed: adapted?.audioSuppressed ?? false,
+    videoHidden: adapted?.videoHidden ?? false,
   };
 }
 
@@ -245,7 +250,7 @@ function compileValidatedPlan(
   input: CompileSingleClipRenderPlanInput,
   validatedRevision: ValidatedSingleClipRevision,
 ): RenderPlanV1 {
-  const { revision, audioSuppressed } = validatedRevision;
+  const { revision, audioSuppressed, videoHidden } = validatedRevision;
   const asset = revision.state.asset;
   const sequence = revision.state.sequence;
   if (asset === null || sequence === null) {
@@ -262,6 +267,7 @@ function compileValidatedPlan(
   const videoFilter = [
     `scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos`,
     `pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:black`,
+    ...(videoHidden ? ["drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill"] : []),
     `fps=${sequence.rate.numerator}/${sequence.rate.denominator}`,
   ].join(",");
   const argv = [
@@ -306,6 +312,7 @@ function compileValidatedPlan(
       width: sequence.width,
       height: sequence.height,
       audio: hasAudio,
+      ...(videoHidden ? { videoHidden: true } : {}),
     },
     argv,
   });
