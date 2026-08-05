@@ -24,7 +24,6 @@ import {
 import {
   createTimelineMoveSnapContext,
   resolveTimelineMoveSnap,
-  timelineFrameForClipSourceFrame,
   type TimelineMoveSnapContext,
   type TimelineMoveSnapGuide,
 } from "./timeline-move-snap";
@@ -34,7 +33,8 @@ interface MultitrackTimelineProps {
   readonly preparedAsset: PreparedVideoAsset | null;
   readonly convertCachePath: (path: string) => string;
   readonly selectedClipId: string | null;
-  readonly playheadFrame: number;
+  readonly previewSourceFrame: number;
+  readonly timelinePlayheadFrame: number | null;
   readonly editPending: boolean;
   readonly editError: Error | null;
   readonly onSelectClip: (clipId: string) => void;
@@ -52,6 +52,7 @@ interface MultitrackTimelineProps {
 
 interface CanonicalTimelineClip {
   readonly clip: ProjectClip;
+  readonly trackId: string;
   readonly trackLocked: boolean;
 }
 
@@ -60,6 +61,7 @@ type PointerMode = "move" | "trim-left" | "trim-right";
 interface PointerSession {
   readonly pointerId: number;
   readonly clipId: string;
+  readonly destinationTrackId: string;
   readonly mode: PointerMode;
   readonly originClientX: number;
   readonly originStartFrame: number;
@@ -135,7 +137,9 @@ function canonicalTimelineClip(
   for (const track of sequence.tracks) {
     if (track.kind === "caption") continue;
     const clip = track.clips.find((candidate) => candidate.id === clipId);
-    if (clip !== undefined) return { clip, trackLocked: track.locked ?? false };
+    if (clip !== undefined) {
+      return { clip, trackId: track.id, trackLocked: track.locked ?? false };
+    }
   }
   return null;
 }
@@ -147,12 +151,20 @@ function pointerCaptureTarget(element: HTMLElement) {
   };
 }
 
+function supportsTimelineFrameDeltaTrim(clip: ProjectClip): boolean {
+  return (
+    clip.sourceIn.rateNumerator === clip.timelineStart.rateNumerator &&
+    clip.sourceIn.rateDenominator === clip.timelineStart.rateDenominator
+  );
+}
+
 export function MultitrackTimeline({
   projection,
   preparedAsset,
   convertCachePath,
   selectedClipId,
-  playheadFrame,
+  previewSourceFrame,
+  timelinePlayheadFrame,
   editPending,
   editError,
   onSelectClip,
@@ -250,8 +262,8 @@ export function MultitrackTimeline({
     selectedCanonicalClip !== null && !selectedCanonicalClip.trackLocked && !editPending;
   const canSplit =
     canRippleDelete &&
-    playheadFrame > selectedCanonicalClip.clip.sourceIn.value &&
-    playheadFrame < selectedCanonicalClip.clip.sourceOut.value;
+    previewSourceFrame > selectedCanonicalClip.clip.sourceIn.value &&
+    previewSourceFrame < selectedCanonicalClip.clip.sourceOut.value;
 
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollLeft(event.currentTarget.scrollLeft);
@@ -266,7 +278,12 @@ export function MultitrackTimeline({
   ) => {
     if (event.button !== 0 || editPending || selectedClipId !== clipId) return;
     const canonical = canonicalTimelineClip(projection, clipId);
-    if (canonical === null || canonical.trackLocked) return;
+    if (
+      canonical === null ||
+      canonical.trackLocked ||
+      (mode !== "move" && !supportsTimelineFrameDeltaTrim(canonical.clip))
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     pointerCaptureTarget(event.currentTarget).setPointerCapture?.(event.pointerId);
@@ -276,6 +293,7 @@ export function MultitrackTimeline({
     updatePointerSession({
       pointerId: event.pointerId,
       clipId,
+      destinationTrackId: canonical.trackId,
       mode,
       originClientX: event.clientX,
       originStartFrame: startFrame,
@@ -288,10 +306,7 @@ export function MultitrackTimeline({
       draftSourceOutFrame: canonical.clip.sourceOut.value,
       moveSnapContext:
         mode === "move" && sequence !== undefined
-          ? createTimelineMoveSnapContext(
-              sequence,
-              timelineFrameForClipSourceFrame(canonical.clip, playheadFrame),
-            )
+          ? createTimelineMoveSnapContext(sequence, timelinePlayheadFrame)
           : null,
       snapGuide: null,
     });
@@ -319,6 +334,7 @@ export function MultitrackTimeline({
           ? { startFrame: proposedStartFrame, guide: null }
           : resolveTimelineMoveSnap(current.moveSnapContext, {
               movingClipId: current.clipId,
+              destinationTrackId: current.destinationTrackId,
               proposedStartFrame,
               durationFrames: duration,
               zoomScale: geometryViewport.zoomScale,
@@ -387,7 +403,7 @@ export function MultitrackTimeline({
   };
 
   const splitSelectedClip = () => {
-    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, playheadFrame);
+    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, previewSourceFrame);
   };
 
   const rippleDeleteSelectedClip = () => {
@@ -542,6 +558,12 @@ export function MultitrackTimeline({
                           clip.assetContentIdentity === thumbnailSource.identity;
                         const isSelected = selectedClipId === clip.clipId;
                         const isDragging = draft !== null;
+                        const canonical = canonicalTimelineClip(projection, clip.clipId);
+                        const trimDisabled =
+                          editPending ||
+                          track.locked ||
+                          canonical === null ||
+                          !supportsTimelineFrameDeltaTrim(canonical.clip);
                         return (
                           <li
                             className={`multitrack-clip multitrack-clip-${track.kind}${
@@ -614,7 +636,7 @@ export function MultitrackTimeline({
                                   type="button"
                                   className="multitrack-trim-handle multitrack-trim-handle-left"
                                   aria-label={`Trim start of ${clip.sourceLabel}`}
-                                  disabled={editPending || track.locked}
+                                  disabled={trimDisabled}
                                   onPointerDown={(event) =>
                                     startPointerSession(
                                       event,
@@ -632,7 +654,7 @@ export function MultitrackTimeline({
                                   type="button"
                                   className="multitrack-trim-handle multitrack-trim-handle-right"
                                   aria-label={`Trim end of ${clip.sourceLabel}`}
-                                  disabled={editPending || track.locked}
+                                  disabled={trimDisabled}
                                   onPointerDown={(event) =>
                                     startPointerSession(
                                       event,

@@ -1,4 +1,4 @@
-import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
+import { VideoDomainError, type ProjectClip, type ProjectProjection } from "@supa-video/contracts";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import React, { useState } from "react";
@@ -116,7 +116,7 @@ const initialProjection: ProjectProjection = {
 function ControlledTimelineFixture() {
   const [currentProjection, setCurrentProjection] = useState(initialProjection);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
-
+  const [editError, setEditError] = useState<Error | null>(null);
   const setTrackLocked = (trackId: string, locked: boolean) => {
     setCurrentProjection((current) => ({
       ...current,
@@ -149,6 +149,73 @@ function ControlledTimelineFixture() {
                   ),
                 },
           ),
+        })),
+      },
+    }));
+  };
+
+  const moveClip = (clipId: string, timelineStartFrame: number) => {
+    const sequence = currentProjection.state.sequences.find(
+      ({ id: sequenceId }) => sequenceId === currentProjection.state.activeSequenceId,
+    );
+    const destinationTrack = sequence?.tracks.find(
+      (track) =>
+        track.kind !== "caption" &&
+        track.clips.some(({ id: candidateId }) => candidateId === clipId),
+    );
+    if (destinationTrack !== undefined && destinationTrack.kind !== "caption") {
+      const movedClip = destinationTrack.clips.find(
+        ({ id: candidateId }) => candidateId === clipId,
+      );
+      if (movedClip !== undefined) {
+        const duration = movedClip.sourceOut.value - movedClip.sourceIn.value;
+        const endFrameExclusive = timelineStartFrame + duration;
+        const overlaps = destinationTrack.clips.some(
+          (candidate) =>
+            candidate.id !== clipId &&
+            timelineStartFrame <
+              candidate.timelineStart.value +
+                candidate.sourceOut.value -
+                candidate.sourceIn.value &&
+            candidate.timelineStart.value < endFrameExclusive,
+        );
+        if (overlaps) {
+          setEditError(
+            new VideoDomainError("invalid_command", "Project command failed its preconditions", {
+              operation: "execute_project_command",
+              category: "clip_overlap",
+            }),
+          );
+          return;
+        }
+      }
+    }
+    setEditError(null);
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((candidateSequence) => ({
+          ...candidateSequence,
+          tracks: candidateSequence.tracks.map((track) => {
+            if (track.kind === "caption" || !track.clips.some(({ id }) => id === clipId)) {
+              return track;
+            }
+            return {
+              ...track,
+              clips: track.clips
+                .map((candidate) =>
+                  candidate.id === clipId
+                    ? { ...candidate, timelineStart: time(timelineStartFrame) }
+                    : candidate,
+                )
+                .sort(
+                  (left, right) =>
+                    left.timelineStart.value - right.timelineStart.value ||
+                    left.id.localeCompare(right.id),
+                ),
+            };
+          }),
         })),
       },
     }));
@@ -235,19 +302,15 @@ function ControlledTimelineFixture() {
         preparedAsset={null}
         convertCachePath={(path) => path}
         selectedClipId={selectedClipId}
-        playheadFrame={10}
+        previewSourceFrame={10}
+        timelinePlayheadFrame={10}
         editPending={false}
-        editError={null}
+        editError={editError}
         onSelectClip={setSelectedClipId}
         onSetTrackLocked={setTrackLocked}
         onSplitClip={splitClip}
         onRippleDeleteClip={rippleDeleteClip}
-        onMoveClip={(clipId, timelineStartFrame) =>
-          updateClip(clipId, (candidate) => ({
-            ...candidate,
-            timelineStart: time(timelineStartFrame),
-          }))
-        }
+        onMoveClip={moveClip}
         onTrimClip={(clipId, sourceInFrame, sourceOutFrame, timelineStartFrame) =>
           updateClip(clipId, (candidate) => ({
             ...candidate,

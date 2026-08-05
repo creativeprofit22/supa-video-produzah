@@ -41,6 +41,7 @@ export const rationalTimeSchema = z
 
 export type RationalTime = z.infer<typeof rationalTimeSchema>;
 export type RoundingMode = "floor" | "ceil" | "nearestTiesAwayFromZero";
+export type RescaleMode = RoundingMode | "exact";
 
 export interface FrameRange {
   readonly in: RationalTime;
@@ -129,13 +130,26 @@ export function compareRationalTimes(left: RationalTime, right: RationalTime): -
 export function rescaleRationalTime(
   time: RationalTime,
   targetRate: RationalRate,
-  mode: RoundingMode,
+  mode: RescaleMode,
 ): RationalTime {
   const validTime = rationalTimeSchema.parse(time);
   const validTarget = rationalRateSchema.parse(targetRate);
   const numerator =
     BigInt(validTime.value) * BigInt(validTime.rateDenominator) * BigInt(validTarget.numerator);
   const denominator = BigInt(validTime.rateNumerator) * BigInt(validTarget.denominator);
+  if (mode === "exact") {
+    if (numerator % denominator !== 0n) {
+      throw new VideoDomainError(
+        "invalid_time",
+        "Frame value cannot be represented exactly at the target rate",
+        { time: validTime, targetRate: validTarget },
+      );
+    }
+    return createRationalTime(
+      toSafeNumber(numerator / denominator, "Converted frame value"),
+      validTarget,
+    );
+  }
   return createRationalTime(
     toSafeNumber(divideWithRounding(numerator, denominator, mode), "Converted frame value"),
     validTarget,

@@ -44,12 +44,18 @@ describe("rational time", () => {
     expect(microsecondsToSourceFrames(33_334, rate).value).toBe(2);
   });
 
-  it("uses explicit floor, ceil, and ties-away rounding", () => {
+  it("uses explicit floor, ceil, ties-away, and exact rescaling", () => {
     const source = createRationalTime(1, createRationalRate(2, 1));
     const target = createRationalRate(1, 1);
     expect(rescaleRationalTime(source, target, "floor").value).toBe(0);
     expect(rescaleRationalTime(source, target, "ceil").value).toBe(1);
     expect(rescaleRationalTime(source, target, "nearestTiesAwayFromZero").value).toBe(1);
+    expect(
+      rescaleRationalTime(createRationalTime(2, createRationalRate(2, 1)), target, "exact").value,
+    ).toBe(1);
+    expect(() => rescaleRationalTime(source, target, "exact")).toThrow(
+      "cannot be represented exactly",
+    );
   });
 
   it("rejects mixed-rate comparisons and sub-frame ranges", () => {

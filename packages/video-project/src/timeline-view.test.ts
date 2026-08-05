@@ -200,7 +200,23 @@ describe("visible timeline projection", () => {
     ]);
   });
 
-  it("rejects mixed clip or viewport rates with a typed domain error", () => {
+  it("projects exactly convertible mixed-rate clips in sequence frames", () => {
+    const mixedRateClip = {
+      ...clip(100, 5, 15),
+      sourceIn: createRationalTime(10, { numerator: 20, denominator: 1 }),
+      sourceOut: createRationalTime(30, { numerator: 20, denominator: 1 }),
+    };
+    const value = projection([
+      { id: id(10), name: "Video 1", kind: "video", clips: [mixedRateClip] },
+    ]);
+
+    expect(deriveActiveTimelineRange(value)).toEqual({ startFrame: 0, endFrameExclusive: 15 });
+    expect(
+      projectVisibleTimeline(value, viewportFor(value, 0, 20, 0))?.tracks[0]?.clips[0],
+    ).toMatchObject({ startFrame: 5, endFrameExclusive: 15 });
+  });
+
+  it("rejects inexact clip rescaling or mixed viewport rates with a typed domain error", () => {
     const value = projection([
       {
         id: id(10),
@@ -209,7 +225,8 @@ describe("visible timeline projection", () => {
         clips: [
           {
             ...clip(100, 0, 10),
-            sourceOut: createRationalTime(10, { numerator: 25, denominator: 1 }),
+            sourceIn: createRationalTime(0, { numerator: 25, denominator: 1 }),
+            sourceOut: createRationalTime(1, { numerator: 25, denominator: 1 }),
           },
         ],
       },

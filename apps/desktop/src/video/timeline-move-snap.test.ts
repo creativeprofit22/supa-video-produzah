@@ -8,11 +8,14 @@ import {
 } from "./timeline-move-snap";
 
 const frameRate = { numerator: 10, denominator: 1 } as const;
-const time = (value: number) => ({
+const sourceFrameRate = { numerator: 20, denominator: 1 } as const;
+const timeAtRate = (value: number, rate: typeof frameRate | typeof sourceFrameRate) => ({
   value,
-  rateNumerator: frameRate.numerator,
-  rateDenominator: frameRate.denominator,
+  rateNumerator: rate.numerator,
+  rateDenominator: rate.denominator,
 });
+const time = (value: number) => timeAtRate(value, frameRate);
+const sourceTime = (value: number) => timeAtRate(value, sourceFrameRate);
 
 function clip(id: string, startFrame: number, durationFrames: number): ProjectClip {
   return {
@@ -33,7 +36,10 @@ function clip(id: string, startFrame: number, durationFrames: number): ProjectCl
   };
 }
 
-function sequence(clips: readonly ProjectClip[]): VideoSequenceV2 {
+function sequence(
+  clips: readonly ProjectClip[],
+  crossTrackClips: readonly ProjectClip[] = [],
+): VideoSequenceV2 {
   return {
     id: "sequence-id",
     name: "Sequence",
@@ -43,6 +49,12 @@ function sequence(clips: readonly ProjectClip[]): VideoSequenceV2 {
     audioSampleRate: 48_000,
     tracks: [
       { id: "video-track", name: "Video", kind: "video", clips: [...clips] },
+      {
+        id: "cross-track",
+        name: "Cross-track video",
+        kind: "video",
+        clips: [...crossTrackClips],
+      },
       { id: "caption-track", name: "Captions", kind: "caption", captions: [] },
     ],
     markers: [],
@@ -59,22 +71,54 @@ describe("timeline move snap resolution", () => {
   const otherClip = clip("other", 30, 5);
   const context = createTimelineMoveSnapContext(sequence([movingClip, otherClip]), 50);
 
-  it("maps the source playhead through clip trim and timeline offsets", () => {
+  it("rescales source-rate playheads and clip-edge targets into sequence frames", () => {
     const trimmedAndMovedClip: ProjectClip = {
       ...movingClip,
       timelineStart: time(40),
-      sourceIn: time(10),
-      sourceOut: time(20),
+      sourceIn: sourceTime(10),
+      sourceOut: sourceTime(20),
+    };
+    const mixedRateTarget: ProjectClip = {
+      ...otherClip,
+      sourceIn: sourceTime(10),
+      sourceOut: sourceTime(20),
     };
 
-    expect(timelineFrameForClipSourceFrame(trimmedAndMovedClip, 12)).toBe(42);
+    expect(timelineFrameForClipSourceFrame(trimmedAndMovedClip, 12)).toBe(41);
     expect(timelineFrameForClipSourceFrame(trimmedAndMovedClip, 9)).toBeNull();
     expect(timelineFrameForClipSourceFrame(trimmedAndMovedClip, 20)).toBeNull();
+    expect(
+      resolveTimelineMoveSnap(
+        createTimelineMoveSnapContext(sequence([movingClip], [mixedRateTarget]), null),
+        {
+          movingClipId: movingClip.id,
+          destinationTrackId: "video-track",
+          proposedStartFrame: 31,
+          durationFrames: 4,
+          ...snapGeometry,
+        },
+      ),
+    ).toEqual({
+      startFrame: 31,
+      guide: { frame: 35, targetKind: "clip-end", movingEdge: "end" },
+    });
   });
 
-  it("chooses the smaller correction from either moving edge", () => {
+  it("returns no playhead for an in-range source frame without an exact sequence-frame mapping", () => {
+    const mixedRateClip: ProjectClip = {
+      ...movingClip,
+      timelineStart: time(40),
+      sourceIn: sourceTime(10),
+      sourceOut: sourceTime(20),
+    };
+
+    expect(timelineFrameForClipSourceFrame(mixedRateClip, 11)).toBeNull();
+  });
+
+  it("keeps legal same-track butt adjacency", () => {
     const trailingEdge = resolveTimelineMoveSnap(context, {
       movingClipId: movingClip.id,
+      destinationTrackId: "video-track",
       proposedStartFrame: 25,
       durationFrames: 4,
       ...snapGeometry,
@@ -83,23 +127,33 @@ describe("timeline move snap resolution", () => {
       startFrame: 26,
       guide: { frame: 30, targetKind: "clip-start", movingEdge: "end" },
     });
+  });
 
-    const leadingEdge = resolveTimelineMoveSnap(context, {
+  it("rejects same-track start-to-start and end-to-end overlap candidates", () => {
+    const startToStart = resolveTimelineMoveSnap(context, {
       movingClipId: movingClip.id,
+      destinationTrackId: "video-track",
       proposedStartFrame: 29,
       durationFrames: 4,
       ...snapGeometry,
     });
-    expect(leadingEdge).toEqual({
-      startFrame: 30,
-      guide: { frame: 30, targetKind: "clip-start", movingEdge: "start" },
+    expect(startToStart).toEqual({ startFrame: 29, guide: null });
+
+    const endToEnd = resolveTimelineMoveSnap(context, {
+      movingClipId: movingClip.id,
+      destinationTrackId: "video-track",
+      proposedStartFrame: 31,
+      durationFrames: 4,
+      ...snapGeometry,
     });
+    expect(endToEnd).toEqual({ startFrame: 31, guide: null });
   });
 
   it("snaps to the playhead and excludes both edges of the moving clip", () => {
     expect(
       resolveTimelineMoveSnap(context, {
         movingClipId: movingClip.id,
+        destinationTrackId: "video-track",
         proposedStartFrame: 49,
         durationFrames: 4,
         ...snapGeometry,
@@ -113,6 +167,7 @@ describe("timeline move snap resolution", () => {
     expect(
       resolveTimelineMoveSnap(selfOnlyContext, {
         movingClipId: movingClip.id,
+        destinationTrackId: "video-track",
         proposedStartFrame: 11,
         durationFrames: 4,
         ...snapGeometry,

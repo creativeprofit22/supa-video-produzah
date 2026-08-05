@@ -8,13 +8,16 @@ import { testPrepared, testProbe, testSourceIdentity } from "../test-video-servi
 import { MultitrackTimeline } from "./MultitrackTimeline";
 
 const rate = { numerator: 10, denominator: 1 } as const;
+const sourceRate = { numerator: 20, denominator: 1 } as const;
 const id = (value: number): string =>
   `30000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-const time = (value: number) => ({
+const timeAtRate = (value: number, frameRate: typeof rate | typeof sourceRate) => ({
   value,
-  rateNumerator: rate.numerator,
-  rateDenominator: rate.denominator,
+  rateNumerator: frameRate.numerator,
+  rateDenominator: frameRate.denominator,
 });
+const time = (value: number) => timeAtRate(value, rate);
+const sourceTime = (value: number) => timeAtRate(value, sourceRate);
 const transform = {
   positionXPermille: 0,
   positionYPermille: 0,
@@ -170,7 +173,8 @@ function timelineProps(overrides: Partial<ComponentProps<typeof MultitrackTimeli
     preparedAsset: testPrepared,
     convertCachePath: (path: string) => `asset:${path}`,
     selectedClipId: null,
-    playheadFrame: 1,
+    previewSourceFrame: 1,
+    timelinePlayheadFrame: 1,
     editPending: false,
     editError: null,
     onSelectClip: vi.fn(),
@@ -269,7 +273,9 @@ describe("MultitrackTimeline", () => {
     expect(onSplitClip).toHaveBeenCalledOnce();
     expect(onSplitClip).toHaveBeenCalledWith(firstId, 1);
 
-    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} playheadFrame={2} />);
+    rendered.rerender(
+      <MultitrackTimeline {...props} selectedClipId={firstId} previewSourceFrame={2} />,
+    );
     expect((split as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -413,7 +419,7 @@ describe("MultitrackTimeline", () => {
     expect(materializedClipIds(rendered.container).length).toBeLessThan(1_000);
   });
 
-  it("snaps a trailing edge to a clip edge with one ephemeral guide and one release commit", () => {
+  it("snaps a mixed-rate trailing edge and emits a sequence-frame move start", () => {
     const projection = projectionFixture({
       name: "Clip edge snap timeline",
       videoClipCount: 2,
@@ -422,6 +428,8 @@ describe("MultitrackTimeline", () => {
     const firstId = id(100_000);
     const videoTrack = projection.state.sequences[0]!.tracks[0]!;
     if (videoTrack.kind === "caption") throw new Error("Expected a video track");
+    videoTrack.clips[0]!.sourceIn = sourceTime(10);
+    videoTrack.clips[0]!.sourceOut = sourceTime(14);
     videoTrack.clips[1]!.timelineStart = time(40);
     const onMoveClip = vi.fn();
     const rendered = render(
@@ -429,7 +437,7 @@ describe("MultitrackTimeline", () => {
         {...timelineProps({
           projection,
           selectedClipId: firstId,
-          playheadFrame: 100,
+          timelinePlayheadFrame: null,
           onMoveClip,
         })}
       />,
@@ -457,12 +465,38 @@ describe("MultitrackTimeline", () => {
     expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
   });
 
+  it("disables frame-delta trim handles for mixed-rate clips", () => {
+    const projection = interactionProjection();
+    const firstId = id(100_000);
+    const videoTrack = projection.state.sequences[0]!.tracks[0]!;
+    if (videoTrack.kind === "caption") throw new Error("Expected a video track");
+    videoTrack.clips[0]!.sourceIn = sourceTime(0);
+    videoTrack.clips[0]!.sourceOut = sourceTime(4);
+    const onTrimClip = vi.fn();
+
+    render(
+      <MultitrackTimeline
+        {...timelineProps({ projection, selectedClipId: firstId, onTrimClip })}
+      />,
+    );
+
+    expect(
+      (screen.getByRole("button", { name: "Trim start of camera-a.mp4" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Trim end of camera-a.mp4" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(onTrimClip).not.toHaveBeenCalled();
+  });
+
   it("previews a playhead snap ephemerally and clears its guide on cancel", () => {
     const firstId = id(100_000);
     const onMoveClip = vi.fn();
     const rendered = render(
       <MultitrackTimeline
-        {...timelineProps({ selectedClipId: firstId, playheadFrame: 1, onMoveClip })}
+        {...timelineProps({ selectedClipId: firstId, timelinePlayheadFrame: 1, onMoveClip })}
       />,
     );
     const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
@@ -504,7 +538,7 @@ describe("MultitrackTimeline", () => {
         {...timelineProps({
           projection,
           selectedClipId: firstId,
-          playheadFrame: 100,
+          timelinePlayheadFrame: null,
           onMoveClip,
         })}
       />,

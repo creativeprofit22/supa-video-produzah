@@ -487,6 +487,128 @@ describe("complete mocked Phase 2 workflow", () => {
     );
   });
 
+  it("keeps move snapping tied to the previewed clip when another overlapping-source clip is selected", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("multitrack-scroll-region") ? 1_000 : 0;
+    });
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    const rendered = render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const sequence = service.projection.state.sequences.find(
+      ({ id }) => id === service.projection.state.activeSequenceId,
+    )!;
+    const videoTrack = sequence.tracks.find((track) => track.kind === "video")!;
+    if (videoTrack.kind !== "video") throw new Error("Expected mock video track");
+    const previewedClip = videoTrack.clips[0]!;
+    previewedClip.timelineStart.value = 40;
+    const selectedClip = structuredClone(previewedClip);
+    selectedClip.id = "70000000-0000-4000-8000-000000000099";
+    selectedClip.timelineStart.value = 0;
+    sequence.tracks.push({
+      id: "70000000-0000-4000-8000-000000000098",
+      name: "Cross-track selection",
+      kind: "video",
+      clips: [selectedClip],
+    });
+    expect(selectedClip.sourceIn).toEqual(previewedClip.sourceIn);
+    expect(selectedClip.sourceOut).toEqual(previewedClip.sourceOut);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 100/,
+    });
+    await waitFor(() => expect(screen.getAllByText("Saved").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    await screen.findByText("Frame 10");
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Ripple delete clip" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    const selectedBody = screen.getByRole("button", { name: /clip\.mp4, frames 0 through 100/ });
+    fireEvent.click(selectedBody);
+    expect(selectedBody.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.pointerDown(selectedBody, { button: 0, pointerId: 51, clientX: 10 });
+    let movedClip = rendered.container.querySelector<HTMLElement>(
+      `[data-clip-id='${selectedClip.id}']`,
+    );
+    expect(movedClip?.classList.contains("is-dragging")).toBe(true);
+    fireEvent.pointerMove(selectedBody, { pointerId: 51, clientX: 18 });
+
+    movedClip = rendered.container.querySelector<HTMLElement>(
+      `[data-clip-id='${selectedClip.id}']`,
+    );
+    expect(movedClip?.dataset.startFrame).toBe("50");
+    const guide = rendered.container.querySelector<HTMLElement>(".multitrack-snap-guide");
+    expect(guide?.dataset.snapTargetKind).toBe("playhead");
+    expect(guide?.dataset.snapFrame).toBe("50");
+  });
+
+  it("rejects an illegal same-track snap with a native-style clip_overlap error", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("multitrack-scroll-region") ? 1_000 : 0;
+    });
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    const rendered = render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    const sequence = service.projection.state.sequences.find(
+      ({ id }) => id === service.projection.state.activeSequenceId,
+    )!;
+    const videoTrack = sequence.tracks.find((track) => track.kind === "video")!;
+    if (videoTrack.kind !== "video") throw new Error("Expected mock video track");
+    const movingClip = videoTrack.clips[0]!;
+    const siblingClip = structuredClone(movingClip);
+    siblingClip.id = "70000000-0000-4000-8000-000000000097";
+    siblingClip.timelineStart.value = 120;
+    videoTrack.clips.push(siblingClip);
+    const revisionBeforeMove = service.projection.revision.number;
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const movingBody = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 100/,
+    });
+    await waitFor(() => expect(screen.getAllByText("Saved").length).toBeGreaterThan(0));
+    fireEvent.click(movingBody);
+    fireEvent.pointerDown(movingBody, { button: 0, pointerId: 61, clientX: 10 });
+    fireEvent.pointerMove(movingBody, { pointerId: 61, clientX: 29.2 });
+
+    const movingElement = rendered.container.querySelector<HTMLElement>(
+      `[data-clip-id='${movingClip.id}']`,
+    );
+    expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
+    expect(movingElement?.dataset.startFrame).toBe("120");
+    fireEvent.pointerUp(movingBody, { pointerId: 61, clientX: 29.2 });
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("alert")
+          .some(({ textContent }) =>
+            textContent?.includes("Project command failed its preconditions"),
+          ),
+      ).toBe(true),
+    );
+    expect(service.projection.revision.number).toBe(revisionBeforeMove);
+    expect(videoTrack.clips.find(({ id }) => id === movingClip.id)?.timelineStart.value).toBe(0);
+  });
+
   it("loads equal-timestamp media jobs across composite cursor pages without gaps", async () => {
     const jobs: MediaJobRecord[] = Array.from({ length: 101 }, (_, index) => {
       const number = index + 1;

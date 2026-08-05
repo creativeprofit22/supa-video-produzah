@@ -4,7 +4,7 @@ import type {
   ProjectProjection,
   RecoveryReport,
 } from "@supa-video/contracts";
-import { isTrackLocked } from "@supa-video/contracts";
+import { isTrackLocked, VideoDomainError } from "@supa-video/contracts";
 import {
   listMediaJobsRequestSchema,
   reauthorizeMediaJobOutputRequestSchema,
@@ -215,11 +215,38 @@ function exactTimelineDuration(clip: {
   const scaledDenominator =
     BigInt(clip.sourceIn.rateNumerator) * BigInt(clip.timelineStart.rateDenominator);
   if (scaledNumerator % scaledDenominator !== 0n)
-    throw new Error("Mock ripple duration must rescale exactly");
+    throw new Error("Mock clip duration must rescale exactly");
   const duration = Number(scaledNumerator / scaledDenominator);
   if (!Number.isSafeInteger(duration) || duration <= 0)
-    throw new Error("Mock ripple duration is invalid");
+    throw new Error("Mock clip duration is invalid");
   return duration;
+}
+
+function validateNoClipOverlaps(candidate: ProjectProjection): void {
+  for (const sequence of candidate.state.sequences) {
+    for (const track of sequence.tracks) {
+      if (track.kind === "caption") continue;
+      const intervals = track.clips
+        .map((clip) => ({
+          clipId: clip.id,
+          startFrame: clip.timelineStart.value,
+          endFrameExclusive: clip.timelineStart.value + exactTimelineDuration(clip),
+        }))
+        .sort(
+          (left, right) =>
+            left.startFrame - right.startFrame || left.clipId.localeCompare(right.clipId),
+        );
+      for (let index = 1; index < intervals.length; index += 1) {
+        if (intervals[index]!.startFrame < intervals[index - 1]!.endFrameExclusive) {
+          throw new VideoDomainError(
+            "invalid_command",
+            "Project command failed its preconditions",
+            { operation: "execute_project_command", category: "clip_overlap" },
+          );
+        }
+      }
+    }
+  }
 }
 
 export function createMockVideoService(
@@ -347,7 +374,14 @@ export function createMockVideoService(
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
           if (track.kind !== "caption") {
             const clip = track.clips.find(({ id }) => id === item.clipId);
-            if (clip) clip.timelineStart = item.timelineStart;
+            if (clip) {
+              clip.timelineStart = item.timelineStart;
+              track.clips.sort(
+                (left, right) =>
+                  left.timelineStart.value - right.timelineStart.value ||
+                  left.id.localeCompare(right.id),
+              );
+            }
           }
         } else if (item.type === "TrimClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
@@ -376,6 +410,7 @@ export function createMockVideoService(
           }
         }
       }
+      validateNoClipOverlaps(next);
       undo.push(prior);
       redo.length = 0;
       next.canUndo = true;

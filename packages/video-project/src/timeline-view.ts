@@ -1,9 +1,11 @@
 import {
   VideoDomainError,
+  frameRangeDuration,
   frameToPixel,
   isTrackLocked,
   projectProjectionSchema,
   ratesEqual,
+  rescaleRationalTime,
   timelineFrameRangesIntersect,
   type MediaContentIdentityV1,
   type ProjectClip,
@@ -90,19 +92,16 @@ function timeUsesRate(time: RationalTime, rate: RationalRate): boolean {
 }
 
 function clipRange(clip: ProjectClip, sequenceRate: RationalRate): TimelineRangeViewModel {
-  if (
-    !timeUsesRate(clip.timelineStart, sequenceRate) ||
-    !timeUsesRate(clip.sourceIn, sequenceRate) ||
-    !timeUsesRate(clip.sourceOut, sequenceRate)
-  ) {
+  if (!timeUsesRate(clip.timelineStart, sequenceRate)) {
     throw new VideoDomainError(
       "mixed_rate",
-      "Timeline clip times must use the active sequence rate",
+      "Timeline clip start must use the active sequence rate",
       { clipId: clip.id },
     );
   }
 
-  const durationFrames = clip.sourceOut.value - clip.sourceIn.value;
+  const sourceDuration = frameRangeDuration({ in: clip.sourceIn, out: clip.sourceOut });
+  const durationFrames = rescaleRationalTime(sourceDuration, sequenceRate, "exact").value;
   const endFrameExclusive = clip.timelineStart.value + durationFrames;
   if (durationFrames <= 0 || !Number.isSafeInteger(endFrameExclusive)) {
     throw new VideoDomainError("invalid_range", "Timeline clip range must be nonempty and safe", {

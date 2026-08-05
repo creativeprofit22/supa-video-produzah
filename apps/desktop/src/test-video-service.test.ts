@@ -21,6 +21,8 @@ const unaffectedTrackId = id(12);
 const lockedClipId = id(13);
 const unaffectedClipId = id(14);
 const assetId = id(15);
+const siblingClipId = id(16);
+const unrelatedSiblingClipId = id(9);
 const transform = {
   positionXPermille: 0,
   positionYPermille: 0,
@@ -189,5 +191,121 @@ describe("mock project track locking", () => {
     expect(unlock.newRevision.number - unlock.priorRevision.number).toBe(1);
     expect(unlock.projection.lastCommand?.summary).toBe("Unlocked track");
     expect(track(unlock.projection, lockedTrackId).locked).toBe(false);
+  });
+});
+
+describe("mock clip moves", () => {
+  it("sorts only the affected track after a clip moves across a sibling", async () => {
+    const service = createMockVideoService();
+    await service.invoke("video_create_project");
+    let groupNumber = 400;
+    const execute = async (commands: ProjectCommandV2[]): Promise<CommandResult> => {
+      const request: CommandGroupRequest = {
+        groupId: id(groupNumber++),
+        projectId: service.projection.projectId,
+        baseRevision: service.projection.revision.number,
+        commands,
+      };
+      return (await service.invoke("video_execute_project_group", { request })) as CommandResult;
+    };
+
+    await execute(setupCommands());
+    const sibling = clip(siblingClipId);
+    sibling.timelineStart = createRationalTime(30, rate);
+    const unrelatedSibling = clip(unrelatedSiblingClipId);
+    unrelatedSibling.timelineStart = createRationalTime(20, rate);
+    await execute([
+      {
+        type: "InsertClip",
+        commandId: id(401),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        clip: sibling,
+      },
+      {
+        type: "InsertClip",
+        commandId: id(403),
+        sequenceId,
+        trackId: lockedTrackId,
+        clip: unrelatedSibling,
+      },
+    ]);
+
+    const moved = await execute([
+      {
+        type: "MoveClip",
+        commandId: id(402),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        clipId: unaffectedClipId,
+        timelineStart: createRationalTime(50, rate),
+      },
+    ]);
+    const affectedTrack = track(moved.projection, unaffectedTrackId);
+    if (affectedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(affectedTrack.clips.map(({ id: clipId }) => clipId)).toEqual([
+      siblingClipId,
+      unaffectedClipId,
+    ]);
+    expect(affectedTrack.clips.map(({ timelineStart }) => timelineStart.value)).toEqual([30, 50]);
+
+    const unrelatedTrack = track(moved.projection, lockedTrackId);
+    if (unrelatedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(unrelatedTrack.clips.map(({ id: clipId }) => clipId)).toEqual([
+      lockedClipId,
+      unrelatedSiblingClipId,
+    ]);
+  });
+
+  it("rejects same-track overlap with the native clip_overlap error and preserves revision", async () => {
+    const service = createMockVideoService();
+    await service.invoke("video_create_project");
+    let groupNumber = 500;
+    const execute = async (commands: ProjectCommandV2[]): Promise<CommandResult> => {
+      const request: CommandGroupRequest = {
+        groupId: id(groupNumber++),
+        projectId: service.projection.projectId,
+        baseRevision: service.projection.revision.number,
+        commands,
+      };
+      return (await service.invoke("video_execute_project_group", { request })) as CommandResult;
+    };
+
+    await execute(setupCommands());
+    const sibling = clip(siblingClipId);
+    sibling.timelineStart = createRationalTime(30, rate);
+    await execute([
+      {
+        type: "InsertClip",
+        commandId: id(501),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        clip: sibling,
+      },
+    ]);
+    const revisionBeforeMove = service.projection.revision.number;
+
+    await expect(
+      execute([
+        {
+          type: "MoveClip",
+          commandId: id(502),
+          sequenceId,
+          trackId: unaffectedTrackId,
+          clipId: unaffectedClipId,
+          timelineStart: createRationalTime(30, rate),
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "invalid_command",
+      details: { operation: "execute_project_command", category: "clip_overlap" },
+    });
+    expect(service.projection.revision.number).toBe(revisionBeforeMove);
+    const unchangedTrack = track(service.projection, unaffectedTrackId);
+    if (unchangedTrack.kind === "caption") throw new Error("Expected video track fixture");
+    const unchangedClip = unchangedTrack.clips.find(
+      ({ id: clipId }) => clipId === unaffectedClipId,
+    );
+    expect(unchangedClip?.timelineStart.value).toBe(0);
   });
 });

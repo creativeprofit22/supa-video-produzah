@@ -224,6 +224,83 @@ test("snaps a dragged clip to a visible clip edge and commits on release", async
   await expect(draggedClip).toHaveAttribute("data-start-frame", "6");
 });
 
+for (const illegalSnap of [
+  { name: "start-to-start", pointerDelta: 13.6, previewStart: "34" },
+  { name: "end-to-end", pointerDelta: 19.2, previewStart: "48" },
+]) {
+  test(`rejects an illegal same-track ${illegalSnap.name} snap`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(fixturePath);
+    await page.evaluate(() => document.fonts.ready);
+
+    const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+    const draggedClip = primaryRow.locator(`[data-clip-id="40000000-0000-4000-8000-000000000100"]`);
+    const draggedClipBody = draggedClip.locator(".multitrack-clip-body");
+    await draggedClipBody.click();
+    const clipBox = await draggedClipBody.boundingBox();
+    expect(clipBox).not.toBeNull();
+    const pointer = {
+      pointerId: 1,
+      button: 0,
+      clientX: clipBox!.x + clipBox!.width / 2,
+      clientY: clipBox!.y + clipBox!.height / 2,
+    };
+
+    await draggedClipBody.dispatchEvent("pointerdown", pointer);
+    await draggedClipBody.dispatchEvent("pointermove", {
+      ...pointer,
+      clientX: pointer.clientX + illegalSnap.pointerDelta,
+    });
+    await expect(page.locator(".multitrack-snap-guide")).toHaveCount(0);
+    await expect(draggedClip).toHaveAttribute("data-start-frame", illegalSnap.previewStart);
+
+    await draggedClipBody.dispatchEvent("pointerup", {
+      ...pointer,
+      clientX: pointer.clientX + illegalSnap.pointerDelta,
+    });
+    await expect(draggedClip).toHaveAttribute("data-start-frame", "0");
+    await expect(page.getByRole("alert")).toHaveText("Project command failed its preconditions");
+  });
+}
+
+test("moves a clip across its sibling and renders native canonical order", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => document.fonts.ready);
+
+  const firstClipId = "40000000-0000-4000-8000-000000000100";
+  const secondClipId = "40000000-0000-4000-8000-000000000101";
+  const thirdClipId = "40000000-0000-4000-8000-000000000102";
+  const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+  const firstClip = primaryRow.locator(`[data-clip-id="${firstClipId}"]`);
+  const firstClipBody = firstClip.locator(".multitrack-clip-body");
+  await firstClipBody.click();
+  await expect(firstClipBody).toHaveAttribute("aria-pressed", "true");
+
+  const clipBox = await firstClipBody.boundingBox();
+  expect(clipBox).not.toBeNull();
+  const pointer = {
+    pointerId: 1,
+    button: 0,
+    clientX: clipBox!.x + clipBox!.width / 2,
+    clientY: clipBox!.y + clipBox!.height / 2,
+  };
+  await firstClipBody.dispatchEvent("pointerdown", pointer);
+  await expect(firstClip).toHaveClass(/is-dragging/);
+  await firstClipBody.dispatchEvent("pointermove", { ...pointer, clientX: pointer.clientX + 63.2 });
+  await firstClipBody.dispatchEvent("pointerup", { ...pointer, clientX: pointer.clientX + 63.2 });
+
+  const renderedClips = primaryRow.locator(".multitrack-clip");
+  await expect(renderedClips.nth(0)).toHaveAttribute("data-clip-id", secondClipId);
+  await expect(renderedClips.nth(1)).toHaveAttribute("data-clip-id", thirdClipId);
+  await expect(renderedClips.nth(2)).toHaveAttribute("data-clip-id", firstClipId);
+  const renderedStarts = await renderedClips.evaluateAll((clips) =>
+    clips.map((clip) => Number((clip as HTMLElement).dataset.startFrame)),
+  );
+  expect(renderedStarts).toEqual([...renderedStarts].sort((left, right) => left - right));
+  expect(renderedStarts[2]).toBe(158);
+});
+
 test("locks one track without blocking selection or edits on other tracks", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(fixturePath);

@@ -1,11 +1,15 @@
 import {
+  VideoDomainError,
   createRationalTime,
   createTimelineSnapIndex,
+  frameRangeDuration,
+  rateOf,
+  rescaleRationalTime,
   snapTimelineTime,
+  type ProjectClip,
   type RationalRate,
   type TimelineSnapIndex,
   type TimelineSnapTarget,
-  type ProjectClip,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 
@@ -14,15 +18,25 @@ export type TimelineMovingEdge = "start" | "end";
 
 export interface TimelineMoveSnapTarget extends TimelineSnapTarget {
   readonly kind: TimelineMoveSnapTargetKind;
+  readonly trackId: string | null;
+}
+
+export interface TimelineMoveClipInterval {
+  readonly clipId: string;
+  readonly trackId: string;
+  readonly startFrame: number;
+  readonly endFrameExclusive: number;
 }
 
 export interface TimelineMoveSnapContext {
   readonly frameRate: RationalRate;
   readonly index: TimelineSnapIndex<TimelineMoveSnapTarget>;
+  readonly clipIntervals: readonly TimelineMoveClipInterval[];
 }
 
 export interface TimelineMoveSnapInput {
   readonly movingClipId: string;
+  readonly destinationTrackId: string;
   readonly proposedStartFrame: number;
   readonly durationFrames: number;
   readonly zoomScale: RationalRate;
@@ -52,7 +66,20 @@ export function timelineFrameForClipSourceFrame(
   sourceFrame: number,
 ): number | null {
   if (sourceFrame < clip.sourceIn.value || sourceFrame >= clip.sourceOut.value) return null;
-  return clip.timelineStart.value + sourceFrame - clip.sourceIn.value;
+  const sourceOffset = createRationalTime(sourceFrame - clip.sourceIn.value, rateOf(clip.sourceIn));
+  try {
+    const timelineOffset = rescaleRationalTime(sourceOffset, rateOf(clip.timelineStart), "exact");
+    return clip.timelineStart.value + timelineOffset.value;
+  } catch (error) {
+    if (
+      error instanceof VideoDomainError &&
+      error.code === "invalid_time" &&
+      error.message === "Frame value cannot be represented exactly at the target rate"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /** Builds targets from the full canonical sequence, independent of viewport materialization. */
@@ -60,12 +87,14 @@ export function createTimelineMoveSnapContext(
   sequence: VideoSequenceV2,
   timelinePlayheadFrame: number | null,
 ): TimelineMoveSnapContext {
+  const clipIntervals: TimelineMoveClipInterval[] = [];
   const targets: TimelineMoveSnapTarget[] =
     timelinePlayheadFrame === null
       ? []
       : [
           {
             kind: "playhead",
+            trackId: null,
             time: createRationalTime(timelinePlayheadFrame, sequence.rate),
           },
         ];
@@ -73,16 +102,26 @@ export function createTimelineMoveSnapContext(
     if (track.kind === "caption") continue;
     for (const clip of track.clips) {
       const startFrame = clip.timelineStart.value;
-      const endFrame = startFrame + clip.sourceOut.value - clip.sourceIn.value;
+      const sourceDuration = frameRangeDuration({ in: clip.sourceIn, out: clip.sourceOut });
+      const durationFrames = rescaleRationalTime(sourceDuration, sequence.rate, "exact").value;
+      const endFrame = startFrame + durationFrames;
+      clipIntervals.push({
+        clipId: clip.id,
+        trackId: track.id,
+        startFrame,
+        endFrameExclusive: endFrame,
+      });
       targets.push(
         {
           kind: "clip-start",
           clipId: clip.id,
+          trackId: track.id,
           time: createRationalTime(startFrame, sequence.rate),
         },
         {
           kind: "clip-end",
           clipId: clip.id,
+          trackId: track.id,
           time: createRationalTime(endFrame, sequence.rate),
         },
       );
@@ -91,7 +130,23 @@ export function createTimelineMoveSnapContext(
   return Object.freeze({
     frameRate: sequence.rate,
     index: createTimelineSnapIndex(targets),
+    clipIntervals: Object.freeze(clipIntervals),
   });
+}
+
+function overlapsDestinationTrack(
+  context: TimelineMoveSnapContext,
+  input: TimelineMoveSnapInput,
+  startFrame: number,
+): boolean {
+  const endFrameExclusive = startFrame + input.durationFrames;
+  return context.clipIntervals.some(
+    (interval) =>
+      interval.trackId === input.destinationTrackId &&
+      interval.clipId !== input.movingClipId &&
+      startFrame < interval.endFrameExclusive &&
+      interval.startFrame < endFrameExclusive,
+  );
 }
 
 function snapCandidate(
@@ -114,7 +169,7 @@ function snapCandidate(
     movingEdge === "start"
       ? result.correctedTime.value
       : result.correctedTime.value - input.durationFrames;
-  if (startFrame < 0) return null;
+  if (startFrame < 0 || overlapsDestinationTrack(context, input, startFrame)) return null;
   return {
     startFrame,
     correctionFrames: Math.abs(startFrame - input.proposedStartFrame),
