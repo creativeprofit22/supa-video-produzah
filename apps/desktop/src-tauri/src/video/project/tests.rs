@@ -26,7 +26,7 @@ use super::{
         AffectedRange, CacheInvalidation, ClipSource, ClipTransform, CommandGroupRequest,
         JournalHeader, JournalRecord, JournalRecordKind, ProjectCaption, ProjectClip,
         ProjectCommand, ProjectHistoryEntryV2, ProjectMarker, ProjectTrack, RecoveryStatus,
-        VideoProjectSnapshotV2, VideoProjectStateV2,
+        TrackMuteError, VideoProjectSnapshotV2, VideoProjectStateV2,
     },
 };
 use crate::video::{
@@ -335,23 +335,41 @@ fn fixture_state_hashes_are_deterministic() {
 }
 
 #[test]
-fn missing_track_lock_and_mute_default_without_changing_legacy_hash_or_json() {
+fn track_mute_serde_defaults_omit_false_and_rejects_caption_targets() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
     );
     let bytes = fs::read(fixture).unwrap();
     let legacy_json: Value = serde_json::from_slice(&bytes).unwrap();
     let snapshot: VideoProjectSnapshotV2 = serde_json::from_slice(&bytes).unwrap();
+    let mut track = snapshot.state.sequences[0].tracks[0].clone();
 
-    assert!(snapshot.state.sequences[0]
-        .tracks
-        .iter()
-        .all(|track| !track.is_locked() && !track.is_muted()));
+    assert!(!track.is_locked());
+    assert_eq!(track.is_muted(), Ok(false));
     assert_eq!(
         state_hash(&snapshot.state).unwrap(),
         snapshot.revision.state_hash
     );
     assert_eq!(serde_json::to_value(&snapshot).unwrap(), legacy_json);
+
+    assert_eq!(track.set_muted(true), Ok(false));
+    assert_eq!(track.is_muted(), Ok(true));
+    assert_eq!(serde_json::to_value(&track).unwrap()["muted"], true);
+    assert_eq!(track.set_muted(false), Ok(true));
+    assert!(serde_json::to_value(&track).unwrap().get("muted").is_none());
+
+    let mut caption = ProjectTrack::Caption {
+        id: "75000000-0000-4000-8000-000000000001".to_owned(),
+        name: "Captions".to_owned(),
+        locked: false,
+        captions: vec![],
+    };
+    assert_eq!(caption.is_muted(), Err(TrackMuteError::InvalidTarget));
+    assert_eq!(caption.set_muted(true), Err(TrackMuteError::InvalidTarget));
+    assert!(serde_json::to_value(&caption)
+        .unwrap()
+        .get("muted")
+        .is_none());
 }
 
 const MIXED_RATE_ASSET_ID: &str = "12000000-0000-4000-8000-000000000005";
@@ -1056,6 +1074,10 @@ const RIPPLE_SEQUENCE_ID: &str = "10000000-0000-4000-8000-000000000006";
 const RIPPLE_TRACK_ID: &str = "10000000-0000-4000-8000-000000000007";
 const RIPPLE_SELECTED_CLIP_ID: &str = "61000000-0000-4000-8000-000000000002";
 const RIPPLE_FIRST_SUCCESSOR_ID: &str = "61000000-0000-4000-8000-000000000100";
+const TRACK_MUTE_INITIAL_HASH: &str =
+    "aba0fdd4fcee030bc8b15d2ce0f24f25a8d230e328ae7b952a9f49c16c6d2841";
+const TRACK_MUTE_MUTED_HASH: &str =
+    "10fd961c3d9ded77a9de79aac979fd3f6b2a80f973800012534feadeee1bf5ae";
 
 fn ripple_clip(template: &ProjectClip, id: String, start: u64, duration: u64) -> ProjectClip {
     let mut clip = template.clone();
@@ -1396,59 +1418,201 @@ fn set_track_locked_persists_and_has_exact_undo_redo_hashes_and_labels() {
 }
 
 #[test]
-fn set_track_muted_executes_on_locked_tracks_and_rejects_captions() {
+fn set_track_muted_persists_with_exact_undo_redo_hashes_invalidations_and_range() {
     let mut snapshot = ripple_fixture(1);
     snapshot.state.sequences[0].tracks[0].set_locked(true);
-    let original_state = snapshot.state.clone();
-    let expected_start = original_state.sequences[0].tracks[0].clips().unwrap()[0]
-        .timeline_start
-        .clone();
-    let applied = apply_group(
-        &original_state,
-        &[ProjectCommand::SetTrackMuted {
-            command_id: "74000000-0000-4000-8000-000000000001".to_owned(),
-            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
-            track_id: RIPPLE_TRACK_ID.to_owned(),
-            muted: true,
-        }],
-    )
-    .unwrap();
-
-    assert!(applied.state.sequences[0].tracks[0].is_muted());
-    assert_eq!(applied.summary, "Muted track");
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    assert_eq!(snapshot.revision.state_hash, TRACK_MUTE_INITIAL_HASH);
+    let mute_command = ProjectCommand::SetTrackMuted {
+        command_id: "74000000-0000-4000-8000-000000000001".to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: RIPPLE_TRACK_ID.to_owned(),
+        muted: true,
+    };
+    let expected_muted = apply_group(&snapshot.state, std::slice::from_ref(&mute_command)).unwrap();
     assert_eq!(
-        applied.cache_invalidations,
-        vec![
-            CacheInvalidation::Timeline,
-            CacheInvalidation::Preview,
-            CacheInvalidation::AudioMix,
-            CacheInvalidation::RenderPlan,
-        ]
+        state_hash(&expected_muted.state).unwrap(),
+        TRACK_MUTE_MUTED_HASH
     );
-    assert_eq!(applied.affected_ranges.len(), 1);
-    assert_eq!(applied.affected_ranges[0].sequence_id, RIPPLE_SEQUENCE_ID);
-    assert_eq!(applied.affected_ranges[0].start, expected_start);
-    assert!(matches!(
-        applied.inverse_commands.as_slice(),
-        [ProjectCommand::SetTrackMuted { muted: false, .. }]
-    ));
-    let reverted = apply_group(&applied.state, &applied.inverse_commands).unwrap();
-    assert_eq!(reverted.state, original_state);
+    let expected_range = AffectedRange {
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        start: RationalTime {
+            value: 0,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+        end: RationalTime {
+            value: 21,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+    };
+    let expected_invalidations = vec![
+        CacheInvalidation::Timeline,
+        CacheInvalidation::Preview,
+        CacheInvalidation::AudioMix,
+        CacheInvalidation::RenderPlan,
+    ];
+    assert_eq!(expected_muted.affected_ranges, vec![expected_range.clone()]);
+    assert_eq!(expected_muted.cache_invalidations, expected_invalidations);
 
-    let state = indexed_removal_fixture();
-    let sequence_id = state.sequences[1].id.clone();
-    let caption_track_id = state.sequences[1].tracks[1].id().to_owned();
-    let error = apply_group(
-        &state,
-        &[ProjectCommand::SetTrackMuted {
-            command_id: "74000000-0000-4000-8000-000000000002".to_owned(),
-            sequence_id,
-            track_id: caption_track_id,
-            muted: true,
-        }],
-    )
-    .unwrap_err();
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("track-mute.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("track-mute-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let committed = service
+        .execute(
+            "track-mute-owner",
+            CommandGroupRequest {
+                group_id: "74000000-0000-4000-8000-000000000002".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![mute_command],
+            },
+            &grants,
+        )
+        .unwrap();
+
+    assert_eq!(committed.new_revision.number, 1);
+    assert_eq!(committed.state_hash, TRACK_MUTE_MUTED_HASH);
+    assert_eq!(
+        committed.projection.state.sequences[0].tracks[0].is_muted(),
+        Ok(true)
+    );
+    assert_eq!(committed.affected_ranges, vec![expected_range]);
+    assert_eq!(committed.cache_invalidations, expected_invalidations);
+    assert_eq!(
+        committed.projection.last_command.as_ref().unwrap().summary,
+        "Muted track"
+    );
+
+    let undone = service
+        .undo(
+            "track-mute-owner",
+            &project_id,
+            1,
+            "74000000-0000-4000-8000-000000000003",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.new_revision.number, 2);
+    assert_eq!(undone.state_hash, TRACK_MUTE_INITIAL_HASH);
+    assert_eq!(
+        undone.projection.state.sequences[0].tracks[0].is_muted(),
+        Ok(false)
+    );
+
+    let redone = service
+        .redo(
+            "track-mute-owner",
+            &project_id,
+            2,
+            "74000000-0000-4000-8000-000000000004",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(redone.new_revision.number, 3);
+    assert_eq!(redone.state_hash, TRACK_MUTE_MUTED_HASH);
+    assert_eq!(
+        redone.projection.state.sequences[0].tracks[0].is_muted(),
+        Ok(true)
+    );
+    service.close("track-mute-owner", &project_id).unwrap();
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("track-mute-reopen-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.projection.revision.number, 3);
+    assert_eq!(
+        reopened.projection.revision.state_hash,
+        TRACK_MUTE_MUTED_HASH
+    );
+    assert_eq!(
+        reopened.projection.state.sequences[0].tracks[0].is_muted(),
+        Ok(true)
+    );
+    reopened_service
+        .close("track-mute-reopen-owner", &project_id)
+        .unwrap();
+}
+
+#[test]
+fn caption_track_mute_rejection_is_atomic_across_service_and_persistence() {
+    let mut snapshot = ripple_fixture(1);
+    let caption_track_id = "74000000-0000-4000-8000-000000000010".to_owned();
+    snapshot.state.sequences[0]
+        .tracks
+        .push(ProjectTrack::Caption {
+            id: caption_track_id.clone(),
+            name: "Captions".to_owned(),
+            locked: false,
+            captions: vec![],
+        });
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    let original_state = snapshot.state.clone();
+    let original_hash = snapshot.revision.state_hash.clone();
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("caption-mute-rejection.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("caption-mute-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+
+    let error = service
+        .execute(
+            "caption-mute-owner",
+            CommandGroupRequest {
+                group_id: "74000000-0000-4000-8000-000000000011".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![
+                    ProjectCommand::SetTrackMuted {
+                        command_id: "74000000-0000-4000-8000-000000000012".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: RIPPLE_TRACK_ID.to_owned(),
+                        muted: true,
+                    },
+                    ProjectCommand::SetTrackMuted {
+                        command_id: "74000000-0000-4000-8000-000000000013".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: caption_track_id,
+                        muted: true,
+                    },
+                ],
+            },
+            &grants,
+        )
+        .unwrap_err();
     assert_eq!(error.details["category"], "non_audio_track");
+    service.close("caption-mute-owner", &project_id).unwrap();
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("caption-mute-reopen-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.projection.revision.number, 0);
+    assert_eq!(reopened.projection.revision.state_hash, original_hash);
+    assert_eq!(reopened.projection.state, original_state);
+    assert_eq!(
+        reopened.projection.state.sequences[0].tracks[0].is_muted(),
+        Ok(false)
+    );
+    assert_eq!(
+        reopened.projection.state.sequences[0].tracks[2].is_muted(),
+        Err(TrackMuteError::InvalidTarget)
+    );
+    reopened_service
+        .close("caption-mute-reopen-owner", &project_id)
+        .unwrap();
 }
 
 #[test]
@@ -1998,10 +2162,13 @@ fn v1_migration_preserves_selected_state_and_resets_history() {
         .tracks
         .iter()
         .all(|track| !track.is_locked()));
-    assert!(serde_json::to_value(&migrated.state.sequences[0].tracks[0])
-        .unwrap()
-        .get("locked")
-        .is_none());
+    assert!(migrated.state.sequences[0]
+        .tracks
+        .iter()
+        .all(|track| track.is_muted() == Ok(false)));
+    let migrated_track_json = serde_json::to_value(&migrated.state.sequences[0].tracks[0]).unwrap();
+    assert!(migrated_track_json.get("locked").is_none());
+    assert!(migrated_track_json.get("muted").is_none());
     assert!(migrated.history.undo_stack.is_empty());
     assert!(validate_snapshot(&migrated).is_ok());
 }

@@ -135,6 +135,11 @@ pub enum ProjectTrack {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackMuteError {
+    InvalidTarget,
+}
+
 impl ProjectTrack {
     pub fn id(&self) -> &str {
         match self {
@@ -156,18 +161,18 @@ impl ProjectTrack {
         };
         std::mem::replace(locked, value)
     }
-    pub fn is_muted(&self) -> bool {
+    pub fn is_muted(&self) -> Result<bool, TrackMuteError> {
         match self {
-            Self::Video { muted, .. } | Self::Audio { muted, .. } => *muted,
-            Self::Caption { .. } => false,
+            Self::Video { muted, .. } | Self::Audio { muted, .. } => Ok(*muted),
+            Self::Caption { .. } => Err(TrackMuteError::InvalidTarget),
         }
     }
-    pub fn set_muted(&mut self, value: bool) -> Option<bool> {
+    pub fn set_muted(&mut self, value: bool) -> Result<bool, TrackMuteError> {
         let muted = match self {
             Self::Video { muted, .. } | Self::Audio { muted, .. } => muted,
-            Self::Caption { .. } => return None,
+            Self::Caption { .. } => return Err(TrackMuteError::InvalidTarget),
         };
-        Some(std::mem::replace(muted, value))
+        Ok(std::mem::replace(muted, value))
     }
     pub fn clips(&self) -> Option<&[ProjectClip]> {
         match self {

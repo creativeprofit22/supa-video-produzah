@@ -7,7 +7,7 @@ use super::{
     integrity::{is_canonical_uuid, validate_state},
     types::{
         AffectedRange, CacheInvalidation, ProjectClip, ProjectCommand, ProjectTrack,
-        VideoProjectStateV2, MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER,
+        TrackMuteError, VideoProjectStateV2, MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER,
     },
 };
 use crate::video::{
@@ -609,7 +609,7 @@ fn apply_one(
             let affected_ranges = track_range(sequence_id, track)?;
             let previous = track
                 .set_muted(*muted)
-                .ok_or_else(|| invalid("non_audio_track"))?;
+                .map_err(|TrackMuteError::InvalidTarget| invalid("non_audio_track"))?;
             Ok((
                 vec![ProjectCommand::SetTrackMuted {
                     command_id: inverse_id(id, 0),
