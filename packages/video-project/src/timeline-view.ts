@@ -1,7 +1,9 @@
 import {
   VideoDomainError,
+  canToggleTrackVisibility,
   frameRangeDuration,
   frameToPixel,
+  isTrackHidden,
   isTrackLocked,
   isTrackMuted,
   projectProjectionSchema,
@@ -43,6 +45,8 @@ export interface TimelineTrackViewModel {
   readonly locked: boolean;
   readonly canMute: boolean;
   readonly muted: boolean;
+  readonly canToggleVisibility: boolean;
+  readonly hidden: boolean;
   readonly range: TimelineRangeViewModel;
   readonly totalClipCount: number;
   readonly clips: readonly TimelineClipViewModel[];
@@ -339,6 +343,8 @@ export function projectVisibleTimeline(
         locked: isTrackLocked(track),
         canMute: false,
         muted: isTrackMuted(track),
+        canToggleVisibility: canToggleTrackVisibility(track),
+        hidden: isTrackHidden(track),
         range: preparedTrack.range,
         totalClipCount: 0,
         clips: Object.freeze([]),
@@ -364,6 +370,8 @@ export function projectVisibleTimeline(
       locked: isTrackLocked(track),
       canMute: true,
       muted: isTrackMuted(track),
+      canToggleVisibility: canToggleTrackVisibility(track),
+      hidden: isTrackHidden(track),
       range: preparedTrack.range,
       totalClipCount: preparedTrack.totalClipCount,
       clips,

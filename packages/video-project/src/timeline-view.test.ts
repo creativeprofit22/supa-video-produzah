@@ -192,6 +192,101 @@ describe("visible timeline projection", () => {
     ]);
   });
 
+  it("projects visibility capability and hidden state for every track kind", () => {
+    const value = projection([
+      {
+        id: id(10),
+        name: "Hidden video",
+        kind: "video",
+        hidden: true,
+        clips: [clip(100, 0, 10)],
+      },
+      { id: id(11), name: "Audio", kind: "audio", clips: [] },
+      { id: id(12), name: "Hidden captions", kind: "caption", hidden: true, captions: [] },
+      { id: id(13), name: "Shown video", kind: "video", clips: [] },
+      { id: id(14), name: "Shown captions", kind: "caption", captions: [] },
+    ]);
+
+    const result = projectVisibleTimeline(value, viewportFor(value, 0, 10, 0));
+
+    expect(
+      result?.tracks.map(({ kind, canToggleVisibility, hidden }) => ({
+        kind,
+        canToggleVisibility,
+        hidden,
+      })),
+    ).toEqual([
+      { kind: "video", canToggleVisibility: true, hidden: true },
+      { kind: "audio", canToggleVisibility: false, hidden: false },
+      { kind: "caption", canToggleVisibility: true, hidden: true },
+      { kind: "video", canToggleVisibility: true, hidden: false },
+      { kind: "caption", canToggleVisibility: true, hidden: false },
+    ]);
+  });
+
+  it("retains hidden rows, clips selected by ID, canonical order, and viewport geometry", () => {
+    const tracks = (hidden: boolean): ProjectTrack[] => [
+      {
+        id: id(10),
+        name: "Video 1",
+        kind: "video",
+        ...(hidden ? { hidden: true } : {}),
+        clips: [clip(100, 20, 30), clip(101, 0, 10), clip(102, 10, 20)],
+      },
+      { id: id(11), name: "Audio 1", kind: "audio", clips: [clip(103, 5, 25)] },
+      {
+        id: id(12),
+        name: "Captions",
+        kind: "caption",
+        ...(hidden ? { hidden: true } : {}),
+        captions: [],
+      },
+    ];
+    const shownValue = projection(tracks(false));
+    const hiddenValue = projection(tracks(true));
+    const selectedClipIds = Object.freeze([id(100), id(102)]);
+
+    const shown = projectVisibleTimeline(shownValue, viewportFor(shownValue, 10, 10, 10));
+    const hidden = projectVisibleTimeline(hiddenValue, viewportFor(hiddenValue, 10, 10, 10));
+    const geometry = (timeline: NonNullable<typeof hidden>) => ({
+      range: timeline.range,
+      materializedRange: timeline.materializedRange,
+      totalClipCount: timeline.totalClipCount,
+      materializedClipCount: timeline.materializedClipCount,
+      tracks: timeline.tracks.map((track) => ({
+        trackId: track.trackId,
+        range: track.range,
+        totalClipCount: track.totalClipCount,
+        clips: track.clips.map(({ clipId, startFrame, endFrameExclusive }) => ({
+          clipId,
+          startFrame,
+          endFrameExclusive,
+        })),
+      })),
+    });
+
+    expect(hidden?.tracks.map(({ trackId }) => trackId)).toEqual([id(10), id(11), id(12)]);
+    expect(hidden?.tracks[0]?.clips.map(({ clipId }) => clipId)).toEqual([
+      id(100),
+      id(101),
+      id(102),
+    ]);
+    const materializedClipIds = hidden?.tracks.flatMap((track) =>
+      track.clips.map(({ clipId }) => clipId),
+    );
+    expect(selectedClipIds).toEqual([id(100), id(102)]);
+    expect(selectedClipIds.every((clipId) => materializedClipIds?.includes(clipId))).toBe(true);
+    expect(hidden).not.toBeNull();
+    expect(shown).not.toBeNull();
+    expect(geometry(hidden!)).toEqual(geometry(shown!));
+    expect(hidden).toMatchObject({
+      range: { startFrame: 0, endFrameExclusive: 30 },
+      materializedRange: { startFrame: 0, endFrameExclusive: 30 },
+      totalClipCount: 4,
+      materializedClipCount: 4,
+    });
+  });
+
   it("uses half-open overscan boundaries and caps overscan to one viewport per side", () => {
     const value = projection([
       {
