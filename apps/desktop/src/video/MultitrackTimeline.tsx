@@ -9,7 +9,18 @@ import {
 } from "@supa-video/contracts";
 import { deriveActiveTimelineRange, projectVisibleTimeline } from "@supa-video/project";
 import type { PreparedVideoAsset } from "@supa-video/media";
-import { Film, Lock, LockOpen, Music2, Scissors, Trash2, Volume2, VolumeX } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Film,
+  Lock,
+  LockOpen,
+  Music2,
+  Scissors,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -40,6 +51,7 @@ interface MultitrackTimelineProps {
   readonly onSelectClip: (clipId: string) => void;
   readonly onSetTrackLocked: (trackId: string, locked: boolean) => void;
   readonly onSetTrackMuted: (trackId: string, muted: boolean) => void;
+  readonly onSetTrackHidden?: (trackId: string, hidden: boolean) => void;
   readonly onSplitClip: (clipId: string, sourceFrame: number) => void;
   readonly onRippleDeleteClip: (clipId: string) => void;
   readonly onMoveClip: (clipId: string, timelineStartFrame: number) => void;
@@ -171,6 +183,7 @@ export function MultitrackTimeline({
   onSelectClip,
   onSetTrackLocked,
   onSetTrackMuted,
+  onSetTrackHidden,
   onSplitClip,
   onRippleDeleteClip,
   onMoveClip,
@@ -487,12 +500,31 @@ export function MultitrackTimeline({
               <small>
                 {track.totalClipCount} clips · {track.locked ? "Locked" : "Editable"}
                 {track.canMute ? ` · ${track.muted ? "Muted" : "Audible"}` : ""}
+                {track.canToggleVisibility ? ` · ${track.hidden ? "Hidden" : "Shown"}` : ""}
               </small>
               <div
                 className="multitrack-track-controls"
                 role="group"
                 aria-label={`${track.name} track controls`}
               >
+                {track.canToggleVisibility ? (
+                  <button
+                    type="button"
+                    className="multitrack-visibility-toggle"
+                    aria-label={`${track.name} ${track.kind} output`}
+                    aria-pressed={!track.hidden}
+                    title={track.hidden ? "Show track output" : "Hide track output"}
+                    disabled={editPending}
+                    onClick={() => onSetTrackHidden?.(track.trackId, !track.hidden)}
+                  >
+                    {track.hidden ? (
+                      <EyeOff size={14} aria-hidden="true" />
+                    ) : (
+                      <Eye size={14} aria-hidden="true" />
+                    )}
+                    <span>{track.hidden ? "Show" : "Hide"}</span>
+                  </button>
+                ) : null}
                 {track.canMute ? (
                   <button
                     type="button"

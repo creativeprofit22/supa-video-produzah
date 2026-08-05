@@ -554,6 +554,18 @@ video {
   width: 17px;
   height: 17px;
 }
+.monitor-hidden-video {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  place-items: center;
+  gap: 10px;
+  color: #fff;
+  background: #000;
+  pointer-events: none;
+}
 .monitor-fallback {
   display: grid;
   max-width: 460px;
@@ -786,7 +798,8 @@ video {
   gap: 0.25rem;
 }
 .multitrack-lock-toggle,
-.multitrack-mute-toggle {
+.multitrack-mute-toggle,
+.multitrack-visibility-toggle {
   display: inline-flex;
   min-width: 3.75rem;
   min-height: 2rem;
@@ -803,7 +816,8 @@ video {
   cursor: pointer;
 }
 .multitrack-lock-toggle:hover:not(:disabled),
-.multitrack-mute-toggle:hover:not(:disabled) {
+.multitrack-mute-toggle:hover:not(:disabled),
+.multitrack-visibility-toggle:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text);
 }
@@ -817,13 +831,20 @@ video {
   color: var(--warning);
   background: color-mix(in srgb, var(--surface-soft) 76%, var(--warning));
 }
+.multitrack-visibility-toggle[aria-pressed="false"] {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--surface-soft) 76%, var(--warning));
+}
 .multitrack-lock-toggle:focus-visible,
-.multitrack-mute-toggle:focus-visible {
+.multitrack-mute-toggle:focus-visible,
+.multitrack-visibility-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .multitrack-lock-toggle:disabled,
-.multitrack-mute-toggle:disabled {
+.multitrack-mute-toggle:disabled,
+.multitrack-visibility-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }

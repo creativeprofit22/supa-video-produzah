@@ -1,5 +1,7 @@
 import {
+  canToggleTrackVisibility,
   createRationalTime,
+  isTrackHidden,
   isTrackLocked,
   isTrackMuted,
   microsecondsToSourceFrames,
@@ -35,7 +37,7 @@ export interface TrimDraft {
   readonly outFrame: number;
 }
 export type TimelineEditOperation =
-  "split" | "move" | "trim" | "ripple-delete" | "track-lock" | "track-mute";
+  "split" | "move" | "trim" | "ripple-delete" | "track-lock" | "track-mute" | "track-visibility";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -60,6 +62,10 @@ export interface SetTimelineTrackLockedInput {
 export interface SetTimelineTrackMutedInput {
   readonly trackId: string;
   readonly muted: boolean;
+}
+export interface SetTimelineTrackHiddenInput {
+  readonly trackId: string;
+  readonly hidden: boolean;
 }
 export type EditOperationState =
   | { readonly phase: "idle" }
@@ -324,6 +330,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   const renderListenerRef = useRef<(() => void) | null>(null);
   const projectOperationRef = useRef(0);
   const editOperationRef = useRef(0);
+  const editOperationPendingRef = useRef(false);
   const renderOperationRef = useRef(0);
   const destinationOperationRef = useRef(0);
   const destinationPendingRef = useRef(false);
@@ -366,6 +373,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     (projection: ProjectProjection, patch: Partial<VideoProjectControllerState> = {}) => {
       cancelRenderForProjectSwitch();
       editOperationRef.current += 1;
+      editOperationPendingRef.current = false;
       setEditOperation({ phase: "idle" });
       setTrimDraft(trimDraftForProjection(projection));
       const source = sourceForProjection(projection);
@@ -845,6 +853,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       commands: readonly ProjectCommandV2[],
     ) => {
       const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
       setEditOperation({ phase: "saving", operation: operationKind });
       const request = buildCommandGroup({
         groupId: newId(),
@@ -856,10 +865,15 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         const result = await backend.executeVideoProjectGroup(request);
         if (result.groupId !== request.groupId)
           throw new Error("The desktop service returned a mismatched edit");
-        if (activateEditResult(base, result, operation)) setEditOperation({ phase: "idle" });
+        const activated = activateEditResult(base, result, operation);
+        if (activated) setEditOperation({ phase: "idle" });
+        return activated;
       } catch (error) {
         if (operation === editOperationRef.current)
           setEditOperation({ phase: "error", operation: operationKind, error: asError(error) });
+        return false;
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
       }
     },
     [activateEditResult, backend],
@@ -1043,6 +1057,32 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTimelineTrackHidden = useCallback(
+    async ({ trackId, hidden }: SetTimelineTrackHiddenInput): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        track === undefined ||
+        !canToggleTrackVisibility(track) ||
+        isTrackHidden(track) === hidden ||
+        editOperationPendingRef.current
+      )
+        return false;
+      return executeTimelineCommandGroup(base, "track-visibility", [
+        {
+          type: "SetTrackHidden",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          trackId: track.id,
+          hidden,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
@@ -1073,6 +1113,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       const base = stateRef.current.projection;
       if (base === null || (kind === "undo" ? !base.canUndo : !base.canRedo)) return;
       const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
       setEditOperation({ phase: "saving", operation: kind });
       const operationId = newId();
       try {
@@ -1092,6 +1133,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       } catch (error) {
         if (operation === editOperationRef.current)
           setEditOperation({ phase: "error", operation: kind, error: asError(error) });
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
       }
     },
     [activateEditResult, backend, prepareOpenedSource],
@@ -1213,6 +1256,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     rippleDeleteTimelineClip,
     setTimelineTrackLocked,
     setTimelineTrackMuted,
+    setTimelineTrackHidden,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

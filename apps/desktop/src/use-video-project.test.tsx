@@ -663,6 +663,189 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("deduplicates strict visual-track visibility edits and invalidates an active render", async () => {
+    let active = clipProjection(1);
+    active.state.sequences[0]!.tracks[0]!.locked = true;
+    let releaseExecution: (() => void) | undefined;
+    const executionGate = new Promise<void>((resolve) => {
+      releaseExecution = resolve;
+    });
+    const cancelVideoRender = vi.fn(async () => undefined);
+    const unlisten = vi.fn();
+    let renderHandler: ((event: VideoRenderNotification) => void) | null = null;
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      await executionGate;
+      const command = request.commands[0];
+      if (command?.type !== "SetTrackHidden") throw new Error("Expected track visibility command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: trackId }) => trackId === command.trackId,
+      );
+      if (track === undefined || track.kind === "audio")
+        throw new Error("Expected visual track fixture");
+      track.hidden = command.hidden;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response: CommandResult = {
+        ...commandResult(active, next, request.groupId),
+        cacheInvalidations: ["timeline", "preview", "captions", "render_plan"],
+      };
+      active = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender: vi.fn(async (plan) => ({
+        jobId: id(90),
+        planId: plan.planId,
+        revisionId: plan.revisionId,
+      })),
+      cancelVideoRender,
+      listenVideoRenderEvents: vi.fn(async (handler) => {
+        renderHandler = handler;
+        return unlisten;
+      }),
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.exportVideo());
+    expect(result.current.render.phase).toBe("running");
+    if (result.current.render.phase !== "running") throw new Error("Render did not start");
+    const staleRenderIdentity = {
+      jobId: result.current.render.jobId,
+      planId: result.current.render.planId,
+      revisionId: result.current.render.revisionId,
+    };
+
+    let acceptedRequest: Promise<boolean> | undefined;
+    act(() => {
+      acceptedRequest = result.current.setTimelineTrackHidden({ trackId: id(4), hidden: true });
+    });
+    let pendingResult: boolean | undefined;
+    await act(async () => {
+      pendingResult = await result.current.setTimelineTrackHidden({
+        trackId: id(4),
+        hidden: false,
+      });
+    });
+    expect(pendingResult).toBe(false);
+    expect(execute).toHaveBeenCalledOnce();
+
+    let acceptedResult: boolean | undefined;
+    await act(async () => {
+      releaseExecution?.();
+      acceptedResult = await acceptedRequest;
+    });
+    let unchangedResult: boolean | undefined;
+    await act(async () => {
+      unchangedResult = await result.current.setTimelineTrackHidden({
+        trackId: id(4),
+        hidden: true,
+      });
+    });
+
+    expect(acceptedResult).toBe(true);
+    expect(unchangedResult).toBe(false);
+    const request = execute.mock.calls[0]![0];
+    expect(request).toEqual({
+      groupId: expect.any(String),
+      projectId: id(1),
+      baseRevision: 1,
+      commands: [
+        {
+          type: "SetTrackHidden",
+          commandId: expect.any(String),
+          sequenceId: id(3),
+          trackId: id(4),
+          hidden: true,
+        },
+      ],
+    });
+    await expect(execute.mock.results[0]!.value).resolves.toMatchObject({
+      cacheInvalidations: ["timeline", "preview", "captions", "render_plan"],
+    });
+    expect(cancelVideoRender).toHaveBeenCalledOnce();
+    expect(cancelVideoRender).toHaveBeenCalledWith(id(90));
+    expect(unlisten).toHaveBeenCalledOnce();
+    expect(result.current.render).toEqual({ phase: "idle" });
+    act(() => {
+      renderHandler?.({
+        type: "completed",
+        ...staleRenderIdentity,
+        output: {
+          outputPath: "C:\\Exports\\clip.mp4",
+          previewPath: "C:\\Cache\\stale-preview.mp4",
+          probe,
+        },
+      });
+    });
+    expect(result.current.render).toEqual({ phase: "idle" });
+    expect(result.current.projection?.state.sequences[0]?.tracks[0]).toMatchObject({
+      kind: "video",
+      locked: true,
+      hidden: true,
+    });
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects audio track visibility without submitting or changing controller state", async () => {
+    const opened = clipProjection(1);
+    opened.state.sequences[0]!.tracks.push({
+      id: id(7),
+      name: "Audio 1",
+      kind: "audio",
+      clips: [],
+    });
+    const execute = vi.fn(async () => {
+      throw new Error("unexpected audio visibility submission");
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let visibilityResult: boolean | undefined;
+    await act(async () => {
+      visibilityResult = await result.current.setTimelineTrackHidden({
+        trackId: id(7),
+        hidden: true,
+      });
+    });
+
+    expect(visibilityResult).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
   it("cancels an active render when track mute changes output", async () => {
     let active = clipProjection(1);
     const cancelVideoRender = vi.fn(async () => undefined);

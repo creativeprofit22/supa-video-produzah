@@ -8,18 +8,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testProbe, testSourceIdentity } from "../test-video-service";
 import { VideoWorkspace } from "./VideoWorkspace";
 
-const { captureProgramMonitorProps } = vi.hoisted(() => ({
+const { captureProgramMonitorProps, captureTimelineProps } = vi.hoisted(() => ({
   captureProgramMonitorProps: vi.fn(),
+  captureTimelineProps: vi.fn(),
 }));
 
 vi.mock("./AssetPanel", () => ({ AssetPanel: () => null }));
 vi.mock("./ClipTrimRanges", () => ({ ClipTrimRanges: () => null }));
 vi.mock("./ExportPanel", () => ({ ExportPanel: () => null }));
-vi.mock("./MultitrackTimeline", () => ({ MultitrackTimeline: () => null }));
+vi.mock("./MultitrackTimeline", () => ({
+  MultitrackTimeline: (props: {
+    readonly onSetTrackHidden: (trackId: string, hidden: boolean) => void;
+  }) => {
+    captureTimelineProps(props);
+    return null;
+  },
+}));
 vi.mock("./ProjectInspector", () => ({ ProjectInspector: () => null }));
 vi.mock("./TrimInspector", () => ({ TrimInspector: () => null }));
 vi.mock("./ProgramMonitor", () => ({
-  ProgramMonitor: (props: { readonly timelineAudioMuted: boolean }) => {
+  ProgramMonitor: (props: {
+    readonly timelineAudioMuted: boolean;
+    readonly timelineVideoHidden: boolean;
+  }) => {
     captureProgramMonitorProps(props);
     return <div data-testid="program-monitor" />;
   },
@@ -42,7 +53,10 @@ const assetId = id(1);
 const sequenceId = id(2);
 const previewClipId = id(3);
 
-function canonicalProjection(previewOwnerMuted = true): ProjectProjection {
+function canonicalProjection(
+  previewOwnerMuted = true,
+  previewOwnerHidden = true,
+): ProjectProjection {
   return {
     projectId: id(10),
     name: "Canonical mute owner",
@@ -78,6 +92,7 @@ function canonicalProjection(previewOwnerMuted = true): ProjectProjection {
               name: "Other canonical track",
               kind: "video",
               muted: !previewOwnerMuted,
+              hidden: !previewOwnerHidden,
               clips: [
                 {
                   id: id(21),
@@ -95,6 +110,7 @@ function canonicalProjection(previewOwnerMuted = true): ProjectProjection {
               name: "Preview owner",
               kind: "video",
               muted: previewOwnerMuted,
+              hidden: previewOwnerHidden,
               clips: [
                 {
                   id: previewClipId,
@@ -178,10 +194,11 @@ function legacyProject(): VideoProjectFileV1 {
 afterEach(() => {
   cleanup();
   captureProgramMonitorProps.mockClear();
+  captureTimelineProps.mockClear();
 });
 
 describe("VideoWorkspace", () => {
-  it("derives preview mute from the canonical track that owns the active preview clip", () => {
+  it("derives preview visibility and mute from the active preview clip owner", () => {
     const controller = {
       projectPath: "C:\\Projects\\workspace.svpvideo",
       projection: canonicalProjection(),
@@ -211,6 +228,7 @@ describe("VideoWorkspace", () => {
       rippleDeleteTimelineClip: vi.fn(),
       setTimelineTrackLocked: vi.fn(),
       setTimelineTrackMuted: vi.fn(),
+      setTimelineTrackHidden: vi.fn(),
       undoEdit: vi.fn(),
       redoEdit: vi.fn(),
       convertCachePath: (path: string) => path,
@@ -247,15 +265,24 @@ describe("VideoWorkspace", () => {
     expect(captureProgramMonitorProps).toHaveBeenCalled();
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
       timelineAudioMuted: true,
+      timelineVideoHidden: true,
+    });
+    const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
+      { readonly onSetTrackHidden: (trackId: string, hidden: boolean) => void } | undefined;
+    timelineProps?.onSetTrackHidden(id(30), false);
+    expect(controller.setTimelineTrackHidden).toHaveBeenCalledWith({
+      trackId: id(30),
+      hidden: false,
     });
 
-    const controllerWithMutedNonOwner = {
+    const controllerWithMutedAndHiddenNonOwner = {
       ...controller,
-      projection: canonicalProjection(false),
+      projection: canonicalProjection(false, false),
     } as ComponentProps<typeof VideoWorkspace>["controller"];
-    rerender(workspace(controllerWithMutedNonOwner));
+    rerender(workspace(controllerWithMutedAndHiddenNonOwner));
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
       timelineAudioMuted: false,
+      timelineVideoHidden: false,
     });
   });
 });

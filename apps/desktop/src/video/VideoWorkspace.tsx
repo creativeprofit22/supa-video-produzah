@@ -1,4 +1,5 @@
 import {
+  isTrackHidden,
   isTrackMuted,
   type ProjectClip,
   type ProjectTrack,
@@ -149,6 +150,8 @@ export function VideoWorkspace({
   const canonicalPreview = findCanonicalPreviewClip(canonicalSequence, clip ?? null);
   const timelineAudioMuted =
     canonicalPreview === null ? false : isTrackMuted(canonicalPreview.track);
+  const timelineVideoHidden =
+    canonicalPreview === null ? false : isTrackHidden(canonicalPreview.track);
   const timelinePlayheadFrame = timelineFrameForPreviewSourceFrame(
     canonicalSequence,
     clip ?? null,
@@ -412,6 +415,7 @@ export function VideoWorkspace({
               finalPreviewPath={finalPreviewPath}
               hasAudio={sourceHasAudio}
               timelineAudioMuted={timelineAudioMuted}
+              timelineVideoHidden={timelineVideoHidden}
               convertCachePath={controller.convertCachePath}
               rate={sequence.rate}
               trimIn={draft.inFrame}
@@ -453,6 +457,9 @@ export function VideoWorkspace({
               }
               onSetTrackMuted={(trackId, muted) =>
                 void controller.setTimelineTrackMuted({ trackId, muted })
+              }
+              onSetTrackHidden={(trackId, hidden) =>
+                void controller.setTimelineTrackHidden({ trackId, hidden })
               }
               onSplitClip={(clipId, sourceFrame) =>
                 void controller.splitTimelineClip({ clipId, sourceFrame })

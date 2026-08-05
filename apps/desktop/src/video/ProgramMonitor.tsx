@@ -16,6 +16,7 @@ interface ProgramMonitorProps {
   readonly finalPreviewPath: string | null;
   readonly hasAudio: boolean;
   readonly timelineAudioMuted: boolean;
+  readonly timelineVideoHidden?: boolean;
   readonly convertCachePath: (path: string) => string;
   readonly rate: RationalRate;
   readonly trimIn: number;
@@ -59,6 +60,7 @@ export function ProgramMonitor({
   finalPreviewPath,
   hasAudio,
   timelineAudioMuted: canonicalTimelineAudioMuted,
+  timelineVideoHidden = false,
   convertCachePath,
   rate,
   trimIn,
@@ -412,6 +414,12 @@ export function ProgramMonitor({
               <div className="monitor-buffering-status" role="status">
                 <span className="spinner monitor-buffering-spinner" aria-hidden />
                 <span>Buffering preview. Please wait.</span>
+              </div>
+            ) : null}
+            {timelineVideoHidden ? (
+              <div className="monitor-hidden-video" role="status">
+                <VideoOff size={28} aria-hidden />
+                <strong>Video track hidden</strong>
               </div>
             ) : null}
           </>
