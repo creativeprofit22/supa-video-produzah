@@ -23,10 +23,10 @@ use super::{
     service::{ProjectInitializationFailpoint, VideoProjectService},
     snapshot::{checkpoint, checkpoint_with_failpoint, read_snapshot, CheckpointFailpoint},
     types::{
-        AffectedRange, ClipSource, ClipTransform, CommandGroupRequest, JournalHeader,
-        JournalRecord, JournalRecordKind, ProjectCaption, ProjectClip, ProjectCommand,
-        ProjectHistoryEntryV2, ProjectMarker, ProjectTrack, RecoveryStatus, VideoProjectSnapshotV2,
-        VideoProjectStateV2,
+        AffectedRange, CacheInvalidation, ClipSource, ClipTransform, CommandGroupRequest,
+        JournalHeader, JournalRecord, JournalRecordKind, ProjectCaption, ProjectClip,
+        ProjectCommand, ProjectHistoryEntryV2, ProjectMarker, ProjectTrack, RecoveryStatus,
+        VideoProjectSnapshotV2, VideoProjectStateV2,
     },
 };
 use crate::video::{
@@ -335,7 +335,7 @@ fn fixture_state_hashes_are_deterministic() {
 }
 
 #[test]
-fn missing_track_lock_defaults_to_unlocked_without_changing_legacy_hash_or_json() {
+fn missing_track_lock_and_mute_default_without_changing_legacy_hash_or_json() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
     );
@@ -346,7 +346,7 @@ fn missing_track_lock_defaults_to_unlocked_without_changing_legacy_hash_or_json(
     assert!(snapshot.state.sequences[0]
         .tracks
         .iter()
-        .all(|track| !track.is_locked()));
+        .all(|track| !track.is_locked() && !track.is_muted()));
     assert_eq!(
         state_hash(&snapshot.state).unwrap(),
         snapshot.revision.state_hash
@@ -888,6 +888,7 @@ fn indexed_removal_fixture() -> VideoProjectStateV2 {
         id: "90000000-0000-4000-8000-000000000502".to_owned(),
         name: "Audio".to_owned(),
         locked: false,
+        muted: false,
         clips: vec![],
     });
 
@@ -1392,6 +1393,62 @@ fn set_track_locked_persists_and_has_exact_undo_redo_hashes_and_labels() {
         .unwrap();
     assert!(reopened.projection.state.sequences[0].tracks[0].is_locked());
     assert_eq!(reopened.projection.revision.state_hash, redone_hash);
+}
+
+#[test]
+fn set_track_muted_executes_on_locked_tracks_and_rejects_captions() {
+    let mut snapshot = ripple_fixture(1);
+    snapshot.state.sequences[0].tracks[0].set_locked(true);
+    let original_state = snapshot.state.clone();
+    let expected_start = original_state.sequences[0].tracks[0].clips().unwrap()[0]
+        .timeline_start
+        .clone();
+    let applied = apply_group(
+        &original_state,
+        &[ProjectCommand::SetTrackMuted {
+            command_id: "74000000-0000-4000-8000-000000000001".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            muted: true,
+        }],
+    )
+    .unwrap();
+
+    assert!(applied.state.sequences[0].tracks[0].is_muted());
+    assert_eq!(applied.summary, "Muted track");
+    assert_eq!(
+        applied.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::AudioMix,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert_eq!(applied.affected_ranges.len(), 1);
+    assert_eq!(applied.affected_ranges[0].sequence_id, RIPPLE_SEQUENCE_ID);
+    assert_eq!(applied.affected_ranges[0].start, expected_start);
+    assert!(matches!(
+        applied.inverse_commands.as_slice(),
+        [ProjectCommand::SetTrackMuted { muted: false, .. }]
+    ));
+    let reverted = apply_group(&applied.state, &applied.inverse_commands).unwrap();
+    assert_eq!(reverted.state, original_state);
+
+    let state = indexed_removal_fixture();
+    let sequence_id = state.sequences[1].id.clone();
+    let caption_track_id = state.sequences[1].tracks[1].id().to_owned();
+    let error = apply_group(
+        &state,
+        &[ProjectCommand::SetTrackMuted {
+            command_id: "74000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id,
+            track_id: caption_track_id,
+            muted: true,
+        }],
+    )
+    .unwrap_err();
+    assert_eq!(error.details["category"], "non_audio_track");
 }
 
 #[test]

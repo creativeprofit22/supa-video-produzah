@@ -7,14 +7,20 @@ import {
   commandGroupRequestSchema,
   projectCommandSchemaV2,
   setTrackLockedCommandSchemaV2,
+  setTrackMutedCommandSchemaV2,
 } from "./project-commands-v2.js";
 import {
   isTrackLocked,
+  isTrackMuted,
   projectHistoryEntryV2Schema,
   projectTrackSchema,
   videoProjectSnapshotV2Schema,
 } from "./project-v2.js";
-import { projectProjectionSchema, recoveryReportSchema } from "./project-service.js";
+import {
+  commandResultSchema,
+  projectProjectionSchema,
+  recoveryReportSchema,
+} from "./project-service.js";
 
 const ids = {
   project: "00000000-0000-4000-8000-000000000001",
@@ -158,6 +164,34 @@ describe("V2 project contracts", () => {
     }
   });
 
+  it("preserves legacy tracks without mute state and restricts mute to AV tracks", () => {
+    const legacyTracks = [
+      { id: ids.project, name: "Video", kind: "video", clips: [] },
+      { id: ids.operation, name: "Audio", kind: "audio", clips: [] },
+      { id: ids.revision, name: "Captions", kind: "caption", captions: [] },
+    ] as const;
+
+    for (const legacyTrack of legacyTracks) {
+      const parsed = projectTrackSchema.parse(legacyTrack);
+      expect(parsed).toEqual(legacyTrack);
+      expect(Object.hasOwn(parsed, "muted")).toBe(false);
+      expect(JSON.parse(JSON.stringify(parsed))).toEqual(legacyTrack);
+      expect(isTrackMuted(parsed)).toBe(false);
+
+      if (legacyTrack.kind !== "caption") {
+        for (const muted of [false, true]) {
+          const persisted = projectTrackSchema.parse({ ...legacyTrack, muted });
+          expect(persisted).toEqual({ ...legacyTrack, muted });
+          expect(isTrackMuted(persisted)).toBe(muted);
+        }
+      }
+    }
+
+    const caption = legacyTracks[2];
+    expect(projectTrackSchema.safeParse({ ...caption, muted: false }).success).toBe(false);
+    expect(projectTrackSchema.safeParse({ ...caption, muted: true }).success).toBe(false);
+  });
+
   it("rejects dangling clip asset and sequence references", async () => {
     const fixtureUrl = new URL(
       "../fixtures/project-v2/valid-relative-source.svpvideo",
@@ -245,6 +279,56 @@ describe("V2 project contracts", () => {
         sequenceId: ids.project,
         trackId: ids.operation,
       }).success,
+    ).toBe(false);
+  });
+
+  it("validates strict SetTrackMuted commands in public groups and history", () => {
+    const muteCommand = {
+      type: "SetTrackMuted" as const,
+      commandId: ids.command,
+      sequenceId: ids.project,
+      trackId: ids.operation,
+      muted: true,
+    };
+    const unmuteCommand = { ...muteCommand, muted: false };
+
+    expect(setTrackMutedCommandSchemaV2.parse(muteCommand)).toEqual(muteCommand);
+    expect(projectCommandSchemaV2.parse(muteCommand)).toEqual(muteCommand);
+    expect(
+      commandGroupRequestSchema.parse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [muteCommand],
+      }).commands,
+    ).toEqual([muteCommand]);
+
+    const historyEntry = {
+      groupId: ids.group,
+      summary: "Muted track",
+      forwardCommands: [muteCommand],
+      inverseCommands: [unmuteCommand],
+      affectedRanges: [],
+      cacheInvalidations: ["timeline" as const, "audio_mix" as const],
+    };
+    expect(projectHistoryEntryV2Schema.parse(historyEntry)).toEqual(historyEntry);
+
+    expect(setTrackMutedCommandSchemaV2.safeParse({ ...muteCommand, muted: "true" }).success).toBe(
+      false,
+    );
+    expect(setTrackMutedCommandSchemaV2.safeParse({ ...muteCommand, audible: false }).success).toBe(
+      false,
+    );
+    expect(
+      setTrackMutedCommandSchemaV2.safeParse({
+        type: "SetTrackMuted",
+        commandId: ids.command,
+        sequenceId: ids.project,
+        trackId: ids.operation,
+      }).success,
+    ).toBe(false);
+    expect(
+      setTrackMutedCommandSchemaV2.safeParse({ ...muteCommand, trackId: "not-a-uuid" }).success,
     ).toBe(false);
   });
 
@@ -397,25 +481,72 @@ describe("V2 project contracts", () => {
     expect(() => projectCommandSchemaV2.parse({ ...indexedCommands[0], index: -1 })).toThrow();
   });
 
-  it("validates projections and recovery reports without private storage fields", () => {
+  it("validates muted state through projections and command results", () => {
+    const state = {
+      assets: [],
+      sequences: [
+        {
+          id: ids.revision,
+          name: "Sequence",
+          rate: { numerator: 30, denominator: 1 },
+          width: 1920,
+          height: 1080,
+          audioSampleRate: 48_000,
+          tracks: [
+            {
+              id: ids.operation,
+              name: "Camera",
+              kind: "video" as const,
+              muted: true,
+              clips: [],
+            },
+          ],
+          markers: [],
+        },
+      ],
+      activeSequenceId: ids.revision,
+    };
+    const newRevision = {
+      ...snapshot().revision,
+      number: 1,
+      id: ids.generation,
+      parentId: ids.revision,
+    };
     const projection = {
       projectId: ids.project,
       name: "Canonical fixture",
-      revision: snapshot().revision,
-      state: snapshot().state,
-      canUndo: false,
+      revision: newRevision,
+      state,
+      canUndo: true,
       canRedo: false,
-      lastCommand: null,
+      lastCommand: { operationId: ids.operation, groupId: ids.group, summary: "Muted track" },
       sources: [],
       journalHealth: "healthy" as const,
       snapshotRevision: 0,
       recoveryStatus: "clean" as const,
-      replayedRecordCount: 0,
+      replayedRecordCount: 1,
     };
+    const result = {
+      projectId: ids.project,
+      operationId: ids.operation,
+      groupId: ids.group,
+      priorRevision: snapshot().revision,
+      newRevision,
+      stateHash: hash,
+      projection,
+      affectedRanges: [],
+      cacheInvalidations: ["timeline" as const, "audio_mix" as const],
+      events: [],
+    };
+
     expect(projectProjectionSchema.parse(projection)).toEqual(projection);
+    expect(commandResultSchema.parse(result)).toEqual(result);
     expect(() =>
       projectProjectionSchema.parse({ ...projection, journalPath: "C:\\private" }),
     ).toThrow();
+  });
+
+  it("validates recovery reports without private storage fields", () => {
     expect(
       recoveryReportSchema.parse({
         status: "migrated_v1",

@@ -593,6 +593,11 @@ fn valid_command(command: &ProjectCommand) -> bool {
             sequence_id,
             track_id,
             ..
+        }
+        | ProjectCommand::SetTrackMuted {
+            sequence_id,
+            track_id,
+            ..
         } => is_canonical_uuid(sequence_id) && is_canonical_uuid(track_id),
         ProjectCommand::InsertClip {
             sequence_id,

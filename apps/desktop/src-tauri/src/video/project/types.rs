@@ -113,6 +113,8 @@ pub enum ProjectTrack {
         name: String,
         #[serde(default, skip_serializing_if = "is_false")]
         locked: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        muted: bool,
         clips: Vec<ProjectClip>,
     },
     Audio {
@@ -120,6 +122,8 @@ pub enum ProjectTrack {
         name: String,
         #[serde(default, skip_serializing_if = "is_false")]
         locked: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        muted: bool,
         clips: Vec<ProjectClip>,
     },
     Caption {
@@ -151,6 +155,19 @@ impl ProjectTrack {
             | Self::Caption { locked, .. } => locked,
         };
         std::mem::replace(locked, value)
+    }
+    pub fn is_muted(&self) -> bool {
+        match self {
+            Self::Video { muted, .. } | Self::Audio { muted, .. } => *muted,
+            Self::Caption { .. } => false,
+        }
+    }
+    pub fn set_muted(&mut self, value: bool) -> Option<bool> {
+        let muted = match self {
+            Self::Video { muted, .. } | Self::Audio { muted, .. } => muted,
+            Self::Caption { .. } => return None,
+        };
+        Some(std::mem::replace(muted, value))
     }
     pub fn clips(&self) -> Option<&[ProjectClip]> {
         match self {
@@ -276,6 +293,15 @@ pub enum ProjectCommand {
         #[serde(rename = "trackId")]
         track_id: String,
         locked: bool,
+    },
+    SetTrackMuted {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        muted: bool,
     },
     InsertClip {
         #[serde(rename = "commandId")]
@@ -451,6 +477,7 @@ impl ProjectCommand {
             | Self::InsertTrack { command_id, .. }
             | Self::RemoveTrack { command_id, .. }
             | Self::SetTrackLocked { command_id, .. }
+            | Self::SetTrackMuted { command_id, .. }
             | Self::InsertClip { command_id, .. }
             | Self::RemoveClip { command_id, .. }
             | Self::RippleDeleteClip { command_id, .. }

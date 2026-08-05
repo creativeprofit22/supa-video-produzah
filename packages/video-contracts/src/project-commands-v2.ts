@@ -71,6 +71,14 @@ export const setTrackLockedCommandSchemaV2 = z
     locked: z.boolean(),
   })
   .strict();
+export const setTrackMutedCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetTrackMuted"),
+    ...commandId,
+    ...target,
+    muted: z.boolean(),
+  })
+  .strict();
 export const insertClipCommandSchemaV2 = z
   .object({
     type: z.literal("InsertClip"),
@@ -202,6 +210,7 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   insertTrackCommandSchemaV2,
   removeTrackCommandSchemaV2,
   setTrackLockedCommandSchemaV2,
+  setTrackMutedCommandSchemaV2,
   insertClipCommandSchemaV2,
   removeClipCommandSchemaV2,
   rippleDeleteClipCommandSchemaV2,

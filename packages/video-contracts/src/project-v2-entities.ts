@@ -73,6 +73,7 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
     .object({
       ...trackBase,
       kind: z.literal("video"),
+      muted: z.boolean().optional(),
       clips: z.array(projectClipSchema).max(100_000),
     })
     .strict(),
@@ -80,6 +81,7 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
     .object({
       ...trackBase,
       kind: z.literal("audio"),
+      muted: z.boolean().optional(),
       clips: z.array(projectClipSchema).max(100_000),
     })
     .strict(),
@@ -96,6 +98,11 @@ export type ProjectTrack = z.infer<typeof projectTrackSchema>;
 /** Tracks persisted before locking was introduced are semantically unlocked. */
 export function isTrackLocked(track: ProjectTrack): boolean {
   return track.locked ?? false;
+}
+
+/** Tracks persisted before muting was introduced are semantically audible. */
+export function isTrackMuted(track: ProjectTrack): boolean {
+  return track.kind === "caption" ? false : (track.muted ?? false);
 }
 
 export const videoSequenceV2Schema = z

@@ -169,6 +169,31 @@ fn clip_range(sequence_id: &str, clip: &ProjectClip) -> Result<AffectedRange, Vi
     })
 }
 
+fn track_range(
+    sequence_id: &str,
+    track: &ProjectTrack,
+) -> Result<Vec<AffectedRange>, VideoCommandError> {
+    let clips = track.clips().ok_or_else(|| invalid("non_audio_track"))?;
+    let Some(first) = clips.first() else {
+        return Ok(vec![]);
+    };
+    let mut start = first.timeline_start.clone();
+    let mut end = clip_range(sequence_id, first)?.end;
+    for clip in &clips[1..] {
+        let range = clip_range(sequence_id, clip)?;
+        if range.start.value < start.value {
+            start = range.start;
+        }
+        if range.end.value > end.value {
+            end = range.end;
+        }
+    }
+    Ok(vec![AffectedRange {
+        sequence_id: sequence_id.to_owned(),
+        start,
+        end,
+    }])
+}
 fn insertion_index(
     requested: Option<u64>,
     collection_len: usize,
@@ -224,6 +249,19 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
                 "Unlocked track"
             },
             vec![CacheInvalidation::Timeline],
+        ),
+        ProjectCommand::SetTrackMuted { muted, .. } => (
+            if *muted {
+                "Muted track"
+            } else {
+                "Unmuted track"
+            },
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::AudioMix,
+                CacheInvalidation::RenderPlan,
+            ],
         ),
         ProjectCommand::InsertClip { .. } => (
             "Inserted clip",
@@ -559,6 +597,27 @@ fn apply_one(
                     locked: previous,
                 }],
                 vec![],
+            ))
+        }
+        ProjectCommand::SetTrackMuted {
+            sequence_id,
+            track_id,
+            muted,
+            ..
+        } => {
+            let track = find_track_mut(state, sequence_id, track_id)?;
+            let affected_ranges = track_range(sequence_id, track)?;
+            let previous = track
+                .set_muted(*muted)
+                .ok_or_else(|| invalid("non_audio_track"))?;
+            Ok((
+                vec![ProjectCommand::SetTrackMuted {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    muted: previous,
+                }],
+                affected_ranges,
             ))
         }
         ProjectCommand::InsertClip {
