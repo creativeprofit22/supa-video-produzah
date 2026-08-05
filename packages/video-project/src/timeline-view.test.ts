@@ -172,6 +172,26 @@ describe("visible timeline projection", () => {
     expect(Object.isFrozen(result?.tracks[0]?.clips[0])).toBe(true);
   });
 
+  it("projects mute capability and effective state for absent, AV, and caption tracks", () => {
+    const value = projection([
+      { id: id(10), name: "Absent video", kind: "video", clips: [clip(100, 0, 10)] },
+      { id: id(11), name: "Absent audio", kind: "audio", clips: [] },
+      { id: id(12), name: "Muted video", kind: "video", muted: true, clips: [] },
+      { id: id(13), name: "Muted audio", kind: "audio", muted: true, clips: [] },
+      { id: id(14), name: "Captions", kind: "caption", captions: [] },
+    ]);
+
+    const result = projectVisibleTimeline(value, viewportFor(value, 0, 10, 0));
+
+    expect(result?.tracks.map(({ kind, canMute, muted }) => ({ kind, canMute, muted }))).toEqual([
+      { kind: "video", canMute: true, muted: false },
+      { kind: "audio", canMute: true, muted: false },
+      { kind: "video", canMute: true, muted: true },
+      { kind: "audio", canMute: true, muted: true },
+      { kind: "caption", canMute: false, muted: false },
+    ]);
+  });
+
   it("uses half-open overscan boundaries and caps overscan to one viewport per side", () => {
     const value = projection([
       {

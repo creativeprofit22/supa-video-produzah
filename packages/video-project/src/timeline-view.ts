@@ -3,6 +3,7 @@ import {
   frameRangeDuration,
   frameToPixel,
   isTrackLocked,
+  isTrackMuted,
   projectProjectionSchema,
   ratesEqual,
   rescaleRationalTime,
@@ -40,6 +41,8 @@ export interface TimelineTrackViewModel {
   readonly name: string;
   readonly kind: ProjectTrack["kind"];
   readonly locked: boolean;
+  readonly canMute: boolean;
+  readonly muted: boolean;
   readonly range: TimelineRangeViewModel;
   readonly totalClipCount: number;
   readonly clips: readonly TimelineClipViewModel[];
@@ -334,6 +337,8 @@ export function projectVisibleTimeline(
         name: track.name,
         kind: track.kind,
         locked: isTrackLocked(track),
+        canMute: false,
+        muted: isTrackMuted(track),
         range: preparedTrack.range,
         totalClipCount: 0,
         clips: Object.freeze([]),
@@ -357,6 +362,8 @@ export function projectVisibleTimeline(
       name: track.name,
       kind: track.kind,
       locked: isTrackLocked(track),
+      canMute: true,
+      muted: isTrackMuted(track),
       range: preparedTrack.range,
       totalClipCount: preparedTrack.totalClipCount,
       clips,
