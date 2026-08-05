@@ -81,12 +81,17 @@ function installVideoFrameCallbacks() {
   };
 }
 
-function preparedProxyMonitor(proxyPath = "/cache/proxy.mp4", hasAudio = true) {
+function preparedProxyMonitor(
+  proxyPath = "/cache/proxy.mp4",
+  hasAudio = true,
+  timelineAudioMuted = false,
+) {
   return (
     <ProgramMonitor
       proxyPath={proxyPath}
       finalPreviewPath={null}
       hasAudio={hasAudio}
+      timelineAudioMuted={timelineAudioMuted}
       convertCachePath={(path) => `asset:${path}`}
       rate={rate}
       trimIn={10}
@@ -109,13 +114,14 @@ describe("ProgramMonitor", () => {
     restoreVideoFrameCallbacks();
   });
 
-  it("converts only controlled cache paths and switches to the verified final preview", () => {
+  it("converts controlled paths and limits timeline mute to the source preview", () => {
     const convertCachePath = vi.fn((path: string) => `asset:${path}`);
     render(
       <ProgramMonitor
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
+        timelineAudioMuted
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -125,15 +131,23 @@ describe("ProgramMonitor", () => {
       />,
     );
 
+    const sourceVideo = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
     expect(convertCachePath).toHaveBeenCalledWith("/cache/proxy.mp4");
-    expect(screen.getByLabelText("Prepared source proxy").getAttribute("src")).toBe(
-      "asset:/cache/proxy.mp4",
+    expect(sourceVideo.getAttribute("src")).toBe("asset:/cache/proxy.mp4");
+    expect(sourceVideo.muted).toBe(true);
+    expect(screen.getByRole("button", { name: "Audio muted by timeline track" })).toHaveProperty(
+      "disabled",
+      true,
     );
+
     fireEvent.click(screen.getByRole("button", { name: "Final" }));
+
+    const finalVideo = screen.getByLabelText("Verified final video preview") as HTMLVideoElement;
     expect(convertCachePath).toHaveBeenCalledWith("/cache/final-preview.mp4");
-    expect(screen.getByLabelText("Verified final video preview").getAttribute("src")).toBe(
-      "asset:/cache/final-preview.mp4",
-    );
+    expect(finalVideo.getAttribute("src")).toBe("asset:/cache/final-preview.mp4");
+    expect(finalVideo.muted).toBe(false);
+    expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
+    expect(screen.queryByText("Audio muted by timeline track")).toBeNull();
     expect(convertCachePath).toHaveBeenCalledTimes(2);
   });
 
@@ -145,6 +159,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -181,6 +196,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -212,6 +228,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -243,6 +260,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy-a.mp4"
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -261,6 +279,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy-b.mp4"
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -293,6 +312,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -328,6 +348,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -358,6 +379,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -391,6 +413,58 @@ describe("ProgramMonitor", () => {
     expect(video.muted).toBe(false);
   });
 
+  it("enforces timeline track mute and restores the prior transport volume", () => {
+    const { rerender } = render(preparedProxyMonitor());
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    const volumeControl = screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement;
+
+    fireEvent.change(volumeControl, { target: { value: "0.35" } });
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(false);
+
+    rerender(preparedProxyMonitor("/cache/proxy.mp4", true, true));
+
+    const timelineMuteControl = screen.getByRole("button", {
+      name: "Audio muted by timeline track",
+    }) as HTMLButtonElement;
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(true);
+    expect(timelineMuteControl.disabled).toBe(true);
+    expect(volumeControl.disabled).toBe(true);
+    expect(screen.getByText("Audio muted by timeline track").getAttribute("role")).toBe("status");
+
+    fireEvent.click(timelineMuteControl);
+    fireEvent.change(volumeControl, { target: { value: "0.8" } });
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(true);
+
+    rerender(preparedProxyMonitor());
+
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(video.muted).toBe(false);
+    expect(volumeControl.value).toBe("0.35");
+    expect(volumeControl.disabled).toBe(false);
+    expect(screen.queryByText("Audio muted by timeline track")).toBeNull();
+  });
+
+  it("restores a user-muted transport after timeline track mute clears", () => {
+    const { rerender } = render(preparedProxyMonitor());
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+
+    fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+      target: { value: "0.45" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Mute audio" }));
+    expect(video.muted).toBe(true);
+
+    rerender(preparedProxyMonitor("/cache/proxy.mp4", true, true));
+    rerender(preparedProxyMonitor());
+
+    expect(video.volume).toBeCloseTo(0.45);
+    expect(video.muted).toBe(true);
+    expect(screen.getByRole("button", { name: "Unmute audio" })).toBeTruthy();
+  });
+
   it("updates media volume from the accessible range without seeking", () => {
     const onPlayheadChange = vi.fn();
     render(
@@ -398,6 +472,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -452,6 +527,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -554,6 +630,7 @@ describe("ProgramMonitor", () => {
         proxyPath="/cache/proxy.mp4"
         finalPreviewPath={null}
         hasAudio
+        timelineAudioMuted={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}

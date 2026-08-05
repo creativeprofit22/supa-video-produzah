@@ -15,6 +15,7 @@ interface ProgramMonitorProps {
   readonly proxyPath: string | null;
   readonly finalPreviewPath: string | null;
   readonly hasAudio: boolean;
+  readonly timelineAudioMuted: boolean;
   readonly convertCachePath: (path: string) => string;
   readonly rate: RationalRate;
   readonly trimIn: number;
@@ -57,6 +58,7 @@ export function ProgramMonitor({
   proxyPath,
   finalPreviewPath,
   hasAudio,
+  timelineAudioMuted: canonicalTimelineAudioMuted,
   convertCachePath,
   rate,
   trimIn,
@@ -73,6 +75,7 @@ export function ProgramMonitor({
     () => false,
   );
   const [previewMode, setPreviewMode] = useState<"source" | "final">("source");
+  const timelineAudioMuted = previewMode === "source" && canonicalTimelineAudioMuted;
   const [playing, setPlaying] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [mediaError, setMediaError] = useState(false);
@@ -246,55 +249,92 @@ export function ProgramMonitor({
     setMediaError(true);
   }, [cancelFrameObservation]);
 
-  const syncAudioState = useCallback((video: HTMLVideoElement) => {
-    const nextVolume = Math.max(0, Math.min(video.volume, 1));
-    if (nextVolume > 0) {
-      lastNonZeroVolumeRef.current = nextVolume;
+  const syncUserAudioStateFromMedia = useCallback(
+    (video: HTMLVideoElement) => {
+      const nextVolume = Math.max(0, Math.min(video.volume, 1));
+      if (nextVolume > 0) {
+        lastNonZeroVolumeRef.current = nextVolume;
+      }
+      const nextMuted = timelineAudioMuted ? audioSettingsRef.current.muted : video.muted;
+      audioSettingsRef.current = { volume: nextVolume, muted: nextMuted };
+      setVolume(nextVolume);
+      setMuted(nextMuted);
+      if (timelineAudioMuted && !video.muted) {
+        video.muted = true;
+      }
+    },
+    [timelineAudioMuted],
+  );
+
+  const applyEffectiveAudioState = useCallback(
+    (video: HTMLVideoElement) => {
+      const audioSettings = audioSettingsRef.current;
+      if (video.volume !== audioSettings.volume) {
+        video.volume = audioSettings.volume;
+      }
+      const effectiveMuted = timelineAudioMuted || audioSettings.muted;
+      if (video.muted !== effectiveMuted) {
+        video.muted = effectiveMuted;
+      }
+    },
+    [timelineAudioMuted],
+  );
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video !== null) {
+      applyEffectiveAudioState(video);
     }
-    audioSettingsRef.current = { volume: nextVolume, muted: video.muted };
-    setVolume(nextVolume);
-    setMuted(video.muted);
-  }, []);
+  }, [applyEffectiveAudioState, mediaUrl, muted, volume]);
 
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (video === null) {
       return;
     }
-    const audioSettings = audioSettingsRef.current;
-    video.volume = audioSettings.volume;
-    video.muted = audioSettings.muted;
+    applyEffectiveAudioState(video);
     seekTo(activeIn);
-  }, [activeIn, seekTo]);
+  }, [activeIn, applyEffectiveAudioState, seekTo]);
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
-    if (video === null || !hasAudio) {
+    if (video === null || !hasAudio || timelineAudioMuted) {
       return;
     }
-    if (video.muted || video.volume === 0) {
-      if (video.volume === 0) {
-        video.volume = lastNonZeroVolumeRef.current;
+    const audioSettings = audioSettingsRef.current;
+    let nextVolume = audioSettings.volume;
+    let nextMuted = audioSettings.muted;
+    if (nextMuted || nextVolume === 0) {
+      if (nextVolume === 0) {
+        nextVolume = lastNonZeroVolumeRef.current;
       }
-      video.muted = false;
+      nextMuted = false;
     } else {
-      video.muted = true;
+      nextMuted = true;
     }
-    syncAudioState(video);
-  }, [hasAudio, syncAudioState]);
+    audioSettingsRef.current = { volume: nextVolume, muted: nextMuted };
+    setVolume(nextVolume);
+    setMuted(nextMuted);
+    applyEffectiveAudioState(video);
+  }, [applyEffectiveAudioState, hasAudio, timelineAudioMuted]);
 
   const changeVolume = useCallback(
     (nextVolume: number) => {
       const video = videoRef.current;
-      if (video === null || !hasAudio) {
+      if (video === null || !hasAudio || timelineAudioMuted) {
         return;
       }
       const boundedVolume = Math.max(0, Math.min(nextVolume, 1));
-      video.volume = boundedVolume;
-      video.muted = boundedVolume === 0;
-      syncAudioState(video);
+      if (boundedVolume > 0) {
+        lastNonZeroVolumeRef.current = boundedVolume;
+      }
+      const nextMuted = boundedVolume === 0;
+      audioSettingsRef.current = { volume: boundedVolume, muted: nextMuted };
+      setVolume(boundedVolume);
+      setMuted(nextMuted);
+      applyEffectiveAudioState(video);
     },
-    [hasAudio, syncAudioState],
+    [applyEffectiveAudioState, hasAudio, timelineAudioMuted],
   );
 
   useEffect(() => {
@@ -365,7 +405,7 @@ export function ProgramMonitor({
               onCanPlayThrough={handlePlaybackRecovered}
               onSeeked={handlePlaybackRecovered}
               onTimeUpdate={updatePlayheadFromTimeUpdate}
-              onVolumeChange={(event) => syncAudioState(event.currentTarget)}
+              onVolumeChange={(event) => syncUserAudioStateFromMedia(event.currentTarget)}
               onError={handleMediaError}
             />
             {buffering ? (
@@ -427,12 +467,18 @@ export function ProgramMonitor({
             <button
               className="transport-mute"
               type="button"
-              aria-label={muted || volume === 0 ? "Unmute audio" : "Mute audio"}
-              aria-pressed={muted || volume === 0}
-              disabled={mediaUrl === null || mediaError}
+              aria-label={
+                timelineAudioMuted
+                  ? "Audio muted by timeline track"
+                  : muted || volume === 0
+                    ? "Unmute audio"
+                    : "Mute audio"
+              }
+              aria-pressed={timelineAudioMuted || muted || volume === 0}
+              disabled={mediaUrl === null || mediaError || timelineAudioMuted}
               onClick={toggleMute}
             >
-              {muted || volume === 0 ? (
+              {timelineAudioMuted || muted || volume === 0 ? (
                 <VolumeX size={18} aria-hidden />
               ) : (
                 <Volume2 size={18} aria-hidden />
@@ -447,12 +493,17 @@ export function ProgramMonitor({
               max="1"
               step="0.05"
               value={volume}
-              disabled={mediaUrl === null || mediaError}
+              disabled={mediaUrl === null || mediaError || timelineAudioMuted}
               onChange={(event) => changeVolume(Number(event.currentTarget.value))}
             />
             <output className="volume-readout" aria-hidden>
               {Math.round(volume * 100)}%
             </output>
+            {timelineAudioMuted ? (
+              <span className="sr-only" role="status">
+                Audio muted by timeline track
+              </span>
+            ) : null}
           </div>
         ) : null}
         <output className="frame-readout" aria-live="off">

@@ -1,8 +1,10 @@
-import type {
-  ProjectClip,
-  VideoClip,
-  VideoProjectFileV1,
-  VideoSequenceV2,
+import {
+  isTrackMuted,
+  type ProjectClip,
+  type ProjectTrack,
+  type VideoClip,
+  type VideoProjectFileV1,
+  type VideoSequenceV2,
 } from "@supa-video/contracts";
 import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
@@ -80,29 +82,44 @@ function sameRationalTime(left: VideoClip["sourceIn"], right: ProjectClip["sourc
   );
 }
 
+type CanonicalVideoTrack = Extract<ProjectTrack, { kind: "video" }>;
+
+interface CanonicalPreviewClip {
+  readonly clip: ProjectClip;
+  readonly track: CanonicalVideoTrack;
+}
+
+function findCanonicalPreviewClip(
+  sequence: VideoSequenceV2 | null,
+  previewClip: VideoClip | null,
+): CanonicalPreviewClip | null {
+  if (sequence === null || previewClip === null) return null;
+  const videoClips = sequence.tracks.flatMap((track) =>
+    track.kind === "video" ? track.clips.map((clip) => ({ clip, track })) : [],
+  );
+  const idMatch = videoClips.find((candidate) => candidate.clip.id === previewClip.id);
+  if (idMatch !== undefined) return idMatch;
+
+  const sourceMatches = videoClips.filter(
+    ({ clip: candidate }) =>
+      candidate.source.kind === "asset" &&
+      candidate.source.assetId === previewClip.assetId &&
+      sameRationalTime(previewClip.sourceIn, candidate.sourceIn) &&
+      sameRationalTime(previewClip.sourceOut, candidate.sourceOut),
+  );
+  return sourceMatches.length === 1 ? sourceMatches[0]! : null;
+}
+
 /** Resolves the legacy monitor source to its canonical clip before deriving sequence time. */
 export function timelineFrameForPreviewSourceFrame(
   sequence: VideoSequenceV2 | null,
   previewClip: VideoClip | null,
   sourceFrame: number,
 ): number | null {
-  if (sequence === null || previewClip === null) return null;
-  const videoClips = sequence.tracks.flatMap((track) =>
-    track.kind === "video" ? track.clips : [],
-  );
-  const idMatch = videoClips.find((candidate) => candidate.id === previewClip.id);
-  if (idMatch !== undefined) return timelineFrameForClipSourceFrame(idMatch, sourceFrame);
-
-  const sourceMatches = videoClips.filter(
-    (candidate) =>
-      candidate.source.kind === "asset" &&
-      candidate.source.assetId === previewClip.assetId &&
-      sameRationalTime(previewClip.sourceIn, candidate.sourceIn) &&
-      sameRationalTime(previewClip.sourceOut, candidate.sourceOut),
-  );
-  return sourceMatches.length === 1
-    ? timelineFrameForClipSourceFrame(sourceMatches[0]!, sourceFrame)
-    : null;
+  const canonicalPreview = findCanonicalPreviewClip(sequence, previewClip);
+  return canonicalPreview === null
+    ? null
+    : timelineFrameForClipSourceFrame(canonicalPreview.clip, sourceFrame);
 }
 
 export function VideoWorkspace({
@@ -129,6 +146,9 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
+  const canonicalPreview = findCanonicalPreviewClip(canonicalSequence, clip ?? null);
+  const timelineAudioMuted =
+    canonicalPreview === null ? false : isTrackMuted(canonicalPreview.track);
   const timelinePlayheadFrame = timelineFrameForPreviewSourceFrame(
     canonicalSequence,
     clip ?? null,
@@ -391,6 +411,7 @@ export function VideoWorkspace({
               proxyPath={controller.preparedAsset?.proxyPath ?? null}
               finalPreviewPath={finalPreviewPath}
               hasAudio={sourceHasAudio}
+              timelineAudioMuted={timelineAudioMuted}
               convertCachePath={controller.convertCachePath}
               rate={sequence.rate}
               trimIn={draft.inFrame}
