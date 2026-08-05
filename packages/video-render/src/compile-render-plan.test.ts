@@ -21,6 +21,75 @@ const ids = {
 } as const;
 const inputPath = "C:\\Media Source\\single clip.mp4";
 const outputPath = "D:\\Rendered Output\\trim result.mp4";
+const avArgv = [
+  "-hide_banner",
+  "-nostdin",
+  "-loglevel",
+  "warning",
+  "-progress",
+  "pipe:1",
+  "-nostats",
+  "-i",
+  inputPath,
+  "-ss",
+  "0.500500",
+  "-t",
+  "2.502500",
+  "-map",
+  "0:v:0",
+  "-map",
+  "0:a:0",
+  "-vf",
+  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
+  "-c:v",
+  "libx264",
+  "-pix_fmt",
+  "yuv420p",
+  "-c:a",
+  "aac",
+  "-ar",
+  "48000",
+  "-movflags",
+  "+faststart",
+  outputPath,
+] as const;
+const videoOnlyArgv = [
+  "-hide_banner",
+  "-nostdin",
+  "-loglevel",
+  "warning",
+  "-progress",
+  "pipe:1",
+  "-nostats",
+  "-i",
+  inputPath,
+  "-ss",
+  "0.500500",
+  "-t",
+  "2.502500",
+  "-map",
+  "0:v:0",
+  "-an",
+  "-vf",
+  "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
+  "-c:v",
+  "libx264",
+  "-pix_fmt",
+  "yuv420p",
+  "-movflags",
+  "+faststart",
+  outputPath,
+] as const;
+
+function expectedMetadata(audio: boolean) {
+  return {
+    durationFrames: 75,
+    rate: { numerator: 30_000, denominator: 1_001 },
+    width: 1_280,
+    height: 720,
+    audio,
+  };
+}
 
 interface RevisionOptions {
   readonly rate?: RationalRate;
@@ -81,17 +150,74 @@ function makeRevision(options: RevisionOptions = {}): ProjectRevision {
   };
 }
 
-function compile(revision = makeRevision()) {
+function makeV2Revision(muted?: boolean) {
+  const legacy = makeRevision();
+  const asset = legacy.state.asset!;
+  const sequence = legacy.state.sequence!;
+  const clip = sequence.videoTracks[0].clips[0]!;
+
+  return {
+    revision: {
+      number: 0,
+      id: legacy.id,
+      parentId: null,
+      committedAt: legacy.committedAt,
+      operationId: "00000000-0000-4000-8000-000000000007",
+      stateHash: "a".repeat(64),
+    },
+    state: {
+      assets: [asset],
+      sequences: [
+        {
+          id: sequence.id,
+          name: "Sequence 1",
+          rate: sequence.rate,
+          width: sequence.width,
+          height: sequence.height,
+          audioSampleRate: sequence.audioSampleRate,
+          markers: [],
+          tracks: [
+            {
+              id: sequence.videoTracks[0].id,
+              name: "Video 1",
+              kind: "video" as const,
+              ...(muted === undefined ? {} : { muted }),
+              clips: [
+                {
+                  id: clip.id,
+                  source: { kind: "asset" as const, assetId: clip.assetId },
+                  timelineStart: clip.timelineStart,
+                  sourceIn: clip.sourceIn,
+                  sourceOut: clip.sourceOut,
+                  transform: {
+                    positionXPermille: 0,
+                    positionYPermille: 0,
+                    scaleXPermille: 1_000,
+                    scaleYPermille: 1_000,
+                    rotationMilliDegrees: 0,
+                    opacityPermille: 1_000,
+                  },
+                  gainMilliDecibels: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      activeSequenceId: sequence.id,
+    },
+  };
+}
+
+function compile(
+  revision: Parameters<typeof compileSingleClipRenderPlan>[0]["revision"] = makeRevision(),
+) {
   return compileSingleClipRenderPlan({
     planId: ids.plan,
     revision,
     inputPath,
     outputPath,
   });
-}
-
-function normalizedArgv(revision = makeRevision()): readonly string[] {
-  return compile(revision).argv.map((argument) => argument.replaceAll("\\", "/"));
 }
 
 function expectInvalidRenderPlan(action: () => unknown): VideoDomainError {
@@ -115,108 +241,28 @@ function malformedRevision(transform: (revision: ProjectRevision) => void): Proj
 }
 
 describe("compileSingleClipRenderPlan", () => {
-  it("adapts a V2 renderable revision without changing FFmpeg argv", () => {
-    const legacy = makeRevision();
-    const asset = legacy.state.asset!;
-    const sequence = legacy.state.sequence!;
-    const clip = sequence.videoTracks[0].clips[0]!;
-    const v2 = {
-      revision: {
-        number: 0,
-        id: legacy.id,
-        parentId: null,
-        committedAt: legacy.committedAt,
-        operationId: "00000000-0000-4000-8000-000000000007",
-        stateHash: "a".repeat(64),
-      },
-      state: {
-        assets: [asset],
-        sequences: [
-          {
-            id: sequence.id,
-            name: "Sequence 1",
-            rate: sequence.rate,
-            width: sequence.width,
-            height: sequence.height,
-            audioSampleRate: sequence.audioSampleRate,
-            markers: [],
-            tracks: [
-              {
-                id: sequence.videoTracks[0].id,
-                name: "Video 1",
-                kind: "video" as const,
-                clips: [
-                  {
-                    id: clip.id,
-                    source: { kind: "asset" as const, assetId: clip.assetId },
-                    timelineStart: clip.timelineStart,
-                    sourceIn: clip.sourceIn,
-                    sourceOut: clip.sourceOut,
-                    transform: {
-                      positionXPermille: 0,
-                      positionYPermille: 0,
-                      scaleXPermille: 1_000,
-                      scaleYPermille: 1_000,
-                      rotationMilliDegrees: 0,
-                      opacityPermille: 1_000,
-                    },
-                    gainMilliDecibels: 0,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        activeSequenceId: sequence.id,
-      },
-    };
-    const v2Plan = compileSingleClipRenderPlan({
-      planId: ids.plan,
-      revision: v2,
-      inputPath,
-      outputPath,
-    });
-    expect(v2Plan.argv).toEqual(compile().argv);
-    expect(v2Plan.expected).toEqual(compile().expected);
+  it.each([
+    ["absent", makeV2Revision()],
+    ["false", makeV2Revision(false)],
+  ])("keeps exact AV argv and expected metadata when V2 mute is %s", (_label, revision) => {
+    const plan = compile(revision);
+
+    expect(plan.argv).toEqual(avArgv);
+    expect(plan.expected).toEqual(expectedMetadata(true));
   });
 
-  it("compiles exact deterministic AV argv and expected metadata", () => {
+  it("uses exact video-only argv and expected metadata when the V2 video track is muted", () => {
+    const plan = compile(makeV2Revision(true));
+
+    expect(plan.argv).toEqual(videoOnlyArgv);
+    expect(plan.expected).toEqual(expectedMetadata(false));
+  });
+
+  it("keeps exact legacy AV argv and expected metadata unchanged", () => {
     const plan = compile();
 
-    expect(normalizedArgv()).toMatchInlineSnapshot(`
-      [
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-progress",
-        "pipe:1",
-        "-nostats",
-        "-i",
-        "C:/Media Source/single clip.mp4",
-        "-ss",
-        "0.500500",
-        "-t",
-        "2.502500",
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a:0",
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-ar",
-        "48000",
-        "-movflags",
-        "+faststart",
-        "D:/Rendered Output/trim result.mp4",
-      ]
-    `);
+    expect(plan.argv).toEqual(avArgv);
+    expect(plan.expected).toEqual(expectedMetadata(true));
     expect(plan).toMatchObject({
       schemaVersion: 1,
       planId: ids.plan,
@@ -224,52 +270,15 @@ describe("compileSingleClipRenderPlan", () => {
       executable: "ffmpeg",
       inputPath,
       outputPath,
-      expected: {
-        durationFrames: 75,
-        rate: { numerator: 30_000, denominator: 1_001 },
-        width: 1_280,
-        height: 720,
-        audio: true,
-      },
     });
     expect(renderPlanV1Schema.parse(plan)).toEqual(plan);
   });
 
-  it("compiles the exact video-only branch", () => {
-    const revision = makeRevision({ audio: false });
+  it("compiles the exact video-only branch for sources without embedded audio", () => {
+    const plan = compile(makeRevision({ audio: false }));
 
-    expect(normalizedArgv(revision)).toMatchInlineSnapshot(`
-      [
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-progress",
-        "pipe:1",
-        "-nostats",
-        "-i",
-        "C:/Media Source/single clip.mp4",
-        "-ss",
-        "0.500500",
-        "-t",
-        "2.502500",
-        "-map",
-        "0:v:0",
-        "-an",
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=30000/1001",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        "D:/Rendered Output/trim result.mp4",
-      ]
-    `);
-    expect(compile(revision).expected.audio).toBe(false);
-    expect(compile(revision).argv).not.toContain("0:a:0");
-    expect(compile(revision).argv).not.toContain("-c:a");
+    expect(plan.argv).toEqual(videoOnlyArgv);
+    expect(plan.expected).toEqual(expectedMetadata(false));
   });
 
   it("formats integer and NTSC-rate boundaries as fixed six-place seconds", () => {

@@ -7,6 +7,7 @@ import {
   type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
+  isTrackMuted,
   microsecondsToSourceFrames,
   projectRevisionDescriptorV2Schema,
   projectRevisionSchema,
@@ -25,6 +26,11 @@ export interface CompileSingleClipRenderPlanInput {
   readonly revision: Readonly<ProjectRevision> | Readonly<RenderableRevisionV2>;
   readonly inputPath: string;
   readonly outputPath: string;
+}
+
+interface ValidatedSingleClipRevision {
+  readonly revision: ProjectRevision;
+  readonly audioSuppressed: boolean;
 }
 
 function invalidRenderPlan(
@@ -71,7 +77,7 @@ function toBoundarySeconds(time: RationalTime): string {
   }
 }
 
-function adaptV2Revision(input: unknown): ProjectRevision | null {
+function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
   if (
     typeof input !== "object" ||
     input === null ||
@@ -120,42 +126,45 @@ function adaptV2Revision(input: unknown): ProjectRevision | null {
   ) {
     invalidRenderPlan("The Phase 2 single-clip exporter requires default transform and gain");
   }
-  return projectRevisionSchema.parse({
-    id: descriptor.data.id,
-    parentRevisionId: descriptor.data.parentId,
-    sequenceNumber: descriptor.data.number,
-    committedAt: descriptor.data.committedAt,
-    commandSummary: "Canonical render revision",
-    state: {
-      asset,
-      sequence: {
-        id: sequence.id,
-        rate: sequence.rate,
-        width: sequence.width,
-        height: sequence.height,
-        audioSampleRate: 48_000,
-        videoTracks: [
-          {
-            id: track.id,
-            clips: [
-              {
-                id: clip.id,
-                assetId,
-                timelineStart: clip.timelineStart,
-                sourceIn: clip.sourceIn,
-                sourceOut: clip.sourceOut,
-              },
-            ],
-          },
-        ],
+  return {
+    revision: projectRevisionSchema.parse({
+      id: descriptor.data.id,
+      parentRevisionId: descriptor.data.parentId,
+      sequenceNumber: descriptor.data.number,
+      committedAt: descriptor.data.committedAt,
+      commandSummary: "Canonical render revision",
+      state: {
+        asset,
+        sequence: {
+          id: sequence.id,
+          rate: sequence.rate,
+          width: sequence.width,
+          height: sequence.height,
+          audioSampleRate: 48_000,
+          videoTracks: [
+            {
+              id: track.id,
+              clips: [
+                {
+                  id: clip.id,
+                  assetId,
+                  timelineStart: clip.timelineStart,
+                  sourceIn: clip.sourceIn,
+                  sourceOut: clip.sourceOut,
+                },
+              ],
+            },
+          ],
+        },
       },
-    },
-  });
+    }),
+    audioSuppressed: isTrackMuted(track),
+  };
 }
 
-function validateRevision(input: unknown): ProjectRevision {
+function validateRevision(input: unknown): ValidatedSingleClipRevision {
   const adapted = adaptV2Revision(input);
-  const result = projectRevisionSchema.safeParse(adapted ?? input);
+  const result = projectRevisionSchema.safeParse(adapted?.revision ?? input);
   if (!result.success) {
     invalidRenderPlan("Revision failed strict render validation", {
       issues: result.error.issues,
@@ -226,13 +235,17 @@ function validateRevision(input: unknown): ProjectRevision {
     });
   }
 
-  return revision;
+  return {
+    revision,
+    audioSuppressed: adapted?.audioSuppressed ?? false,
+  };
 }
 
 function compileValidatedPlan(
   input: CompileSingleClipRenderPlanInput,
-  revision: ProjectRevision,
+  validatedRevision: ValidatedSingleClipRevision,
 ): RenderPlanV1 {
+  const { revision, audioSuppressed } = validatedRevision;
   const asset = revision.state.asset;
   const sequence = revision.state.sequence;
   if (asset === null || sequence === null) {
@@ -245,7 +258,7 @@ function compileValidatedPlan(
 
   const durationFrames = clip.sourceOut.value - clip.sourceIn.value;
   const duration = createRationalTime(durationFrames, sequence.rate);
-  const hasAudio = asset.probe.audio !== null;
+  const hasAudio = asset.probe.audio !== null && !audioSuppressed;
   const videoFilter = [
     `scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos`,
     `pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:black`,
@@ -310,10 +323,10 @@ export function compileSingleClipRenderPlan(
   if (typeof input !== "object" || input === null) {
     invalidRenderPlan("Render compiler input must be an object");
   }
-  const revision = validateRevision(input.revision);
+  const validatedRevision = validateRevision(input.revision);
 
   try {
-    return deepFreeze(compileValidatedPlan(input, revision));
+    return deepFreeze(compileValidatedPlan(input, validatedRevision));
   } catch (error) {
     if (error instanceof VideoDomainError && error.code === "invalid_render_plan") {
       throw error;
