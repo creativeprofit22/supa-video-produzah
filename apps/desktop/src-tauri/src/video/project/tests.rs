@@ -1097,6 +1097,10 @@ const TRACK_MUTE_INITIAL_HASH: &str =
     "aba0fdd4fcee030bc8b15d2ce0f24f25a8d230e328ae7b952a9f49c16c6d2841";
 const TRACK_MUTE_MUTED_HASH: &str =
     "10fd961c3d9ded77a9de79aac979fd3f6b2a80f973800012534feadeee1bf5ae";
+const TRACK_VISIBILITY_INITIAL_HASH: &str =
+    "39dab5d17c0cf4c45f1aacb4c0659d36861c9d2cebc98ac08e8769a48afa2c9c";
+const TRACK_VISIBILITY_HIDDEN_HASH: &str =
+    "02e539620c34f39008f66725282fa5de6f4011235f203c588d863f3b0499ce15";
 
 fn ripple_clip(template: &ProjectClip, id: String, start: u64, duration: u64) -> ProjectClip {
     let mut clip = template.clone();
@@ -1507,6 +1511,498 @@ fn set_track_hidden_executes_with_exact_inverse_metadata_and_rejects_audio() {
     )
     .unwrap_err();
     assert_eq!(error.details["category"], "non_visual_track");
+}
+
+#[test]
+fn caption_track_visibility_uses_its_full_range_when_locked() {
+    let mut snapshot = ripple_fixture(1);
+    let caption_track_id = "73500000-0000-4000-8000-000000000010".to_owned();
+    let time = |value| RationalTime {
+        value,
+        rate_numerator: 30,
+        rate_denominator: 1,
+    };
+    snapshot.state.sequences[0]
+        .tracks
+        .push(ProjectTrack::Caption {
+            id: caption_track_id.clone(),
+            name: "Locked captions".to_owned(),
+            locked: true,
+            hidden: false,
+            captions: vec![
+                ProjectCaption {
+                    id: "73500000-0000-4000-8000-000000000011".to_owned(),
+                    start: time(12),
+                    end: time(17),
+                    text: "Later".to_owned(),
+                    language: None,
+                },
+                ProjectCaption {
+                    id: "73500000-0000-4000-8000-000000000012".to_owned(),
+                    start: time(2),
+                    end: time(4),
+                    text: "Earlier".to_owned(),
+                    language: Some("en".to_owned()),
+                },
+            ],
+        });
+
+    let applied = apply_group(
+        &snapshot.state,
+        &[ProjectCommand::SetTrackHidden {
+            command_id: "73500000-0000-4000-8000-000000000013".to_owned(),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: caption_track_id,
+            hidden: true,
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(applied.summary, "Hid track");
+    assert_eq!(
+        applied.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::Captions,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert_eq!(
+        applied.affected_ranges,
+        vec![AffectedRange {
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            start: time(2),
+            end: time(17),
+        }]
+    );
+    assert_eq!(applied.state.sequences[0].tracks[2].is_hidden(), Ok(true));
+    assert!(applied.state.sequences[0].tracks[2].is_locked());
+}
+
+#[test]
+fn empty_visual_tracks_have_no_visibility_affected_ranges() {
+    let mut snapshot = ripple_fixture(0);
+    snapshot.state.sequences[0].tracks[0]
+        .clips_mut()
+        .unwrap()
+        .clear();
+    let caption_track_id = "73500000-0000-4000-8000-000000000020".to_owned();
+    snapshot.state.sequences[0]
+        .tracks
+        .push(ProjectTrack::Caption {
+            id: caption_track_id.clone(),
+            name: "Empty captions".to_owned(),
+            locked: false,
+            hidden: false,
+            captions: vec![],
+        });
+
+    for (index, track_id) in [RIPPLE_TRACK_ID.to_owned(), caption_track_id]
+        .into_iter()
+        .enumerate()
+    {
+        let applied = apply_group(
+            &snapshot.state,
+            &[ProjectCommand::SetTrackHidden {
+                command_id: format!("73500000-0000-4000-8000-{:012}", 21_u64 + index as u64),
+                sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                track_id,
+                hidden: true,
+            }],
+        )
+        .unwrap();
+        assert!(applied.affected_ranges.is_empty());
+        assert_eq!(applied.summary, "Hid track");
+    }
+}
+
+#[test]
+fn same_value_visibility_and_hidden_state_hashing_are_deterministic() {
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let snapshot: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+    assert_eq!(
+        state_hash(&snapshot.state).unwrap(),
+        TRACK_VISIBILITY_INITIAL_HASH
+    );
+
+    let visibility = |command_id: &str, hidden| ProjectCommand::SetTrackHidden {
+        command_id: command_id.to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: RIPPLE_TRACK_ID.to_owned(),
+        hidden,
+    };
+    let same_visible = apply_group(
+        &snapshot.state,
+        &[visibility("73500000-0000-4000-8000-000000000029", false)],
+    )
+    .unwrap();
+    let first = apply_group(
+        &snapshot.state,
+        &[visibility("73500000-0000-4000-8000-000000000030", true)],
+    )
+    .unwrap();
+    let independent = apply_group(
+        &snapshot.state,
+        &[visibility("73500000-0000-4000-8000-000000000030", true)],
+    )
+    .unwrap();
+    let same_hidden = apply_group(
+        &first.state,
+        &[visibility("73500000-0000-4000-8000-000000000032", true)],
+    )
+    .unwrap();
+
+    assert_eq!(same_visible.state, snapshot.state);
+    assert_eq!(
+        state_hash(&same_visible.state).unwrap(),
+        TRACK_VISIBILITY_INITIAL_HASH
+    );
+    assert!(matches!(
+        same_visible.inverse_commands.as_slice(),
+        [ProjectCommand::SetTrackHidden { hidden: false, .. }]
+    ));
+    assert_eq!(first.state, independent.state);
+    assert_eq!(first.inverse_commands, independent.inverse_commands);
+    assert_eq!(first.summary, independent.summary);
+    assert_eq!(first.affected_ranges, independent.affected_ranges);
+    assert_eq!(first.cache_invalidations, independent.cache_invalidations);
+    assert_eq!(
+        state_hash(&first.state).unwrap(),
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert_eq!(
+        state_hash(&independent.state).unwrap(),
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert_eq!(same_hidden.state, first.state);
+    assert_eq!(
+        state_hash(&same_hidden.state).unwrap(),
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert!(matches!(
+        same_hidden.inverse_commands.as_slice(),
+        [ProjectCommand::SetTrackHidden { hidden: true, .. }]
+    ));
+    let same_hidden_inverse =
+        apply_group(&same_hidden.state, &same_hidden.inverse_commands).unwrap();
+    assert_eq!(
+        state_hash(&same_hidden_inverse.state).unwrap(),
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+}
+
+#[test]
+fn audio_visibility_rejection_is_atomic_across_service_and_persistence() {
+    let mut snapshot = ripple_fixture(1);
+    let sequence = &mut snapshot.state.sequences[0];
+    let visual_track_id = sequence.tracks[1].id().to_owned();
+    let ProjectTrack::Video {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+        ..
+    } = sequence.tracks.remove(0)
+    else {
+        unreachable!();
+    };
+    let audio_track_id = id.clone();
+    sequence.tracks.insert(
+        0,
+        ProjectTrack::Audio {
+            id,
+            name,
+            locked,
+            muted,
+            clips,
+        },
+    );
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    validate_snapshot(&snapshot).unwrap();
+    let original_state = snapshot.state.clone();
+    let original_hash = snapshot.revision.state_hash.clone();
+
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("audio-visibility-rejection.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("audio-visibility-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+
+    let error = service
+        .execute(
+            "audio-visibility-owner",
+            CommandGroupRequest {
+                group_id: "73500000-0000-4000-8000-000000000040".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![
+                    ProjectCommand::SetTrackHidden {
+                        command_id: "73500000-0000-4000-8000-000000000041".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: visual_track_id,
+                        hidden: true,
+                    },
+                    ProjectCommand::SetTrackHidden {
+                        command_id: "73500000-0000-4000-8000-000000000042".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: audio_track_id,
+                        hidden: true,
+                    },
+                ],
+            },
+            &grants,
+        )
+        .unwrap_err();
+    assert_eq!(error.details["category"], "non_visual_track");
+    assert_eq!(
+        service
+            .inspector("audio-visibility-owner", &project_id)
+            .unwrap()
+            .revision
+            .number,
+        0
+    );
+    service
+        .close("audio-visibility-owner", &project_id)
+        .unwrap();
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("audio-visibility-reopen-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.projection.revision.number, 0);
+    assert_eq!(reopened.projection.revision.state_hash, original_hash);
+    assert_eq!(reopened.projection.state, original_state);
+}
+
+#[test]
+fn visibility_save_reopen_and_undo_redo_preserve_exact_hashes_and_metadata() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("track-visibility.svpvideo");
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    fs::copy(fixture_path, &project_path).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("visibility-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let expected_range = AffectedRange {
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        start: RationalTime {
+            value: 0,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+        end: RationalTime {
+            value: 30,
+            rate_numerator: 30,
+            rate_denominator: 1,
+        },
+    };
+    let expected_invalidations = vec![
+        CacheInvalidation::Timeline,
+        CacheInvalidation::Preview,
+        CacheInvalidation::Captions,
+        CacheInvalidation::RenderPlan,
+    ];
+
+    let committed = service
+        .execute(
+            "visibility-owner",
+            CommandGroupRequest {
+                group_id: "73500000-0000-4000-8000-000000000050".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![ProjectCommand::SetTrackHidden {
+                    command_id: "73500000-0000-4000-8000-000000000051".to_owned(),
+                    sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                    track_id: RIPPLE_TRACK_ID.to_owned(),
+                    hidden: true,
+                }],
+            },
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(committed.state_hash, TRACK_VISIBILITY_HIDDEN_HASH);
+    assert_eq!(committed.affected_ranges, vec![expected_range.clone()]);
+    assert_eq!(committed.cache_invalidations, expected_invalidations);
+    assert_eq!(
+        committed.projection.last_command.as_ref().unwrap().summary,
+        "Hid track"
+    );
+
+    let undone = service
+        .undo(
+            "visibility-owner",
+            &project_id,
+            1,
+            "73500000-0000-4000-8000-000000000052",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.state_hash, TRACK_VISIBILITY_INITIAL_HASH);
+    assert_eq!(undone.affected_ranges, vec![expected_range.clone()]);
+    assert_eq!(
+        undone.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::Captions,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert_eq!(
+        undone.projection.last_command.as_ref().unwrap().summary,
+        "Undid Hid track"
+    );
+
+    let redone = service
+        .redo(
+            "visibility-owner",
+            &project_id,
+            2,
+            "73500000-0000-4000-8000-000000000053",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(redone.state_hash, TRACK_VISIBILITY_HIDDEN_HASH);
+    assert_eq!(redone.affected_ranges, vec![expected_range]);
+    assert_eq!(
+        redone.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::Captions,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert_eq!(
+        redone.projection.last_command.as_ref().unwrap().summary,
+        "Redid Hid track"
+    );
+    service.close("visibility-owner", &project_id).unwrap();
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("visibility-reopen-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.projection.revision.number, 3);
+    assert_eq!(
+        reopened.projection.revision.state_hash,
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert_eq!(
+        state_hash(&reopened.projection.state).unwrap(),
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert_eq!(
+        reopened.projection.state.sequences[0].tracks[0].is_hidden(),
+        Ok(true)
+    );
+}
+
+#[test]
+fn visibility_journal_recovers_exact_state_without_clean_close() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("visibility-recovery.svpvideo");
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    fs::copy(fixture_path, &project_path).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let project_id = {
+        let service = VideoProjectService::default();
+        let opened = service
+            .open("visibility-recovery-owner", &project_path, &grants)
+            .unwrap();
+        let project_id = opened.projection.project_id.clone();
+        let committed = service
+            .execute(
+                "visibility-recovery-owner",
+                CommandGroupRequest {
+                    group_id: "73500000-0000-4000-8000-000000000060".to_owned(),
+                    project_id: project_id.clone(),
+                    base_revision: 0,
+                    commands: vec![ProjectCommand::SetTrackHidden {
+                        command_id: "73500000-0000-4000-8000-000000000061".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: RIPPLE_TRACK_ID.to_owned(),
+                        hidden: true,
+                    }],
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(committed.state_hash, TRACK_VISIBILITY_HIDDEN_HASH);
+        project_id
+    };
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("visibility-recovery-reopen-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 1);
+    assert_eq!(reopened.projection.project_id, project_id);
+    assert_eq!(reopened.projection.revision.number, 1);
+    assert_eq!(
+        reopened.projection.revision.state_hash,
+        TRACK_VISIBILITY_HIDDEN_HASH
+    );
+    assert_eq!(
+        reopened.projection.last_command.as_ref().unwrap().summary,
+        "Hid track"
+    );
+    assert_eq!(
+        reopened.projection.state.sequences[0].tracks[0].is_hidden(),
+        Ok(true)
+    );
+
+    let retried = reopened_service
+        .execute(
+            "visibility-recovery-reopen-owner",
+            CommandGroupRequest {
+                group_id: "73500000-0000-4000-8000-000000000060".to_owned(),
+                project_id,
+                base_revision: 0,
+                commands: vec![ProjectCommand::SetTrackHidden {
+                    command_id: "73500000-0000-4000-8000-000000000061".to_owned(),
+                    sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                    track_id: RIPPLE_TRACK_ID.to_owned(),
+                    hidden: true,
+                }],
+            },
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(retried.projection.revision.number, 1);
+    assert_eq!(retried.state_hash, TRACK_VISIBILITY_HIDDEN_HASH);
+    assert_eq!(retried.affected_ranges.len(), 1);
+    assert_eq!(
+        retried.cache_invalidations,
+        vec![
+            CacheInvalidation::Timeline,
+            CacheInvalidation::Preview,
+            CacheInvalidation::Captions,
+            CacheInvalidation::RenderPlan,
+        ]
+    );
+    assert_eq!(
+        retried.projection.last_command.as_ref().unwrap().summary,
+        "Hid track"
+    );
 }
 
 #[test]
@@ -2373,7 +2869,7 @@ fn service_v1_migration_initialization_failures_preserve_bytes_and_retry() {
 }
 
 #[test]
-fn v1_migration_preserves_selected_state_and_resets_history() {
+fn v1_migration_preserves_track_defaults_and_resets_history() {
     let fixture_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/video-phase1/single-clip.svpvideo");
     let migrated = migrate_v1_bytes(&fs::read(fixture_path).unwrap()).unwrap();
@@ -2388,9 +2884,14 @@ fn v1_migration_preserves_selected_state_and_resets_history() {
         .tracks
         .iter()
         .all(|track| track.is_muted() == Ok(false)));
+    assert!(migrated.state.sequences[0]
+        .tracks
+        .iter()
+        .all(|track| track.is_hidden() == Ok(false)));
     let migrated_track_json = serde_json::to_value(&migrated.state.sequences[0].tracks[0]).unwrap();
     assert!(migrated_track_json.get("locked").is_none());
     assert!(migrated_track_json.get("muted").is_none());
+    assert!(migrated_track_json.get("hidden").is_none());
     assert!(migrated.history.undo_stack.is_empty());
     assert!(validate_snapshot(&migrated).is_ok());
 }
