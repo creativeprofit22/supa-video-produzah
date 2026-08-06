@@ -497,9 +497,9 @@ Separate waveform data caches from painted bitmap caches. **License:** GPL-3.0; 
 
 **Depends on:** Phases 2 and 3
 
-## Implementation checkpoint — interaction slices through track mute verified 5 August 2026
+## Implementation checkpoint — command registry/remapping slice verified 6 August 2026
 
-Phases 1–3 remain complete for private-use development. Phase 4 is active and explicitly unfinished; committed work is verified through `7192db94c8cfc71c47deedbe5d184a5ee02ce17d`.
+Phases 1–3 remain complete for private-use development. Phase 4 is active and explicitly unfinished. This checkpoint adds the committed command-registry slice from `3b529c4` through `6913556`; it does not change the broader Phase 4 completion state.
 
 - **Viewport and projection foundations (`4edea0b`–`7292335`):** exact rational viewport geometry and the canonical, ordered, virtualized multitrack projection remain the read-only base for interaction work.
 - **Selection and editing (`cc42d24`–`18aeb7c`):** ephemeral single-clip selection now drives split, move, and trim through the existing validated command-group controller; one completed action adopts one returned canonical revision, while drag/selection previews remain outside persisted project state.
@@ -507,10 +507,11 @@ Phases 1–3 remain complete for private-use development. Phase 4 is active and 
 - **Track lock (`f1a30bf`–`43b5bfd`):** canonical lock state is persisted and projected, locked tracks reject clip/caption mutations, and one controller command powers accessible lock/unlock controls and disabled editing affordances.
 - **Exact snapping (`bd6be44`–`a6d41e5`):** the rational snap engine evaluates predecessor/successor candidates without floating-point conversion, excludes the moving clip, supports clip edges, playhead, markers, grid, and caption boundaries, and keeps mixed-rate move results exact.
 - **Track mute (`6896754`–`7192db9`):** video/audio mute is strict canonical state with inverse history, exact affected ranges and summaries, projection/controller/UI coverage, source-monitor and render-plan enforcement, active-render cancellation, persisted undo/redo proof, responsive controls, and focused browser interaction coverage; caption tracks remain invalid mute targets.
+- **Application command registry/remapping (`3b529c4`–`6913556`):** 13 stable desktop command IDs now share one runtime execution path across buttons and one global keyboard dispatcher. Versioned sparse `localStorage` preferences support exact remapping, disabling, per-command/all reset, collision rejection, strict corrupt-data fallback, immediate visible/ARIA updates, centralized modal/input/context/repeat suppression, and focus restoration without changing project or Rust persistence.
 
-Verification at `7192db9` passes the targeted track-mute matrix with **87/87 tests**: 13 contracts, 6 projection, 52 desktop controller/timeline/monitor/workspace, 12 render compiler, 3 Rust `set_track_muted`, and 1 focused Chromium interaction. Root lint/format, desktop TypeScript checking, Rustfmt, all-target/all-feature Clippy with warnings denied, and `git diff --check` also pass; tracked Phase 4 desktop, mobile, 320px/200%-text, and forced-color evidence remains under `evidence/phase-4/`.
+Verification actually run while closing this slice: `ShortcutSettings.test.tsx` passed **7/7**; the eight affected desktop Vitest files passed **89/89** before the final edit-saving guard correction, and `App.test.tsx` then passed **12/12** with its added regression; the full desktop Playwright set passed **32/32**; and all three desktop TypeScript configurations passed. `git diff --check` also passed. No root lint, full green Vitest-suite, Rust, mobile, native-menu, or broader Phase 4 completion claim is made.
 
-The remaining Phase 4 scope—including track visibility, keyboard command registry/remapping, broader inspector controls, stress/runtime proof, and the Phase 4 hard completion gate—is not complete and is not claimed complete here.
+The remaining Phase 4 scope—including track visibility, broader inspector controls, stress/runtime proof, and the Phase 4 hard completion gate—is not complete and is not claimed complete here.
 
 ### Next implementation item
 
