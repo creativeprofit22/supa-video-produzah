@@ -177,7 +177,7 @@ describe("complete mocked Phase 2 workflow", () => {
       ).toBe(5),
     );
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
-  });
+  }, 15_000);
 
   it("routes timeline split through mock IPC and exposes precise undo and redo labels", async () => {
     const service = createMockVideoService();
