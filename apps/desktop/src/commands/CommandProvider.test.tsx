@@ -289,6 +289,63 @@ describe("central keyboard suppression", () => {
     expect(step).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves horizontal arrows on the focused timeline scroll region", () => {
+    const stepBackward = vi.fn();
+    const stepForward = vi.fn();
+    const jumpBackward = vi.fn();
+    const jumpForward = vi.fn();
+    const shortcuts = [
+      { code: "ArrowLeft", shiftKey: false, execute: stepBackward },
+      { code: "ArrowRight", shiftKey: false, execute: stepForward },
+      { code: "ArrowLeft", shiftKey: true, execute: jumpBackward },
+      { code: "ArrowRight", shiftKey: true, execute: jumpForward },
+    ] as const;
+    render(
+      <TestProvider>
+        <Handler id="playback.stepBackward" execute={stepBackward} />
+        <Handler id="playback.stepForward" execute={stepForward} />
+        <Handler id="playback.jumpBackward" execute={jumpBackward} />
+        <Handler id="playback.jumpForward" execute={jumpForward} />
+        <div
+          className="multitrack-scroll-region"
+          role="region"
+          tabIndex={0}
+          aria-label="Timeline tracks; scroll horizontally"
+        />
+        <div tabIndex={0} aria-label="Application surface" />
+      </TestProvider>,
+    );
+
+    const timelineRegion = screen.getByRole("region", {
+      name: "Timeline tracks; scroll horizontally",
+    });
+    timelineRegion.focus();
+    expect(document.activeElement).toBe(timelineRegion);
+    for (const shortcut of shortcuts) {
+      expect(
+        dispatchKey(timelineRegion, {
+          code: shortcut.code,
+          shiftKey: shortcut.shiftKey,
+        }).defaultPrevented,
+      ).toBe(false);
+    }
+    for (const { execute } of shortcuts) expect(execute).not.toHaveBeenCalled();
+
+    const applicationSurface = screen.getByLabelText("Application surface");
+    applicationSurface.focus();
+    expect(document.activeElement).toBe(applicationSurface);
+    for (const shortcut of shortcuts) {
+      expect(
+        dispatchKey(applicationSurface, {
+          code: shortcut.code,
+          shiftKey: shortcut.shiftKey,
+        }).defaultPrevented,
+      ).toBe(true);
+      expect(shortcut.execute).toHaveBeenCalledOnce();
+      expect(shortcut.execute).toHaveBeenCalledWith("keyboard");
+    }
+  });
+
   it("requires timeline scope and allows only its neutral surface or clip body", () => {
     const split = vi.fn();
     function Timeline() {

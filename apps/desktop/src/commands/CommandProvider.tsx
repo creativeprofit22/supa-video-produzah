@@ -143,8 +143,14 @@ function nativeActivationTargetOwnsApplicationSpace(event: KeyboardEvent): boole
   });
 }
 
-function interactiveTargetOwnsTransport(target: HTMLElement | null): boolean {
-  return target !== null && target.closest("button, a, video, input, textarea, select") !== null;
+function interactiveTargetOwnsTransport(event: KeyboardEvent): boolean {
+  const target = eventTargetElement(event);
+  if (target === null) return false;
+  if (target.closest("button, a, video, input, textarea, select") !== null) return true;
+  return (
+    (event.code === "ArrowLeft" || event.code === "ArrowRight") &&
+    target.closest(".multitrack-scroll-region") !== null
+  );
 }
 
 function interactiveTargetOwnsTimeline(target: HTMLElement | null): boolean {
@@ -173,7 +179,7 @@ function commandAcceptsKeyboardEvent(
     return !nativeActivationTargetOwnsApplicationSpace(event);
   }
   if (definition.keyboardContext === "transport") {
-    return !interactiveTargetOwnsTransport(target);
+    return !interactiveTargetOwnsTransport(event);
   }
   if (definition.keyboardContext === "timeline") {
     const scope = registration.current.current.keyboardScopeRef?.current;

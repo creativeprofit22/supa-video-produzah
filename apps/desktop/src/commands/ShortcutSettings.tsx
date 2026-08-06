@@ -263,7 +263,7 @@ export function ShortcutSettings({ open, onClose, returnFocusRef }: ShortcutSett
         <button
           className="secondary-button compact-button"
           type="button"
-          disabled={Object.keys(overrides).length === 0}
+          disabled={Object.keys(overrides).length === 0 && preferenceError === null}
           onClick={resetAll}
         >
           <RotateCcw size={15} aria-hidden="true" />

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { CommandProvider, useCommand, useCommandHandler } from "./CommandProvider";
 import { ShortcutSettings } from "./ShortcutSettings";
-import type { ShortcutPreferenceStorage } from "./shortcut-preferences";
+import { SHORTCUT_PREFERENCES_KEY, type ShortcutPreferenceStorage } from "./shortcut-preferences";
 
 afterEach(cleanup);
 
@@ -187,6 +187,36 @@ describe("ShortcutSettings", () => {
     expect(screen.getByText("All keyboard shortcuts reset to defaults.")).toBeTruthy();
   });
 
+  it.each([
+    ["malformed JSON", "{"],
+    ["an unsupported version", JSON.stringify({ version: 2, overrides: {} })],
+  ])(
+    "recovers directly from %s persisted data and stays recovered after reload",
+    (_name, record) => {
+      const storage = new MemoryStorage();
+      storage.values.set(SHORTCUT_PREFERENCES_KEY, record);
+      const firstRender = render(<Harness storage={storage} />);
+      fireEvent.click(screen.getByRole("button", { name: "Open shortcuts" }));
+
+      expect(screen.getByText(/Shortcut preferences were ignored/)).toBeTruthy();
+      const resetAll = screen.getByRole("button", { name: "Reset all" }) as HTMLButtonElement;
+      expect(resetAll.disabled).toBe(false);
+      fireEvent.click(resetAll);
+
+      expect(storage.values.has(SHORTCUT_PREFERENCES_KEY)).toBe(false);
+      expect(screen.queryByText(/Shortcut preferences were ignored/)).toBeNull();
+      expect(screen.getByText("All keyboard shortcuts reset to defaults.")).toBeTruthy();
+
+      firstRender.unmount();
+      render(<Harness storage={storage} />);
+      fireEvent.click(screen.getByRole("button", { name: "Open shortcuts" }));
+      expect(screen.queryByText(/Shortcut preferences were ignored/)).toBeNull();
+      expect(
+        (screen.getByRole("button", { name: "Reset all" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+    },
+  );
+
   it("keeps session changes active and announces storage failures", () => {
     const storage = new MemoryStorage();
     storage.failWrites = true;
@@ -199,6 +229,22 @@ describe("ShortcutSettings", () => {
       }),
     );
     expect(within(row).getByText("Off")).toBeTruthy();
+    expect(
+      screen.getAllByText("Shortcut changes are active for this session but could not be saved.")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps a rejected record and reports the write failure when recovery removal fails", () => {
+    const storage = new MemoryStorage();
+    storage.values.set(SHORTCUT_PREFERENCES_KEY, "{");
+    storage.failWrites = true;
+    render(<Harness storage={storage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open shortcuts" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset all" }));
+
+    expect(storage.values.get(SHORTCUT_PREFERENCES_KEY)).toBe("{");
     expect(
       screen.getAllByText("Shortcut changes are active for this session but could not be saved.")
         .length,
