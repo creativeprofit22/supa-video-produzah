@@ -196,6 +196,128 @@ for (const viewport of [
   });
 }
 
+const longPrimaryTrackName =
+  "Primäre Kameraausgabe für die außergewöhnlich lange Dokumentarfilmsequenz";
+
+for (const visibilityCase of [
+  { name: "desktop", width: 1280, height: 800 },
+  { name: "320px with 200% text", width: 320, height: 900, rootFontSize: 32 },
+  { name: "forced colors", width: 1280, height: 800, forcedColors: true },
+  { name: "RTL", width: 1280, height: 800, direction: "rtl" },
+  { name: "a long label", width: 1280, height: 800, longLabel: true },
+] as const) {
+  test(`updates visual track visibility without losing editing state at ${visibilityCase.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: visibilityCase.width, height: visibilityCase.height });
+    if ("forcedColors" in visibilityCase) {
+      await page.emulateMedia({ forcedColors: "active" });
+    }
+    await page.goto(`${fixturePath}${"longLabel" in visibilityCase ? "?long-label=1" : ""}`);
+    await page.evaluate(
+      ({ direction, rootFontSize }) => {
+        document.documentElement.dir = direction ?? "ltr";
+        if (rootFontSize !== undefined) {
+          document.documentElement.style.fontSize = `${rootFontSize}px`;
+        }
+      },
+      {
+        direction: "direction" in visibilityCase ? visibilityCase.direction : undefined,
+        rootFontSize: "rootFontSize" in visibilityCase ? visibilityCase.rootFontSize : undefined,
+      },
+    );
+    await page.evaluate(() => document.fonts.ready);
+
+    const primaryTrackName =
+      "longLabel" in visibilityCase ? longPrimaryTrackName : "Primary camera";
+    const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+    const primaryLabel = page
+      .getByRole("group", { name: `${primaryTrackName} track controls` })
+      .locator("..");
+    const captionLabel = page
+      .getByRole("group", { name: "English captions track controls" })
+      .locator("..");
+    const primaryClip = primaryRow.locator(".multitrack-clip-body").first();
+    const videoVisibility = page.getByRole("button", {
+      name: `${primaryTrackName} video output`,
+    });
+    const captionVisibility = page.getByRole("button", {
+      name: "English captions caption output",
+    });
+    const split = page.getByRole("button", { name: "Split at playhead" });
+    const rippleDelete = page.getByRole("button", { name: "Ripple delete clip" });
+    const trimStart = page.getByRole("button", {
+      name: "Trim start of Interview A — wide camera.mp4",
+    });
+
+    await expect(videoVisibility).toHaveCount(1);
+    await expect(captionVisibility).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Interview dialogue audio output" })).toHaveCount(
+      0,
+    );
+    await expect(videoVisibility).toHaveAttribute("aria-pressed", "true");
+    await expect(captionVisibility).toHaveAttribute("aria-pressed", "true");
+    await expect(videoVisibility).toHaveAttribute("title", "Hide track output");
+    await expect(videoVisibility.locator(".lucide-eye")).toHaveCount(1);
+    await expect(videoVisibility).toContainText("Hide");
+    await expect(primaryLabel).toContainText("3 clips · Editable · Audible · Shown");
+    await expect(captionLabel).toContainText("0 clips · Editable · Shown");
+    await expect(primaryRow).toHaveAttribute("data-track-kind", "video");
+    await expect(primaryRow).toHaveAttribute("data-track-locked", "false");
+    await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
+
+    await primaryClip.click();
+    await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+    await expect(split).toBeEnabled();
+    await expect(rippleDelete).toBeEnabled();
+    await expect(trimStart).toBeEnabled();
+
+    await videoVisibility.click();
+
+    await expect(videoVisibility).toHaveCount(1);
+    await expect(videoVisibility).toHaveAccessibleName(`${primaryTrackName} video output`);
+    await expect(videoVisibility).toHaveAttribute("aria-pressed", "false");
+    await expect(videoVisibility).toHaveAttribute("title", "Show track output");
+    await expect(videoVisibility.locator(".lucide-eye-off")).toHaveCount(1);
+    await expect(videoVisibility).toContainText("Show");
+    await expect(primaryLabel).toContainText("3 clips · Editable · Audible · Hidden");
+    await expect(primaryRow).toHaveAttribute("data-track-kind", "video");
+    await expect(primaryRow).toHaveAttribute("data-track-locked", "false");
+    await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
+    await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+    await expect(split).toBeEnabled();
+    await expect(rippleDelete).toBeEnabled();
+    await expect(trimStart).toBeEnabled();
+
+    await captionVisibility.click();
+    await expect(captionVisibility).toHaveAccessibleName("English captions caption output");
+    await expect(captionVisibility).toHaveAttribute("aria-pressed", "false");
+    await expect(captionVisibility).toHaveAttribute("title", "Show track output");
+    await expect(captionVisibility.locator(".lucide-eye-off")).toHaveCount(1);
+    await expect(captionVisibility).toContainText("Show");
+    await expect(captionLabel).toContainText("0 clips · Editable · Hidden");
+    await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
+
+    if ("forcedColors" in visibilityCase) {
+      expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+    }
+    if ("direction" in visibilityCase) {
+      await expect(page.locator(".multitrack-panel")).toHaveCSS("direction", "rtl");
+    }
+
+    const disabledAxeRules = [
+      "target-size",
+      ...(visibilityCase.name === "forced colors" ? ["color-contrast"] : []),
+    ];
+    const axe = await new AxeBuilder({ page })
+      .include(".multitrack-panel")
+      .disableRules(disabledAxeRules)
+      .withTags(wcagTags)
+      .analyze();
+    expect(axe.violations, axe.violations.map(({ id }) => id).join(", ")).toEqual([]);
+  });
+}
+
 test("snaps a dragged clip to a visible clip edge and commits on release", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(fixturePath);

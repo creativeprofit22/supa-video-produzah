@@ -36,6 +36,10 @@ const clip = (
 });
 const assetId = id(1);
 const nestedSequenceId = id(3);
+const longTrackLabel = new URLSearchParams(window.location.search).has("long-label");
+const primaryTrackName = longTrackLabel
+  ? "Primäre Kameraausgabe für die außergewöhnlich lange Dokumentarfilmsequenz"
+  : "Primary camera";
 
 const initialProjection: ProjectProjection = {
   projectId: id(900_001),
@@ -69,7 +73,7 @@ const initialProjection: ProjectProjection = {
         tracks: [
           {
             id: id(10),
-            name: "Primary camera",
+            name: primaryTrackName,
             kind: "video",
             clips: [
               clip(100, 0, 28, { kind: "asset", assetId }),
@@ -126,6 +130,21 @@ function ControlledTimelineFixture() {
           ...sequence,
           tracks: sequence.tracks.map((track) =>
             track.id === trackId ? { ...track, locked } : track,
+          ),
+        })),
+      },
+    }));
+  };
+
+  const setTrackHidden = (trackId: string, hidden: boolean) => {
+    setCurrentProjection((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        sequences: current.state.sequences.map((sequence) => ({
+          ...sequence,
+          tracks: sequence.tracks.map((track) =>
+            track.id === trackId && track.kind !== "audio" ? { ...track, hidden } : track,
           ),
         })),
       },
@@ -324,6 +343,7 @@ function ControlledTimelineFixture() {
         onSelectClip={setSelectedClipId}
         onSetTrackLocked={setTrackLocked}
         onSetTrackMuted={setTrackMuted}
+        onSetTrackHidden={setTrackHidden}
         onSplitClip={splitClip}
         onRippleDeleteClip={rippleDeleteClip}
         onMoveClip={moveClip}
