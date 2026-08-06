@@ -2729,7 +2729,10 @@ fn render_plan_value_for_profile(
 }
 
 fn hidden_render_plan_value(input: &Path, output: &Path, audio: bool, plan_id: &str) -> Value {
-    let mut plan = render_plan_value(input, output, audio, plan_id);
+    with_hidden_render_video(render_plan_value(input, output, audio, plan_id))
+}
+
+fn with_hidden_render_video(mut plan: Value) -> Value {
     plan["expected"]["videoHidden"] = Value::Bool(true);
     let filter = plan["argv"]
         .as_array_mut()
@@ -2849,7 +2852,9 @@ fn render_plan_validation_accepts_exact_av_and_video_only_and_rejects_mutations(
 }
 
 #[test]
-fn render_plan_visibility_accepts_only_the_exact_derived_black_filter() {
+fn render_visibility_plan_accepts_exact_filter_and_rejects_mutation_removal_or_injection() {
+    const DRAWBOX: &str = "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill";
+    const EXACT_FILTER: &str = "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill,fps=30000/1001";
     let directory = tempdir().expect("hidden render workspace must be created");
     let source = directory.path().join("hidden-source.mp4");
     let output = directory.path().join("hidden-output.mp4");
@@ -2866,9 +2871,18 @@ fn render_plan_visibility_accepts_only_the_exact_derived_black_filter() {
     let validated = parse_and_validate_render_plan(exact.clone(), "owner", &grants)
         .expect("exact hidden render plan must validate");
     assert!(validated.plan.expected.video_hidden);
+    assert_eq!(
+        validated
+            .plan
+            .argv
+            .iter()
+            .find(|argument| argument.starts_with("scale="))
+            .map(String::as_str),
+        Some(EXACT_FILTER)
+    );
 
-    let mut mutated = exact;
-    let filter = mutated["argv"]
+    let mut mutated = exact.clone();
+    let mutated_filter = mutated["argv"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
@@ -2878,10 +2892,89 @@ fn render_plan_visibility_accepts_only_the_exact_derived_black_filter() {
                 .is_some_and(|value| value.starts_with("scale="))
         })
         .unwrap();
-    *filter = Value::String(filter.as_str().unwrap().replace("color=black", "color=red"));
-    let error = parse_and_validate_render_plan(mutated, "owner", &grants)
-        .expect_err("mutated hidden filter must fail");
-    assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+    *mutated_filter = Value::String(
+        mutated_filter
+            .as_str()
+            .unwrap()
+            .replace("color=black", "color=red"),
+    );
+
+    let mut removed = exact;
+    let removed_filter = removed["argv"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| {
+            argument
+                .as_str()
+                .is_some_and(|value| value.starts_with("scale="))
+        })
+        .unwrap();
+    *removed_filter = Value::String(
+        removed_filter
+            .as_str()
+            .unwrap()
+            .replace(&format!(",{DRAWBOX}"), ""),
+    );
+
+    let mut injected = render_plan_value(&source, &output, true, RENDER_PLAN_ID);
+    let injected_filter = injected["argv"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| {
+            argument
+                .as_str()
+                .is_some_and(|value| value.starts_with("scale="))
+        })
+        .unwrap();
+    *injected_filter = Value::String(
+        injected_filter
+            .as_str()
+            .unwrap()
+            .replace(",fps=", &format!(",{DRAWBOX},fps=")),
+    );
+
+    for (description, invalid) in [
+        ("mutated", mutated),
+        ("removed", removed),
+        ("injected", injected),
+    ] {
+        let error = match parse_and_validate_render_plan(invalid, "owner", &grants) {
+            Ok(_) => panic!("{description} hidden filter must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "argv_grammar");
+    }
+}
+
+#[test]
+fn render_visibility_legacy_plan_without_hidden_field_remains_compatible() {
+    let directory = tempdir().expect("legacy render workspace must be created");
+    let source = directory.path().join("legacy-source.mp4");
+    let output = directory.path().join("legacy-output.mp4");
+    fs::write(&source, b"source").expect("source must be written");
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("output must grant");
+    let legacy = render_plan_value(&source, &output, true, RENDER_PLAN_ID);
+    assert!(legacy["expected"].get("videoHidden").is_none());
+
+    let validated = parse_and_validate_render_plan(legacy, "owner", &grants)
+        .expect("legacy plan without videoHidden must validate");
+    assert!(!validated.plan.expected.video_hidden);
+    assert!(validated
+        .plan
+        .argv
+        .iter()
+        .all(|argument| !argument.contains("drawbox=")));
+    let serialized = serde_json::to_value(&validated.plan).unwrap();
+    assert!(serialized["expected"].get("videoHidden").is_none());
 }
 
 #[test]
@@ -3253,6 +3346,8 @@ const RENDER_VIDEO_ONLY_PLAN_ID: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const RENDER_COLLISION_PLAN_ID: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const RENDER_CANCELLATION_PLAN_ID: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const RENDER_RESTART_PLAN_ID: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const RENDER_HIDDEN_AV_PLAN_ID: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const RENDER_HIDDEN_MUTED_PLAN_ID: &str = "12121212-1212-4212-8212-121212121212";
 
 #[derive(Clone, Copy)]
 struct RenderTestProfile {
@@ -3290,6 +3385,31 @@ fn validated_system_render_fixture(
     plan_id: &str,
     profile: RenderTestProfile,
 ) -> super::render::ValidatedRenderPlan {
+    validated_system_render_fixture_with_visibility(
+        directory, source, audio, false, plan_id, profile,
+    )
+}
+
+fn validated_system_hidden_render_fixture(
+    directory: &Path,
+    source: &Path,
+    audio: bool,
+    plan_id: &str,
+    profile: RenderTestProfile,
+) -> super::render::ValidatedRenderPlan {
+    validated_system_render_fixture_with_visibility(
+        directory, source, audio, true, plan_id, profile,
+    )
+}
+
+fn validated_system_render_fixture_with_visibility(
+    directory: &Path,
+    source: &Path,
+    audio: bool,
+    video_hidden: bool,
+    plan_id: &str,
+    profile: RenderTestProfile,
+) -> super::render::ValidatedRenderPlan {
     let output = directory.join(format!("output-{plan_id}.mp4"));
     let grants = VideoPathGrants::default();
     let source = grants
@@ -3298,22 +3418,24 @@ fn validated_system_render_fixture(
     let output = grants
         .grant_destination(RENDER_INTEGRATION_OWNER, GrantCategory::Output, &output)
         .expect("integration output must be granted");
-    parse_and_validate_render_plan(
-        render_plan_value_for_profile(
-            &source,
-            &output,
-            audio,
-            plan_id,
-            profile.duration_frames,
-            profile.rate_numerator,
-            profile.rate_denominator,
-            profile.width,
-            profile.height,
-        ),
-        RENDER_INTEGRATION_OWNER,
-        &grants,
-    )
-    .expect("integration render plan must validate")
+    let plan = render_plan_value_for_profile(
+        &source,
+        &output,
+        audio,
+        plan_id,
+        profile.duration_frames,
+        profile.rate_numerator,
+        profile.rate_denominator,
+        profile.width,
+        profile.height,
+    );
+    let plan = if video_hidden {
+        with_hidden_render_video(plan)
+    } else {
+        plan
+    };
+    parse_and_validate_render_plan(plan, RENDER_INTEGRATION_OWNER, &grants)
+        .expect("integration render plan must validate")
 }
 
 fn registered_render_worker(
@@ -3819,6 +3941,93 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
         OsString::from("ffprobe"),
     ))
     .await;
+}
+
+fn assert_every_render_frame_is_black(ffmpeg: &OsString, path: &Path, expected_frame_count: u64) {
+    let output = Command::new(ffmpeg)
+        .args(["-hide_banner", "-nostdin", "-loglevel", "info", "-i"])
+        .arg(path)
+        .args([
+            "-an",
+            "-vf",
+            "blackframe=amount=100:threshold=32",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .expect("black-frame FFmpeg assertion must run");
+    assert!(
+        output.status.success(),
+        "black-frame FFmpeg assertion failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let black_frame_count = stderr
+        .lines()
+        .filter(|line| line.contains("Parsed_blackframe") && line.contains("pblack:100"))
+        .count();
+    assert_eq!(
+        black_frame_count,
+        usize::try_from(expected_frame_count).unwrap(),
+        "every decoded render frame must be 100% black; FFmpeg stderr:\n{stderr}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires system FFmpeg, FFprobe, and the canonical media fixture"]
+async fn render_visibility_local_ffmpeg_outputs_black_video_and_respects_audio_mute() {
+    let programs = MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
+    let ffmpeg = programs
+        .verified_ffmpeg("verify_hidden_render_black_frames")
+        .await
+        .expect("hidden render FFmpeg program must verify");
+    let source = canonical_media_fixture();
+    for (muted, plan_id) in [
+        (false, RENDER_HIDDEN_AV_PLAN_ID),
+        (true, RENDER_HIDDEN_MUTED_PLAN_ID),
+    ] {
+        let workspace = tempdir().expect("hidden render integration workspace must be created");
+        let validated = validated_system_hidden_render_fixture(
+            workspace.path(),
+            &source,
+            !muted,
+            plan_id,
+            CANONICAL_RENDER_PROFILE,
+        );
+        let (request, captured) = registered_render_worker(
+            validated.clone(),
+            false,
+            workspace.path().join("app-cache"),
+            programs.clone(),
+        );
+
+        run_render_worker(request).await;
+
+        let events = captured_render_events(&captured);
+        assert_worker_event_order(&events);
+        assert!(
+            matches!(events.last(), Some(VideoRenderEvent::Completed { .. })),
+            "hidden render must complete: {events:?}"
+        );
+        let inspected = probe_and_validate_render(
+            &validated.output_path,
+            &validated,
+            &programs,
+            "probe_hidden_render_integration",
+        )
+        .await;
+        assert_eq!(
+            inspected.probe.audio.is_some(),
+            !muted,
+            "FFprobe audio presence must match track mute state"
+        );
+        assert_every_render_frame_is_black(
+            &ffmpeg,
+            &validated.output_path,
+            CANONICAL_RENDER_PROFILE.duration_frames,
+        );
+    }
 }
 
 pub(crate) async fn assert_render_worker_collision(programs: MediaPrograms) {
