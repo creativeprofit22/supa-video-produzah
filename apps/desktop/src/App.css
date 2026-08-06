@@ -721,7 +721,7 @@ video {
 }
 .multitrack-layout {
   --timeline-ruler-height: 1.75rem;
-  --timeline-track-height: 5.25rem;
+  --timeline-track-height: 6.75rem;
   display: grid;
   min-width: 0;
   grid-template-columns: clamp(11rem, 20vw, 14rem) minmax(0, 1fr);
@@ -759,6 +759,18 @@ video {
   background: color-mix(in srgb, var(--surface) 82%, var(--quiet));
   box-shadow: inset 3px 0 0 var(--quiet);
 }
+.multitrack-visible-label.is-hidden {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    rgb(255 255 255 / 7%) 9px 12px
+  );
+}
+.multitrack-visible-label.is-hidden > span,
+.multitrack-visible-label.is-hidden > strong,
+.multitrack-visible-label.is-hidden > small {
+  color: var(--muted);
+}
 .multitrack-visible-label > span {
   grid-area: kind;
 }
@@ -791,18 +803,22 @@ video {
 }
 .multitrack-track-controls {
   grid-area: controls;
-  display: flex;
+  display: grid;
+  width: 7.75rem;
   min-width: 0;
   align-self: center;
-  flex-direction: column;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.25rem;
+}
+.multitrack-track-controls > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .multitrack-lock-toggle,
 .multitrack-mute-toggle,
 .multitrack-visibility-toggle {
   display: inline-flex;
   min-width: 3.75rem;
-  min-height: 2rem;
+  min-height: 2.75rem;
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
@@ -908,6 +924,17 @@ video {
     repeating-linear-gradient(135deg, transparent 0 10px, rgb(255 255 255 / 3%) 10px 12px),
     linear-gradient(90deg, transparent 99%, var(--border) 100%);
 }
+.multitrack-track-row.is-hidden {
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 9px, rgb(255 255 255 / 7%) 9px 12px),
+    linear-gradient(90deg, transparent 99%, var(--border) 100%);
+}
+.multitrack-track-row.is-locked.is-hidden {
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 9px, rgb(255 255 255 / 7%) 9px 12px),
+    repeating-linear-gradient(135deg, transparent 0 10px, rgb(255 255 255 / 3%) 10px 12px),
+    linear-gradient(90deg, transparent 99%, var(--border) 100%);
+}
 .multitrack-clip-list {
   position: absolute;
   inset: 0;
@@ -927,6 +954,17 @@ video {
 .multitrack-clip-audio {
   border-color: rgb(151 188 255 / 55%);
   background: #1f2830;
+}
+.multitrack-clip.is-hidden .multitrack-clip-body {
+  filter: grayscale(0.85);
+}
+.multitrack-clip.is-hidden::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 8px, rgb(0 0 0 / 42%) 8px 11px);
+  content: "";
+  pointer-events: none;
 }
 .multitrack-clip.is-locked {
   border-color: var(--quiet);
@@ -2066,19 +2104,19 @@ video {
     line-height: 1.15;
   }
   .multitrack-track-controls {
-    display: grid;
     width: 100%;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-block-start: 0.125rem;
   }
   .multitrack-track-controls > :only-child {
     grid-column: 1 / -1;
   }
   .multitrack-lock-toggle,
-  .multitrack-mute-toggle {
+  .multitrack-mute-toggle,
+  .multitrack-visibility-toggle {
     width: 100%;
     min-width: 0;
-    min-height: 2rem;
+    min-height: 44px;
     gap: 0.15rem;
     padding-inline: 0.2rem;
     font-size: 0.55rem;
@@ -2142,14 +2180,16 @@ video {
       margin-block-start: 0;
     }
     .multitrack-lock-toggle,
-    .multitrack-mute-toggle {
+    .multitrack-mute-toggle,
+    .multitrack-visibility-toggle {
       min-height: 44px;
       gap: 0;
       padding-inline: 0.1rem;
       font-size: 0.5rem;
     }
     .multitrack-lock-toggle svg,
-    .multitrack-mute-toggle svg {
+    .multitrack-mute-toggle svg,
+    .multitrack-visibility-toggle svg {
       display: none;
     }
   }
@@ -2210,6 +2250,7 @@ video {
   .multitrack-clip,
   .multitrack-lock-toggle,
   .multitrack-mute-toggle,
+  .multitrack-visibility-toggle,
   .multitrack-scroll-region:focus-visible {
     border-color: CanvasText;
     box-shadow: none;
@@ -2223,6 +2264,16 @@ video {
     outline: 1px dashed GrayText;
     outline-offset: -2px;
   }
+  .multitrack-visible-label.is-hidden,
+  .multitrack-track-row.is-hidden {
+    border-inline-start: 4px double CanvasText;
+  }
+  .multitrack-clip.is-hidden {
+    border-style: dashed;
+  }
+  .multitrack-clip.is-hidden::after {
+    background: transparent;
+  }
   .multitrack-snap-guide {
     width: 2px;
     background: Highlight;
@@ -2230,7 +2281,8 @@ video {
     forced-color-adjust: none;
   }
   .multitrack-lock-toggle[aria-pressed="true"],
-  .multitrack-mute-toggle[aria-pressed="true"] {
+  .multitrack-mute-toggle[aria-pressed="true"],
+  .multitrack-visibility-toggle[aria-pressed="false"] {
     color: HighlightText;
     background: Highlight;
     forced-color-adjust: none;

@@ -16,7 +16,7 @@ interface ProgramMonitorProps {
   readonly finalPreviewPath: string | null;
   readonly hasAudio: boolean;
   readonly timelineAudioMuted: boolean;
-  readonly timelineVideoHidden?: boolean;
+  readonly timelineVideoHidden: boolean;
   readonly convertCachePath: (path: string) => string;
   readonly rate: RationalRate;
   readonly trimIn: number;
@@ -60,7 +60,7 @@ export function ProgramMonitor({
   finalPreviewPath,
   hasAudio,
   timelineAudioMuted: canonicalTimelineAudioMuted,
-  timelineVideoHidden = false,
+  timelineVideoHidden,
   convertCachePath,
   rate,
   trimIn,

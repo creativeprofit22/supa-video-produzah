@@ -491,8 +491,11 @@ export function MultitrackTimeline({
           <div className="multitrack-label-spacer" aria-hidden="true" />
           {timeline.tracks.map((track) => (
             <div
-              className={`multitrack-visible-label${track.locked ? " is-locked" : ""}`}
+              className={`multitrack-visible-label${track.locked ? " is-locked" : ""}${
+                track.canToggleVisibility && track.hidden ? " is-hidden" : ""
+              }`}
               data-track-muted={track.canMute ? track.muted : undefined}
+              data-track-hidden={track.canToggleVisibility ? track.hidden : undefined}
               key={track.trackId}
             >
               <span>{track.kind}</span>
@@ -591,13 +594,16 @@ export function MultitrackTimeline({
             <ol className="multitrack-track-list" aria-label={`${timeline.name} tracks`}>
               {timeline.tracks.map((track) => (
                 <li
-                  className={`multitrack-track-row${track.locked ? " is-locked" : ""}`}
+                  className={`multitrack-track-row${track.locked ? " is-locked" : ""}${
+                    track.canToggleVisibility && track.hidden ? " is-hidden" : ""
+                  }`}
                   data-track-id={track.trackId}
                   data-track-kind={track.kind}
                   data-track-locked={track.locked}
                   data-track-muted={track.canMute ? track.muted : undefined}
+                  data-track-hidden={track.canToggleVisibility ? track.hidden : undefined}
                   key={track.trackId}
-                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}`}
+                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}${track.canToggleVisibility ? `, ${track.hidden ? "hidden" : "shown"}` : ""}`}
                 >
                   {track.clips.length === 0 ? null : (
                     <ol className="multitrack-clip-list" aria-label={`${track.name} clips`}>
@@ -628,9 +634,12 @@ export function MultitrackTimeline({
                           <li
                             className={`multitrack-clip multitrack-clip-${track.kind}${
                               isSelected ? " is-selected" : ""
-                            }${isDragging ? " is-dragging" : ""}${track.locked ? " is-locked" : ""}`}
+                            }${isDragging ? " is-dragging" : ""}${
+                              track.locked ? " is-locked" : ""
+                            }${track.canToggleVisibility && track.hidden ? " is-hidden" : ""}`}
                             data-clip-id={clip.clipId}
                             data-track-locked={track.locked}
+                            data-track-hidden={track.canToggleVisibility ? track.hidden : undefined}
                             data-start-frame={startFrame}
                             data-end-frame-exclusive={endFrameExclusive}
                             data-drag-mode={draft?.mode}

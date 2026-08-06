@@ -368,10 +368,25 @@ describe("MultitrackTimeline", () => {
     expect(
       screen.getByRole("group", { name: "Captions track controls" }).parentElement?.textContent,
     ).toContain("0 clips · Editable · Shown");
-    expect(screen.getByRole("listitem", { name: /Camera, video track.*locked/ })).toBeTruthy();
-    expect(
-      screen.getByRole("listitem", { name: /Captions, caption track.*editable/ }),
-    ).toBeTruthy();
+    const videoLabel = screen.getByRole("group", { name: "Camera track controls" }).parentElement!;
+    const videoRow = screen.getByRole("listitem", {
+      name: /Camera, video track.*locked.*audible.*hidden/,
+    });
+    const captionRow = screen.getByRole("listitem", {
+      name: /Captions, caption track.*editable.*shown/,
+    });
+    const selectedClipContainer = selectedClip.parentElement!;
+    expect(videoLabel.className).toContain("is-hidden");
+    expect(videoLabel.getAttribute("data-track-hidden")).toBe("true");
+    expect(videoRow.className).toContain("is-hidden");
+    expect(videoRow.className).toContain("is-locked");
+    expect(videoRow.getAttribute("data-track-hidden")).toBe("true");
+    expect(captionRow.className).not.toContain("is-hidden");
+    expect(captionRow.getAttribute("data-track-hidden")).toBe("false");
+    expect(selectedClipContainer.className).toContain("is-hidden");
+    expect(selectedClipContainer.className).toContain("is-locked");
+    expect(selectedClipContainer.className).toContain("is-selected");
+    expect(selectedClipContainer.getAttribute("data-track-hidden")).toBe("true");
     expect(selectedClip.getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(videoVisibility);
@@ -401,11 +416,56 @@ describe("MultitrackTimeline", () => {
     expect(videoVisibility.getAttribute("aria-pressed")).toBe("true");
     expect(videoVisibility.getAttribute("title")).toBe("Hide track output");
     expect(videoVisibility.textContent).toContain("Hide");
+    expect(videoLabel.className).not.toContain("is-hidden");
+    expect(videoLabel.getAttribute("data-track-hidden")).toBe("false");
+    expect(videoRow.className).not.toContain("is-hidden");
+    expect(videoRow.className).toContain("is-locked");
+    expect(videoRow.getAttribute("data-track-hidden")).toBe("false");
+    expect(selectedClipContainer.className).not.toContain("is-hidden");
+    expect(selectedClipContainer.className).toContain("is-locked");
+    expect(selectedClipContainer.className).toContain("is-selected");
+    expect(selectedClipContainer.getAttribute("data-track-hidden")).toBe("false");
     expect(screen.getByRole("button", { name: "Captions caption output" })).toBe(captionVisibility);
     expect(captionVisibility.querySelector(".lucide-eye-off")).toBeTruthy();
     expect(captionVisibility.getAttribute("aria-pressed")).toBe("false");
     expect(captionVisibility.getAttribute("title")).toBe("Show track output");
     expect(captionVisibility.textContent).toContain("Show");
+  });
+
+  it("keeps hidden unlocked visual clips selectable and trimmable", () => {
+    const projection = projectionFixture({
+      name: "Hidden editable timeline",
+      videoClipCount: 1,
+      audioClipCount: 1,
+    });
+    const videoTrack = projection.state.sequences[0]!.tracks[0]!;
+    if (videoTrack.kind !== "video") throw new Error("Expected a video track");
+    videoTrack.hidden = true;
+    videoTrack.locked = false;
+    const selectedClipId = id(100_000);
+    const onSelectClip = vi.fn();
+
+    render(<MultitrackTimeline {...timelineProps({ projection, selectedClipId, onSelectClip })} />);
+
+    const selectedClip = screen.getByRole("button", {
+      name: /camera-a\.mp4, frames 0 through 2.*end exclusive$/,
+    });
+    const selectedClipContainer = selectedClip.parentElement!;
+    expect(selectedClipContainer.className).toContain("is-hidden");
+    expect(selectedClipContainer.className).toContain("is-selected");
+    expect(selectedClipContainer.className).not.toContain("is-locked");
+    expect(screen.getByRole("button", { name: "Trim start of camera-a.mp4" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.getByRole("button", { name: "Trim end of camera-a.mp4" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+
+    fireEvent.click(selectedClip);
+    expect(onSelectClip).toHaveBeenCalledOnce();
+    expect(onSelectClip).toHaveBeenCalledWith(selectedClipId);
   });
 
   it("disables visibility toggles only while a timeline edit is pending", () => {

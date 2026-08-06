@@ -92,6 +92,7 @@ function preparedProxyMonitor(
       finalPreviewPath={null}
       hasAudio={hasAudio}
       timelineAudioMuted={timelineAudioMuted}
+      timelineVideoHidden={false}
       convertCachePath={(path) => `asset:${path}`}
       rate={rate}
       trimIn={10}
@@ -122,6 +123,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
         timelineAudioMuted
+        timelineVideoHidden={false}
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -249,6 +251,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -286,6 +289,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -318,6 +322,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -350,6 +355,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -369,6 +375,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={convertCachePath}
         rate={rate}
         trimIn={10}
@@ -402,6 +409,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -438,6 +446,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -469,6 +478,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -562,6 +572,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -617,6 +628,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath="/cache/final-preview.mp4"
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}
@@ -720,6 +732,7 @@ describe("ProgramMonitor", () => {
         finalPreviewPath={null}
         hasAudio
         timelineAudioMuted={false}
+        timelineVideoHidden={false}
         convertCachePath={(path) => `asset:${path}`}
         rate={rate}
         trimIn={10}

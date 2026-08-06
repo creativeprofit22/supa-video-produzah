@@ -238,6 +238,7 @@ for (const visibilityCase of [
       .getByRole("group", { name: "English captions track controls" })
       .locator("..");
     const primaryClip = primaryRow.locator(".multitrack-clip-body").first();
+    const primaryClipContainer = primaryClip.locator("..");
     const videoVisibility = page.getByRole("button", {
       name: `${primaryTrackName} video output`,
     });
@@ -252,6 +253,14 @@ for (const visibilityCase of [
 
     await expect(videoVisibility).toHaveCount(1);
     await expect(captionVisibility).toHaveCount(1);
+    const primaryControls = primaryLabel.locator(".multitrack-track-controls > button");
+    await expect(primaryControls).toHaveCount(3);
+    for (const control of await primaryControls.all()) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
     await expect(page.getByRole("button", { name: "Interview dialogue audio output" })).toHaveCount(
       0,
     );
@@ -265,6 +274,12 @@ for (const visibilityCase of [
     await expect(primaryRow).toHaveAttribute("data-track-kind", "video");
     await expect(primaryRow).toHaveAttribute("data-track-locked", "false");
     await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
+    await expect(primaryRow).toHaveAttribute("data-track-hidden", "false");
+    await expect(primaryRow).not.toHaveClass(/is-hidden/);
+    await expect(primaryLabel).toHaveAttribute("data-track-hidden", "false");
+    await expect(primaryLabel).not.toHaveClass(/is-hidden/);
+    await expect(primaryClipContainer).toHaveAttribute("data-track-hidden", "false");
+    await expect(primaryClipContainer).not.toHaveClass(/is-hidden/);
 
     await primaryClip.click();
     await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
@@ -284,6 +299,16 @@ for (const visibilityCase of [
     await expect(primaryRow).toHaveAttribute("data-track-kind", "video");
     await expect(primaryRow).toHaveAttribute("data-track-locked", "false");
     await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
+    await expect(primaryRow).toHaveAttribute("data-track-hidden", "true");
+    await expect(primaryRow).toHaveClass(/is-hidden/);
+    await expect(primaryRow).toHaveAccessibleName(
+      new RegExp(`${primaryTrackName}, video track, 3 clips, editable, audible, hidden`),
+    );
+    await expect(primaryLabel).toHaveAttribute("data-track-hidden", "true");
+    await expect(primaryLabel).toHaveClass(/is-hidden/);
+    await expect(primaryClipContainer).toHaveAttribute("data-track-hidden", "true");
+    await expect(primaryClipContainer).toHaveClass(/is-hidden/);
+    await expect(primaryClipContainer).toHaveClass(/is-selected/);
     await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
     await expect(split).toBeEnabled();
     await expect(rippleDelete).toBeEnabled();
@@ -300,6 +325,11 @@ for (const visibilityCase of [
 
     if ("forcedColors" in visibilityCase) {
       expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+      await expect(primaryRow).toHaveCSS("border-left-style", "double");
+      await expect(primaryRow).toHaveCSS("border-left-width", "4px");
+      await expect(primaryLabel).toHaveCSS("border-left-style", "double");
+      await expect(primaryClipContainer).toHaveCSS("border-top-style", "dashed");
+      await expect(videoVisibility).toHaveCSS("forced-color-adjust", "none");
     }
     if ("direction" in visibilityCase) {
       await expect(page.locator(".multitrack-panel")).toHaveCSS("direction", "rtl");
