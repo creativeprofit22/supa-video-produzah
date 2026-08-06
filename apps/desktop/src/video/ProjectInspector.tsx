@@ -2,10 +2,11 @@ import type { ProjectProjection, RecoveryReport } from "@supa-video/contracts";
 import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+import { useCommand } from "../commands/CommandProvider";
+
 interface ProjectInspectorProps {
   readonly projection: ProjectProjection;
   readonly recovery: RecoveryReport | null;
-  readonly onClose: () => void;
 }
 
 const recoveryFallback: Record<RecoveryReport["status"], string> = {
@@ -44,9 +45,12 @@ function recoveryLabel(status: RecoveryReport["status"]): string {
   return status.replaceAll("_", " ");
 }
 
-export function ProjectInspector({ projection, recovery, onClose }: ProjectInspectorProps) {
+export function ProjectInspector({ projection, recovery }: ProjectInspectorProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeRef.current?.focus(), []);
+  const inspectorCommand = useCommand("view.toggleProjectInspector");
+  useEffect(() => {
+    if (inspectorCommand.canExecute) closeRef.current?.focus();
+  }, [inspectorCommand.canExecute]);
   const lastCommand = projection.lastCommand;
   const recoveryStatus = recovery?.status ?? projection.recoveryStatus;
   const replayedRecordCount = recovery?.replayedRecordCount ?? projection.replayedRecordCount;
@@ -61,7 +65,9 @@ export function ProjectInspector({ projection, recovery, onClose }: ProjectInspe
           ref={closeRef}
           className="secondary-button compact-button"
           type="button"
-          onClick={onClose}
+          disabled={!inspectorCommand.canExecute}
+          aria-keyshortcuts={inspectorCommand.ariaKeyShortcuts}
+          onClick={inspectorCommand.execute}
         >
           <X size={16} aria-hidden />
           Close

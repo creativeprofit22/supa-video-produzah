@@ -5,6 +5,7 @@ import { cleanup, render } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CommandProvider } from "../commands/CommandProvider";
 import { testProbe, testSourceIdentity } from "../test-video-service";
 import { VideoWorkspace } from "./VideoWorkspace";
 
@@ -240,25 +241,25 @@ describe("VideoWorkspace", () => {
     } as unknown as ComponentProps<typeof VideoWorkspace>["controller"];
 
     const workspace = (value: ComponentProps<typeof VideoWorkspace>["controller"]) => (
-      <VideoWorkspace
-        controller={value}
-        mediaJobs={[]}
-        project={legacyProject()}
-        readiness={{
-          phase: "loaded",
-          value: {
-            source: "bundled",
-            toolchainId: "ffmpeg-test-v1",
-            ffmpeg: { available: true, version: "8.1.2" },
-            ffprobe: { available: true, version: "8.1.2" },
-            ready: true,
-          },
-        }}
-        onCheckTools={vi.fn()}
-        onOpenJobCenter={vi.fn()}
-        onNewProject={vi.fn()}
-        onOpenProject={vi.fn()}
-      />
+      <CommandProvider>
+        <VideoWorkspace
+          controller={value}
+          mediaJobs={[]}
+          project={legacyProject()}
+          readiness={{
+            phase: "loaded",
+            value: {
+              source: "bundled",
+              toolchainId: "ffmpeg-test-v1",
+              ffmpeg: { available: true, version: "8.1.2" },
+              ffprobe: { available: true, version: "8.1.2" },
+              ready: true,
+            },
+          }}
+          onCheckTools={vi.fn()}
+          onOpenJobCenter={vi.fn()}
+        />
+      </CommandProvider>
     );
     const { rerender } = render(workspace(controller));
 

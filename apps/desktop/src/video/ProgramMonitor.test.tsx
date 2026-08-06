@@ -1,9 +1,25 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as testingLibraryRender,
+  screen,
+  type RenderResult,
+} from "@testing-library/react";
+import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CommandProvider } from "../commands/CommandProvider";
 import { ProgramMonitor } from "./ProgramMonitor";
+
+function render(ui: ReactElement): RenderResult {
+  const result = testingLibraryRender(<CommandProvider>{ui}</CommandProvider>);
+  const rerender = (nextUi: ReactNode) =>
+    result.rerender(<CommandProvider>{nextUi}</CommandProvider>);
+  return { ...result, rerender };
+}
 
 const rate = { numerator: 25, denominator: 1 } as const;
 const originalRequestVideoFrameCallback = Object.getOwnPropertyDescriptor(
@@ -470,7 +486,7 @@ describe("ProgramMonitor", () => {
     expect(onPlayheadChange).toHaveBeenCalledWith(89);
   });
 
-  it("seeks one or ten frames with keyboard shortcuts outside editable controls", () => {
+  it("seeks one or five frames with keyboard shortcuts outside interactive controls", () => {
     const onPlayheadChange = vi.fn();
     render(
       <ProgramMonitor
@@ -487,14 +503,53 @@ describe("ProgramMonitor", () => {
         onPlayheadChange={onPlayheadChange}
       />,
     );
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    fireEvent.keyDown(window, { key: "ArrowLeft", shiftKey: true });
+    fireEvent.keyDown(window, { code: "ArrowRight", key: "ArrowRight" });
+    fireEvent.keyDown(window, { code: "ArrowLeft", key: "ArrowLeft", shiftKey: true });
     expect(onPlayheadChange).toHaveBeenNthCalledWith(1, 51);
-    expect(onPlayheadChange).toHaveBeenNthCalledWith(2, 40);
+    expect(onPlayheadChange).toHaveBeenNthCalledWith(2, 46);
 
     const playButton = screen.getByRole("button", { name: "Play" });
-    fireEvent.keyDown(playButton, { key: "ArrowRight" });
+    fireEvent.keyDown(playButton, { code: "ArrowRight", key: "ArrowRight" });
     expect(onPlayheadChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("accumulates repeated frame steps and jumps before the parent rerenders", () => {
+    const onPlayheadChange = vi.fn();
+    render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={50}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+
+    fireEvent.keyDown(window, { code: "ArrowRight", key: "ArrowRight", repeat: true });
+    fireEvent.keyDown(window, { code: "ArrowRight", key: "ArrowRight", repeat: true });
+    fireEvent.keyDown(window, {
+      code: "ArrowRight",
+      key: "ArrowRight",
+      shiftKey: true,
+      repeat: true,
+    });
+    fireEvent.keyDown(window, {
+      code: "ArrowRight",
+      key: "ArrowRight",
+      shiftKey: true,
+      repeat: true,
+    });
+
+    expect(onPlayheadChange.mock.calls.map(([frame]) => frame)).toEqual([51, 52, 57, 62]);
+    expect(
+      (screen.getByLabelText("Prepared source proxy") as HTMLVideoElement).currentTime,
+    ).toBeCloseTo(62 / 25);
   });
 
   it("toggles mute while preserving the current non-zero volume", () => {
@@ -710,7 +765,7 @@ describe("ProgramMonitor", () => {
     expect(screen.queryByText("Buffering preview. Please wait.")).toBeNull();
 
     fireEvent.waiting(video);
-    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     expect(screen.queryByText("Buffering preview. Please wait.")).toBeNull();
   });
 

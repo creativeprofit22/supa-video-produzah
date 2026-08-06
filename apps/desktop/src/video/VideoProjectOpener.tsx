@@ -1,6 +1,7 @@
 import type { VideoToolInfo, VideoToolProblem, VideoToolStatus } from "@supa-video/contracts";
 import { AlertCircle, CheckCircle2, FilePlus2, FolderOpen, RefreshCw } from "lucide-react";
 
+import { useCommand } from "../commands/CommandProvider";
 export type ReadinessState =
   | { readonly phase: "loading" }
   | { readonly phase: "error" }
@@ -11,8 +12,6 @@ interface VideoProjectOpenerProps {
   readonly projectPending: boolean;
   readonly projectError: Error | null;
   readonly onCheckTools: () => void;
-  readonly onNewProject: () => void;
-  readonly onOpenProject: () => void;
 }
 
 type VideoToolName = "FFmpeg" | "FFprobe";
@@ -91,9 +90,9 @@ export function VideoProjectOpener({
   projectPending,
   projectError,
   onCheckTools,
-  onNewProject,
-  onOpenProject,
 }: VideoProjectOpenerProps) {
+  const newProjectCommand = useCommand("project.new");
+  const openProjectCommand = useCommand("project.open");
   const toolsReady = readiness.phase === "loaded" && readiness.value.ready;
   return (
     <main className="opener shared-rail" id="workspace">
@@ -116,8 +115,9 @@ export function VideoProjectOpener({
           <button
             className="primary-button"
             type="button"
-            disabled={projectPending}
-            onClick={onNewProject}
+            disabled={!newProjectCommand.canExecute}
+            aria-keyshortcuts={newProjectCommand.ariaKeyShortcuts}
+            onClick={newProjectCommand.execute}
           >
             {projectPending ? (
               <span className="button-spinner" aria-hidden />
@@ -129,8 +129,9 @@ export function VideoProjectOpener({
           <button
             className="secondary-button"
             type="button"
-            disabled={projectPending}
-            onClick={onOpenProject}
+            disabled={!openProjectCommand.canExecute}
+            aria-keyshortcuts={openProjectCommand.ariaKeyShortcuts}
+            onClick={openProjectCommand.execute}
           >
             <FolderOpen size={17} aria-hidden />
             Open project

@@ -1,20 +1,17 @@
-import type { EditOperationState } from "../use-video-project";
 import { AlertCircle, Redo2, Scissors, Undo2 } from "lucide-react";
 
+import { useCommand } from "../commands/CommandProvider";
+import type { EditOperationState } from "../use-video-project";
 interface TrimInspectorProps {
   readonly inFrame: number;
   readonly outFrame: number;
   readonly durationFrames: number;
   readonly valid: boolean;
   readonly changed: boolean;
-  readonly canUndo: boolean;
-  readonly canRedo: boolean;
   readonly operation: EditOperationState;
   readonly onInFrameChange: (frame: number) => void;
   readonly onOutFrameChange: (frame: number) => void;
   readonly onApply: () => void;
-  readonly onUndo: () => void;
-  readonly onRedo: () => void;
 }
 
 export function TrimInspector({
@@ -23,16 +20,14 @@ export function TrimInspector({
   durationFrames,
   valid,
   changed,
-  canUndo,
-  canRedo,
   operation,
   onInFrameChange,
   onOutFrameChange,
   onApply,
-  onUndo,
-  onRedo,
 }: TrimInspectorProps) {
   const pending = operation.phase === "saving";
+  const undoCommand = useCommand("history.undo");
+  const redoCommand = useCommand("history.redo");
   const validationMessage = valid
     ? `${outFrame - inFrame} frames will be kept.`
     : `Enter a range from frame 0 through ${durationFrames}, with trim out after trim in.`;
@@ -44,13 +39,33 @@ export function TrimInspector({
           <h2 id="trim-title">Trim inspector</h2>
         </div>
         <div className="history-actions" aria-label="Edit history">
-          <button type="button" disabled={!canUndo || pending} onClick={onUndo}>
+          <button
+            type="button"
+            disabled={!undoCommand.canExecute}
+            aria-keyshortcuts={undoCommand.ariaKeyShortcuts}
+            onClick={undoCommand.execute}
+          >
             <Undo2 size={16} aria-hidden />
             Undo
+            {undoCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {undoCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
-          <button type="button" disabled={!canRedo || pending} onClick={onRedo}>
+          <button
+            type="button"
+            disabled={!redoCommand.canExecute}
+            aria-keyshortcuts={redoCommand.ariaKeyShortcuts}
+            onClick={redoCommand.execute}
+          >
             <Redo2 size={16} aria-hidden />
             Redo
+            {redoCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {redoCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
         </div>
       </div>

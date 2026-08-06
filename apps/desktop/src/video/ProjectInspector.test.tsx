@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 
+import { CommandProvider, useCommandHandler } from "../commands/CommandProvider";
 import { ProjectInspector } from "./ProjectInspector";
 
 const projection: ProjectProjection = {
@@ -51,12 +52,39 @@ const journalRecreated: RecoveryReport = {
   legacyHistoryReset: false,
 };
 
+function InspectorFixture({
+  value,
+  recovery,
+  onClose = () => undefined,
+}: {
+  value: ProjectProjection;
+  recovery: RecoveryReport | null;
+  onClose?: () => void;
+}) {
+  useCommandHandler("view.toggleProjectInspector", { canExecute: true, execute: onClose });
+  return <ProjectInspector projection={value} recovery={recovery} />;
+}
+
+function inspector(
+  value: ProjectProjection,
+  recovery: RecoveryReport | null,
+  onClose?: () => void,
+) {
+  return (
+    <CommandProvider>
+      <InspectorFixture
+        value={value}
+        recovery={recovery}
+        {...(onClose === undefined ? {} : { onClose })}
+      />
+    </CommandProvider>
+  );
+}
+
 describe("ProjectInspector", () => {
   it("renders sanitized recovered details, focuses Close, and has no axe violations", async () => {
     const onClose = vi.fn();
-    const { container } = render(
-      <ProjectInspector projection={projection} recovery={recovered} onClose={onClose} />,
-    );
+    const { container } = render(inspector(projection, recovered, onClose));
     expect(screen.getByRole("heading", { name: "Project inspector" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Recovery report" })).toBeTruthy();
     expect(screen.getByText(projection.revision.stateHash)).toBeTruthy();
@@ -80,9 +108,7 @@ describe("ProjectInspector", () => {
         summary: "Redid Applied trim",
       },
     };
-    const { container } = render(
-      <ProjectInspector projection={reopenedProjection} recovery={recovered} onClose={vi.fn()} />,
-    );
+    const { container } = render(inspector(reopenedProjection, recovered));
 
     expect(screen.getByText("Redid Applied trim")).toBeTruthy();
     expect(screen.getByText("50000000-0000-4000-8000-000000000004")).toBeTruthy();
@@ -97,9 +123,7 @@ describe("ProjectInspector", () => {
       message:
         "Recreated C:\\Users\\Editor\\project.svpvideo.data from aabbccddeeff00112233445566778899.",
     };
-    const { container } = render(
-      <ProjectInspector projection={projection} recovery={privateMessage} onClose={vi.fn()} />,
-    );
+    const { container } = render(inspector(projection, privateMessage));
     expect(screen.getByText("journal recreated")).toBeTruthy();
     expect(
       screen.getByText("The recovery journal was recreated from the validated project snapshot."),

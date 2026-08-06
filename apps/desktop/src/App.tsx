@@ -1,8 +1,10 @@
 import { VideoDomainError } from "@supa-video/contracts";
-import { Film, ListTodo } from "lucide-react";
+import { Film, Keyboard, ListTodo } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./App.css";
+import { CommandProvider, useCommand, useCommandHandler } from "./commands/CommandProvider";
+import { ShortcutSettings } from "./commands/ShortcutSettings";
 import { useDraftDiscardGuard } from "./use-draft-discard-guard";
 import { useMediaJobs } from "./use-media-jobs";
 import { useVideoProject } from "./use-video-project";
@@ -11,12 +13,15 @@ import { JobCenter } from "./video/JobCenter";
 import { type ReadinessState, VideoProjectOpener } from "./video/VideoProjectOpener";
 import { VideoWorkspace } from "./video/VideoWorkspace";
 
-function App() {
+export function AppContent() {
   const [readiness, setReadiness] = useState<ReadinessState>({ phase: "loading" });
   const [jobCenterOpen, setJobCenterOpen] = useState(false);
   const [jobCenterTarget, setJobCenterTarget] = useState<string | null>(null);
+  const [shortcutSettingsOpen, setShortcutSettingsOpen] = useState(false);
   const readinessRequest = useRef(0);
   const jobsToggleRef = useRef<HTMLButtonElement>(null);
+  const shortcutSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const shortcutSettingsReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const checkReadiness = useCallback(async () => {
     const request = ++readinessRequest.current;
@@ -50,6 +55,7 @@ function App() {
   }, [checkReadiness, toolUnavailableFailure]);
 
   const projectPending = controller.projectOperation.phase === "pending";
+  const editPending = controller.editOperation.phase === "saving";
   const projectError =
     controller.projectOperation.phase === "error" ? controller.projectOperation.error : null;
   const { requestNewProject, requestOpenProject, discardDialog } = useDraftDiscardGuard({
@@ -57,6 +63,27 @@ function App() {
     onNewProject: controller.newProject,
     onOpenProject: controller.openProject,
   });
+  useCommandHandler("project.new", {
+    canExecute: !projectPending && !editPending,
+    execute: requestNewProject,
+  });
+  useCommandHandler("project.open", {
+    canExecute: !projectPending && !editPending,
+    execute: requestOpenProject,
+  });
+  useCommandHandler("app.openShortcutSettings", {
+    canExecute: !shortcutSettingsOpen,
+    execute: (source) => {
+      shortcutSettingsReturnFocusRef.current =
+        source === "button"
+          ? shortcutSettingsButtonRef.current
+          : document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+      setShortcutSettingsOpen(true);
+    },
+  });
+  const shortcutSettingsCommand = useCommand("app.openShortcutSettings");
   const closeJobCenter = useCallback(() => {
     setJobCenterOpen(false);
     setJobCenterTarget(null);
@@ -79,6 +106,17 @@ function App() {
           </a>
           <div className="app-header-actions">
             <span className="phase-label">Phase 3B · Durable media jobs</span>
+            <button
+              ref={shortcutSettingsButtonRef}
+              className="jobs-toggle shortcut-settings-toggle"
+              type="button"
+              disabled={!shortcutSettingsCommand.canExecute}
+              aria-keyshortcuts={shortcutSettingsCommand.ariaKeyShortcuts}
+              onClick={shortcutSettingsCommand.execute}
+            >
+              <Keyboard size={17} aria-hidden />
+              <span>Shortcuts</span>
+            </button>
             <button
               ref={jobsToggleRef}
               className="jobs-toggle"
@@ -115,8 +153,6 @@ function App() {
           projectPending={projectPending}
           projectError={projectError}
           onCheckTools={() => void checkReadiness()}
-          onNewProject={requestNewProject}
-          onOpenProject={requestOpenProject}
         />
       ) : (
         <VideoWorkspace
@@ -126,13 +162,24 @@ function App() {
           readiness={readiness}
           onCheckTools={checkReadiness}
           onOpenJobCenter={openJobCenter}
-          onNewProject={requestNewProject}
-          onOpenProject={requestOpenProject}
         />
       )}
       {discardDialog}
+      <ShortcutSettings
+        open={shortcutSettingsOpen}
+        onClose={() => setShortcutSettingsOpen(false)}
+        returnFocusRef={shortcutSettingsReturnFocusRef}
+      />
     </div>
   );
 }
 
-export default App;
+export function AppRoot() {
+  return (
+    <CommandProvider>
+      <AppContent />
+    </CommandProvider>
+  );
+}
+
+export default AppRoot;

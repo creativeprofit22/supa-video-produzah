@@ -27,10 +27,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type UIEvent,
 } from "react";
+
+import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 
 import {
   createTimelineMoveSnapContext,
@@ -266,6 +267,37 @@ export function MultitrackTimeline({
     [convertCachePath, preparedAsset],
   );
 
+  const canRippleDelete =
+    selectedCanonicalClip !== null &&
+    !selectedCanonicalClip.trackLocked &&
+    !editPending &&
+    pointerSession === null;
+  const canSplit =
+    canRippleDelete &&
+    previewSourceFrame > selectedCanonicalClip.clip.sourceIn.value &&
+    previewSourceFrame < selectedCanonicalClip.clip.sourceOut.value;
+  const splitSelectedClip = () => {
+    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, previewSourceFrame);
+  };
+  const rippleDeleteSelectedClip = () => {
+    if (canRippleDelete && selectedClipId !== null) {
+      restoreFocusAfterRippleDeleteRef.current = true;
+      onRippleDeleteClip(selectedClipId);
+    }
+  };
+  useCommandHandler("timeline.splitSelectedClip", {
+    canExecute: canSplit,
+    execute: splitSelectedClip,
+    keyboardScopeRef: panelRef,
+  });
+  useCommandHandler("timeline.rippleDeleteSelectedClip", {
+    canExecute: canRippleDelete,
+    execute: rippleDeleteSelectedClip,
+    keyboardScopeRef: panelRef,
+  });
+  const splitCommand = useCommand("timeline.splitSelectedClip");
+  const rippleDeleteCommand = useCommand("timeline.rippleDeleteSelectedClip");
+
   if (timeline === null || geometryViewport === null) return null;
 
   const draftTimelineEnd = pointerSession?.draftEndFrameExclusive ?? 0;
@@ -273,12 +305,6 @@ export function MultitrackTimeline({
     viewportWidth,
     frameToPixel(Math.max(timeline.range.endFrameExclusive, draftTimelineEnd), geometryViewport),
   );
-  const canRippleDelete =
-    selectedCanonicalClip !== null && !selectedCanonicalClip.trackLocked && !editPending;
-  const canSplit =
-    canRippleDelete &&
-    previewSourceFrame > selectedCanonicalClip.clip.sourceIn.value &&
-    previewSourceFrame < selectedCanonicalClip.clip.sourceOut.value;
 
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     setScrollLeft(event.currentTarget.scrollLeft);
@@ -417,37 +443,8 @@ export function MultitrackTimeline({
     updatePointerSession(null);
   };
 
-  const splitSelectedClip = () => {
-    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, previewSourceFrame);
-  };
-
-  const rippleDeleteSelectedClip = () => {
-    if (canRippleDelete && selectedClipId !== null) onRippleDeleteClip(selectedClipId);
-  };
-
-  const handleTimelineKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (
-      event.code !== "Delete" ||
-      !event.shiftKey ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey ||
-      !canRippleDelete
-    ) {
-      return;
-    }
-    event.preventDefault();
-    restoreFocusAfterRippleDeleteRef.current = true;
-    rippleDeleteSelectedClip();
-  };
-
   return (
-    <section
-      ref={panelRef}
-      className="multitrack-panel"
-      aria-labelledby="multitrack-heading"
-      onKeyDown={handleTimelineKeyDown}
-    >
+    <section ref={panelRef} className="multitrack-panel" aria-labelledby="multitrack-heading">
       <div className="section-heading multitrack-heading">
         <div>
           <p className="eyebrow">Sequence timeline</p>
@@ -457,21 +454,32 @@ export function MultitrackTimeline({
           <button
             type="button"
             className="compact-button"
-            disabled={!canSplit}
-            onClick={splitSelectedClip}
+            disabled={!splitCommand.canExecute}
+            aria-keyshortcuts={splitCommand.ariaKeyShortcuts}
+            onClick={splitCommand.execute}
           >
             <Scissors size={14} aria-hidden="true" />
             Split at playhead
+            {splitCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {splitCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
           <button
             type="button"
             className="compact-button"
-            aria-keyshortcuts="Shift+Delete"
-            disabled={!canRippleDelete}
-            onClick={rippleDeleteSelectedClip}
+            aria-keyshortcuts={rippleDeleteCommand.ariaKeyShortcuts}
+            disabled={!rippleDeleteCommand.canExecute}
+            onClick={rippleDeleteCommand.execute}
           >
             <Trash2 size={14} aria-hidden="true" />
             Ripple delete clip
+            {rippleDeleteCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {rippleDeleteCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
           <p className="timeline-range" aria-label="Timeline frame range">
             <span>Frames </span>
@@ -652,21 +660,6 @@ export function MultitrackTimeline({
                               aria-label={`${clip.sourceLabel}, frames ${startFrame} through ${endFrameExclusive}, end exclusive${track.locked ? ", locked track" : ""}`}
                               aria-pressed={isSelected}
                               onClick={() => onSelectClip(clip.clipId)}
-                              onKeyDown={(event) => {
-                                if (
-                                  event.code === "KeyS" &&
-                                  !event.altKey &&
-                                  !event.ctrlKey &&
-                                  !event.metaKey &&
-                                  !event.shiftKey &&
-                                  isSelected &&
-                                  canSplit
-                                ) {
-                                  event.preventDefault();
-                                  splitSelectedClip();
-                                  return;
-                                }
-                              }}
                               onPointerDown={(event) =>
                                 startPointerSession(
                                   event,

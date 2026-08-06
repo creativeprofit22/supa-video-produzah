@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useCommand, useCommandHandler } from "../commands/CommandProvider";
+
 interface ProgramMonitorProps {
   readonly proxyPath: string | null;
   readonly finalPreviewPath: string | null;
@@ -45,16 +47,6 @@ interface PendingVideoFrameRequest {
   readonly id: number;
 }
 
-function shortcutOwnsFocus(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return (
-    target.isContentEditable ||
-    ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "VIDEO", "A"].includes(target.tagName)
-  );
-}
-
 export function ProgramMonitor({
   proxyPath,
   finalPreviewPath,
@@ -69,6 +61,8 @@ export function ProgramMonitor({
   onPlayheadChange,
 }: ProgramMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playheadRef = useRef(playhead);
+  playheadRef.current = playhead;
   const pendingVideoFrameRequestRef = useRef<PendingVideoFrameRequest | null>(null);
   const frameObservationGenerationRef = useRef(0);
   const audioSettingsRef = useRef({ volume: 1, muted: false });
@@ -124,6 +118,7 @@ export function ProgramMonitor({
   const seekTo = useCallback(
     (frame: number) => {
       const boundedFrame = Math.max(activeIn, Math.min(frame, activeOut - 1));
+      playheadRef.current = boundedFrame;
       setBuffering(false);
       if (videoRef.current !== null) {
         videoRef.current.currentTime = secondsForFrame(boundedFrame, rate);
@@ -131,6 +126,10 @@ export function ProgramMonitor({
       onPlayheadChange(boundedFrame);
     },
     [activeIn, activeOut, onPlayheadChange, rate],
+  );
+  const seekRelative = useCallback(
+    (deltaFrames: number) => seekTo(playheadRef.current + deltaFrames),
+    [seekTo],
   );
 
   const updatePlayheadAtSeconds = useCallback(
@@ -339,23 +338,36 @@ export function ProgramMonitor({
     [applyEffectiveAudioState, hasAudio, timelineAudioMuted],
   );
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (shortcutOwnsFocus(event.target) || event.ctrlKey || event.metaKey || event.altKey) {
-        return;
-      }
-      if (event.code === "Space") {
-        event.preventDefault();
-        void togglePlayback();
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault();
-        const direction = event.key === "ArrowLeft" ? -1 : 1;
-        seekTo(playhead + direction * (event.shiftKey ? 10 : 1));
-      }
-    };
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
-  }, [playhead, seekTo, togglePlayback]);
+  const transportReady =
+    mediaUrl !== null &&
+    !mediaError &&
+    Number.isFinite(activeOut - activeIn) &&
+    activeOut > activeIn;
+  useCommandHandler("playback.toggle", {
+    canExecute: transportReady,
+    execute: togglePlayback,
+  });
+  useCommandHandler("playback.stepBackward", {
+    canExecute: transportReady,
+    execute: () => seekRelative(-1),
+  });
+  useCommandHandler("playback.stepForward", {
+    canExecute: transportReady,
+    execute: () => seekRelative(1),
+  });
+  useCommandHandler("playback.jumpBackward", {
+    canExecute: transportReady,
+    execute: () => seekRelative(-5),
+  });
+  useCommandHandler("playback.jumpForward", {
+    canExecute: transportReady,
+    execute: () => seekRelative(5),
+  });
+  const toggleCommand = useCommand("playback.toggle");
+  const stepBackwardCommand = useCommand("playback.stepBackward");
+  const stepForwardCommand = useCommand("playback.stepForward");
+  const jumpBackwardCommand = useCommand("playback.jumpBackward");
+  const jumpForwardCommand = useCommand("playback.jumpForward");
 
   return (
     <section className="panel monitor-panel" aria-labelledby="monitor-title">
@@ -446,28 +458,76 @@ export function ProgramMonitor({
         <div className="transport-playback">
           <button
             type="button"
-            aria-label="Seek back ten frames"
-            onClick={() => seekTo(playhead - 10)}
+            aria-label="Step backward five frames"
+            disabled={!jumpBackwardCommand.canExecute}
+            aria-keyshortcuts={jumpBackwardCommand.ariaKeyShortcuts}
+            onClick={jumpBackwardCommand.execute}
           >
             <SkipBack size={17} aria-hidden />
-            <span>10</span>
+            <span>5</span>
+            {jumpBackwardCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {jumpBackwardCommand.shortcutLabel}
+              </kbd>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            aria-label="Step backward one frame"
+            disabled={!stepBackwardCommand.canExecute}
+            aria-keyshortcuts={stepBackwardCommand.ariaKeyShortcuts}
+            onClick={stepBackwardCommand.execute}
+          >
+            <span aria-hidden>−1</span>
+            {stepBackwardCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {stepBackwardCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
           <button
             type="button"
             className="transport-play"
-            onClick={() => void togglePlayback()}
-            disabled={mediaUrl === null || mediaError}
+            aria-keyshortcuts={toggleCommand.ariaKeyShortcuts}
+            onClick={toggleCommand.execute}
+            disabled={!toggleCommand.canExecute}
           >
             {playing ? <Pause size={18} aria-hidden /> : <Play size={18} aria-hidden />}
             {playing ? "Pause" : "Play"}
+            {toggleCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {toggleCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
           <button
             type="button"
-            aria-label="Seek forward ten frames"
-            onClick={() => seekTo(playhead + 10)}
+            aria-label="Step forward one frame"
+            disabled={!stepForwardCommand.canExecute}
+            aria-keyshortcuts={stepForwardCommand.ariaKeyShortcuts}
+            onClick={stepForwardCommand.execute}
+          >
+            <span aria-hidden>+1</span>
+            {stepForwardCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {stepForwardCommand.shortcutLabel}
+              </kbd>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            aria-label="Step forward five frames"
+            disabled={!jumpForwardCommand.canExecute}
+            aria-keyshortcuts={jumpForwardCommand.ariaKeyShortcuts}
+            onClick={jumpForwardCommand.execute}
           >
             <SkipForward size={17} aria-hidden />
-            <span>10</span>
+            <span>5</span>
+            {jumpForwardCommand.shortcutLabel !== null ? (
+              <kbd className="command-shortcut-hint" aria-hidden="true">
+                {jumpForwardCommand.shortcutLabel}
+              </kbd>
+            ) : null}
           </button>
         </div>
         {hasAudio ? (

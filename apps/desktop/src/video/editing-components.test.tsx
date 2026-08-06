@@ -3,8 +3,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CommandProvider, useCommandHandler } from "../commands/CommandProvider";
 import { ClipTrimRanges } from "./ClipTrimRanges";
 import { TrimInspector } from "./TrimInspector";
+
+function HistoryHandlers({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
+  useCommandHandler("history.undo", { canExecute: canUndo, execute: () => undefined });
+  useCommandHandler("history.redo", { canExecute: canRedo, execute: () => undefined });
+  return null;
+}
 
 afterEach(cleanup);
 
@@ -33,42 +40,40 @@ describe("timeline and trim inspector", () => {
   it("blocks invalid, unchanged, and pending trim submissions", () => {
     const onApply = vi.fn();
     const { rerender } = render(
-      <TrimInspector
-        inFrame={10}
-        outFrame={10}
-        durationFrames={100}
-        valid={false}
-        changed={true}
-        canUndo={false}
-        canRedo={false}
-        operation={{ phase: "idle" }}
-        onInFrameChange={vi.fn()}
-        onOutFrameChange={vi.fn()}
-        onApply={onApply}
-        onUndo={vi.fn()}
-        onRedo={vi.fn()}
-      />,
+      <CommandProvider>
+        <HistoryHandlers canUndo={false} canRedo={false} />
+        <TrimInspector
+          inFrame={10}
+          outFrame={10}
+          durationFrames={100}
+          valid={false}
+          changed={true}
+          operation={{ phase: "idle" }}
+          onInFrameChange={vi.fn()}
+          onOutFrameChange={vi.fn()}
+          onApply={onApply}
+        />
+      </CommandProvider>,
     );
     expect((screen.getByRole("button", { name: "Apply trim" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
 
     rerender(
-      <TrimInspector
-        inFrame={10}
-        outFrame={90}
-        durationFrames={100}
-        valid={true}
-        changed={false}
-        canUndo={true}
-        canRedo={true}
-        operation={{ phase: "saving", operation: "trim" }}
-        onInFrameChange={vi.fn()}
-        onOutFrameChange={vi.fn()}
-        onApply={onApply}
-        onUndo={vi.fn()}
-        onRedo={vi.fn()}
-      />,
+      <CommandProvider>
+        <HistoryHandlers canUndo={false} canRedo={false} />
+        <TrimInspector
+          inFrame={10}
+          outFrame={90}
+          durationFrames={100}
+          valid={true}
+          changed={false}
+          operation={{ phase: "saving", operation: "trim" }}
+          onInFrameChange={vi.fn()}
+          onOutFrameChange={vi.fn()}
+          onApply={onApply}
+        />
+      </CommandProvider>,
     );
     expect(
       (screen.getByRole("button", { name: "Saving trim" }) as HTMLButtonElement).disabled,
@@ -81,21 +86,20 @@ describe("timeline and trim inspector", () => {
     const onInFrameChange = vi.fn();
     const onOutFrameChange = vi.fn();
     render(
-      <TrimInspector
-        inFrame={5}
-        outFrame={50}
-        durationFrames={100}
-        valid={true}
-        changed={true}
-        canUndo={true}
-        canRedo={false}
-        operation={{ phase: "idle" }}
-        onInFrameChange={onInFrameChange}
-        onOutFrameChange={onOutFrameChange}
-        onApply={vi.fn()}
-        onUndo={vi.fn()}
-        onRedo={vi.fn()}
-      />,
+      <CommandProvider>
+        <HistoryHandlers canUndo={true} canRedo={false} />
+        <TrimInspector
+          inFrame={5}
+          outFrame={50}
+          durationFrames={100}
+          valid={true}
+          changed={true}
+          operation={{ phase: "idle" }}
+          onInFrameChange={onInFrameChange}
+          onOutFrameChange={onOutFrameChange}
+          onApply={vi.fn()}
+        />
+      </CommandProvider>,
     );
     fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
       target: { value: "7" },

@@ -9,8 +9,9 @@ import {
 } from "@supa-video/contracts";
 import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
 import { AssetPanel } from "./AssetPanel";
 import { ClipTrimRanges } from "./ClipTrimRanges";
@@ -30,8 +31,6 @@ interface VideoWorkspaceProps {
   readonly readiness: ReadinessState;
   readonly onCheckTools: () => void;
   readonly onOpenJobCenter: (jobId: string) => void;
-  readonly onNewProject: () => void;
-  readonly onOpenProject: () => void;
 }
 
 export function findAssetPreparationJob(
@@ -53,14 +52,6 @@ export function findAssetPreparationJob(
         const created = Date.parse(right.createdAt) - Date.parse(left.createdAt);
         return created === 0 ? Date.parse(right.updatedAt) - Date.parse(left.updatedAt) : created;
       })[0] ?? null
-  );
-}
-
-function editableOwnsShortcut(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "VIDEO", "A"].includes(target.tagName)
   );
 }
 
@@ -130,14 +121,15 @@ export function VideoWorkspace({
   readiness,
   onCheckTools,
   onOpenJobCenter,
-  onNewProject,
-  onOpenProject,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
+  const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const reconciledPreparationJobs = useRef(new Set<string>());
+  const newProjectCommand = useCommand("project.new");
+  const openProjectCommand = useCommand("project.open");
   const revision = project.revisions[0]!;
   const asset = revision.state.asset;
   const sourceHasAudio = asset !== null && asset.probe.audio !== null;
@@ -161,6 +153,32 @@ export function VideoWorkspace({
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
   const projectPending = controller.projectOperation.phase === "pending";
+  useCommandHandler("history.undo", {
+    canExecute: controller.projection !== null && controller.canUndo && !editPending,
+    execute: () => controller.undoEdit(),
+  });
+  useCommandHandler("history.redo", {
+    canExecute: controller.projection !== null && controller.canRedo && !editPending,
+    execute: () => controller.redoEdit(),
+  });
+  useCommandHandler("view.toggleProjectInspector", {
+    canExecute: controller.projection !== null,
+    execute: (source) => {
+      if (inspectorOpen) {
+        setInspectorOpen(false);
+        queueMicrotask(() => inspectorReturnFocus.current?.focus());
+        return;
+      }
+      inspectorReturnFocus.current =
+        source === "button"
+          ? inspectorToggleRef.current
+          : document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+      setInspectorOpen(true);
+    },
+  });
+  const inspectorCommand = useCommand("view.toggleProjectInspector");
   const preparationJob = useMemo(
     () =>
       findAssetPreparationJob(
@@ -215,40 +233,6 @@ export function VideoWorkspace({
     void controller.retryPreparation();
   }, [controller.preparation.phase, controller.retryPreparation, preparationJob]);
 
-  const handleWorkspaceShortcut = useCallback(
-    (
-      event: Pick<
-        KeyboardEvent,
-        "target" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "code" | "preventDefault"
-      >,
-    ) => {
-      if (editableOwnsShortcut(event.target) || (!event.ctrlKey && !event.metaKey)) return;
-      if (event.altKey && event.code === "KeyD") {
-        event.preventDefault();
-        inspectorReturnFocus.current =
-          document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        setInspectorOpen((open) => !open);
-        return;
-      }
-      if (event.altKey || event.code !== "KeyZ") return;
-      event.preventDefault();
-      if (event.shiftKey) void controller.redoEdit();
-      else void controller.undoEdit();
-    },
-    [controller],
-  );
-
-  useEffect(() => {
-    const listener = (event: KeyboardEvent) => handleWorkspaceShortcut(event);
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  }, [handleWorkspaceShortcut]);
-
-  const closeInspector = useCallback(() => {
-    setInspectorOpen(false);
-    queueMicrotask(() => inspectorReturnFocus.current?.focus());
-  }, []);
-
   const sourceStatus = useMemo(() => {
     if (controller.source === null) return "No source";
     if (controller.source.status === "resolved") return "Source ready";
@@ -280,8 +264,9 @@ export function VideoWorkspace({
           <button
             className="secondary-button compact-button"
             type="button"
-            disabled={projectPending || editPending}
-            onClick={onNewProject}
+            disabled={!newProjectCommand.canExecute}
+            aria-keyshortcuts={newProjectCommand.ariaKeyShortcuts}
+            onClick={newProjectCommand.execute}
           >
             <FilePlus2 size={16} aria-hidden />
             New
@@ -289,8 +274,9 @@ export function VideoWorkspace({
           <button
             className="secondary-button compact-button"
             type="button"
-            disabled={projectPending || editPending}
-            onClick={onOpenProject}
+            disabled={!openProjectCommand.canExecute}
+            aria-keyshortcuts={openProjectCommand.ariaKeyShortcuts}
+            onClick={openProjectCommand.execute}
           >
             <FolderOpen size={16} aria-hidden />
             Open
@@ -337,23 +323,18 @@ export function VideoWorkspace({
       ) : null}
 
       <button
-        className="sr-only"
+        ref={inspectorToggleRef}
+        className="sr-only inspector-toggle"
         type="button"
-        aria-keyshortcuts="Control+Alt+D Meta+Alt+D"
-        onClick={(event) => {
-          inspectorReturnFocus.current = event.currentTarget;
-          setInspectorOpen((open) => !open);
-        }}
+        disabled={!inspectorCommand.canExecute}
+        aria-keyshortcuts={inspectorCommand.ariaKeyShortcuts}
+        onClick={inspectorCommand.execute}
       >
         Toggle project inspector
       </button>
 
       {inspectorOpen && controller.projection !== null ? (
-        <ProjectInspector
-          projection={controller.projection}
-          recovery={controller.recovery}
-          onClose={closeInspector}
-        />
+        <ProjectInspector projection={controller.projection} recovery={controller.recovery} />
       ) : null}
 
       {controller.checkpointWarning !== null ? (
@@ -510,14 +491,10 @@ export function VideoWorkspace({
               durationFrames={durationFrames}
               valid={controller.trimValid}
               changed={controller.trimChanged}
-              canUndo={controller.canUndo}
-              canRedo={controller.canRedo}
               operation={controller.editOperation}
               onInFrameChange={(inFrame) => controller.updateTrimDraft({ inFrame })}
               onOutFrameChange={(outFrame) => controller.updateTrimDraft({ outFrame })}
               onApply={() => void controller.applyTrim()}
-              onUndo={() => void controller.undoEdit()}
-              onRedo={() => void controller.redoEdit()}
             />
           ) : null}
           <ExportPanel

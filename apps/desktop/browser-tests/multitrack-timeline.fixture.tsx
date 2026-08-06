@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
+import { CommandProvider } from "../src/commands/CommandProvider";
 import { MultitrackTimeline } from "../src/video/MultitrackTimeline";
 import { testProbe, testSourceIdentity } from "../src/test-video-service";
 
@@ -362,6 +363,8 @@ function ControlledTimelineFixture() {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ControlledTimelineFixture />
+    <CommandProvider>
+      <ControlledTimelineFixture />
+    </CommandProvider>
   </React.StrictMode>,
 );

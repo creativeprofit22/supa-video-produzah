@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
+import { CommandProvider } from "../commands/CommandProvider";
 import { createMockVideoService, testMediaJob } from "../test-video-service";
 import { useVideoProject } from "../use-video-project";
 import { VideoWorkspace } from "./VideoWorkspace";
@@ -96,8 +97,6 @@ function RippleWorkflowHarness() {
           }}
           onCheckTools={() => undefined}
           onOpenJobCenter={() => undefined}
-          onNewProject={() => undefined}
-          onOpenProject={() => undefined}
         />
       )}
     </>
@@ -192,7 +191,8 @@ describe("complete mocked Phase 2 workflow", () => {
 
     const split = screen.getByRole("button", { name: "Split at playhead" });
     expect((split as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     expect((split as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(split);
 
@@ -321,7 +321,8 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Prepared proxy" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     fireEvent.click(screen.getByRole("button", { name: "Split at playhead" }));
     const rightClip = await screen.findByRole("button", {
       name: /clip\.mp4, frames 10 through 100/,
@@ -344,7 +345,11 @@ describe("complete mocked Phase 2 workflow", () => {
   it("ripple deletes one revision, selects the survivor, and round-trips undo and redo", async () => {
     const service = createMockVideoService();
     invokeMock.mockImplementation(service.invoke);
-    render(<RippleWorkflowHarness />);
+    render(
+      <CommandProvider>
+        <RippleWorkflowHarness />
+      </CommandProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Initialize ripple workflow" }));
     await screen.findByRole("heading", { name: "Prepared proxy" });
 
@@ -526,7 +531,8 @@ describe("complete mocked Phase 2 workflow", () => {
       name: /clip\.mp4, frames 0 through 100/,
     });
     await waitFor(() => expect(screen.getAllByText("Saved").length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole("button", { name: "Seek forward ten frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     await screen.findByText("Frame 10");
     await waitFor(() =>
       expect(

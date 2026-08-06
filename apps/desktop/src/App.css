@@ -2082,7 +2082,7 @@ video {
   }
   .multitrack-layout {
     --timeline-track-height: max(128px, 9rem);
-    grid-template-columns: max(92px, 6rem) minmax(0, 1fr);
+    grid-template-columns: max(112px, 6rem) minmax(0, 1fr);
   }
   .multitrack-visible-label {
     grid-template-columns: minmax(0, 1fr);

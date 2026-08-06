@@ -102,7 +102,7 @@ for (const viewport of [
     const split = page.getByRole("button", { name: "Split at playhead" });
     const rippleDelete = page.getByRole("button", { name: "Ripple delete clip" });
     await expect(rippleDelete).toBeDisabled();
-    await expect(rippleDelete).toHaveAttribute("aria-keyshortcuts", "Shift+Delete");
+    await expect(rippleDelete).not.toHaveAttribute("aria-keyshortcuts");
     await expectContained(actions, timeline);
     await expectContained(split, timeline);
     await expectContained(rippleDelete, timeline);
@@ -113,6 +113,7 @@ for (const viewport of [
     await firstClipBody.click();
     await expect(firstClipBody).toHaveAttribute("aria-pressed", "true");
     await expect(rippleDelete).toBeEnabled();
+    await expect(rippleDelete).toHaveAttribute("aria-keyshortcuts", "Shift+Delete");
 
     const selectedClip = page.locator(".multitrack-clip.is-selected");
     await expect(selectedClip).toHaveCount(1);

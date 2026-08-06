@@ -5,6 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
+import { CommandProvider, useCommandHandler } from "../src/commands/CommandProvider";
 import { VideoProjectOpener, type ReadinessState } from "../src/video/VideoProjectOpener";
 
 const longToolchainId = `ffmpeg-${"x".repeat(121)}`;
@@ -31,15 +32,22 @@ const readiness: ReadinessState = {
   value: requestedState === "failure" ? failureStatus : readyStatus,
 };
 
+function ProjectCommandHandlers() {
+  useCommandHandler("project.new", { canExecute: true, execute: () => undefined });
+  useCommandHandler("project.open", { canExecute: true, execute: () => undefined });
+  return null;
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <VideoProjectOpener
-      readiness={readiness}
-      projectPending={false}
-      projectError={null}
-      onCheckTools={() => undefined}
-      onNewProject={() => undefined}
-      onOpenProject={() => undefined}
-    />
+    <CommandProvider>
+      <ProjectCommandHandlers />
+      <VideoProjectOpener
+        readiness={readiness}
+        projectPending={false}
+        projectError={null}
+        onCheckTools={() => undefined}
+      />
+    </CommandProvider>
   </React.StrictMode>,
 );

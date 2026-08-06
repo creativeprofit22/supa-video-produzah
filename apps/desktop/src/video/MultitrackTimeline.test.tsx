@@ -1,11 +1,26 @@
 // @vitest-environment jsdom
 import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import {
+  cleanup,
+  fireEvent,
+  render as testingLibraryRender,
+  screen,
+  waitFor,
+  type RenderResult,
+} from "@testing-library/react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CommandProvider } from "../commands/CommandProvider";
 import { testPrepared, testProbe, testSourceIdentity } from "../test-video-service";
 import { MultitrackTimeline } from "./MultitrackTimeline";
+
+function render(ui: ReactElement): RenderResult {
+  const result = testingLibraryRender(<CommandProvider>{ui}</CommandProvider>);
+  const rerender = (nextUi: ReactNode) =>
+    result.rerender(<CommandProvider>{nextUi}</CommandProvider>);
+  return { ...result, rerender };
+}
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const sourceRate = { numerator: 20, denominator: 1 } as const;
@@ -254,7 +269,15 @@ describe("MultitrackTimeline", () => {
     const onSelectClip = vi.fn();
     const onSplitClip = vi.fn();
     const firstId = id(100_000);
-    const props = timelineProps({ onSelectClip, onSplitClip });
+    const props = timelineProps({
+      projection: projectionFixture({
+        name: "Two-clip interaction timeline",
+        videoClipCount: 2,
+        audioClipCount: 0,
+      }),
+      onSelectClip,
+      onSplitClip,
+    });
     const rendered = render(<MultitrackTimeline {...props} />);
     const firstClip = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
     const split = screen.getByRole("button", { name: "Split at playhead" });
@@ -271,6 +294,10 @@ describe("MultitrackTimeline", () => {
     expect(onSelectClip).toHaveBeenLastCalledWith(firstId);
     expect(firstClip.getAttribute("aria-pressed")).toBe("true");
     expect((split as HTMLButtonElement).disabled).toBe(false);
+    const unselectedClip = screen.getByRole("button", { name: /frames 4 through 6/ });
+    expect(unselectedClip.getAttribute("aria-pressed")).toBe("false");
+    expect(fireEvent.keyDown(unselectedClip, { code: "KeyS" })).toBe(true);
+    expect(onSplitClip).not.toHaveBeenCalled();
     fireEvent.keyDown(firstClip, { code: "KeyS" });
     expect(onSplitClip).toHaveBeenCalledOnce();
     expect(onSplitClip).toHaveBeenCalledWith(firstId, 1);
@@ -290,27 +317,28 @@ describe("MultitrackTimeline", () => {
     const rippleDelete = screen.getByRole("button", { name: "Ripple delete clip" });
 
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
-    expect(rippleDelete.getAttribute("aria-keyshortcuts")).toBe("Shift+Delete");
+    expect(rippleDelete.getAttribute("aria-keyshortcuts")).toBeNull();
     expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete" })).toBe(true);
     expect(onRippleDeleteClip).not.toHaveBeenCalled();
 
     rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} />);
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(false);
+    expect(rippleDelete.getAttribute("aria-keyshortcuts")).toBe("Shift+Delete");
     fireEvent.click(rippleDelete);
     expect(onRippleDeleteClip).toHaveBeenCalledOnce();
     expect(onRippleDeleteClip).toHaveBeenLastCalledWith(firstId);
 
     expect(fireEvent.keyDown(rippleDelete, { key: "Delete", code: "Delete", shiftKey: true })).toBe(
-      false,
+      true,
     );
-    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(1);
 
     expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete" })).toBe(true);
-    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(1);
     expect(fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true })).toBe(
       false,
     );
-    expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
     expect(onRippleDeleteClip).toHaveBeenLastCalledWith(firstId);
 
     rendered.rerender(
@@ -318,7 +346,7 @@ describe("MultitrackTimeline", () => {
     );
     expect((rippleDelete as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(firstClip, { key: "Delete", code: "Delete", shiftKey: true });
-    expect(onRippleDeleteClip).toHaveBeenCalledTimes(3);
+    expect(onRippleDeleteClip).toHaveBeenCalledTimes(2);
   });
 
   it("exposes stable Eye toggles only for visual tracks without changing lock or selection semantics", () => {

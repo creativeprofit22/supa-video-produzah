@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CommandProvider, useCommandHandler } from "../commands/CommandProvider";
 import { VideoProjectOpener, type ReadinessState } from "./VideoProjectOpener";
 
 const toolchainId = "ffmpeg-8.1.2-gyan-essentials-windows-x86_64";
@@ -28,19 +29,30 @@ function status(problem?: VideoToolProblem, identity = toolchainId): VideoToolSt
   };
 }
 
-function renderOpener(readiness: ReadinessState, onCheckTools = vi.fn()) {
-  return {
-    onCheckTools,
-    ...render(
+function ProjectCommandHandlers() {
+  useCommandHandler("project.new", { canExecute: true, execute: () => undefined });
+  useCommandHandler("project.open", { canExecute: true, execute: () => undefined });
+  return null;
+}
+
+function opener(readiness: ReadinessState, onCheckTools: () => void) {
+  return (
+    <CommandProvider>
+      <ProjectCommandHandlers />
       <VideoProjectOpener
         readiness={readiness}
         projectPending={false}
         projectError={null}
         onCheckTools={onCheckTools}
-        onNewProject={vi.fn()}
-        onOpenProject={vi.fn()}
-      />,
-    ),
+      />
+    </CommandProvider>
+  );
+}
+
+function renderOpener(readiness: ReadinessState, onCheckTools = vi.fn()) {
+  return {
+    onCheckTools,
+    ...render(opener(readiness, onCheckTools)),
   };
 }
 
@@ -159,16 +171,7 @@ describe("VideoProjectOpener bundled media-tool states", () => {
     ]);
     retry.focus();
     expect(document.activeElement).toBe(retry);
-    rerender(
-      <VideoProjectOpener
-        readiness={{ phase: "loaded", value: status() }}
-        projectPending={false}
-        projectError={null}
-        onCheckTools={onCheckTools}
-        onNewProject={vi.fn()}
-        onOpenProject={vi.fn()}
-      />,
-    );
+    rerender(opener({ phase: "loaded", value: status() }, onCheckTools));
     expect(document.activeElement).not.toBe(retry);
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
   });

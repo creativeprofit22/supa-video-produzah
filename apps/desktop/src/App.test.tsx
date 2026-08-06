@@ -143,6 +143,81 @@ describe("App Phase 3B durable workspace", () => {
     ]);
   });
 
+  it("routes New and Open shortcuts through the draft-discard guard exactly once", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
+      target: { value: "1" },
+    });
+    await screen.findByText("Unsaved trim");
+    const workspace = screen.getByRole("main");
+    workspace.focus();
+
+    fireEvent.keyDown(window, { code: "KeyN", key: "n", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Discard unsaved trim?" })).toBeTruthy();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_create_project"),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+
+    fireEvent.keyDown(window, { code: "KeyO", key: "o", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Discard unsaved trim?" })).toBeTruthy();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_open_project"),
+    ).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "video_open_project"),
+      ).toHaveLength(1),
+    );
+  });
+
+  it("disables New and Open buttons and shortcuts while an edit is saving", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation((command, args) => {
+      if (command === "video_undo_project") return new Promise(() => undefined);
+      return service.invoke(command, args);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Prepared proxy" });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
+    await screen.findByText("Saving");
+    const newButton = screen.getByRole("button", { name: "New" }) as HTMLButtonElement;
+    const openButton = screen.getByRole("button", { name: "Open" }) as HTMLButtonElement;
+    expect(newButton.disabled).toBe(true);
+    expect(openButton.disabled).toBe(true);
+
+    const createCount = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_create_project",
+    ).length;
+    const openCount = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_open_project",
+    ).length;
+    const workspace = screen.getByRole("main");
+    workspace.focus();
+    fireEvent.keyDown(window, { code: "KeyN", key: "n", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyO", key: "o", ctrlKey: true });
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_create_project"),
+    ).toHaveLength(createCount);
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_open_project"),
+    ).toHaveLength(openCount);
+  });
+
   it("toggles the in-flow inspector, wraps diagnostics, and returns focus", async () => {
     const service = createMockVideoService();
     invokeMock.mockImplementation(service.invoke);
