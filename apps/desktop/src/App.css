@@ -2307,3 +2307,310 @@ video {
     forced-color-adjust: none;
   }
 }
+
+.command-registry-fixture {
+  display: grid;
+  gap: 24px;
+  padding-block: 40px;
+}
+.command-registry-fixture-heading,
+.command-registry-command {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.command-registry-fixture-heading h1,
+.command-registry-command h2 {
+  margin: 0;
+}
+.command-registry-command {
+  padding: 22px;
+}
+.command-registry-command p:last-child {
+  margin-block-end: 0;
+  color: var(--muted);
+}
+.command-registry-command output {
+  color: var(--accent);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 0.78rem;
+}
+.command-shortcut-hint,
+.shortcut-value kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  background: var(--surface-deep);
+  font-family: "Geist Mono Variable", "Cascadia Code", monospace;
+  font-size: 0.66em;
+  font-weight: 550;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.shortcut-settings-toggle {
+  gap: 7px;
+}
+.inspector-toggle:focus-visible {
+  position: fixed;
+  inset-block-start: 8px;
+  left: 50%;
+  z-index: 80;
+  width: auto;
+  height: auto;
+  padding: 9px 14px;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.shortcut-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: 100%;
+  max-height: min(84vh, 820px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 48%);
+}
+.shortcut-dialog::backdrop {
+  background: rgb(7 8 6 / 76%);
+}
+.shortcut-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 22px 16px;
+  border-block-end: 1px solid var(--border);
+}
+.shortcut-dialog-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+.shortcut-dialog-description {
+  margin: 0;
+  padding: 14px 22px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.shortcut-dialog-close {
+  flex: 0 0 auto;
+}
+.shortcut-list {
+  display: grid;
+  max-height: min(56vh, 540px);
+  margin: 0;
+  padding: 0 22px;
+  overflow: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+.shortcut-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-block: 14px;
+  border-block-start: 1px solid var(--border);
+}
+.shortcut-summary {
+  display: grid;
+  min-width: min(100%, 230px);
+  flex: 1 1 260px;
+  gap: 8px;
+}
+.shortcut-summary > strong {
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.shortcut-value {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.shortcut-value small {
+  color: var(--quiet);
+  font-size: 0.69rem;
+}
+.shortcut-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.shortcut-actions .compact-button {
+  min-height: 36px;
+}
+.shortcut-actions .is-recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.shortcut-error {
+  flex-basis: 100%;
+  margin: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.shortcut-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px 20px;
+  border-block-start: 1px solid var(--border);
+}
+.shortcut-status {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.shortcut-status.is-error {
+  color: var(--danger);
+}
+.shortcut-dialog-footer > button {
+  flex: 0 0 auto;
+}
+.transport-playback {
+  flex-wrap: wrap;
+}
+.transport-playback .command-shortcut-hint {
+  font-size: 0.58rem;
+}
+
+@media (max-width: 759px) {
+  .transport-playback {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .transport-play {
+    min-width: 0;
+  }
+  .transport-playback .command-shortcut-hint,
+  .multitrack-actions .command-shortcut-hint,
+  .history-actions .command-shortcut-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 479px) {
+  .shortcut-settings-toggle span {
+    display: none;
+  }
+  .command-registry-fixture-heading,
+  .command-registry-command {
+    align-items: stretch;
+    flex-flow: column nowrap;
+  }
+  .command-registry-fixture-heading > button,
+  .command-registry-command > button {
+    width: 100%;
+  }
+  .shortcut-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+  .shortcut-dialog *,
+  .command-registry-fixture * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .command-registry-fixture h1,
+  .shortcut-actions button,
+  .shortcut-value kbd {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .shortcut-dialog-heading,
+  .shortcut-dialog-description,
+  .shortcut-dialog-footer {
+    padding-inline: 14px;
+  }
+  .shortcut-dialog-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .shortcut-dialog-close {
+    width: 100%;
+  }
+  .shortcut-list {
+    max-height: 55vh;
+    padding-inline: 14px;
+    scrollbar-gutter: auto;
+  }
+  .shortcut-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .shortcut-summary {
+    min-width: 0;
+    flex-basis: auto;
+  }
+  .shortcut-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+  .shortcut-actions .compact-button:first-child {
+    grid-column: 1 / -1;
+  }
+  .shortcut-dialog-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .shortcut-dialog-footer > button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shortcut-dialog,
+  .shortcut-actions .is-recording {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .shortcut-dialog,
+  .shortcut-value kbd,
+  .command-shortcut-hint,
+  .shortcut-actions .is-recording {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .shortcut-actions .is-recording {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  .shortcut-error,
+  .shortcut-status.is-error {
+    color: CanvasText;
+  }
+}
