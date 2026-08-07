@@ -49,7 +49,25 @@
       "requiredCapabilities": {
         "encoders": ["libx264", "aac", "mjpeg"],
         "muxers": ["mp4", "image2"],
-        "filters": ["scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap"]
+        "filters": [
+          "scale",
+          "fps",
+          "pad",
+          "tile",
+          "setsar",
+          "zscale",
+          "tonemap",
+          "drawbox",
+          "color",
+          "setpts",
+          "format",
+          "overlay",
+          "null",
+          "asetpts",
+          "anull",
+          "amix",
+          "drawtext"
+        ]
       }
     }
   },

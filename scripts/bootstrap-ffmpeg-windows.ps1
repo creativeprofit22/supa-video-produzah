@@ -223,7 +223,11 @@ function Read-StrictManifest {
     Assert-ExactProperties $target.requiredCapabilities @("encoders", "muxers", "filters") "target.requiredCapabilities"
     $null = Assert-ExactStringSet $target.requiredCapabilities.encoders @("libx264", "aac", "mjpeg") "target.requiredCapabilities.encoders"
     $null = Assert-ExactStringSet $target.requiredCapabilities.muxers @("mp4", "image2") "target.requiredCapabilities.muxers"
-    $null = Assert-ExactStringSet $target.requiredCapabilities.filters @("scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap") "target.requiredCapabilities.filters"
+    $null = Assert-ExactStringSet $target.requiredCapabilities.filters @(
+        "scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "drawbox",
+        "color", "setpts", "format", "overlay", "null", "asetpts", "anull", "amix",
+        "drawtext"
+    ) "target.requiredCapabilities.filters"
 
     Assert-ExactProperties $manifest.compliance @("thirdPartyNoticesPath", "licensePaths", "providerNoticePath", "sourceOfferPath") "manifest.compliance"
     Assert-RelativeResourcePath ([string]$manifest.compliance.thirdPartyNoticesPath) "media-tools/THIRD_PARTY_NOTICES.md" "manifest.compliance.thirdPartyNoticesPath"

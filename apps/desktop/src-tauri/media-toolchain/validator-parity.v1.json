@@ -150,7 +150,26 @@
       "mutations": [
         {
           "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/filters",
-          "value": ["scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "crop"]
+          "value": [
+            "scale",
+            "fps",
+            "pad",
+            "tile",
+            "setsar",
+            "zscale",
+            "tonemap",
+            "drawbox",
+            "color",
+            "setpts",
+            "format",
+            "overlay",
+            "null",
+            "asetpts",
+            "anull",
+            "amix",
+            "drawtext",
+            "crop"
+          ]
         }
       ]
     },
