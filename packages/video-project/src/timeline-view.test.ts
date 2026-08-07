@@ -224,6 +224,49 @@ describe("visible timeline projection", () => {
     ]);
   });
 
+  it("materializes viewport caption cues without dropping hidden caption tracks", () => {
+    const caption = (value: number, start: number, end: number, text: string) => ({
+      id: id(value),
+      start: createRationalTime(start, rate),
+      end: createRationalTime(end, rate),
+      text,
+    });
+    const value = projection([
+      {
+        id: id(12),
+        name: "Hidden captions",
+        kind: "caption",
+        hidden: true,
+        captions: [
+          caption(200, 0, 10, "Before viewport"),
+          caption(201, 10, 20, "Visible cue"),
+          caption(202, 30, 40, "After viewport"),
+        ],
+      },
+    ]);
+
+    expect(deriveActiveTimelineRange(value)).toEqual({ startFrame: 0, endFrameExclusive: 40 });
+    const result = projectVisibleTimeline(value, viewportFor(value, 10, 10, 0));
+
+    expect(result).toMatchObject({ totalCaptionCount: 3, materializedCaptionCount: 1 });
+    expect(result?.tracks[0]).toMatchObject({
+      kind: "caption",
+      hidden: true,
+      totalCaptionCount: 3,
+      range: { startFrame: 0, endFrameExclusive: 40 },
+      captions: [
+        {
+          captionId: id(201),
+          trackId: id(12),
+          text: "Visible cue",
+          startFrame: 10,
+          endFrameExclusive: 20,
+        },
+      ],
+    });
+    expect(Object.isFrozen(result?.tracks[0]?.captions[0])).toBe(true);
+  });
+
   it("retains hidden rows, clips selected by ID, canonical order, and viewport geometry", () => {
     const tracks = (hidden: boolean): ProjectTrack[] => [
       {

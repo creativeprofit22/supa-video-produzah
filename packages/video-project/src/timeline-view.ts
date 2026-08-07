@@ -11,6 +11,7 @@ import {
   rescaleRationalTime,
   timelineFrameRangesIntersect,
   type MediaContentIdentityV1,
+  type ProjectCaption,
   type ProjectClip,
   type ProjectProjection,
   type ProjectTrack,
@@ -38,6 +39,12 @@ export interface TimelineClipViewModel extends TimelineRangeViewModel {
   readonly assetContentIdentity?: MediaContentIdentityV1;
 }
 
+export interface TimelineCaptionViewModel extends TimelineRangeViewModel {
+  readonly captionId: string;
+  readonly trackId: string;
+  readonly text: string;
+}
+
 export interface TimelineTrackViewModel {
   readonly trackId: string;
   readonly name: string;
@@ -49,7 +56,9 @@ export interface TimelineTrackViewModel {
   readonly hidden: boolean;
   readonly range: TimelineRangeViewModel;
   readonly totalClipCount: number;
+  readonly totalCaptionCount: number;
   readonly clips: readonly TimelineClipViewModel[];
+  readonly captions: readonly TimelineCaptionViewModel[];
 }
 
 export interface TimelineSequenceViewModel {
@@ -61,6 +70,8 @@ export interface TimelineSequenceViewModel {
   readonly tracks: readonly TimelineTrackViewModel[];
   readonly totalClipCount: number;
   readonly materializedClipCount: number;
+  readonly totalCaptionCount: number;
+  readonly materializedCaptionCount: number;
 }
 
 interface IndexedClip extends TimelineRangeViewModel {
@@ -68,10 +79,15 @@ interface IndexedClip extends TimelineRangeViewModel {
   readonly canonicalIndex: number;
 }
 
-interface ClipIntervalNode {
-  readonly clip: IndexedClip;
-  readonly left: ClipIntervalNode | null;
-  readonly right: ClipIntervalNode | null;
+interface IndexedCaption extends TimelineRangeViewModel {
+  readonly caption: ProjectCaption;
+  readonly canonicalIndex: number;
+}
+
+interface IntervalNode<T extends TimelineRangeViewModel & { readonly canonicalIndex: number }> {
+  readonly item: T;
+  readonly left: IntervalNode<T> | null;
+  readonly right: IntervalNode<T> | null;
   readonly minStartFrame: number;
   readonly maxEndFrameExclusive: number;
 }
@@ -79,8 +95,10 @@ interface ClipIntervalNode {
 interface PreparedTrack {
   readonly track: ProjectTrack;
   readonly range: TimelineRangeViewModel;
-  readonly clipIndex: ClipIntervalNode | null;
+  readonly clipIndex: IntervalNode<IndexedClip> | null;
+  readonly captionIndex: IntervalNode<IndexedCaption> | null;
   readonly totalClipCount: number;
+  readonly totalCaptionCount: number;
 }
 
 interface PreparedTimeline {
@@ -88,6 +106,7 @@ interface PreparedTimeline {
   readonly range: TimelineRangeViewModel;
   readonly tracks: readonly PreparedTrack[];
   readonly totalClipCount: number;
+  readonly totalCaptionCount: number;
   readonly assetsById: ReadonlyMap<string, ProjectProjection["state"]["assets"][number]>;
   readonly sequencesById: ReadonlyMap<string, VideoSequenceV2>;
 }
@@ -124,6 +143,19 @@ function clipRange(clip: ProjectClip, sequenceRate: RationalRate): TimelineRange
   };
 }
 
+function captionRange(caption: ProjectCaption, sequenceRate: RationalRate): TimelineRangeViewModel {
+  const startFrame = rescaleRationalTime(caption.start, sequenceRate, "floor").value;
+  const endFrameExclusive = rescaleRationalTime(caption.end, sequenceRate, "ceil").value;
+  if (endFrameExclusive <= startFrame) {
+    throw new VideoDomainError("invalid_range", "Timeline caption range must be nonempty", {
+      captionId: caption.id,
+      startFrame,
+      endFrameExclusive,
+    });
+  }
+  return { startFrame, endFrameExclusive };
+}
+
 function activeSequence(projection: ProjectProjection): VideoSequenceV2 | null {
   if (projection.state.activeSequenceId === null) return null;
   const sequence = projection.state.sequences.find(
@@ -137,37 +169,39 @@ function activeSequence(projection: ProjectProjection): VideoSequenceV2 | null {
   return sequence;
 }
 
-function buildClipIntervalIndex(clips: readonly IndexedClip[]): ClipIntervalNode | null {
-  if (clips.length === 0) return null;
-  const sortedClips = [...clips].sort(
+function buildIntervalIndex<T extends TimelineRangeViewModel & { readonly canonicalIndex: number }>(
+  items: readonly T[],
+): IntervalNode<T> | null {
+  if (items.length === 0) return null;
+  const sortedItems = [...items].sort(
     (left, right) =>
       left.startFrame - right.startFrame || left.canonicalIndex - right.canonicalIndex,
   );
-  const build = (start: number, end: number): ClipIntervalNode | null => {
+  const build = (start: number, end: number): IntervalNode<T> | null => {
     if (start >= end) return null;
     const middle = Math.floor((start + end) / 2);
-    const clip = sortedClips[middle]!;
+    const item = sortedItems[middle]!;
     const left = build(start, middle);
     const right = build(middle + 1, end);
     return {
-      clip,
+      item,
       left,
       right,
-      minStartFrame: left?.minStartFrame ?? clip.startFrame,
+      minStartFrame: left?.minStartFrame ?? item.startFrame,
       maxEndFrameExclusive: Math.max(
-        clip.endFrameExclusive,
-        left?.maxEndFrameExclusive ?? clip.endFrameExclusive,
-        right?.maxEndFrameExclusive ?? clip.endFrameExclusive,
+        item.endFrameExclusive,
+        left?.maxEndFrameExclusive ?? item.endFrameExclusive,
+        right?.maxEndFrameExclusive ?? item.endFrameExclusive,
       ),
     };
   };
-  return build(0, sortedClips.length);
+  return build(0, sortedItems.length);
 }
 
-function queryClipIntervalIndex(
-  node: ClipIntervalNode | null,
+function queryIntervalIndex<T extends TimelineRangeViewModel & { readonly canonicalIndex: number }>(
+  node: IntervalNode<T> | null,
   range: TimelineFrameRange,
-  matches: IndexedClip[],
+  matches: T[],
 ): void {
   if (
     node === null ||
@@ -176,16 +210,16 @@ function queryClipIntervalIndex(
   ) {
     return;
   }
-  queryClipIntervalIndex(node.left, range, matches);
+  queryIntervalIndex(node.left, range, matches);
   if (
     timelineFrameRangesIntersect(
-      { start: node.clip.startFrame, endExclusive: node.clip.endFrameExclusive },
+      { start: node.item.startFrame, endExclusive: node.item.endFrameExclusive },
       range,
     )
   ) {
-    matches.push(node.clip);
+    matches.push(node.item);
   }
-  queryClipIntervalIndex(node.right, range, matches);
+  queryIntervalIndex(node.right, range, matches);
 }
 
 function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
@@ -204,6 +238,7 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
       range: Object.freeze({ startFrame: 0, endFrameExclusive: 0 }),
       tracks: Object.freeze([]),
       totalClipCount: 0,
+      totalCaptionCount: 0,
       assetsById,
       sequencesById,
     };
@@ -213,13 +248,27 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
 
   let timelineEndFrameExclusive = 0;
   let totalClipCount = 0;
+  let totalCaptionCount = 0;
   const tracks = sequence.tracks.map((track): PreparedTrack => {
     if (track.kind === "caption") {
+      const indexedCaptions = track.captions.map((caption, canonicalIndex): IndexedCaption => ({
+        caption,
+        canonicalIndex,
+        ...captionRange(caption, sequence.rate),
+      }));
+      const trackEndFrameExclusive = indexedCaptions.reduce(
+        (maximum, caption) => Math.max(maximum, caption.endFrameExclusive),
+        0,
+      );
+      timelineEndFrameExclusive = Math.max(timelineEndFrameExclusive, trackEndFrameExclusive);
+      totalCaptionCount += indexedCaptions.length;
       return {
         track,
-        range: Object.freeze({ startFrame: 0, endFrameExclusive: 0 }),
+        range: Object.freeze({ startFrame: 0, endFrameExclusive: trackEndFrameExclusive }),
         clipIndex: null,
+        captionIndex: buildIntervalIndex(indexedCaptions),
         totalClipCount: 0,
+        totalCaptionCount: indexedCaptions.length,
       };
     }
     const indexedClips = track.clips.map((clip, canonicalIndex): IndexedClip => ({
@@ -236,8 +285,10 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
     return {
       track,
       range: Object.freeze({ startFrame: 0, endFrameExclusive: trackEndFrameExclusive }),
-      clipIndex: buildClipIntervalIndex(indexedClips),
+      clipIndex: buildIntervalIndex(indexedClips),
+      captionIndex: null,
       totalClipCount: indexedClips.length,
+      totalCaptionCount: 0,
     };
   });
 
@@ -246,6 +297,7 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
     range: Object.freeze({ startFrame: 0, endFrameExclusive: timelineEndFrameExclusive }),
     tracks,
     totalClipCount,
+    totalCaptionCount,
     assetsById,
     sequencesById,
   };
@@ -333,9 +385,23 @@ export function projectVisibleTimeline(
   frameToPixel(range.startFrame, viewport);
 
   let materializedClipCount = 0;
+  let materializedCaptionCount = 0;
   const tracks: TimelineTrackViewModel[] = prepared.tracks.map((preparedTrack) => {
     const { track } = preparedTrack;
     if (track.kind === "caption") {
+      const visibleCaptions: IndexedCaption[] = [];
+      queryIntervalIndex(preparedTrack.captionIndex, viewport.overscanRange, visibleCaptions);
+      visibleCaptions.sort((left, right) => left.canonicalIndex - right.canonicalIndex);
+      const captions = visibleCaptions.map(
+        ({ caption, startFrame, endFrameExclusive }): TimelineCaptionViewModel => ({
+          captionId: caption.id,
+          trackId: track.id,
+          text: caption.text,
+          startFrame,
+          endFrameExclusive,
+        }),
+      );
+      materializedCaptionCount += captions.length;
       return {
         trackId: track.id,
         name: track.name,
@@ -347,12 +413,14 @@ export function projectVisibleTimeline(
         hidden: isTrackHidden(track),
         range: preparedTrack.range,
         totalClipCount: 0,
+        totalCaptionCount: preparedTrack.totalCaptionCount,
         clips: Object.freeze([]),
+        captions,
       };
     }
 
     const visibleClips: IndexedClip[] = [];
-    queryClipIntervalIndex(preparedTrack.clipIndex, viewport.overscanRange, visibleClips);
+    queryIntervalIndex(preparedTrack.clipIndex, viewport.overscanRange, visibleClips);
     visibleClips.sort((left, right) => left.canonicalIndex - right.canonicalIndex);
     const clips = visibleClips.map(({ clip, startFrame, endFrameExclusive }) => ({
       clipId: clip.id,
@@ -374,7 +442,9 @@ export function projectVisibleTimeline(
       hidden: isTrackHidden(track),
       range: preparedTrack.range,
       totalClipCount: preparedTrack.totalClipCount,
+      totalCaptionCount: 0,
       clips,
+      captions: Object.freeze([]),
     };
   });
 
@@ -387,5 +457,7 @@ export function projectVisibleTimeline(
     tracks,
     totalClipCount: prepared.totalClipCount,
     materializedClipCount,
+    totalCaptionCount: prepared.totalCaptionCount,
+    materializedCaptionCount,
   });
 }
