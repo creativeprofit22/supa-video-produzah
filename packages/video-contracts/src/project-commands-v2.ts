@@ -145,6 +145,10 @@ export const trimClipCommandSchemaV2 = z
     sourceOut: rationalTimeSchema,
   })
   .strict();
+/**
+ * Atomically replaces the complete clip transform.
+ * Single-field editors must use field-specific commands to avoid overwriting stale sibling fields.
+ */
 export const setClipTransformCommandSchemaV2 = z
   .object({
     type: z.literal("SetClipTransform"),
@@ -152,6 +156,15 @@ export const setClipTransformCommandSchemaV2 = z
     ...target,
     clipId: projectUuidSchema,
     transform: clipTransformSchema,
+  })
+  .strict();
+export const setClipOpacityCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetClipOpacity"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+    opacityPermille: z.number().int().safe().min(0).max(1_000),
   })
   .strict();
 export const setClipGainCommandSchemaV2 = z
@@ -228,6 +241,7 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   moveClipCommandSchemaV2,
   trimClipCommandSchemaV2,
   setClipTransformCommandSchemaV2,
+  setClipOpacityCommandSchemaV2,
   setClipGainCommandSchemaV2,
   addMarkerCommandSchemaV2,
   removeMarkerCommandSchemaV2,

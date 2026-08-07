@@ -6,12 +6,14 @@ import { parseVideoProjectFile } from "./migrations.js";
 import {
   commandGroupRequestSchema,
   projectCommandSchemaV2,
+  setClipOpacityCommandSchemaV2,
   setTrackHiddenCommandSchemaV2,
   setTrackLockedCommandSchemaV2,
   setTrackMutedCommandSchemaV2,
 } from "./project-commands-v2.js";
 import {
   canToggleTrackVisibility,
+  clipTransformSchema,
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
@@ -270,6 +272,68 @@ describe("V2 project contracts", () => {
     expect(commandGroupRequestSchema.parse(request)).toEqual(request);
     expect(() => commandGroupRequestSchema.parse({ ...request, committedAt: timestamp })).toThrow();
     expect(() => projectCommandSchemaV2.parse({ ...command, summary: "caller owned" })).toThrow();
+  });
+
+  it("parses bounded SetClipOpacity commands and enforces canonical opacity bounds", () => {
+    const opacityCommand = {
+      type: "SetClipOpacity" as const,
+      commandId: ids.command,
+      sequenceId: ids.project,
+      trackId: ids.operation,
+      clipId: ids.revision,
+      opacityPermille: 425,
+    };
+
+    expect(setClipOpacityCommandSchemaV2.parse(opacityCommand)).toEqual(opacityCommand);
+    expect(projectCommandSchemaV2.parse(opacityCommand)).toEqual(opacityCommand);
+    expect(
+      commandGroupRequestSchema.parse({
+        groupId: ids.group,
+        projectId: ids.project,
+        baseRevision: 0,
+        commands: [opacityCommand],
+      }).commands,
+    ).toEqual([opacityCommand]);
+
+    for (const opacityPermille of [0, 1_000]) {
+      expect(setClipOpacityCommandSchemaV2.parse({ ...opacityCommand, opacityPermille })).toEqual({
+        ...opacityCommand,
+        opacityPermille,
+      });
+    }
+
+    for (const opacityPermille of [-1, 1_001, 0.5, "500", Number.NaN]) {
+      expect(
+        setClipOpacityCommandSchemaV2.safeParse({ ...opacityCommand, opacityPermille }).success,
+      ).toBe(false);
+    }
+    for (const idField of ["commandId", "sequenceId", "trackId", "clipId"] as const) {
+      expect(
+        setClipOpacityCommandSchemaV2.safeParse({ ...opacityCommand, [idField]: "not-a-uuid" })
+          .success,
+      ).toBe(false);
+    }
+    expect(
+      setClipOpacityCommandSchemaV2.safeParse({ ...opacityCommand, transform: {} }).success,
+    ).toBe(false);
+
+    const transform = {
+      positionXPermille: 125,
+      positionYPermille: -250,
+      scaleXPermille: 1_250,
+      scaleYPermille: 750,
+      rotationMilliDegrees: 45_000,
+      opacityPermille: 425,
+    };
+    for (const opacityPermille of [0, 1_000]) {
+      expect(clipTransformSchema.parse({ ...transform, opacityPermille })).toEqual({
+        ...transform,
+        opacityPermille,
+      });
+    }
+    for (const opacityPermille of [-1, 1_001, 0.5]) {
+      expect(clipTransformSchema.safeParse({ ...transform, opacityPermille }).success).toBe(false);
+    }
   });
 
   it("validates SetTrackLocked as a public command accepted by groups and history", () => {
