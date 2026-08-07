@@ -37,7 +37,9 @@ const clip = (
 });
 const assetId = id(1);
 const nestedSequenceId = id(3);
-const longTrackLabel = new URLSearchParams(window.location.search).has("long-label");
+const fixtureParameters = new URLSearchParams(window.location.search);
+const longTrackLabel = fixtureParameters.has("long-label");
+const primaryTrackLocked = fixtureParameters.has("primary-track-locked");
 const primaryTrackName = longTrackLabel
   ? "Primäre Kameraausgabe für die außergewöhnlich lange Dokumentarfilmsequenz"
   : "Primary camera";
@@ -76,6 +78,7 @@ const initialProjection: ProjectProjection = {
             id: id(10),
             name: primaryTrackName,
             kind: "video",
+            locked: primaryTrackLocked,
             clips: [
               clip(100, 0, 28, { kind: "asset", assetId }),
               clip(101, 34, 42, { kind: "asset", assetId }),

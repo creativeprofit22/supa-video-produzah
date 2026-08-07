@@ -190,10 +190,6 @@ for (const viewport of [
       .withTags(wcagTags)
       .analyze();
     expect(axe.violations, axe.violations.map(({ id }) => id).join(", ")).toEqual([]);
-
-    await timeline.screenshot({
-      path: `../../evidence/phase-4/multitrack-timeline-${viewport.name.replaceAll(" ", "-")}.png`,
-    });
   });
 }
 
@@ -605,7 +601,71 @@ test("locks one track without blocking selection or edits on other tracks", asyn
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
-  await page.locator(".multitrack-panel").screenshot({
-    path: "../../evidence/phase-4/multitrack-timeline-forced-colors-locked.png",
-  });
 });
+
+for (const evidenceCapture of [
+  {
+    name: "desktop",
+    width: 1280,
+    height: 800,
+    rootFontSize: 16,
+    path: "../../evidence/phase-4/multitrack-timeline-desktop.png",
+  },
+  {
+    name: "mobile",
+    width: 390,
+    height: 844,
+    rootFontSize: 16,
+    path: "../../evidence/phase-4/multitrack-timeline-mobile.png",
+  },
+  {
+    name: "320px with 200% text",
+    width: 320,
+    height: 900,
+    rootFontSize: 32,
+    path: "../../evidence/phase-4/multitrack-timeline-320px-with-200%-text.png",
+  },
+  {
+    name: "forced colors with the primary track locked",
+    width: 1280,
+    height: 800,
+    rootFontSize: 16,
+    forcedColors: true,
+    primaryTrackLocked: true,
+    path: "../../evidence/phase-4/multitrack-timeline-forced-colors-locked.png",
+  },
+] as const) {
+  test(`captures fresh successful timeline evidence at ${evidenceCapture.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      width: evidenceCapture.width,
+      height: evidenceCapture.height,
+    });
+    if ("forcedColors" in evidenceCapture) {
+      await page.emulateMedia({ forcedColors: "active" });
+    }
+    await page.goto(
+      `${fixturePath}${"primaryTrackLocked" in evidenceCapture ? "?primary-track-locked=1" : ""}`,
+    );
+    await page.evaluate((fontSize) => {
+      document.documentElement.style.fontSize = `${fontSize}px`;
+    }, evidenceCapture.rootFontSize);
+    await page.evaluate(() => document.fonts.ready);
+
+    const timeline = page.locator(".multitrack-panel");
+    await expect(timeline).toBeVisible();
+    await expect(page.locator("[data-clip-id]")).toHaveCount(5);
+    await expect(page.locator(".multitrack-clip.is-selected")).toHaveCount(0);
+    await expect(page.locator(".multitrack-clip.is-dragging")).toHaveCount(0);
+    await expect(page.locator(".multitrack-snap-guide")).toHaveCount(0);
+    if ("primaryTrackLocked" in evidenceCapture) {
+      await expect(page.getByRole("button", { name: "Primary camera track lock" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    }
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await timeline.screenshot({ path: evidenceCapture.path, animations: "disabled" });
+  });
+}
