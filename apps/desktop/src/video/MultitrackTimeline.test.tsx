@@ -362,6 +362,12 @@ describe("MultitrackTimeline", () => {
     videoTrack.locked = true;
     videoTrack.hidden = true;
     captionTrack.hidden = false;
+    captionTrack.captions.push({
+      id: id(300_000),
+      start: time(0),
+      end: time(2),
+      text: "Opening caption",
+    });
     const selectedClipId = id(100_000);
     const onSelectClip = vi.fn();
     const onSetTrackHidden = vi.fn();
@@ -395,14 +401,17 @@ describe("MultitrackTimeline", () => {
     ).toContain("1 clips · Locked · Audible · Hidden");
     expect(
       screen.getByRole("group", { name: "Captions track controls" }).parentElement?.textContent,
-    ).toContain("0 clips · Editable · Shown");
+    ).toContain("1 cue · Non-editable · Shown");
     const videoLabel = screen.getByRole("group", { name: "Camera track controls" }).parentElement!;
     const videoRow = screen.getByRole("listitem", {
       name: /Camera, video track.*locked.*audible.*hidden/,
     });
     const captionRow = screen.getByRole("listitem", {
-      name: /Captions, caption track.*editable.*shown/,
+      name: /Captions, caption track.*non-editable.*shown/,
     });
+    const captionCue = screen.getByText("Opening caption").closest("li");
+    expect(captionCue?.getAttribute("data-caption-id")).toBe(id(300_000));
+    expect(captionCue?.querySelector("button")).toBeNull();
     const selectedClipContainer = selectedClip.parentElement!;
     expect(videoLabel.className).toContain("is-hidden");
     expect(videoLabel.getAttribute("data-track-hidden")).toBe("true");

@@ -912,7 +912,8 @@ video {
   );
 }
 .multitrack-track-list,
-.multitrack-clip-list {
+.multitrack-clip-list,
+.multitrack-caption-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -941,9 +942,31 @@ video {
     repeating-linear-gradient(135deg, transparent 0 10px, rgb(255 255 255 / 3%) 10px 12px),
     linear-gradient(90deg, transparent 99%, var(--border) 100%);
 }
-.multitrack-clip-list {
+.multitrack-clip-list,
+.multitrack-caption-list {
   position: absolute;
   inset: 0;
+}
+.multitrack-caption {
+  position: absolute;
+  inset-block: 12px;
+  min-width: 2px;
+  overflow: hidden;
+  padding: 6px 8px;
+  border: 1px solid rgb(255 205 112 / 65%);
+  border-radius: 4px;
+  color: #fff4d7;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #342918;
+  cursor: default;
+}
+.multitrack-caption.is-hidden {
+  border-style: dashed;
+  filter: grayscale(0.8);
+  opacity: 0.62;
 }
 .multitrack-clip {
   position: absolute;

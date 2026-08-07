@@ -271,7 +271,7 @@ for (const visibilityCase of [
     await expect(videoVisibility.locator(".lucide-eye")).toHaveCount(1);
     await expect(videoVisibility).toContainText("Hide");
     await expect(primaryLabel).toContainText("3 clips · Editable · Audible · Shown");
-    await expect(captionLabel).toContainText("0 clips · Editable · Shown");
+    await expect(captionLabel).toContainText("1 cue · Non-editable · Shown");
     await expect(primaryRow).toHaveAttribute("data-track-kind", "video");
     await expect(primaryRow).toHaveAttribute("data-track-locked", "false");
     await expect(primaryRow).toHaveAttribute("data-track-muted", "false");
@@ -321,7 +321,7 @@ for (const visibilityCase of [
     await expect(captionVisibility).toHaveAttribute("title", "Show track output");
     await expect(captionVisibility.locator(".lucide-eye-off")).toHaveCount(1);
     await expect(captionVisibility).toContainText("Show");
-    await expect(captionLabel).toContainText("0 clips · Editable · Hidden");
+    await expect(captionLabel).toContainText("1 cue · Non-editable · Hidden");
     await expect(primaryClip).toHaveAttribute("aria-pressed", "true");
 
     if ("forcedColors" in visibilityCase) {
@@ -348,6 +348,33 @@ for (const visibilityCase of [
     expect(axe.violations, axe.violations.map(({ id }) => id).join(", ")).toEqual([]);
   });
 }
+
+test("caption visibility survives canonical undo and redo", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => document.fonts.ready);
+
+  const captionVisibility = page.getByRole("button", {
+    name: "English captions caption output",
+  });
+  const captionCue = page.locator('[data-caption-id="40000000-0000-4000-8000-000000000250"]');
+
+  await expect(captionCue).toBeVisible();
+  await expect(captionCue).toContainText("Canonical caption output");
+  await expect(captionCue).not.toHaveClass(/is-hidden/);
+
+  await captionVisibility.click();
+  await expect(captionVisibility).toHaveAttribute("aria-pressed", "false");
+  await expect(captionCue).toHaveClass(/is-hidden/);
+
+  await page.keyboard.press("Control+Z");
+  await expect(captionVisibility).toHaveAttribute("aria-pressed", "true");
+  await expect(captionCue).not.toHaveClass(/is-hidden/);
+
+  await page.keyboard.press("Control+Shift+Z");
+  await expect(captionVisibility).toHaveAttribute("aria-pressed", "false");
+  await expect(captionCue).toHaveClass(/is-hidden/);
+});
 
 test("snaps a dragged clip to a visible clip edge and commits on release", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });

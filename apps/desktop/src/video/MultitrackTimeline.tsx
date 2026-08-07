@@ -509,7 +509,9 @@ export function MultitrackTimeline({
               <span>{track.kind}</span>
               <strong>{track.name}</strong>
               <small>
-                {track.totalClipCount} clips · {track.locked ? "Locked" : "Editable"}
+                {track.kind === "caption"
+                  ? `${track.totalCaptionCount ?? 0} ${(track.totalCaptionCount ?? 0) === 1 ? "cue" : "cues"} · Non-editable`
+                  : `${track.totalClipCount} clips · ${track.locked ? "Locked" : "Editable"}`}
                 {track.canMute ? ` · ${track.muted ? "Muted" : "Audible"}` : ""}
                 {track.canToggleVisibility ? ` · ${track.hidden ? "Hidden" : "Shown"}` : ""}
               </small>
@@ -611,8 +613,35 @@ export function MultitrackTimeline({
                   data-track-muted={track.canMute ? track.muted : undefined}
                   data-track-hidden={track.canToggleVisibility ? track.hidden : undefined}
                   key={track.trackId}
-                  aria-label={`${track.name}, ${track.kind} track, ${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}${track.canToggleVisibility ? `, ${track.hidden ? "hidden" : "shown"}` : ""}`}
+                  aria-label={`${track.name}, ${track.kind} track, ${track.kind === "caption" ? `${track.totalCaptionCount ?? 0} ${(track.totalCaptionCount ?? 0) === 1 ? "cue" : "cues"}, non-editable` : `${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}`}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}${track.canToggleVisibility ? `, ${track.hidden ? "hidden" : "shown"}` : ""}`}
                 >
+                  {(track.captions ?? []).length === 0 ? null : (
+                    <ol
+                      className="multitrack-caption-list"
+                      aria-label={`${track.name} caption cues`}
+                    >
+                      {(track.captions ?? []).map((caption) => {
+                        const left = frameToPixel(caption.startFrame, geometryViewport);
+                        const width = Math.max(
+                          2,
+                          frameToPixel(caption.endFrameExclusive, geometryViewport) - left,
+                        );
+                        return (
+                          <li
+                            className={`multitrack-caption${track.hidden ? " is-hidden" : ""}`}
+                            data-caption-id={caption.captionId}
+                            data-start-frame={caption.startFrame}
+                            data-end-frame-exclusive={caption.endFrameExclusive}
+                            key={caption.captionId}
+                            style={{ left: `${left}px`, width: `${width}px` }}
+                            aria-label={`${caption.text}, frames ${caption.startFrame} through ${caption.endFrameExclusive}, end exclusive, non-editable`}
+                          >
+                            <span>{caption.text}</span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
                   {track.clips.length === 0 ? null : (
                     <ol className="multitrack-clip-list" aria-label={`${track.name} clips`}>
                       {track.clips.map((clip) => {
@@ -744,17 +773,18 @@ export function MultitrackTimeline({
         </div>
       </div>
 
-      {timeline.totalClipCount === 0 ? (
+      {timeline.totalClipCount === 0 && (timeline.totalCaptionCount ?? 0) === 0 ? (
         <p className="multitrack-empty">
           <Film size={15} aria-hidden="true" />
-          This sequence has no timeline clips yet.
+          This sequence has no timeline clips or caption cues yet.
         </p>
       ) : (
         <p
           className="multitrack-count"
           aria-label={`${timeline.materializedClipCount} visible clips`}
         >
-          Showing {timeline.materializedClipCount} of {timeline.totalClipCount} clips
+          Showing {timeline.materializedClipCount} of {timeline.totalClipCount} clips ·{" "}
+          {timeline.materializedCaptionCount ?? 0} of {timeline.totalCaptionCount ?? 0} caption cues
         </p>
       )}
     </section>

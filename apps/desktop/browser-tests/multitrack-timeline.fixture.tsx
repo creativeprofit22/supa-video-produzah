@@ -5,7 +5,7 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
-import { CommandProvider } from "../src/commands/CommandProvider";
+import { CommandProvider, useCommandHandler } from "../src/commands/CommandProvider";
 import { MultitrackTimeline } from "../src/video/MultitrackTimeline";
 import { testProbe, testSourceIdentity } from "../src/test-video-service";
 
@@ -91,7 +91,19 @@ const initialProjection: ProjectProjection = {
               clip(201, 68, 90, { kind: "sequence", sequenceId: nestedSequenceId }),
             ],
           },
-          { id: id(12), name: "English captions", kind: "caption", captions: [] },
+          {
+            id: id(12),
+            name: "English captions",
+            kind: "caption",
+            captions: [
+              {
+                id: id(250),
+                start: time(10),
+                end: time(20),
+                text: "Canonical caption output",
+              },
+            ],
+          },
         ],
         markers: [],
       },
@@ -120,6 +132,8 @@ const initialProjection: ProjectProjection = {
 
 function ControlledTimelineFixture() {
   const [currentProjection, setCurrentProjection] = useState(initialProjection);
+  const [visibilityUndo, setVisibilityUndo] = useState<ProjectProjection[]>([]);
+  const [visibilityRedo, setVisibilityRedo] = useState<ProjectProjection[]>([]);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [editError, setEditError] = useState<Error | null>(null);
   const setTrackLocked = (trackId: string, locked: boolean) => {
@@ -138,19 +152,42 @@ function ControlledTimelineFixture() {
   };
 
   const setTrackHidden = (trackId: string, hidden: boolean) => {
-    setCurrentProjection((current) => ({
-      ...current,
+    setVisibilityUndo((history) => [...history, currentProjection]);
+    setVisibilityRedo([]);
+    setCurrentProjection({
+      ...currentProjection,
       state: {
-        ...current.state,
-        sequences: current.state.sequences.map((sequence) => ({
+        ...currentProjection.state,
+        sequences: currentProjection.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
             track.id === trackId && track.kind !== "audio" ? { ...track, hidden } : track,
           ),
         })),
       },
-    }));
+    });
   };
+
+  useCommandHandler("history.undo", {
+    canExecute: visibilityUndo.length > 0,
+    execute: () => {
+      const previous = visibilityUndo.at(-1);
+      if (previous === undefined) return;
+      setVisibilityUndo((history) => history.slice(0, -1));
+      setVisibilityRedo((history) => [...history, currentProjection]);
+      setCurrentProjection(previous);
+    },
+  });
+  useCommandHandler("history.redo", {
+    canExecute: visibilityRedo.length > 0,
+    execute: () => {
+      const next = visibilityRedo.at(-1);
+      if (next === undefined) return;
+      setVisibilityRedo((history) => history.slice(0, -1));
+      setVisibilityUndo((history) => [...history, currentProjection]);
+      setCurrentProjection(next);
+    },
+  });
 
   const setTrackMuted = (trackId: string, muted: boolean) => {
     setCurrentProjection((current) => ({
