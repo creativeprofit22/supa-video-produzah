@@ -55,6 +55,32 @@ describe("command registry", () => {
       "playback.jumpForward",
     ]);
   });
+
+  it("keeps frame movement distinct from transport and rejects colliding remaps", () => {
+    const defaults = createDefaultShortcutMap();
+    expect(defaults["timeline.moveSelectedClipBackward"]).toEqual(
+      exact("ArrowLeft", { alt: true }),
+    );
+    expect(defaults["timeline.moveSelectedClipForward"]).toEqual(
+      exact("ArrowRight", { alt: true }),
+    );
+    expect(matchesShortcut(keyboardEvent("ArrowRight"), defaults["playback.stepForward"]!)).toBe(
+      true,
+    );
+    expect(
+      matchesShortcut(
+        keyboardEvent("ArrowRight", { altKey: true }),
+        defaults["timeline.moveSelectedClipForward"]!,
+      ),
+    ).toBe(true);
+    expect(
+      validateShortcutAssignment("timeline.moveSelectedClipForward", exact("ArrowRight"), defaults),
+    ).toEqual({
+      valid: false,
+      commandId: "timeline.moveSelectedClipForward",
+      conflictingCommandId: "playback.stepForward",
+    });
+  });
 });
 
 describe("shortcut matching and normalization", () => {

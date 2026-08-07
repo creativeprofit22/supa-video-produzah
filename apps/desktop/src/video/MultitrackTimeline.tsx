@@ -272,10 +272,46 @@ export function MultitrackTimeline({
     !selectedCanonicalClip.trackLocked &&
     !editPending &&
     pointerSession === null;
+  const selectedTimelineClip =
+    timeline?.tracks
+      .flatMap((track) => track.clips)
+      .find((clip) => clip.clipId === selectedClipId) ?? null;
+  const canMoveSelectedClip =
+    canRippleDelete && selectedTimelineClip !== null && geometryViewport !== null;
+  const canMoveSelectedClipBackward = canMoveSelectedClip && selectedTimelineClip.startFrame > 0;
   const canSplit =
     canRippleDelete &&
     previewSourceFrame > selectedCanonicalClip.clip.sourceIn.value &&
     previewSourceFrame < selectedCanonicalClip.clip.sourceOut.value;
+  const moveSelectedClipByFrames = (frameDelta: -1 | 1) => {
+    if (
+      !canMoveSelectedClip ||
+      selectedClipId === null ||
+      selectedCanonicalClip === null ||
+      selectedTimelineClip === null ||
+      geometryViewport === null
+    )
+      return;
+    const sequence = projection.state.sequences.find(
+      (candidate) => candidate.id === projection.state.activeSequenceId,
+    );
+    if (sequence === undefined) return;
+    const proposedStartFrame = selectedTimelineClip.startFrame + frameDelta;
+    if (proposedStartFrame < 0) return;
+    const resolution = resolveTimelineMoveSnap(
+      createTimelineMoveSnapContext(sequence, timelinePlayheadFrame),
+      {
+        movingClipId: selectedClipId,
+        destinationTrackId: selectedCanonicalClip.trackId,
+        proposedStartFrame,
+        durationFrames: selectedTimelineClip.endFrameExclusive - selectedTimelineClip.startFrame,
+        zoomScale: geometryViewport.zoomScale,
+        maximumSnapDistancePixels: 0,
+      },
+    );
+    if (resolution.startFrame !== selectedTimelineClip.startFrame)
+      onMoveClip(selectedClipId, resolution.startFrame);
+  };
   const splitSelectedClip = () => {
     if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, previewSourceFrame);
   };
@@ -285,6 +321,16 @@ export function MultitrackTimeline({
       onRippleDeleteClip(selectedClipId);
     }
   };
+  useCommandHandler("timeline.moveSelectedClipBackward", {
+    canExecute: canMoveSelectedClipBackward,
+    execute: () => moveSelectedClipByFrames(-1),
+    keyboardScopeRef: panelRef,
+  });
+  useCommandHandler("timeline.moveSelectedClipForward", {
+    canExecute: canMoveSelectedClip,
+    execute: () => moveSelectedClipByFrames(1),
+    keyboardScopeRef: panelRef,
+  });
   useCommandHandler("timeline.splitSelectedClip", {
     canExecute: canSplit,
     execute: splitSelectedClip,
@@ -295,9 +341,10 @@ export function MultitrackTimeline({
     execute: rippleDeleteSelectedClip,
     keyboardScopeRef: panelRef,
   });
+  const moveBackwardCommand = useCommand("timeline.moveSelectedClipBackward");
+  const moveForwardCommand = useCommand("timeline.moveSelectedClipForward");
   const splitCommand = useCommand("timeline.splitSelectedClip");
   const rippleDeleteCommand = useCommand("timeline.rippleDeleteSelectedClip");
-
   if (timeline === null || geometryViewport === null) return null;
 
   const draftTimelineEnd = pointerSession?.draftEndFrameExclusive ?? 0;
@@ -688,6 +735,20 @@ export function MultitrackTimeline({
                               className="multitrack-clip-body"
                               aria-label={`${clip.sourceLabel}, frames ${startFrame} through ${endFrameExclusive}, end exclusive${track.locked ? ", locked track" : ""}`}
                               aria-pressed={isSelected}
+                              aria-keyshortcuts={
+                                isSelected
+                                  ? [
+                                      canMoveSelectedClipBackward
+                                        ? moveBackwardCommand.ariaKeyShortcuts
+                                        : undefined,
+                                      canMoveSelectedClip
+                                        ? moveForwardCommand.ariaKeyShortcuts
+                                        : undefined,
+                                    ]
+                                      .filter((shortcut) => shortcut !== undefined)
+                                      .join(" ") || undefined
+                                  : undefined
+                              }
                               onClick={() => onSelectClip(clip.clipId)}
                               onPointerDown={(event) =>
                                 startPointerSession(

@@ -437,6 +437,67 @@ describe("runtime shortcut updates", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("remaps selected-clip movement while preserving transport arrows", () => {
+    const moveForward = vi.fn();
+    const stepForward = vi.fn();
+    function Timeline() {
+      const scopeRef = useRef<HTMLElement | null>(null);
+      const preferences = useCommandPreferences();
+      return (
+        <>
+          <Handler
+            id="timeline.moveSelectedClipForward"
+            execute={moveForward}
+            scopeRef={scopeRef}
+          />
+          <Handler id="playback.stepForward" execute={stepForward} />
+          <section ref={scopeRef}>
+            <button type="button" className="multitrack-clip-body" aria-pressed="true">
+              Selected clip
+            </button>
+          </section>
+          <div tabIndex={0} aria-label="Application surface" />
+          <button
+            type="button"
+            onClick={() =>
+              preferences.assignShortcut(
+                "timeline.moveSelectedClipForward",
+                exact("KeyK", { control: true, alt: true }),
+              )
+            }
+          >
+            Remap move forward
+          </button>
+        </>
+      );
+    }
+    render(
+      <TestProvider>
+        <Timeline />
+      </TestProvider>,
+    );
+    const selectedClip = screen.getByRole("button", { name: "Selected clip" });
+    const applicationSurface = screen.getByLabelText("Application surface");
+
+    expect(dispatchKey(selectedClip, { code: "ArrowRight", altKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(dispatchKey(selectedClip, { code: "ArrowRight" }).defaultPrevented).toBe(false);
+    expect(dispatchKey(applicationSurface, { code: "ArrowRight" }).defaultPrevented).toBe(true);
+    expect(moveForward).toHaveBeenCalledOnce();
+    expect(stepForward).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remap move forward" }));
+    expect(dispatchKey(selectedClip, { code: "ArrowRight", altKey: true }).defaultPrevented).toBe(
+      false,
+    );
+    expect(
+      dispatchKey(selectedClip, { code: "KeyK", ctrlKey: true, altKey: true }).defaultPrevented,
+    ).toBe(true);
+    expect(dispatchKey(applicationSurface, { code: "ArrowRight" }).defaultPrevented).toBe(true);
+    expect(moveForward).toHaveBeenCalledTimes(2);
+    expect(stepForward).toHaveBeenCalledTimes(2);
+  });
   it("rejects a reset that would restore a colliding default", () => {
     const undo = vi.fn();
     const newProject = vi.fn();

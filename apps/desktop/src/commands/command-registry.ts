@@ -10,6 +10,8 @@ export const COMMAND_IDS = [
   "playback.stepForward",
   "playback.jumpBackward",
   "playback.jumpForward",
+  "timeline.moveSelectedClipBackward",
+  "timeline.moveSelectedClipForward",
   "timeline.splitSelectedClip",
   "timeline.rippleDeleteSelectedClip",
 ] as const;
@@ -149,6 +151,20 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = Object.freeze([
     defaultShortcut: exact("ArrowRight", { shift: true }),
     keyboardContext: "transport",
     allowRepeat: true,
+  },
+  {
+    id: "timeline.moveSelectedClipBackward",
+    label: "Move selected clip backward one frame",
+    defaultShortcut: exact("ArrowLeft", { alt: true }),
+    keyboardContext: "timeline",
+    allowRepeat: false,
+  },
+  {
+    id: "timeline.moveSelectedClipForward",
+    label: "Move selected clip forward one frame",
+    defaultShortcut: exact("ArrowRight", { alt: true }),
+    keyboardContext: "timeline",
+    allowRepeat: false,
   },
   {
     id: "timeline.splitSelectedClip",

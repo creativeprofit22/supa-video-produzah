@@ -646,6 +646,7 @@ describe("MultitrackTimeline", () => {
     });
     fireEvent.click(lockedClip);
     expect(onSelectClip).toHaveBeenCalledWith(lockedClipId);
+    expect(lockedClip.hasAttribute("aria-keyshortcuts")).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Split at playhead" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -654,6 +655,8 @@ describe("MultitrackTimeline", () => {
     ).toBe(true);
     fireEvent.keyDown(lockedClip, { code: "KeyS" });
     fireEvent.keyDown(lockedClip, { code: "Delete", shiftKey: true });
+    fireEvent.keyDown(lockedClip, { code: "ArrowLeft", altKey: true });
+    fireEvent.keyDown(lockedClip, { code: "ArrowRight", altKey: true });
     fireEvent.pointerDown(lockedClip, { button: 0, pointerId: 31, clientX: 8 });
     fireEvent.pointerMove(lockedClip, { pointerId: 31, clientX: 24 });
     fireEvent.pointerUp(lockedClip, { pointerId: 31, clientX: 24 });
@@ -678,6 +681,39 @@ describe("MultitrackTimeline", () => {
     expect(
       screen.getByRole("button", { name: "Nested audio track lock" }).getAttribute("aria-pressed"),
     ).toBe("false");
+  });
+
+  it("moves the selected clip by exact frames through scoped keyboard commands", () => {
+    const projection = interactionProjection();
+    const track = projection.state.sequences[0]!.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected a video track");
+    track.clips[0]!.timelineStart = timeAtRate(5, rate);
+    const clipId = id(100_000);
+    const onMoveClip = vi.fn();
+    render(
+      <MultitrackTimeline
+        {...timelineProps({
+          projection,
+          selectedClipId: clipId,
+          timelinePlayheadFrame: 6,
+          onMoveClip,
+        })}
+      />,
+    );
+    const selectedClip = screen.getByRole("button", {
+      name: /camera-a\.mp4, frames 5 through 7/,
+    });
+
+    expect(selectedClip.getAttribute("aria-keyshortcuts")).toBe("Alt+ArrowLeft Alt+ArrowRight");
+    expect(fireEvent.keyDown(selectedClip, { code: "ArrowRight", altKey: true })).toBe(false);
+    expect(onMoveClip).toHaveBeenLastCalledWith(clipId, 6);
+    expect(fireEvent.keyDown(selectedClip, { code: "ArrowLeft", altKey: true })).toBe(false);
+    expect(onMoveClip).toHaveBeenLastCalledWith(clipId, 4);
+    expect(fireEvent.keyDown(selectedClip, { code: "ArrowRight" })).toBe(true);
+    expect(
+      fireEvent.keyDown(selectedClip, { code: "ArrowRight", altKey: true, repeat: true }),
+    ).toBe(true);
+    expect(onMoveClip).toHaveBeenCalledTimes(2);
   });
 
   it("previews moves ephemerally, commits once on release, and cancels without committing", () => {

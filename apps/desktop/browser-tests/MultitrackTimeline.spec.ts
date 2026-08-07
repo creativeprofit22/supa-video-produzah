@@ -372,6 +372,58 @@ test("caption visibility survives canonical undo and redo", async ({ page }) => 
   await expect(captionCue).toHaveClass(/is-hidden/);
 });
 
+test("moves the selected clip through default and remapped keyboard commands", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${fixturePath}?keyboard-move=1`);
+  await page.evaluate(() => document.fonts.ready);
+
+  const primaryRow = page.locator(`[data-track-id="40000000-0000-4000-8000-000000000010"]`);
+  const clip = primaryRow.locator(`[data-clip-id="40000000-0000-4000-8000-000000000100"]`);
+  const clipBody = clip.locator(".multitrack-clip-body");
+  const revision = page.getByTestId("canonical-revision");
+  const transportFrame = page.getByTestId("transport-frame");
+
+  await expect(clip).toHaveAttribute("data-start-frame", "0");
+  await expect(revision).toHaveText("4");
+  await clipBody.click();
+  await expect(clipBody).toHaveAttribute("aria-keyshortcuts", "Alt+ArrowRight");
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(clip).toHaveAttribute("data-start-frame", "1");
+  await expect(revision).toHaveText("5");
+
+  await page.getByRole("button", { name: "Remap move forward to Alt+M" }).click();
+  await expect(clipBody).toHaveAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+M");
+  await clipBody.focus();
+  await page.keyboard.press("Alt+KeyM");
+  await expect(clip).toHaveAttribute("data-start-frame", "2");
+  await expect(revision).toHaveText("6");
+
+  await page.keyboard.press("Control+Z");
+  await expect(clip).toHaveAttribute("data-start-frame", "1");
+  await expect(revision).toHaveText("7");
+  await page.keyboard.press("Control+Shift+Z");
+  await expect(clip).toHaveAttribute("data-start-frame", "2");
+  await expect(revision).toHaveText("8");
+
+  const transportSurface = page.getByRole("region", { name: "Transport keyboard surface" });
+  await transportSurface.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(transportFrame).toHaveText("1");
+  await page.keyboard.press("ArrowLeft");
+  await expect(transportFrame).toHaveText("0");
+  await expect(clip).toHaveAttribute("data-start-frame", "2");
+  await expect(revision).toHaveText("8");
+
+  await page.getByRole("button", { name: "Primary camera track lock" }).click();
+  await expect(primaryRow).toHaveAttribute("data-track-locked", "true");
+  await expect(revision).toHaveText("9");
+  await expect(clipBody).not.toHaveAttribute("aria-keyshortcuts");
+  await clipBody.focus();
+  await page.keyboard.press("Alt+KeyM");
+  await expect(clip).toHaveAttribute("data-start-frame", "2");
+  await expect(revision).toHaveText("9");
+});
+
 test("snaps a dragged clip to a visible clip edge and commits on release", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(fixturePath);

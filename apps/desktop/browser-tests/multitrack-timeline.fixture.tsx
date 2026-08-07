@@ -5,7 +5,11 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
-import { CommandProvider, useCommandHandler } from "../src/commands/CommandProvider";
+import {
+  CommandProvider,
+  useCommandHandler,
+  useCommandPreferences,
+} from "../src/commands/CommandProvider";
 import { MultitrackTimeline } from "../src/video/MultitrackTimeline";
 import { testProbe, testSourceIdentity } from "../src/test-video-service";
 
@@ -40,6 +44,7 @@ const nestedSequenceId = id(3);
 const fixtureParameters = new URLSearchParams(window.location.search);
 const longTrackLabel = fixtureParameters.has("long-label");
 const primaryTrackLocked = fixtureParameters.has("primary-track-locked");
+const keyboardMovement = fixtureParameters.has("keyboard-move");
 const primaryTrackName = longTrackLabel
   ? "Primäre Kameraausgabe für die außergewöhnlich lange Dokumentarfilmsequenz"
   : "Primary camera";
@@ -139,25 +144,36 @@ function ControlledTimelineFixture() {
   const [visibilityRedo, setVisibilityRedo] = useState<ProjectProjection[]>([]);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [editError, setEditError] = useState<Error | null>(null);
+  const [transportFrame, setTransportFrame] = useState(0);
+  const commandPreferences = useCommandPreferences();
+  const commitCanonicalProjection = (nextProjection: ProjectProjection) => {
+    setVisibilityUndo((history) => [...history, currentProjection]);
+    setVisibilityRedo([]);
+    setCurrentProjection({
+      ...nextProjection,
+      revision: {
+        ...nextProjection.revision,
+        number: currentProjection.revision.number + 1,
+      },
+    });
+  };
   const setTrackLocked = (trackId: string, locked: boolean) => {
-    setCurrentProjection((current) => ({
-      ...current,
+    commitCanonicalProjection({
+      ...currentProjection,
       state: {
-        ...current.state,
-        sequences: current.state.sequences.map((sequence) => ({
+        ...currentProjection.state,
+        sequences: currentProjection.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
             track.id === trackId ? { ...track, locked } : track,
           ),
         })),
       },
-    }));
+    });
   };
 
   const setTrackHidden = (trackId: string, hidden: boolean) => {
-    setVisibilityUndo((history) => [...history, currentProjection]);
-    setVisibilityRedo([]);
-    setCurrentProjection({
+    commitCanonicalProjection({
       ...currentProjection,
       state: {
         ...currentProjection.state,
@@ -178,7 +194,13 @@ function ControlledTimelineFixture() {
       if (previous === undefined) return;
       setVisibilityUndo((history) => history.slice(0, -1));
       setVisibilityRedo((history) => [...history, currentProjection]);
-      setCurrentProjection(previous);
+      setCurrentProjection({
+        ...previous,
+        revision: {
+          ...previous.revision,
+          number: currentProjection.revision.number + 1,
+        },
+      });
     },
   });
   useCommandHandler("history.redo", {
@@ -188,8 +210,22 @@ function ControlledTimelineFixture() {
       if (next === undefined) return;
       setVisibilityRedo((history) => history.slice(0, -1));
       setVisibilityUndo((history) => [...history, currentProjection]);
-      setCurrentProjection(next);
+      setCurrentProjection({
+        ...next,
+        revision: {
+          ...next.revision,
+          number: currentProjection.revision.number + 1,
+        },
+      });
     },
+  });
+  useCommandHandler("playback.stepBackward", {
+    canExecute: true,
+    execute: () => setTransportFrame((frame) => frame - 1),
+  });
+  useCommandHandler("playback.stepForward", {
+    canExecute: true,
+    execute: () => setTransportFrame((frame) => frame + 1),
   });
 
   const setTrackMuted = (trackId: string, muted: boolean) => {
@@ -266,11 +302,11 @@ function ControlledTimelineFixture() {
       }
     }
     setEditError(null);
-    setCurrentProjection((current) => ({
-      ...current,
+    commitCanonicalProjection({
+      ...currentProjection,
       state: {
-        ...current.state,
-        sequences: current.state.sequences.map((candidateSequence) => ({
+        ...currentProjection.state,
+        sequences: currentProjection.state.sequences.map((candidateSequence) => ({
           ...candidateSequence,
           tracks: candidateSequence.tracks.map((track) => {
             if (track.kind === "caption" || !track.clips.some(({ id }) => id === clipId)) {
@@ -293,7 +329,7 @@ function ControlledTimelineFixture() {
           }),
         })),
       },
-    }));
+    });
   };
 
   const splitClip = (clipId: string, sourceFrame: number) => {
@@ -397,6 +433,29 @@ function ControlledTimelineFixture() {
           }))
         }
       />
+      {keyboardMovement ? (
+        <section aria-label="Keyboard movement test controls">
+          <button
+            type="button"
+            onClick={() =>
+              commandPreferences.assignShortcut("timeline.moveSelectedClipForward", {
+                code: "KeyM",
+                shift: false,
+                alt: true,
+                control: false,
+                meta: false,
+              })
+            }
+          >
+            Remap move forward to Alt+M
+          </button>
+          <div role="region" tabIndex={0} aria-label="Transport keyboard surface">
+            Transport keyboard surface
+          </div>
+          <output data-testid="canonical-revision">{currentProjection.revision.number}</output>
+          <output data-testid="transport-frame">{transportFrame}</output>
+        </section>
+      ) : null}
     </main>
   );
 }

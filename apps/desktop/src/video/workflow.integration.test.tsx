@@ -347,6 +347,8 @@ describe("complete mocked Phase 2 workflow", () => {
 
     fireEvent.keyDown(clip, { code: "KeyS" });
     fireEvent.keyDown(clip, { code: "Delete", shiftKey: true });
+    fireEvent.keyDown(clip, { code: "ArrowLeft", altKey: true });
+    fireEvent.keyDown(clip, { code: "ArrowRight", altKey: true });
     fireEvent.pointerDown(clip, { button: 0, pointerId: 41, clientX: 8 });
     fireEvent.pointerMove(clip, { pointerId: 41, clientX: 24 });
     fireEvent.pointerUp(clip, { pointerId: 41, clientX: 24 });
@@ -465,6 +467,72 @@ describe("complete mocked Phase 2 workflow", () => {
           .getAttribute("aria-pressed"),
       ).toBe("true"),
     );
+  });
+
+  it("moves one frame per keyboard action and round-trips undo and redo", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Canonical composition" });
+
+    const initialBody = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 0 through 100/,
+    });
+    expect(service.projection.revision.number).toBe(1);
+    expect(initialBody.getAttribute("aria-keyshortcuts")).toBe("Alt+ArrowRight");
+    fireEvent.keyDown(initialBody, { code: "ArrowRight", altKey: true });
+
+    await waitFor(() => expect(service.projection.revision.number).toBe(2));
+    const movedTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (movedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(movedTrack.clips[0]!.timelineStart.value).toBe(1);
+    const moveRequest = invokeMock.mock.calls
+      .filter(([command]) => command === "video_execute_project_group")
+      .at(-1)?.[1] as {
+      request: { baseRevision: number; commands: Array<Record<string, unknown>> };
+    };
+    expect(moveRequest.request).toMatchObject({
+      baseRevision: 1,
+      commands: [
+        expect.objectContaining({
+          type: "MoveClip",
+          timelineStart: expect.objectContaining({ value: 1 }),
+        }),
+      ],
+    });
+    expect(moveRequest.request.commands).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(service.projection.revision.number).toBe(3));
+    const undoTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (undoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(undoTrack.clips[0]!.timelineStart.value).toBe(0);
+    expect(service.projection.lastCommand?.summary).toBe("Undid Moved clip");
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(service.projection.revision.number).toBe(4));
+    const redoTrack = service.projection.state.sequences[0]!.tracks[0]!;
+    if (redoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    expect(redoTrack.clips[0]!.timelineStart.value).toBe(1);
+    expect(service.projection.lastCommand?.summary).toBe("Redid Moved clip");
+
+    fireEvent.click(screen.getByRole("button", { name: "Video 1 track lock" }));
+    await waitFor(() => expect(service.projection.revision.number).toBe(5));
+    const lockedBody = await screen.findByRole("button", {
+      name: /clip\.mp4, frames 1 through 101.*locked track/,
+    });
+    const executeCount = invokeMock.mock.calls.filter(
+      ([command]) => command === "video_execute_project_group",
+    ).length;
+    fireEvent.keyDown(lockedBody, { code: "ArrowRight", altKey: true });
+    expect(service.projection.revision.number).toBe(5);
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group"),
+    ).toHaveLength(executeCount);
   });
 
   it("routes timeline move and grouped left trim through one group per gesture", async () => {
