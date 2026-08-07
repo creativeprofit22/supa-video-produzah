@@ -125,6 +125,7 @@ interface RevisionOptions {
 interface V2RevisionOptions {
   readonly muted?: boolean;
   readonly hidden?: boolean;
+  readonly opacityPermille?: number;
   readonly captionHidden?: boolean;
   readonly dedicatedAudioTrack?: "empty" | "non-empty";
 }
@@ -226,7 +227,7 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                     scaleXPermille: 1_000,
                     scaleYPermille: 1_000,
                     rotationMilliDegrees: 0,
-                    opacityPermille: 1_000,
+                    opacityPermille: options.opacityPermille ?? 1_000,
                   },
                   gainMilliDecibels: 0,
                 },
@@ -297,6 +298,17 @@ function compile(
     inputPath,
     outputPath,
   });
+}
+
+function expectedActiveSequenceFilter(opacity: string, audible = true): string {
+  return [
+    "color=c=black:s=1280x720:r=30000/1001:d=2.502500[base]",
+    `[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=${opacity},pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30000/1001[v0]`,
+    ...(audible ? ["[0:a:0]asetpts=PTS-STARTPTS[a0]"] : []),
+    "[base][v0]overlay=0:0:format=auto[stack0]",
+    "[stack0]null[vout]",
+    ...(audible ? ["[a0]anull[aout]"] : []),
+  ].join(";");
 }
 
 function expectInvalidRenderPlan(action: () => unknown): VideoDomainError {
@@ -542,6 +554,64 @@ describe("compileSingleClipRenderPlan", () => {
 });
 
 describe("compileActiveSequenceRenderPlan", () => {
+  it.each([
+    [0, "0.000"],
+    [425, "0.425"],
+    [1_000, "1.000"],
+  ] as const)(
+    "compiles opacity %i as the exact deterministic %s alpha filter",
+    (opacityPermille, alpha) => {
+      const revision = makeV2Revision({ opacityPermille });
+      expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+
+      const plan = compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      });
+
+      expect(plan.videoInputs).toEqual([
+        {
+          assetId: ids.asset,
+          path: inputPath,
+          sourceInMicroseconds: 500_500,
+          opacityPermille,
+          hidden: false,
+          muted: false,
+          hasAudio: true,
+        },
+      ]);
+      expect(plan.argv[plan.argv.indexOf("-filter_complex") + 1]).toBe(
+        expectedActiveSequenceFilter(alpha),
+      );
+      expect(plan.expected.audio).toBe(true);
+    },
+  );
+
+  it("keeps zero-opacity clip audio independent from visual alpha", () => {
+    const audibleRevision = makeV2Revision({ opacityPermille: 0 });
+    const mutedRevision = makeV2Revision({ opacityPermille: 0, muted: true });
+    const compileActive = (revision: ReturnType<typeof makeV2Revision>) =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      });
+
+    const audible = compileActive(audibleRevision);
+    const muted = compileActive(mutedRevision);
+    expect(audible.argv[audible.argv.indexOf("-filter_complex") + 1]).toBe(
+      expectedActiveSequenceFilter("0.000"),
+    );
+    expect(muted.argv[muted.argv.indexOf("-filter_complex") + 1]).toBe(
+      expectedActiveSequenceFilter("0.000", false),
+    );
+    expect(audible.expected.audio).toBe(true);
+    expect(muted.expected.audio).toBe(false);
+  });
+
   it("uses the compiler validator for render eligibility", () => {
     const revision = structuredClone(makeV2Revision());
     expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
@@ -626,6 +696,7 @@ describe("compileActiveSequenceRenderPlan", () => {
     const firstAsset = revision.state.assets[0]!;
     const firstTrack = revision.state.sequences[0]!.tracks[0]!;
     if (firstTrack.kind !== "video") throw new Error("expected video track fixture");
+    firstTrack.clips[0]!.transform.opacityPermille = 425;
     const secondAsset = { ...structuredClone(firstAsset), id: ids.asset2 };
     const secondTrack = {
       ...structuredClone(firstTrack),
@@ -637,6 +708,10 @@ describe("compileActiveSequenceRenderPlan", () => {
           ...structuredClone(firstTrack.clips[0]!),
           id: ids.clip2,
           source: { kind: "asset" as const, assetId: ids.asset2 },
+          transform: {
+            ...structuredClone(firstTrack.clips[0]!.transform),
+            opacityPermille: 0,
+          },
         },
       ],
     };
@@ -660,6 +735,7 @@ describe("compileActiveSequenceRenderPlan", () => {
         assetId: ids.asset,
         path: inputPath,
         sourceInMicroseconds: 500_500,
+        opacityPermille: 425,
         hidden: false,
         muted: true,
         hasAudio: true,
@@ -668,16 +744,25 @@ describe("compileActiveSequenceRenderPlan", () => {
         assetId: ids.asset2,
         path: "C:\\Media Source\\bottom.mp4",
         sourceInMicroseconds: 500_500,
+        opacityPermille: 0,
         hidden: true,
         muted: false,
         hasAudio: true,
       },
     ]);
     const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
-    expect(filter).toContain("[0:v:0]");
+    expect(filter).toBe(
+      [
+        "color=c=black:s=1280x720:r=30000/1001:d=2.502500[base]",
+        "[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.425,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30000/1001[v0]",
+        "[1:a:0]asetpts=PTS-STARTPTS[a1]",
+        "[base][v0]overlay=0:0:format=auto[stack0]",
+        "[stack0]null[vout]",
+        "[a1]anull[aout]",
+      ].join(";"),
+    );
     expect(filter).not.toContain("[1:v:0]");
     expect(filter).not.toContain("[0:a:0]");
-    expect(filter).toContain("[1:a:0]");
     expect(plan.expected.audio).toBe(true);
 
     secondTrack.hidden = false;
@@ -688,8 +773,17 @@ describe("compileActiveSequenceRenderPlan", () => {
       outputPath,
     });
     const layeredFilter = layered.argv[layered.argv.indexOf("-filter_complex") + 1]!;
-    expect(layeredFilter).toContain(
-      "[base][v1]overlay=0:0:format=auto[stack0];[stack0][v0]overlay=0:0:format=auto[stack1];[stack1]null[vout]",
+    expect(layeredFilter).toBe(
+      [
+        "color=c=black:s=1280x720:r=30000/1001:d=2.502500[base]",
+        "[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.425,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30000/1001[v0]",
+        "[1:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.000,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30000/1001[v1]",
+        "[1:a:0]asetpts=PTS-STARTPTS[a1]",
+        "[base][v1]overlay=0:0:format=auto[stack0]",
+        "[stack0][v0]overlay=0:0:format=auto[stack1]",
+        "[stack1]null[vout]",
+        "[a1]anull[aout]",
+      ].join(";"),
     );
   });
 });

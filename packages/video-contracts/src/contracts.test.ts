@@ -224,6 +224,7 @@ describe("project contracts", () => {
           assetId: ids.asset,
           path: inputPath,
           sourceInMicroseconds: 500_000,
+          opacityPermille: 1_000,
           hidden: false,
           muted: true,
           hasAudio: true,
@@ -235,6 +236,26 @@ describe("project contracts", () => {
     } as const;
     expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
     expect(renderPlanSchema.parse(plan)).toEqual(plan);
+
+    for (const opacityPermille of [0, 425, 1_000]) {
+      const boundedPlan = {
+        ...plan,
+        videoInputs: [{ ...plan.videoInputs[0], opacityPermille }],
+      } as const;
+      expect(renderPlanV2Schema.parse(boundedPlan)).toEqual(boundedPlan);
+    }
+    for (const opacityPermille of [-1, 1_001, 0.5]) {
+      expect(
+        renderPlanV2Schema.safeParse({
+          ...plan,
+          videoInputs: [{ ...plan.videoInputs[0], opacityPermille }],
+        }).success,
+      ).toBe(false);
+    }
+    const { opacityPermille: _opacityPermille, ...videoInputWithoutOpacity } = plan.videoInputs[0];
+    expect(
+      renderPlanV2Schema.safeParse({ ...plan, videoInputs: [videoInputWithoutOpacity] }).success,
+    ).toBe(false);
 
     const caption = {
       trackId: ids.project,

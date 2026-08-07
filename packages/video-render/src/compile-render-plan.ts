@@ -77,6 +77,12 @@ function formatMicrosecondsAsSeconds(microseconds: number): string {
   return `${wholeSeconds}.${fractionalMicroseconds.toString().padStart(6, "0")}`;
 }
 
+function formatOpacityPermille(opacityPermille: number): string {
+  const whole = Math.floor(opacityPermille / 1_000);
+  const fractional = opacityPermille % 1_000;
+  return `${whole}.${fractional.toString().padStart(3, "0")}`;
+}
+
 function escapeDrawtextText(text: string): string {
   return text
     .replaceAll("\\", "\\\\")
@@ -409,14 +415,13 @@ interface ValidatedActiveSequenceRevision {
 export type ActiveSequenceRenderEligibility =
   { readonly eligible: true } | { readonly eligible: false; readonly reason: string };
 
-function hasDefaultTransformAndGain(clip: V2Clip): boolean {
+function hasSupportedTransformAndGain(clip: V2Clip): boolean {
   return (
     clip.transform.positionXPermille === 0 &&
     clip.transform.positionYPermille === 0 &&
     clip.transform.scaleXPermille === 1_000 &&
     clip.transform.scaleYPermille === 1_000 &&
     clip.transform.rotationMilliDegrees === 0 &&
-    clip.transform.opacityPermille === 1_000 &&
     clip.gainMilliDecibels === 0
   );
 }
@@ -471,8 +476,8 @@ function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequence
         trackIndex,
       });
     }
-    if (!hasDefaultTransformAndGain(directClip)) {
-      invalidRenderPlan("Canonical multi-track export requires default transform and gain", {
+    if (!hasSupportedTransformAndGain(directClip)) {
+      invalidRenderPlan("Canonical multi-track export requires default geometry and gain", {
         trackIndex,
       });
     }
@@ -553,6 +558,7 @@ export function compileActiveSequenceRenderPlan(
       assetId: asset.id,
       path: inputPath,
       sourceInMicroseconds: rationalTimeToMicroseconds(clip.sourceIn, "nearestTiesAwayFromZero"),
+      opacityPermille: clip.transform.opacityPermille,
       hidden: isTrackHidden(track),
       muted: isTrackMuted(track),
       hasAudio: asset.probe.audio !== null,
@@ -573,10 +579,10 @@ export function compileActiveSequenceRenderPlan(
     ];
     const visibleTrackIndices: number[] = [];
     const audibleTrackIndices: number[] = [];
-    clips.forEach(({ track, asset }, trackIndex) => {
+    clips.forEach(({ track, clip, asset }, trackIndex) => {
       if (!isTrackHidden(track)) {
         filterParts.push(
-          `[${trackIndex}:v:0]setpts=PTS-STARTPTS,scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${sequence.rate.numerator}/${sequence.rate.denominator}[v${trackIndex}]`,
+          `[${trackIndex}:v:0]setpts=PTS-STARTPTS,scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=${formatOpacityPermille(clip.transform.opacityPermille)},pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${sequence.rate.numerator}/${sequence.rate.denominator}[v${trackIndex}]`,
         );
         visibleTrackIndices.push(trackIndex);
       }

@@ -84,6 +84,7 @@ export const renderVideoInputV2Schema = z
     assetId: projectUuidSchema,
     path: pathSchema,
     sourceInMicroseconds: safeNonNegativeIntegerSchema,
+    opacityPermille: z.number().int().safe().min(0).max(1_000),
     hidden: z.boolean(),
     muted: z.boolean(),
     hasAudio: z.boolean(),

@@ -147,6 +147,7 @@ const multitrackRenderPlan: RenderPlanV2 = {
       assetId: id(2),
       path: "C:\\Media\\clip.mp4",
       sourceInMicroseconds: 0,
+      opacityPermille: 1_000,
       hidden: false,
       muted: false,
       hasAudio: false,
