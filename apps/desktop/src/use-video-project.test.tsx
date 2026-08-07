@@ -874,9 +874,7 @@ describe("canonical project controller", () => {
       message: "Clean",
       legacyHistoryReset: false,
     };
-    let resolveStart!: (
-      started: Awaited<ReturnType<VideoBackend["startVideoRender"]>>,
-    ) => void;
+    let resolveStart!: (started: Awaited<ReturnType<VideoBackend["startVideoRender"]>>) => void;
     const pendingStart = new Promise<Awaited<ReturnType<VideoBackend["startVideoRender"]>>>(
       (resolve) => {
         resolveStart = resolve;
