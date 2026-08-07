@@ -1263,6 +1263,9 @@ async fn execute_render_worker(
     )
     .await?;
     validate_render_output(&partial_path, &inspected, &request.validated)?;
+    if !request.overwrite && request.validated.output_path.exists() {
+        return Err(VideoCommandError::output_exists("promote_render"));
+    }
     let (preview_path, preview_probe) = prepare_render_preview(
         &request.app_cache_dir,
         &request.identity.job_id,

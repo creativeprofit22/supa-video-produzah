@@ -1261,6 +1261,15 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the assembled Windows Tauri media resource overlay"]
+    fn packaged_phase3b_collision_stops_before_preview_preparation() {
+        tauri::async_runtime::block_on(video::tests::assert_render_worker_collision(
+            packaged_media_programs(),
+        ));
+    }
+
+    #[cfg(windows)]
     async fn run_packaged_cache_stage<T>(
         label: &str,
         stage: impl std::future::Future<Output = T>,
