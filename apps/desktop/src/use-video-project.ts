@@ -5,11 +5,12 @@ import {
   isTrackLocked,
   isTrackMuted,
   microsecondsToSourceFrames,
+  VideoDomainError,
   type CommandResult,
   type ProjectCommandV2,
   type ProjectProjection,
   type RecoveryReport,
-  type RenderPlanV1,
+  type RenderPlan,
   type VerifiedRenderOutput,
   type VideoProjectFileV1,
   type VideoSourceRecord,
@@ -17,7 +18,10 @@ import {
 } from "@supa-video/contracts";
 import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
 import { buildCommandGroup, buildProjectCommand } from "@supa-video/project";
-import { compileSingleClipRenderPlan } from "@supa-video/render";
+import {
+  compileActiveSequenceRenderPlan,
+  getActiveSequenceRenderEligibility,
+} from "@supa-video/render";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
@@ -292,8 +296,29 @@ function sourceDurationFrames(projection: ProjectProjection | null): number | nu
     : microsecondsToSourceFrames(asset.probe.durationMicroseconds, asset.probe.averageFrameRate)
         .value;
 }
-function hasSingleClip(projection: ProjectProjection | null): boolean {
-  return activeClip(projection) !== null;
+function renderInputPaths(
+  projection: ProjectProjection | null,
+): Readonly<Record<string, string>> | null {
+  if (projection === null) return null;
+  const sequence = activeSequence(projection);
+  if (sequence === null) return null;
+  const videoTracks = sequence.tracks.filter((track) => track.kind === "video");
+  if (videoTracks.length === 0 || videoTracks.length > 16) return null;
+  const paths: Record<string, string> = {};
+  for (const track of videoTracks) {
+    const clip = track.clips[0];
+    if (track.clips.length !== 1 || clip === undefined || clip.source.kind !== "asset") return null;
+    const assetId = clip.source.assetId;
+    const source = projection.sources.find((candidate) => candidate.assetId === assetId);
+    if (source?.status !== "resolved") return null;
+    paths[assetId] = source.resolvedPath;
+  }
+  return paths;
+}
+function unsupportedCompositionError(reason: string): VideoDomainError {
+  return new VideoDomainError("invalid_render_plan", reason, {
+    category: "unsupported_composition",
+  });
 }
 function contentIdentityMatches(
   expected: { digest: string; byteLength: number },
@@ -346,9 +371,13 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   const editOperationRef = useRef(0);
   const editOperationPendingRef = useRef(false);
   const renderOperationRef = useRef(0);
+  const invalidatedRenderRef = useRef<RenderIdentity | null>(null);
+  const invalidatedStartingRenderRef = useRef<
+    ({ readonly operation: number } & Omit<PendingRenderIdentity, "jobId">) | null
+  >(null);
   const destinationOperationRef = useRef(0);
   const destinationPendingRef = useRef(false);
-  const overwritePlanRef = useRef<Readonly<RenderPlanV1> | null>(null);
+  const overwritePlanRef = useRef<Readonly<RenderPlan> | null>(null);
 
   const replaceState = useCallback((next: VideoProjectControllerState) => {
     stateRef.current = next;
@@ -369,6 +398,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   }, []);
   const resetRender = useCallback(() => {
     renderOperationRef.current += 1;
+    invalidatedRenderRef.current = null;
+    invalidatedStartingRenderRef.current = null;
     destinationOperationRef.current += 1;
     disposeRenderListener();
     overwritePlanRef.current = null;
@@ -379,10 +410,63 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   }, [disposeRenderListener, replaceRender]);
   const cancelRenderForProjectSwitch = useCallback(() => {
     const active = renderRef.current;
-    if (active.phase === "running")
-      void backend.cancelVideoRender(active.jobId).catch(() => undefined);
-    resetRender();
-  }, [backend, resetRender]);
+    if (active.phase === "starting") {
+      const invalidatedStarting = invalidatedStartingRenderRef.current;
+      if (
+        invalidatedStarting?.planId === active.planId &&
+        invalidatedStarting.revisionId === active.revisionId
+      )
+        return;
+      invalidatedStartingRenderRef.current = {
+        operation: renderOperationRef.current,
+        planId: active.planId,
+        revisionId: active.revisionId,
+        outputPath: active.outputPath,
+      };
+      renderOperationRef.current += 1;
+      destinationOperationRef.current += 1;
+      overwritePlanRef.current = null;
+      destinationPendingRef.current = false;
+      setDestinationPending(false);
+      setDestinationError(null);
+      return;
+    }
+    if (active.phase !== "running") {
+      resetRender();
+      return;
+    }
+    if (invalidatedRenderRef.current?.jobId === active.jobId) return;
+    const invalidated: RenderIdentity = {
+      jobId: active.jobId,
+      planId: active.planId,
+      revisionId: active.revisionId,
+    };
+    invalidatedRenderRef.current = invalidated;
+    renderOperationRef.current += 1;
+    replaceRender({ ...active, cancellationPending: true, cancellationError: null });
+    void backend.cancelVideoRender(active.jobId).then(
+      () => {
+        if (
+          invalidatedRenderRef.current?.jobId === invalidated.jobId &&
+          renderRef.current.phase === "running" &&
+          renderRef.current.jobId === invalidated.jobId
+        )
+          resetRender();
+      },
+      (error: unknown) => {
+        if (
+          invalidatedRenderRef.current?.jobId === invalidated.jobId &&
+          renderRef.current.phase === "running" &&
+          renderRef.current.jobId === invalidated.jobId
+        )
+          replaceRender({
+            ...renderRef.current,
+            cancellationPending: false,
+            cancellationError: asError(error),
+          });
+      },
+    );
+  }, [backend, replaceRender, resetRender]);
   const activateProjection = useCallback(
     (projection: ProjectProjection, patch: Partial<VideoProjectControllerState> = {}) => {
       cancelRenderForProjectSwitch();
@@ -425,11 +509,13 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   );
 
   const handleRenderEvent = useCallback(
-    (operation: number, plan: Readonly<RenderPlanV1>, event: VideoRenderNotification) => {
+    (operation: number, plan: Readonly<RenderPlan>, event: VideoRenderNotification) => {
       if (
         operation !== renderOperationRef.current ||
         event.planId !== plan.planId ||
-        event.revisionId !== plan.revisionId
+        event.revisionId !== plan.revisionId ||
+        (invalidatedRenderRef.current !== null &&
+          eventMatchesIdentity(event, invalidatedRenderRef.current))
       )
         return;
       const active = renderRef.current;
@@ -505,7 +591,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   );
 
   const startRenderPlan = useCallback(
-    async (plan: Readonly<RenderPlanV1>, overwrite: boolean) => {
+    async (plan: Readonly<RenderPlan>, overwrite: boolean) => {
       const operation = ++renderOperationRef.current;
       disposeRenderListener();
       overwritePlanRef.current = null;
@@ -522,13 +608,63 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         );
         if (operation !== renderOperationRef.current) {
           unlisten();
+          if (invalidatedStartingRenderRef.current?.operation === operation) resetRender();
           return;
         }
         renderListenerRef.current = unlisten;
         const started = await backend.startVideoRender(plan, overwrite);
         if (operation !== renderOperationRef.current) {
-          unlisten();
-          void backend.cancelVideoRender(started.jobId);
+          disposeRenderListener();
+          const invalidatedStarting = invalidatedStartingRenderRef.current;
+          const invalidated: RenderIdentity = {
+            jobId: started.jobId,
+            planId: started.planId,
+            revisionId: started.revisionId,
+          };
+          if (
+            invalidatedRenderRef.current?.jobId === invalidated.jobId &&
+            invalidatedRenderRef.current.planId === invalidated.planId &&
+            invalidatedRenderRef.current.revisionId === invalidated.revisionId
+          )
+            return;
+          if (
+            invalidatedStarting?.operation !== operation ||
+            invalidatedStarting.planId !== plan.planId ||
+            invalidatedStarting.revisionId !== plan.revisionId
+          ) {
+            void backend.cancelVideoRender(started.jobId).catch(() => undefined);
+            return;
+          }
+          invalidatedStartingRenderRef.current = null;
+          invalidatedRenderRef.current = invalidated;
+          replaceRender({
+            phase: "running",
+            ...started,
+            outputPath: invalidatedStarting.outputPath,
+            progress: 0,
+            cancellationPending: true,
+            cancellationError: null,
+          });
+          try {
+            await backend.cancelVideoRender(started.jobId);
+            if (
+              invalidatedRenderRef.current?.jobId === started.jobId &&
+              renderRef.current.phase === "running" &&
+              renderRef.current.jobId === started.jobId
+            )
+              resetRender();
+          } catch (error) {
+            if (
+              invalidatedRenderRef.current?.jobId === started.jobId &&
+              renderRef.current.phase === "running" &&
+              renderRef.current.jobId === started.jobId
+            )
+              replaceRender({
+                ...renderRef.current,
+                cancellationPending: false,
+                cancellationError: asError(error),
+              });
+          }
           return;
         }
         if (started.planId !== plan.planId || started.revisionId !== plan.revisionId)
@@ -543,7 +679,10 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
             cancellationError: null,
           });
       } catch (error) {
-        if (operation !== renderOperationRef.current) return;
+        if (operation !== renderOperationRef.current) {
+          if (invalidatedStartingRenderRef.current?.operation === operation) resetRender();
+          return;
+        }
         disposeRenderListener();
         const normalized = asError(error);
         const canOverwrite = "code" in normalized && normalized.code === "output_exists";
@@ -559,7 +698,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         });
       }
     },
-    [backend, disposeRenderListener, handleRenderEvent, replaceRender],
+    [backend, disposeRenderListener, handleRenderEvent, replaceRender, resetRender],
   );
 
   const prepareOpenedSources = useCallback(
@@ -1201,12 +1340,20 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       projection === null ||
       destinationPendingRef.current ||
       renderRef.current.phase === "starting" ||
-      renderRef.current.phase === "running" ||
-      stateRef.current.preparedAsset === null ||
-      stateRef.current.sourcePath === null ||
-      !hasSingleClip(projection)
+      renderRef.current.phase === "running"
     )
       return;
+    const eligibility = getActiveSequenceRenderEligibility({
+      revision: projection.revision,
+      state: projection.state,
+    });
+    if (!eligibility.eligible) {
+      setDestinationError(unsupportedCompositionError(eligibility.reason));
+      return;
+    }
+    const initialInputPaths = renderInputPaths(projection);
+    if (stateRef.current.preparedAsset === null || initialInputPaths === null) return;
+
     const operation = ++destinationOperationRef.current;
     destinationPendingRef.current = true;
     setDestinationPending(true);
@@ -1215,13 +1362,20 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       const outputPath = await backend.pickVideoExportPath(exportDisplayName(projection));
       if (operation !== destinationOperationRef.current || outputPath === null) return;
       const active = stateRef.current.projection;
-      const sourcePath = stateRef.current.sourcePath;
-      if (active === null || sourcePath === null)
+      const inputPathsByAssetId = renderInputPaths(active);
+      if (active === null || inputPathsByAssetId === null)
         throw new Error("The project changed before export could start");
-      const plan = compileSingleClipRenderPlan({
+      const activeEligibility = getActiveSequenceRenderEligibility({
+        revision: active.revision,
+        state: active.state,
+      });
+      if (!activeEligibility.eligible) {
+        throw unsupportedCompositionError(activeEligibility.reason);
+      }
+      const plan = compileActiveSequenceRenderPlan({
         planId: newId(),
         revision: { revision: active.revision, state: active.state },
-        inputPath: sourcePath,
+        inputPathsByAssetId,
         outputPath,
       });
       await startRenderPlan(plan, false);
@@ -1241,9 +1395,17 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   const cancelRender = useCallback(async () => {
     const active = renderRef.current;
     if (active.phase !== "running" || active.cancellationPending) return;
+    const invalidated = invalidatedRenderRef.current?.jobId === active.jobId;
     replaceRender({ ...active, cancellationPending: true, cancellationError: null });
     try {
       await backend.cancelVideoRender(active.jobId);
+      if (
+        invalidated &&
+        invalidatedRenderRef.current?.jobId === active.jobId &&
+        renderRef.current.phase === "running" &&
+        renderRef.current.jobId === active.jobId
+      )
+        resetRender();
     } catch (error) {
       if (renderRef.current.phase === "running" && renderRef.current.jobId === active.jobId)
         replaceRender({
@@ -1252,7 +1414,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           cancellationError: asError(error),
         });
     }
-  }, [backend, replaceRender]);
+  }, [backend, replaceRender, resetRender]);
 
   const project = state.projection === null ? null : projectionToLegacyProject(state.projection);
   const history = projectionHistory(state.projection);
@@ -1270,6 +1432,12 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimDraft !== null &&
     committedTrim !== null &&
     (trimDraft.inFrame !== committedTrim.inFrame || trimDraft.outFrame !== committedTrim.outFrame);
+  const renderEligible =
+    state.projection !== null &&
+    getActiveSequenceRenderEligibility({
+      revision: state.projection.revision,
+      state: state.projection.state,
+    }).eligible;
   return {
     projectPath: state.projectPath,
     projection: state.projection,
@@ -1295,7 +1463,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     editOperation,
     canUndo: state.projection?.canUndo ?? false,
     canRedo: state.projection?.canRedo ?? false,
-    renderReady: hasSingleClip(state.projection) && state.preparedAsset !== null,
+    renderReady:
+      renderEligible && renderInputPaths(state.projection) !== null && state.preparedAsset !== null,
     newProject,
     openProject,
     chooseSource,

@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { commandGroupRequestSchema } from "@supa-video/contracts";
-import type { CommandGroupRequest, CommandResult, ProjectProjection } from "@supa-video/contracts";
+import type {
+  CommandGroupRequest,
+  CommandResult,
+  ProjectProjection,
+  RenderPlan,
+} from "@supa-video/contracts";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -143,6 +148,44 @@ function clipProjection(revision = 1, sourceIn = 0, sourceOut = 60): ProjectProj
     },
     sources: [{ assetId: id(2), status: "resolved", resolvedPath: "C:\\Media\\clip.mp4" }],
   };
+}
+
+function multitrackProjection(revision = 1): ProjectProjection {
+  const projection = clipProjection(revision);
+  projection.state.assets[0]!.probe = {
+    ...projection.state.assets[0]!.probe,
+    audio: { codecName: "aac", channels: 2, sampleRate: 48_000 },
+  };
+  const sequence = projection.state.sequences[0]!;
+  const topTrack = sequence.tracks[0]!;
+  if (topTrack.kind !== "video") throw new Error("Expected video track fixture");
+  topTrack.muted = true;
+  const secondaryAssetId = id(8);
+  projection.state.assets.push({
+    ...structuredClone(projection.state.assets[0]!),
+    id: secondaryAssetId,
+    displayName: "secondary.mp4",
+  });
+  projection.sources.push({
+    assetId: secondaryAssetId,
+    status: "resolved",
+    resolvedPath: "C:\\Media\\secondary.mp4",
+  });
+  sequence.tracks.push({
+    ...structuredClone(topTrack),
+    id: id(6),
+    name: "Video 2",
+    hidden: true,
+    muted: false,
+    clips: [
+      {
+        ...structuredClone(topTrack.clips[0]!),
+        id: id(7),
+        source: { kind: "asset", assetId: secondaryAssetId },
+      },
+    ],
+  });
+  return projection;
 }
 
 function rippleProjection(revision = 1): ProjectProjection {
@@ -786,6 +829,22 @@ describe("canonical project controller", () => {
     expect(result.current.render).toEqual({ phase: "idle" });
     act(() => {
       renderHandler?.({
+        type: "started",
+        ...staleRenderIdentity,
+      });
+    });
+    expect(result.current.render).toEqual({ phase: "idle" });
+    act(() => {
+      renderHandler?.({
+        type: "progress",
+        ...staleRenderIdentity,
+        completedMicroseconds: 1_000_000,
+        durationMicroseconds: 2_000_000,
+      });
+    });
+    expect(result.current.render).toEqual({ phase: "idle" });
+    act(() => {
+      renderHandler?.({
         type: "completed",
         ...staleRenderIdentity,
         output: {
@@ -802,6 +861,196 @@ describe("canonical project controller", () => {
       hidden: true,
     });
     expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("keeps a late-started render cancellable when project-switch cancellation fails", async () => {
+    const first = clipProjection(1);
+    const second = { ...clipProjection(1), projectId: id(9), name: "Second" };
+    const recovery = {
+      status: "clean" as const,
+      recoveredRevision: 1,
+      replayedRecordCount: 0,
+      discardedTailBytes: 0,
+      message: "Clean",
+      legacyHistoryReset: false,
+    };
+    let resolveStart!: (
+      started: Awaited<ReturnType<VideoBackend["startVideoRender"]>>,
+    ) => void;
+    const pendingStart = new Promise<Awaited<ReturnType<VideoBackend["startVideoRender"]>>>(
+      (resolve) => {
+        resolveStart = resolve;
+      },
+    );
+    const cancellationError = new Error("late render cancellation failed");
+    const cancelVideoRender = vi
+      .fn()
+      .mockRejectedValueOnce(cancellationError)
+      .mockResolvedValueOnce(undefined);
+    const openVideoProject = vi
+      .fn()
+      .mockResolvedValueOnce({ projection: first, recovery })
+      .mockResolvedValueOnce({ projection: second, recovery });
+    const startVideoRender = vi.fn(
+      (_plan: Parameters<VideoBackend["startVideoRender"]>[0]) => pendingStart,
+    );
+    const backend = createBackend({
+      openVideoProject,
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender,
+      cancelVideoRender,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    let exportPromise!: Promise<void>;
+    act(() => {
+      exportPromise = result.current.exportVideo();
+    });
+    await waitFor(() => expect(result.current.render.phase).toBe("starting"));
+    const plan = startVideoRender.mock.calls[0]?.[0];
+    if (plan === undefined) throw new Error("Render plan was not submitted");
+    const lateIdentity = {
+      jobId: id(90),
+      planId: plan.planId,
+      revisionId: plan.revisionId,
+    };
+
+    await act(() => result.current.openProject());
+    expect(result.current.projection?.projectId).toBe(second.projectId);
+    expect(result.current.render).toMatchObject({
+      phase: "starting",
+      planId: lateIdentity.planId,
+      revisionId: lateIdentity.revisionId,
+    });
+    await act(async () => {
+      resolveStart(lateIdentity);
+      await exportPromise;
+      await Promise.resolve();
+    });
+
+    expect(cancelVideoRender).toHaveBeenCalledOnce();
+    expect(cancelVideoRender).toHaveBeenCalledWith(lateIdentity.jobId);
+    expect(result.current.render).toMatchObject({
+      phase: "running",
+      ...lateIdentity,
+      cancellationPending: false,
+      cancellationError,
+    });
+    await act(() => result.current.cancelRender());
+    expect(cancelVideoRender).toHaveBeenCalledTimes(2);
+    expect(result.current.render).toEqual({ phase: "idle" });
+  });
+
+  it("retains a stale render when visibility invalidation fails and permits retry", async () => {
+    let active = clipProjection(1);
+    const cancellationError = new Error("cancel service unavailable");
+    let rejectCancellation!: (reason: unknown) => void;
+    const pendingCancellation = new Promise<void>((_resolve, reject) => {
+      rejectCancellation = reject;
+    });
+    const cancelVideoRender = vi
+      .fn()
+      .mockImplementationOnce(() => pendingCancellation)
+      .mockResolvedValueOnce(undefined);
+    const unlisten = vi.fn();
+    let renderHandler: ((event: VideoRenderNotification) => void) | null = null;
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      const command = request.commands[0];
+      if (command?.type !== "SetTrackHidden") throw new Error("Expected visibility command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: trackId }) => trackId === command.trackId,
+      );
+      if (track === undefined || track.kind === "audio")
+        throw new Error("Expected visual track fixture");
+      track.hidden = command.hidden;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      response.cacheInvalidations = ["timeline", "preview", "captions", "render_plan"];
+      active = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender: vi.fn(async (plan) => ({
+        jobId: id(90),
+        planId: plan.planId,
+        revisionId: plan.revisionId,
+      })),
+      cancelVideoRender,
+      listenVideoRenderEvents: vi.fn(async (handler) => {
+        renderHandler = handler;
+        return unlisten;
+      }),
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.exportVideo());
+    if (result.current.render.phase !== "running") throw new Error("Render did not start");
+    const staleRenderIdentity = {
+      jobId: result.current.render.jobId,
+      planId: result.current.render.planId,
+      revisionId: result.current.render.revisionId,
+    };
+
+    await act(() => result.current.setTimelineTrackHidden({ trackId: id(4), hidden: true }));
+
+    expect(cancelVideoRender).toHaveBeenCalledOnce();
+    expect(result.current.render).toMatchObject({
+      phase: "running",
+      ...staleRenderIdentity,
+      cancellationPending: true,
+      cancellationError: null,
+    });
+    expect(unlisten).not.toHaveBeenCalled();
+    await act(async () => {
+      rejectCancellation(cancellationError);
+      await pendingCancellation.catch(() => undefined);
+    });
+    expect(result.current.render).toMatchObject({
+      phase: "running",
+      ...staleRenderIdentity,
+      cancellationPending: false,
+      cancellationError,
+    });
+    act(() => {
+      renderHandler?.({
+        type: "completed",
+        ...staleRenderIdentity,
+        output: {
+          outputPath: "C:\\Exports\\clip.mp4",
+          previewPath: "C:\\Cache\\stale-preview.mp4",
+          probe,
+        },
+      });
+    });
+    expect(result.current.render).toMatchObject({
+      phase: "running",
+      cancellationError,
+    });
+
+    await act(() => result.current.cancelRender());
+
+    expect(cancelVideoRender).toHaveBeenCalledTimes(2);
+    expect(cancelVideoRender).toHaveBeenLastCalledWith(id(90));
+    expect(unlisten).toHaveBeenCalledOnce();
+    expect(result.current.render).toEqual({ phase: "idle" });
   });
 
   it("rejects audio track visibility without submitting or changing controller state", async () => {
@@ -1248,6 +1497,84 @@ describe("canonical project controller", () => {
     expect(result.current.source?.status).toBe("missing");
     expect(result.current.projectOperation).toEqual({ phase: "idle" });
   });
+  it("rejects an unsupported multi-clip composition before destination picking", async () => {
+    const opened = clipProjection(1);
+    const track = opened.state.sequences[0]!.tracks[0]!;
+    if (track.kind !== "video") throw new Error("expected video track fixture");
+    track.clips.push({ ...structuredClone(track.clips[0]!), id: id(7) });
+    const pickVideoExportPath = vi.fn(async () => "C:\\Exports\\clip.mp4");
+    const startVideoRender = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      pickVideoExportPath,
+      startVideoRender,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+
+    await act(() => result.current.openProject());
+    expect(result.current.renderReady).toBe(false);
+    await act(() => result.current.exportVideo());
+
+    expect(pickVideoExportPath).not.toHaveBeenCalled();
+    expect(startVideoRender).not.toHaveBeenCalled();
+    expect(result.current.destinationError?.message).toBe(
+      "Each video track must contain exactly one direct-asset clip to export",
+    );
+  });
+
+  it("exports all canonical video tracks while preserving hidden-layer audio and editability", async () => {
+    const opened = multitrackProjection(1);
+    const startVideoRender = vi.fn(async (plan: RenderPlan) => ({
+      jobId: id(90),
+      planId: plan.planId,
+      revisionId: plan.revisionId,
+    }));
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\multitrack.mp4"),
+      startVideoRender,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+
+    await act(() => result.current.openProject());
+    expect(backend.prepareVideoAsset).toHaveBeenCalledTimes(2);
+    expect(Object.keys(result.current.preparedAssetsById)).toEqual([id(2), id(8)]);
+    await act(() => result.current.exportVideo());
+
+    expect(startVideoRender).toHaveBeenCalledOnce();
+    expect(startVideoRender.mock.calls[0]?.[0]).toMatchObject({
+      schemaVersion: 2,
+      videoInputs: [
+        { hidden: false, muted: true, hasAudio: true },
+        { hidden: true, muted: false, hasAudio: true },
+      ],
+      expected: { audio: true },
+    });
+    const secondaryTrack = result.current.projection?.state.sequences[0]?.tracks[1];
+    expect(secondaryTrack?.kind).toBe("video");
+    expect(secondaryTrack?.kind === "video" ? secondaryTrack.clips : []).toHaveLength(1);
+  });
+
   it("stays running through a durable retry and accepts the sole completion terminal", async () => {
     const opened = clipProjection(1);
     const outputPath = "C:\\Exports\\clip.mp4";
