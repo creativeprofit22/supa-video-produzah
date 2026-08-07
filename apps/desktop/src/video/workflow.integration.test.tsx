@@ -533,7 +533,7 @@ describe("complete mocked Phase 2 workflow", () => {
     await waitFor(() => expect(screen.getAllByText("Saved").length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
-    await screen.findByText("Frame 10");
+    await screen.findByText("Frame 50");
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: "Ripple delete clip" }) as HTMLButtonElement).disabled,
@@ -545,13 +545,13 @@ describe("complete mocked Phase 2 workflow", () => {
 
     fireEvent.pointerDown(selectedBody, { button: 0, pointerId: 51, clientX: 10 });
     let movedClip = rendered.container.querySelector<HTMLElement>(
-      `[data-clip-id='${selectedClip.id}']`,
+      `.multitrack-clip[data-clip-id='${selectedClip.id}']`,
     );
     expect(movedClip?.classList.contains("is-dragging")).toBe(true);
     fireEvent.pointerMove(selectedBody, { pointerId: 51, clientX: 18 });
 
     movedClip = rendered.container.querySelector<HTMLElement>(
-      `[data-clip-id='${selectedClip.id}']`,
+      `.multitrack-clip[data-clip-id='${selectedClip.id}']`,
     );
     expect(movedClip?.dataset.startFrame).toBe("50");
     const guide = rendered.container.querySelector<HTMLElement>(".multitrack-snap-guide");
@@ -596,7 +596,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.pointerMove(movingBody, { pointerId: 61, clientX: 29.2 });
 
     const movingElement = rendered.container.querySelector<HTMLElement>(
-      `[data-clip-id='${movingClip.id}']`,
+      `.multitrack-clip[data-clip-id='${movingClip.id}']`,
     );
     expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
     expect(movingElement?.dataset.startFrame).toBe("120");
@@ -796,7 +796,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByLabelText("Prepared source proxy");
+    await screen.findByLabelText("Canonical video layer 1");
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     await screen.findByText("Source file is missing");
@@ -813,7 +813,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose replacement" }));
 
     await screen.findByText("Source resolved");
-    await screen.findByLabelText("Prepared source proxy");
+    await screen.findByLabelText("Canonical video layer 1");
     const assetId = service.projection.state.assets[0]!.id;
     expect(invokeMock).toHaveBeenCalledWith("video_relink_project_asset", {
       projectId: service.projection.projectId,
@@ -898,7 +898,7 @@ describe("complete mocked Phase 2 workflow", () => {
     dispatchMediaJob(service.replaceMediaJobs([complete]));
 
     expect(await screen.findByText("Preview preparation: Complete")).toBeTruthy();
-    expect(await screen.findByLabelText("Prepared source proxy")).toBeTruthy();
+    expect(await screen.findByLabelText("Canonical video layer 1")).toBeTruthy();
     expect(
       within(screen.getByRole("region", { name: "Job Center" })).getByText("Complete"),
     ).toBeTruthy();

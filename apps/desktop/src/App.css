@@ -527,13 +527,19 @@ video {
   background: var(--surface-deep);
 }
 .monitor-stage video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
   background: #000;
 }
+.monitor-stage video[data-clip-id] {
+  background: transparent;
+}
 .monitor-buffering-status {
   position: absolute;
+  z-index: 100;
   inset-block-end: 14px;
   inset-inline: 14px;
   display: flex;
@@ -556,7 +562,7 @@ video {
 }
 .monitor-hidden-video {
   position: absolute;
-  z-index: 1;
+  z-index: 100;
   inset: 0;
   display: grid;
   place-content: center;

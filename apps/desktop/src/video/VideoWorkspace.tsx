@@ -18,7 +18,7 @@ import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
-import { ProgramMonitor } from "./ProgramMonitor";
+import { ProgramMonitor, type ProgramMonitorLayer } from "./ProgramMonitor";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
@@ -123,6 +123,7 @@ export function VideoWorkspace({
   onOpenJobCenter,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
+  const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
@@ -132,7 +133,6 @@ export function VideoWorkspace({
   const openProjectCommand = useCommand("project.open");
   const revision = project.revisions[0]!;
   const asset = revision.state.asset;
-  const sourceHasAudio = asset !== null && asset.probe.audio !== null;
   const sequence = revision.state.sequence;
   const clip = sequence?.videoTracks[0]?.clips[0];
   const canonicalSequence =
@@ -144,11 +144,74 @@ export function VideoWorkspace({
     canonicalPreview === null ? false : isTrackMuted(canonicalPreview.track);
   const timelineVideoHidden =
     canonicalPreview === null ? false : isTrackHidden(canonicalPreview.track);
-  const timelinePlayheadFrame = timelineFrameForPreviewSourceFrame(
+  const sourceLayers = useMemo<readonly ProgramMonitorLayer[]>(() => {
+    if (canonicalSequence === null || controller.projection === null) return [];
+    const assets = new Map(controller.projection.state.assets.map((item) => [item.id, item]));
+    return canonicalSequence.tracks.flatMap((track, canonicalTrackIndex) => {
+      if (track.kind !== "video") return [];
+      return track.clips.flatMap((canonicalClip) => {
+        if (canonicalClip.source.kind !== "asset") return [];
+        const canonicalAsset = assets.get(canonicalClip.source.assetId);
+        const path = controller.preparedAssetsById[canonicalClip.source.assetId]?.proxyPath ?? null;
+        if (canonicalAsset === undefined || path === null) return [];
+        return [
+          {
+            clipId: canonicalClip.id,
+            path,
+            canonicalTrackIndex,
+            timelineStartFrame: canonicalClip.timelineStart.value,
+            sourceInFrame: canonicalClip.sourceIn.value,
+            sourceOutFrame: canonicalClip.sourceOut.value,
+            hidden: isTrackHidden(track),
+            muted: isTrackMuted(track),
+            hasAudio: canonicalAsset.probe.audio !== null,
+          },
+        ];
+      });
+    });
+  }, [canonicalSequence, controller.preparedAssetsById, controller.projection]);
+  const sourceHasAudio = sourceLayers.some((layer) => layer.hasAudio && !layer.muted);
+  const legacyTimelinePlayheadFrame = timelineFrameForPreviewSourceFrame(
     canonicalSequence,
     clip ?? null,
     playhead,
   );
+  const previewClockLayer = sourceLayers.find(
+    (layer) => layer.clipId === canonicalPreview?.clip.id,
+  );
+  const previewClockIsVisible =
+    legacyTimelinePlayheadFrame !== null &&
+    previewClockLayer !== undefined &&
+    !previewClockLayer.hidden &&
+    previewClockLayer.timelineStartFrame <= legacyTimelinePlayheadFrame &&
+    legacyTimelinePlayheadFrame <
+      previewClockLayer.timelineStartFrame +
+        previewClockLayer.sourceOutFrame -
+        previewClockLayer.sourceInFrame;
+  const visibleSourceLayers = sourceLayers.filter((layer) => !layer.hidden);
+  const visibleTimelineStart =
+    visibleSourceLayers.length === 0
+      ? null
+      : Math.min(...visibleSourceLayers.map((layer) => layer.timelineStartFrame));
+  const visibleTimelineEnd =
+    visibleSourceLayers.length === 0
+      ? null
+      : Math.max(
+          ...visibleSourceLayers.map(
+            (layer) => layer.timelineStartFrame + layer.sourceOutFrame - layer.sourceInFrame,
+          ),
+        );
+  const compositionPlayheadIsInRange =
+    compositionPlayhead !== null &&
+    visibleTimelineStart !== null &&
+    visibleTimelineEnd !== null &&
+    visibleTimelineStart <= compositionPlayhead &&
+    compositionPlayhead < visibleTimelineEnd;
+  const timelinePlayheadFrame = compositionPlayheadIsInRange
+    ? compositionPlayhead
+    : previewClockIsVisible
+      ? legacyTimelinePlayheadFrame
+      : visibleTimelineStart;
   const draft = controller.trimDraft;
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
@@ -397,12 +460,30 @@ export function VideoWorkspace({
               hasAudio={sourceHasAudio}
               timelineAudioMuted={timelineAudioMuted}
               timelineVideoHidden={timelineVideoHidden}
+              sourceLayers={sourceLayers}
               convertCachePath={controller.convertCachePath}
               rate={sequence.rate}
               trimIn={draft.inFrame}
               trimOut={draft.outFrame}
-              playhead={playhead}
-              onPlayheadChange={setPlayhead}
+              playhead={sourceLayers.length > 0 ? (timelinePlayheadFrame ?? 0) : playhead}
+              onPlayheadChange={(frame) => {
+                if (sourceLayers.length === 0) {
+                  setPlayhead(frame);
+                  return;
+                }
+                setCompositionPlayhead(frame);
+                if (canonicalPreview === null) return;
+                const previewSourceFrame =
+                  canonicalPreview.clip.sourceIn.value +
+                  frame -
+                  canonicalPreview.clip.timelineStart.value;
+                if (
+                  timelineFrameForClipSourceFrame(canonicalPreview.clip, previewSourceFrame) ===
+                  frame
+                ) {
+                  setPlayhead(previewSourceFrame);
+                }
+              }}
             />
           ) : (
             <section className="panel monitor-panel" aria-labelledby="monitor-empty-title">

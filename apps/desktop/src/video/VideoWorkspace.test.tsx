@@ -31,6 +31,12 @@ vi.mock("./ProgramMonitor", () => ({
   ProgramMonitor: (props: {
     readonly timelineAudioMuted: boolean;
     readonly timelineVideoHidden: boolean;
+    readonly sourceLayers: readonly {
+      readonly clipId: string;
+      readonly canonicalTrackIndex: number;
+      readonly hidden: boolean;
+      readonly muted: boolean;
+    }[];
   }) => {
     captureProgramMonitorProps(props);
     return <div data-testid="program-monitor" />;
@@ -107,6 +113,18 @@ function canonicalProjection(
               ],
             },
             {
+              id: id(37),
+              name: "Interleaved captions",
+              kind: "caption",
+              captions: [],
+            },
+            {
+              id: id(38),
+              name: "Interleaved audio",
+              kind: "audio",
+              clips: [],
+            },
+            {
               id: id(30),
               name: "Preview owner",
               kind: "video",
@@ -119,6 +137,15 @@ function canonicalProjection(
                   timelineStart: time(25),
                   sourceIn: time(0),
                   sourceOut: time(25),
+                  transform,
+                  gainMilliDecibels: 0,
+                },
+                {
+                  id: id(36),
+                  source: { kind: "asset", assetId },
+                  timelineStart: time(50),
+                  sourceIn: time(25),
+                  sourceOut: time(50),
                   transform,
                   gainMilliDecibels: 0,
                 },
@@ -199,14 +226,15 @@ afterEach(() => {
 });
 
 describe("VideoWorkspace", () => {
-  it("derives preview visibility and mute from the active preview clip owner", () => {
+  it("passes every canonical video layer in stacking order with independent visibility and mute", () => {
     const controller = {
       projectPath: "C:\\Projects\\workspace.svpvideo",
       projection: canonicalProjection(),
       recovery: null,
       checkpointWarning: null,
       source: null,
-      preparedAsset: null,
+      preparedAsset: { proxyPath: "/cache/shared-proxy.mp4" },
+      preparedAssetsById: { [assetId]: { proxyPath: "/cache/shared-proxy.mp4" } },
       preparation: { phase: "idle" },
       projectOperation: { phase: "idle" },
       render: { phase: "idle" },
@@ -265,8 +293,23 @@ describe("VideoWorkspace", () => {
 
     expect(captureProgramMonitorProps).toHaveBeenCalled();
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
-      timelineAudioMuted: true,
-      timelineVideoHidden: true,
+      sourceLayers: [
+        { canonicalTrackIndex: 0, timelineStartFrame: 0, hidden: false, muted: false },
+        {
+          clipId: previewClipId,
+          canonicalTrackIndex: 3,
+          timelineStartFrame: 25,
+          hidden: true,
+          muted: true,
+        },
+        {
+          clipId: id(36),
+          canonicalTrackIndex: 3,
+          timelineStartFrame: 50,
+          hidden: true,
+          muted: true,
+        },
+      ],
     });
     const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
       { readonly onSetTrackHidden: (trackId: string, hidden: boolean) => void } | undefined;
@@ -282,8 +325,11 @@ describe("VideoWorkspace", () => {
     } as ComponentProps<typeof VideoWorkspace>["controller"];
     rerender(workspace(controllerWithMutedAndHiddenNonOwner));
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
-      timelineAudioMuted: false,
-      timelineVideoHidden: false,
+      sourceLayers: [
+        { canonicalTrackIndex: 0, hidden: true, muted: true },
+        { clipId: previewClipId, canonicalTrackIndex: 3, hidden: false, muted: false },
+        { clipId: id(36), canonicalTrackIndex: 3, hidden: false, muted: false },
+      ],
     });
   });
 });

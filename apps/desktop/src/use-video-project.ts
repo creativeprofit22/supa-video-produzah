@@ -124,6 +124,7 @@ interface VideoProjectControllerState {
   readonly source: VideoSourceRecord | null;
   readonly sourcePath: string | null;
   readonly preparedAsset: PreparedVideoAsset | null;
+  readonly preparedAssetsById: Readonly<Record<string, PreparedVideoAsset>>;
   readonly preparation: PreparationState;
   readonly projectOperation: ProjectOperationState;
   readonly recovery: RecoveryReport | null;
@@ -135,6 +136,7 @@ const initialControllerState: VideoProjectControllerState = {
   source: null,
   sourcePath: null,
   preparedAsset: null,
+  preparedAssetsById: {},
   preparation: { phase: "idle" },
   projectOperation: { phase: "idle" },
   recovery: null,
@@ -260,6 +262,20 @@ function sourceForProjection(projection: ProjectProjection): VideoSourceRecord |
     projection.sources.find((record) => record.assetId === assetId) ?? projection.sources[0] ?? null
   );
 }
+function videoSourcesForProjection(projection: ProjectProjection): readonly VideoSourceRecord[] {
+  const sequence = activeSequence(projection);
+  if (sequence === null) return [];
+  const assetIds = new Set(
+    sequence.tracks.flatMap((track) =>
+      track.kind === "video"
+        ? track.clips.flatMap((clip) => (clip.source.kind === "asset" ? [clip.source.assetId] : []))
+        : [],
+    ),
+  );
+  return projection.sources.filter(
+    (source) => assetIds.has(source.assetId) && source.status === "resolved",
+  );
+}
 function trimDraftForProjection(projection: ProjectProjection | null): TrimDraft | null {
   const clip = activeClip(projection)?.clip;
   return clip === undefined || clip === null
@@ -293,10 +309,8 @@ function preparationRequest(
   projection: ProjectProjection,
   source: VideoSourceRecord,
 ): PrepareVideoAssetRequest | null {
-  const selection = activeClip(projection);
-  const clipSource = selection?.clip.source;
-  if (clipSource?.kind !== "asset" || source.status !== "resolved") return null;
-  const asset = projection.state.assets.find((item) => item.id === clipSource.assetId);
+  if (source.status !== "resolved") return null;
+  const asset = projection.state.assets.find((item) => item.id === source.assetId);
   return asset === undefined
     ? null
     : {
@@ -548,32 +562,60 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [backend, disposeRenderListener, handleRenderEvent, replaceRender],
   );
 
-  const prepareOpenedSource = useCallback(
-    async (operation: number, projection: ProjectProjection, source: VideoSourceRecord) => {
-      const request = preparationRequest(projection, source);
-      if (request === null) return;
-      patchState({ preparation: { phase: "pending" }, preparedAsset: null });
+  const prepareOpenedSources = useCallback(
+    async (
+      operation: number,
+      projection: ProjectProjection,
+      sources: readonly VideoSourceRecord[],
+    ) => {
+      const requests = sources.flatMap((source) => {
+        const request = preparationRequest(projection, source);
+        return request === null ? [] : [request];
+      });
+      if (requests.length === 0) return;
+      patchState({
+        preparation: { phase: "pending" },
+        preparedAsset: null,
+        preparedAssetsById: {},
+      });
       try {
-        const prepared = await backend.prepareVideoAsset(request);
-        const asset = projection.state.assets.find((item) => item.id === request.assetId);
-        if (
-          asset?.contentIdentity !== undefined &&
-          !contentIdentityMatches(prepared.sourceIdentity, asset.contentIdentity)
-        )
-          throw new Error("The prepared source does not match the committed project asset");
+        const preparedEntries = await Promise.all(
+          requests.map(async (request) => {
+            const prepared = await backend.prepareVideoAsset(request);
+            const asset = projection.state.assets.find((item) => item.id === request.assetId);
+            if (
+              asset?.contentIdentity !== undefined &&
+              !contentIdentityMatches(prepared.sourceIdentity, asset.contentIdentity)
+            )
+              throw new Error("The prepared source does not match the committed project asset");
+            return [request.assetId, prepared] as const;
+          }),
+        );
         if (
           operation === projectOperationRef.current &&
           stateRef.current.projection?.projectId === projection.projectId &&
           stateRef.current.projection.revision.number === projection.revision.number
-        )
+        ) {
+          const preparedAssetsById = Object.fromEntries(preparedEntries);
+          const primaryAssetId = activeClip(projection)?.clip.source;
+          const preparedAsset =
+            primaryAssetId?.kind === "asset"
+              ? (preparedAssetsById[primaryAssetId.assetId] ?? null)
+              : null;
           patchState({
-            preparedAsset: prepared,
-            preparation: { phase: "success", value: prepared },
+            preparedAsset,
+            preparedAssetsById,
+            preparation:
+              preparedAsset === null
+                ? { phase: "idle" }
+                : { phase: "success", value: preparedAsset },
           });
+        }
       } catch (error) {
         if (operation === projectOperationRef.current)
           patchState({
             preparedAsset: null,
+            preparedAssetsById: {},
             preparation: { phase: "error", error: asError(error) },
           });
       }
@@ -629,8 +671,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         recovery: opened.recovery,
         projectOperation: { phase: "idle" },
       });
-      const source = sourceForProjection(opened.projection);
-      if (source !== null) await prepareOpenedSource(operation, opened.projection, source);
+      const sources = videoSourcesForProjection(opened.projection);
+      if (sources.length > 0) await prepareOpenedSources(operation, opened.projection, sources);
     } catch (error) {
       if (operation === projectOperationRef.current)
         replaceState({
@@ -638,7 +680,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           projectOperation: { phase: "error", operation: "open", error: asError(error) },
         });
     }
-  }, [activateProjection, backend, closeCurrent, patchState, prepareOpenedSource, replaceState]);
+  }, [activateProjection, backend, closeCurrent, patchState, prepareOpenedSources, replaceState]);
 
   const persistImportedSource = useCallback(
     async (operation: number, path: string) => {
@@ -727,6 +769,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       activateProjection(result.projection, {
         projectPath: stateRef.current.projectPath,
         preparedAsset: prepared,
+        preparedAssetsById: { [assetId]: prepared },
         preparation: { phase: "success", value: prepared },
         projectOperation: { phase: "idle" },
         checkpointWarning: checkpointWarningFromResult(result),
@@ -801,20 +844,28 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         checkpointWarning: checkpointWarningFromResult(relinked),
       });
       const resolved = sourceForProjection(relinked.projection);
-      if (resolved !== null) await prepareOpenedSource(operation, relinked.projection, resolved);
+      if (resolved !== null)
+        await prepareOpenedSources(
+          operation,
+          relinked.projection,
+          videoSourcesForProjection(relinked.projection),
+        );
     } catch (error) {
       if (operation === projectOperationRef.current)
         patchState({
           projectOperation: { phase: "error", operation: "regrant", error: asError(error) },
         });
     }
-  }, [activateProjection, backend, patchState, prepareOpenedSource]);
+  }, [activateProjection, backend, patchState, prepareOpenedSources]);
   const retryPreparation = useCallback(async () => {
     const projection = stateRef.current.projection;
-    const source = stateRef.current.source;
-    if (projection !== null && source !== null)
-      await prepareOpenedSource(++projectOperationRef.current, projection, source);
-  }, [prepareOpenedSource]);
+    if (projection !== null)
+      await prepareOpenedSources(
+        ++projectOperationRef.current,
+        projection,
+        videoSourcesForProjection(projection),
+      );
+  }, [prepareOpenedSources]);
   const updateTrimDraft = useCallback((patch: Partial<TrimDraft>) => {
     setTrimDraft((current) => (current === null ? null : { ...current, ...patch }));
     setEditOperation({ phase: "idle" });
@@ -838,6 +889,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           ? {}
           : {
               preparedAsset: stateRef.current.preparedAsset,
+              preparedAssetsById: stateRef.current.preparedAssetsById,
               preparation: stateRef.current.preparation,
             }),
         checkpointWarning: checkpointWarningFromResult(result),
@@ -1124,11 +1176,12 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           throw new Error("The desktop service returned a mismatched history operation");
         if (activateEditResult(base, result, operation)) {
           setEditOperation({ phase: "idle" });
-          if (result.cacheInvalidations.includes("asset_source")) {
-            const source = sourceForProjection(result.projection);
-            if (source !== null)
-              await prepareOpenedSource(++projectOperationRef.current, result.projection, source);
-          }
+          if (result.cacheInvalidations.includes("asset_source"))
+            await prepareOpenedSources(
+              ++projectOperationRef.current,
+              result.projection,
+              videoSourcesForProjection(result.projection),
+            );
         }
       } catch (error) {
         if (operation === editOperationRef.current)
@@ -1137,7 +1190,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         if (operation === editOperationRef.current) editOperationPendingRef.current = false;
       }
     },
-    [activateEditResult, backend, prepareOpenedSource],
+    [activateEditResult, backend, prepareOpenedSources],
   );
   const undoEdit = useCallback(() => historyEdit("undo"), [historyEdit]);
   const redoEdit = useCallback(() => historyEdit("redo"), [historyEdit]);
@@ -1228,6 +1281,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     sources: state.projection?.sources ?? [],
     sourcePath: state.sourcePath,
     preparedAsset: state.preparedAsset,
+    preparedAssetsById: state.preparedAssetsById,
     preparation: state.preparation,
     projectOperation: state.projectOperation,
     render,

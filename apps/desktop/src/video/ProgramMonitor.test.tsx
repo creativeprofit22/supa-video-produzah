@@ -131,6 +131,297 @@ describe("ProgramMonitor", () => {
     restoreVideoFrameCallbacks();
   });
 
+  it("stacks canonical source layers and removes hidden layers without muting their audio", () => {
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "top",
+            path: "/cache/top.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 10,
+            sourceOutFrame: 90,
+            hidden: true,
+            muted: false,
+            hasAudio: true,
+          },
+          {
+            clipId: "bottom",
+            path: "/cache/bottom.mp4",
+            canonicalTrackIndex: 1,
+            timelineStartFrame: 0,
+            sourceInFrame: 10,
+            sourceOutFrame: 90,
+            hidden: false,
+            muted: true,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={vi.fn()}
+      />,
+    );
+
+    const layers = [...container.querySelectorAll<HTMLVideoElement>("video[data-clip-id]")];
+    expect(layers.map((layer) => layer.dataset.clipId)).toEqual(["top", "bottom"]);
+    expect(layers[0]?.style.visibility).toBe("hidden");
+    expect(layers[0]?.style.zIndex).toBe("0");
+    expect(layers[1]?.style.visibility).toBe("visible");
+    expect(layers[1]?.style.zIndex).toBe("1");
+    expect(screen.queryByText("Video track hidden")).toBeNull();
+    expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
+  });
+
+  it("densely stacks visible video layers across caption, audio, and hidden canonical slots", () => {
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio={false}
+        timelineAudioMuted
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "front-video",
+            path: "/cache/front.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            hidden: false,
+            muted: false,
+            hasAudio: false,
+          },
+          {
+            clipId: "hidden-video",
+            path: "/cache/hidden.mp4",
+            canonicalTrackIndex: 2,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            hidden: true,
+            muted: false,
+            hasAudio: false,
+          },
+          {
+            clipId: "middle-video",
+            path: "/cache/middle.mp4",
+            canonicalTrackIndex: 4,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            hidden: false,
+            muted: false,
+            hasAudio: false,
+          },
+          {
+            clipId: "back-video",
+            path: "/cache/back.mp4",
+            canonicalTrackIndex: 8,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            hidden: false,
+            muted: false,
+            hasAudio: false,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={100}
+        playhead={0}
+        onPlayheadChange={vi.fn()}
+      />,
+    );
+    const layerStyles = new Map(
+      [...container.querySelectorAll<HTMLVideoElement>("video[data-clip-id]")].map((layer) => [
+        layer.dataset.clipId,
+        { visibility: layer.style.visibility, zIndex: Number(layer.style.zIndex) },
+      ]),
+    );
+
+    expect(layerStyles).toEqual(
+      new Map([
+        ["front-video", { visibility: "visible", zIndex: 3 }],
+        ["hidden-video", { visibility: "hidden", zIndex: 0 }],
+        ["middle-video", { visibility: "visible", zIndex: 2 }],
+        ["back-video", { visibility: "visible", zIndex: 1 }],
+      ]),
+    );
+    expect(
+      [...layerStyles.values()]
+        .filter(({ visibility }) => visibility === "visible")
+        .every(({ zIndex }) => zIndex > 0),
+    ).toBe(true);
+  });
+
+  it("maps an offset clip between source media and its timeline start", () => {
+    const frameCallbacks = installVideoFrameCallbacks();
+    const onPlayheadChange = vi.fn();
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "offset",
+            path: "/cache/offset.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 100,
+            sourceInFrame: 10,
+            sourceOutFrame: 20,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={200}
+        playhead={102}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const video = container.querySelector<HTMLVideoElement>('[data-clip-id="offset"]')!;
+
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBeCloseTo(12 / 25);
+    onPlayheadChange.mockClear();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+    frameCallbacks.fireNext(13 / 25);
+
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(103);
+  });
+
+  it("activates the second half of a split at its timeline boundary", () => {
+    const frameCallbacks = installVideoFrameCallbacks();
+    const onPlayheadChange = vi.fn();
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "split-left",
+            path: "/cache/source.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 25,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+          {
+            clipId: "split-right",
+            path: "/cache/source.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 25,
+            sourceInFrame: 25,
+            sourceOutFrame: 50,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={50}
+        playhead={25}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const left = container.querySelector<HTMLVideoElement>('[data-clip-id="split-left"]')!;
+    const right = container.querySelector<HTMLVideoElement>('[data-clip-id="split-right"]')!;
+
+    expect(left.dataset.active).toBe("false");
+    expect(left.style.visibility).toBe("hidden");
+    expect(right.dataset.active).toBe("true");
+    expect(right.style.visibility).toBe("visible");
+    fireEvent.loadedMetadata(right);
+    expect(right.currentTime).toBeCloseTo(25 / 25);
+    onPlayheadChange.mockClear();
+    Object.defineProperty(right, "paused", { configurable: true, value: false });
+    fireEvent.play(right);
+    frameCallbacks.fireNext(26 / 25);
+
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(26);
+  });
+
+  it("uses the first visible active layer instead of a hidden first layer as the clock", () => {
+    const frameCallbacks = installVideoFrameCallbacks();
+    const onPlayheadChange = vi.fn();
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "hidden-first",
+            path: "/cache/hidden.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 50,
+            hidden: true,
+            muted: false,
+            hasAudio: true,
+          },
+          {
+            clipId: "visible-second",
+            path: "/cache/visible.mp4",
+            canonicalTrackIndex: 1,
+            timelineStartFrame: 40,
+            sourceInFrame: 10,
+            sourceOutFrame: 30,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={50}
+        playhead={40}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const hidden = container.querySelector<HTMLVideoElement>('[data-clip-id="hidden-first"]')!;
+    const visible = container.querySelector<HTMLVideoElement>('[data-clip-id="visible-second"]')!;
+
+    fireEvent.play(hidden);
+    expect(frameCallbacks.request).not.toHaveBeenCalled();
+    Object.defineProperty(visible, "paused", { configurable: true, value: false });
+    fireEvent.play(visible);
+    frameCallbacks.fireNext(11 / 25);
+
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(41);
+  });
+
   it("enforces canonical source mute and uses rendered media state for final preview", () => {
     const convertCachePath = vi.fn((path: string) => `asset:${path}`);
     render(
@@ -174,7 +465,7 @@ describe("ProgramMonitor", () => {
     expect(convertCachePath).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps a black visibility overlay over mounted, clocking media in source and final modes", () => {
+  it("keeps source visibility output-neutral once the rendered final preview is selected", () => {
     const frameCallbacks = installVideoFrameCallbacks();
     const onPlayheadChange = vi.fn();
     render(
@@ -206,10 +497,8 @@ describe("ProgramMonitor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Final" }));
 
     const finalVideo = screen.getByLabelText("Verified final video preview") as HTMLVideoElement;
-    const finalOverlay = screen.getByText("Video track hidden").parentElement!;
     expect(finalVideo).toBe(sourceVideo);
-    expect(finalOverlay.className).toBe("monitor-hidden-video");
-    expect(finalOverlay.parentElement?.contains(finalVideo)).toBe(true);
+    expect(screen.queryByText("Video track hidden")).toBeNull();
 
     fireEvent.play(finalVideo);
     frameCallbacks.fireNext(12 / 25);
