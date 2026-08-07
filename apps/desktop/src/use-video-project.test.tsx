@@ -891,9 +891,7 @@ describe("canonical project controller", () => {
       .fn()
       .mockResolvedValueOnce({ projection: first, recovery })
       .mockResolvedValueOnce({ projection: second, recovery });
-    const startVideoRender = vi.fn(
-      (_plan: Parameters<VideoBackend["startVideoRender"]>[0]) => pendingStart,
-    );
+    const startVideoRender = vi.fn<VideoBackend["startVideoRender"]>(() => pendingStart);
     const backend = createBackend({
       openVideoProject,
       pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
