@@ -51,7 +51,7 @@ describe("Phase 2 accessibility defect scanning", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     fireEvent.click(screen.getByRole("button", { name: "Toggle project inspector" }));
     await screen.findByRole("heading", { name: "Project inspector" });
     await expectNoAxeViolations(container);

@@ -117,7 +117,7 @@ describe("App Phase 3B durable workspace", () => {
     expect(screen.queryByText("Media tools unavailable")).toBeNull();
 
     fireEvent.click(chooseVideo);
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     expect((screen.getByRole("button", { name: "Export MP4" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
@@ -131,7 +131,7 @@ describe("App Phase 3B durable workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     expect(await screen.findByRole("heading", { name: "Project media" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    expect(await screen.findByRole("heading", { name: "Prepared proxy" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Canonical composition" })).toBeTruthy();
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
     const execute = invokeMock.mock.calls.find(
       ([command]) => command === "video_execute_project_group",
@@ -151,7 +151,7 @@ describe("App Phase 3B durable workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
       target: { value: "1" },
     });
@@ -191,7 +191,7 @@ describe("App Phase 3B durable workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
     await screen.findByText("Saving");
@@ -244,7 +244,7 @@ describe("App Phase 3B durable workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     const input = screen.getByRole("spinbutton", { name: "Trim in" });
     input.focus();
     fireEvent.keyDown(input, { code: "KeyD", ctrlKey: true, altKey: true });

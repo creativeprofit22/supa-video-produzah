@@ -25,6 +25,11 @@ export interface ProgramMonitorLayer {
   readonly hasAudio: boolean;
 }
 
+export interface ProgramMonitorCaption {
+  readonly captionId: string;
+  readonly text: string;
+}
+
 interface ProgramMonitorProps {
   readonly proxyPath: string | null;
   readonly finalPreviewPath: string | null;
@@ -32,6 +37,7 @@ interface ProgramMonitorProps {
   readonly timelineAudioMuted: boolean;
   readonly timelineVideoHidden: boolean;
   readonly sourceLayers?: readonly ProgramMonitorLayer[];
+  readonly activeCaptions?: readonly ProgramMonitorCaption[];
   readonly convertCachePath: (path: string) => string;
   readonly rate: RationalRate;
   readonly trimIn: number;
@@ -88,6 +94,7 @@ export function ProgramMonitor({
   timelineAudioMuted: canonicalTimelineAudioMuted,
   timelineVideoHidden,
   sourceLayers = [],
+  activeCaptions = [],
   convertCachePath,
   rate,
   trimIn,
@@ -502,7 +509,13 @@ export function ProgramMonitor({
       <div className="panel-heading monitor-heading">
         <div>
           <p className="state-kicker">Program monitor</p>
-          <h2 id="monitor-title">{previewMode === "final" ? "Final preview" : "Prepared proxy"}</h2>
+          <h2 id="monitor-title">
+            {previewMode === "final"
+              ? "Final preview"
+              : compositionActive
+                ? "Canonical composition"
+                : "Prepared proxy"}
+          </h2>
         </div>
         {finalPreviewPath !== null ? (
           <div className="segmented-control" aria-label="Monitor source">
@@ -622,6 +635,21 @@ export function ProgramMonitor({
               <div className="monitor-hidden-video" role="status">
                 <VideoOff size={28} aria-hidden />
                 <strong>Video track hidden</strong>
+              </div>
+            ) : null}
+            {previewMode === "source" &&
+            (!compositionActive || primaryLayer !== null) &&
+            activeCaptions.length > 0 ? (
+              <div
+                className="monitor-caption-overlay"
+                aria-label="Active captions"
+                aria-live="polite"
+              >
+                {activeCaptions.map((caption) => (
+                  <p key={caption.captionId} data-caption-id={caption.captionId}>
+                    {caption.text}
+                  </p>
+                ))}
               </div>
             ) : null}
           </>

@@ -1,6 +1,7 @@
 import {
   isTrackHidden,
   isTrackMuted,
+  rescaleRationalTime,
   type ProjectClip,
   type ProjectTrack,
   type VideoClip,
@@ -18,7 +19,11 @@ import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
-import { ProgramMonitor, type ProgramMonitorLayer } from "./ProgramMonitor";
+import {
+  ProgramMonitor,
+  type ProgramMonitorCaption,
+  type ProgramMonitorLayer,
+} from "./ProgramMonitor";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
@@ -112,6 +117,23 @@ export function timelineFrameForPreviewSourceFrame(
   return canonicalPreview === null
     ? null
     : timelineFrameForClipSourceFrame(canonicalPreview.clip, sourceFrame);
+}
+
+export function activeCaptionCuesForTimelineFrame(
+  sequence: VideoSequenceV2 | null,
+  timelineFrame: number | null,
+): readonly ProgramMonitorCaption[] {
+  if (sequence === null || timelineFrame === null) return [];
+  return sequence.tracks.flatMap((track) => {
+    if (track.kind !== "caption" || isTrackHidden(track)) return [];
+    return track.captions.flatMap((caption) => {
+      const startFrame = rescaleRationalTime(caption.start, sequence.rate, "floor").value;
+      const endFrameExclusive = rescaleRationalTime(caption.end, sequence.rate, "ceil").value;
+      return startFrame <= timelineFrame && timelineFrame < endFrameExclusive
+        ? [{ captionId: caption.id, text: caption.text }]
+        : [];
+    });
+  });
 }
 
 export function VideoWorkspace({
@@ -212,6 +234,19 @@ export function VideoWorkspace({
     : previewClockIsVisible
       ? legacyTimelinePlayheadFrame
       : visibleTimelineStart;
+  const hasVisiblePlaybackClock = visibleSourceLayers.some(
+    (layer) =>
+      timelinePlayheadFrame !== null &&
+      layer.timelineStartFrame <= timelinePlayheadFrame &&
+      timelinePlayheadFrame < layer.timelineStartFrame + layer.sourceOutFrame - layer.sourceInFrame,
+  );
+  const activeCaptions = useMemo(
+    () =>
+      hasVisiblePlaybackClock
+        ? activeCaptionCuesForTimelineFrame(canonicalSequence, timelinePlayheadFrame)
+        : [],
+    [canonicalSequence, hasVisiblePlaybackClock, timelinePlayheadFrame],
+  );
   const draft = controller.trimDraft;
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
@@ -461,6 +496,7 @@ export function VideoWorkspace({
               timelineAudioMuted={timelineAudioMuted}
               timelineVideoHidden={timelineVideoHidden}
               sourceLayers={sourceLayers}
+              activeCaptions={activeCaptions}
               convertCachePath={controller.convertCachePath}
               rate={sequence.rate}
               trimIn={draft.inFrame}

@@ -123,7 +123,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
       target: { value: "5" },
     });
@@ -187,7 +187,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const split = screen.getByRole("button", { name: "Split at playhead" });
     expect((split as HTMLButtonElement).disabled).toBe(true);
@@ -241,6 +241,59 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "video_redo_project")).toBe(true);
   });
 
+  it("round-trips video visibility through IPC and canonical projection authority", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Canonical composition" });
+
+    const sequence = service.projection.state.sequences.find(
+      ({ id }) => id === service.projection.state.activeSequenceId,
+    )!;
+    sequence.tracks.push({
+      id: "70000000-0000-4000-8000-000000000096",
+      name: "Audio 1",
+      kind: "audio",
+      clips: [],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    await screen.findByRole("group", { name: "Audio 1 track controls" });
+
+    const videoOutput = () => screen.getByRole("button", { name: "Video 1 video output" });
+    const canonicalVideoTrack = () =>
+      service.projection.state.sequences[0]!.tracks.find((track) => track.kind === "video");
+    expect(videoOutput().getAttribute("aria-pressed")).toBe("true");
+    expect(
+      within(screen.getByRole("group", { name: "Audio 1 track controls" })).queryByRole("button", {
+        name: "Audio 1 audio output",
+      }),
+    ).toBeNull();
+
+    fireEvent.click(videoOutput());
+
+    await waitFor(() => expect(canonicalVideoTrack()?.hidden).toBe(true));
+    expect(service.projection.lastCommand?.summary).toBe("Hid track");
+    expect(canonicalVideoTrack()).toMatchObject({ kind: "video", hidden: true });
+    expect(videoOutput().getAttribute("aria-pressed")).toBe("false");
+    expect(videoOutput().textContent).toContain("Show");
+    expect(
+      videoOutput().closest(".multitrack-visible-label")?.getAttribute("data-track-hidden"),
+    ).toBe("true");
+    expect(await screen.findByText("Video track hidden")).toBeTruthy();
+
+    fireEvent.click(videoOutput());
+
+    await waitFor(() => expect(canonicalVideoTrack()?.hidden).toBe(false));
+    expect(service.projection.lastCommand?.summary).toBe("Showed track");
+    expect(videoOutput().getAttribute("aria-pressed")).toBe("true");
+    expect(videoOutput().textContent).toContain("Hide");
+    expect(screen.queryByText("Video track hidden")).toBeNull();
+  });
+
   it("locks a track through the controller and round-trips undo while blocking timeline edits", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
       this: HTMLElement,
@@ -254,7 +307,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const lockToggle = screen.getByRole("button", { name: "Video 1 track lock" });
     expect(lockToggle.getAttribute("aria-pressed")).toBe("false");
@@ -319,7 +372,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
     fireEvent.click(screen.getByRole("button", { name: "Step forward five frames" }));
@@ -351,7 +404,7 @@ describe("complete mocked Phase 2 workflow", () => {
       </CommandProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Initialize ripple workflow" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const originalClip = await screen.findByRole("button", {
       name: /clip\.mp4, frames 0 through 100/,
@@ -427,7 +480,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const initialBody = await screen.findByRole("button", {
       name: /clip\.mp4, frames 0 through 100/,
@@ -505,7 +558,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const sequence = service.projection.state.sequences.find(
       ({ id }) => id === service.projection.state.activeSequenceId,
@@ -572,7 +625,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const sequence = service.projection.state.sequences.find(
       ({ id }) => id === service.projection.state.activeSequenceId,
@@ -712,7 +765,7 @@ describe("complete mocked Phase 2 workflow", () => {
       const chooseVideo = screen.getByRole("button", { name: "Choose video" });
       fireEvent.click(chooseVideo);
       if (failedCommand === "video_start_render") {
-        await screen.findByRole("heading", { name: "Prepared proxy" });
+        await screen.findByRole("heading", { name: "Canonical composition" });
         fireEvent.click(screen.getByRole("button", { name: "Export MP4" }));
       }
 
@@ -746,7 +799,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     fireEvent.click(screen.getByRole("button", { name: "Export MP4" }));
 
     await screen.findByText(
@@ -852,7 +905,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const assetId = service.projection.state.assets[0]!.id;
     const blocked = {
@@ -944,7 +997,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
 
     const exportPanel = screen.getByRole("region", { name: "Export MP4" });
     expect(await within(exportPanel).findByText("Final export: Needs attention")).toBeTruthy();
@@ -990,7 +1043,7 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
-    await screen.findByRole("heading", { name: "Prepared proxy" });
+    await screen.findByRole("heading", { name: "Canonical composition" });
     fireEvent.click(screen.getByRole("button", { name: "Export MP4" }));
     await screen.findByRole("button", { name: "Cancel export" });
 

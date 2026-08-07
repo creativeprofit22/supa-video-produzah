@@ -131,6 +131,33 @@ describe("ProgramMonitor", () => {
     restoreVideoFrameCallbacks();
   });
 
+  it("shows active source captions and leaves captions to the burned-in final preview", () => {
+    render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath="/cache/final-preview.mp4"
+        hasAudio={false}
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        activeCaptions={[{ captionId: "shown-cue", text: "Shown cue" }]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={100}
+        playhead={10}
+        onPlayheadChange={vi.fn()}
+      />,
+    );
+
+    const overlay = screen.getByLabelText("Active captions");
+    expect(overlay.textContent).toContain("Shown cue");
+    expect(overlay.querySelector('[data-caption-id="shown-cue"]')).not.toBeNull();
+    expect(screen.queryByText("Hidden cue")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Final" }));
+    expect(screen.queryByLabelText("Active captions")).toBeNull();
+  });
+
   it("stacks canonical source layers and removes hidden layers without muting their audio", () => {
     const { container } = render(
       <ProgramMonitor
@@ -378,6 +405,7 @@ describe("ProgramMonitor", () => {
         hasAudio
         timelineAudioMuted={false}
         timelineVideoHidden={false}
+        activeCaptions={[{ captionId: "visible-clock-cue", text: "Visible clock cue" }]}
         sourceLayers={[
           {
             clipId: "hidden-first",
@@ -415,6 +443,7 @@ describe("ProgramMonitor", () => {
 
     fireEvent.play(hidden);
     expect(frameCallbacks.request).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Active captions").textContent).toContain("Visible clock cue");
     Object.defineProperty(visible, "paused", { configurable: true, value: false });
     fireEvent.play(visible);
     frameCallbacks.fireNext(11 / 25);

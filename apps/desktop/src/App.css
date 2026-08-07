@@ -537,6 +537,30 @@ video {
 .monitor-stage video[data-clip-id] {
   background: transparent;
 }
+.monitor-caption-overlay {
+  position: absolute;
+  z-index: 110;
+  inset-inline: max(7%, 18px);
+  inset-block-end: 8%;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+}
+.monitor-caption-overlay p {
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 9px;
+  border-radius: 3px;
+  font-size: clamp(0.82rem, 2vw, 1.2rem);
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  background: rgb(0 0 0 / 78%);
+  box-decoration-break: clone;
+}
 .monitor-buffering-status {
   position: absolute;
   z-index: 100;

@@ -37,6 +37,7 @@ vi.mock("./ProgramMonitor", () => ({
       readonly hidden: boolean;
       readonly muted: boolean;
     }[];
+    readonly activeCaptions: readonly { readonly captionId: string; readonly text: string }[];
   }) => {
     captureProgramMonitorProps(props);
     return <div data-testid="program-monitor" />;
@@ -150,6 +151,22 @@ function canonicalProjection(
                   gainMilliDecibels: 0,
                 },
               ],
+            },
+            {
+              id: id(31),
+              name: "Shown captions",
+              kind: "caption",
+              captions: [
+                { id: id(32), start: time(20), end: time(30), text: "Shown cue" },
+                { id: id(33), start: time(30), end: time(40), text: "Later cue" },
+              ],
+            },
+            {
+              id: id(34),
+              name: "Hidden captions",
+              kind: "caption",
+              hidden: true,
+              captions: [{ id: id(35), start: time(20), end: time(30), text: "Hidden cue" }],
             },
           ],
           markers: [],
@@ -310,6 +327,7 @@ describe("VideoWorkspace", () => {
           muted: true,
         },
       ],
+      activeCaptions: [],
     });
     const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
       { readonly onSetTrackHidden: (trackId: string, hidden: boolean) => void } | undefined;
@@ -330,6 +348,7 @@ describe("VideoWorkspace", () => {
         { clipId: previewClipId, canonicalTrackIndex: 3, hidden: false, muted: false },
         { clipId: id(36), canonicalTrackIndex: 3, hidden: false, muted: false },
       ],
+      activeCaptions: [{ captionId: id(32), text: "Shown cue" }],
     });
   });
 });

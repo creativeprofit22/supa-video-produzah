@@ -1,5 +1,6 @@
 import type {
   CommandGroupRequest,
+  CommandResult,
   ProjectCommandV2,
   ProjectProjection,
   RecoveryReport,
@@ -175,6 +176,8 @@ function commandSummary(command: ProjectCommandV2): string {
       return "Ripple deleted clip";
     case "SetTrackLocked":
       return command.locked ? "Locked track" : "Unlocked track";
+    case "SetTrackHidden":
+      return command.hidden ? "Hid track" : "Showed track";
     default:
       return "Updated project";
   }
@@ -220,6 +223,40 @@ function exactTimelineDuration(clip: {
   if (!Number.isSafeInteger(duration) || duration <= 0)
     throw new Error("Mock clip duration is invalid");
   return duration;
+}
+
+type ProjectTrack = ProjectProjection["state"]["sequences"][number]["tracks"][number];
+type VisualProjectTrack = Exclude<ProjectTrack, { kind: "audio" }>;
+type AffectedRange = CommandResult["affectedRanges"][number];
+
+function visualTrackRanges(sequenceId: string, track: VisualProjectTrack): AffectedRange[] {
+  if (track.kind === "caption") {
+    const first = track.captions[0];
+    if (first === undefined) return [];
+    let start = first.start;
+    let end = first.end;
+    for (const caption of track.captions.slice(1)) {
+      if (caption.start.value < start.value) start = caption.start;
+      if (caption.end.value > end.value) end = caption.end;
+    }
+    return [{ sequenceId, start, end }];
+  }
+  const first = track.clips[0];
+  if (first === undefined) return [];
+  let start = first.timelineStart;
+  let end = {
+    ...first.timelineStart,
+    value: first.timelineStart.value + exactTimelineDuration(first),
+  };
+  for (const clip of track.clips.slice(1)) {
+    const clipEnd = {
+      ...clip.timelineStart,
+      value: clip.timelineStart.value + exactTimelineDuration(clip),
+    };
+    if (clip.timelineStart.value < start.value) start = clip.timelineStart;
+    if (clipEnd.value > end.value) end = clipEnd;
+  }
+  return [{ sequenceId, start, end }];
 }
 
 function validateNoClipOverlaps(candidate: ProjectProjection): void {
@@ -333,6 +370,8 @@ export function createMockVideoService(
       const request = (args as { request: CommandGroupRequest }).request;
       const prior = structuredClone(projection);
       const next = nextProjection(projection, request.groupId);
+      const affectedRanges: CommandResult["affectedRanges"] = [];
+      const cacheInvalidations: CommandResult["cacheInvalidations"] = [];
       for (const item of request.commands) {
         const lockedTarget = lockedMutationTarget(item);
         if (lockedTarget !== null) {
@@ -348,6 +387,35 @@ export function createMockVideoService(
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
           track.locked = item.locked;
+        } else if (item.type === "SetTrackHidden") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (sequence === undefined) {
+            throw new VideoDomainError(
+              "invalid_command",
+              "Project command failed its preconditions",
+              { operation: "execute_project_command", category: "unknown_sequence" },
+            );
+          }
+          const track = sequence.tracks.find(({ id }) => id === item.trackId);
+          if (track === undefined) {
+            throw new VideoDomainError(
+              "invalid_command",
+              "Project command failed its preconditions",
+              { operation: "execute_project_command", category: "unknown_track" },
+            );
+          }
+          if (track.kind === "audio") {
+            throw new VideoDomainError(
+              "invalid_command",
+              "Project command failed its preconditions",
+              { operation: "execute_project_command", category: "non_visual_track" },
+            );
+          }
+          affectedRanges.push(...visualTrackRanges(item.sequenceId, track));
+          track.hidden = item.hidden;
+          for (const invalidation of ["timeline", "preview", "captions", "render_plan"] as const) {
+            if (!cacheInvalidations.includes(invalidation)) cacheInvalidations.push(invalidation);
+          }
         } else if (item.type === "InsertClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
@@ -435,8 +503,8 @@ export function createMockVideoService(
         newRevision: next.revision,
         stateHash: next.revision.stateHash,
         projection: structuredClone(next),
-        affectedRanges: [],
-        cacheInvalidations: [],
+        affectedRanges,
+        cacheInvalidations,
         events,
       };
     }
