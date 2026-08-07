@@ -5,7 +5,7 @@ use std::{
     process::{ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -36,9 +36,17 @@ pub(crate) struct ProcessSpec {
     pub(crate) stderr_tail_limit: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessCancellationPhase {
+    Active,
+    Cancelled,
+    Committed,
+}
+
 #[derive(Debug)]
 struct ProcessCancellationState {
     cancelled: AtomicBool,
+    phase: Mutex<ProcessCancellationPhase>,
     notification: tokio::sync::Notify,
 }
 
@@ -52,6 +60,7 @@ impl Default for ProcessCancellation {
         Self {
             state: Arc::new(ProcessCancellationState {
                 cancelled: AtomicBool::new(false),
+                phase: Mutex::new(ProcessCancellationPhase::Active),
                 notification: tokio::sync::Notify::new(),
             }),
         }
@@ -65,9 +74,40 @@ impl ProcessCancellation {
 
     #[allow(dead_code)]
     pub(crate) fn cancel(&self) {
-        if !self.state.cancelled.swap(true, Ordering::AcqRel) {
+        let should_notify = {
+            let mut phase = self
+                .state
+                .phase
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if *phase != ProcessCancellationPhase::Active {
+                false
+            } else {
+                *phase = ProcessCancellationPhase::Cancelled;
+                self.state.cancelled.store(true, Ordering::Release);
+                true
+            }
+        };
+        if should_notify {
             self.state.notification.notify_waiters();
         }
+    }
+
+    pub(crate) fn commit_if_active<T, E>(
+        &self,
+        commit: impl FnOnce() -> Result<T, E>,
+    ) -> Result<Option<T>, E> {
+        let mut phase = self
+            .state
+            .phase
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *phase != ProcessCancellationPhase::Active {
+            return Ok(None);
+        }
+        let value = commit()?;
+        *phase = ProcessCancellationPhase::Committed;
+        Ok(Some(value))
     }
 
     pub(crate) fn is_cancelled(&self) -> bool {

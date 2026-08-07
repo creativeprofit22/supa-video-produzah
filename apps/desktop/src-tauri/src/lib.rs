@@ -1100,6 +1100,8 @@ mod tests {
     #[cfg(windows)]
     const PACKAGED_COMPLETE_PLAN_ID: &str = "55555555-5555-4555-8555-555555555555";
     #[cfg(windows)]
+    const PACKAGED_HIDDEN_PLAN_ID: &str = "55555555-5555-4555-8555-555555555556";
+    #[cfg(windows)]
     const PACKAGED_CANCEL_PLAN_ID: &str = "66666666-6666-4666-8666-666666666666";
 
     #[cfg(windows)]
@@ -1533,18 +1535,34 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn packaged_render_plan(
+    fn packaged_render_plan_with_visibility(
         input: &Path,
         output: &Path,
         plan_id: &str,
         width: u64,
         height: u64,
+        video_hidden: bool,
     ) -> Value {
         let input = input.to_string_lossy().into_owned();
         let output = output.to_string_lossy().into_owned();
+        let visibility_filter = if video_hidden {
+            ",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill"
+        } else {
+            ""
+        };
         let filter = format!(
-            "scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,fps=30/1"
+            "scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black{visibility_filter},fps=30/1"
         );
+        let mut expected = json!({
+            "durationFrames": 60,
+            "rate": { "numerator": 30, "denominator": 1 },
+            "width": width,
+            "height": height,
+            "audio": true
+        });
+        if video_hidden {
+            expected["videoHidden"] = json!(true);
+        }
         json!({
             "schemaVersion": 1,
             "planId": plan_id,
@@ -1552,13 +1570,7 @@ mod tests {
             "executable": "ffmpeg",
             "inputPath": input,
             "outputPath": output,
-            "expected": {
-                "durationFrames": 60,
-                "rate": { "numerator": 30, "denominator": 1 },
-                "width": width,
-                "height": height,
-                "audio": true
-            },
+            "expected": expected,
             "argv": [
                 "-hide_banner", "-nostdin", "-loglevel", "warning", "-progress", "pipe:1",
                 "-nostats", "-i", input, "-ss", "0.000000", "-t", "2.000000", "-map",
@@ -1566,6 +1578,54 @@ mod tests {
                 "yuv420p", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", output
             ]
         })
+    }
+
+    #[cfg(windows)]
+    fn packaged_render_plan(
+        input: &Path,
+        output: &Path,
+        plan_id: &str,
+        width: u64,
+        height: u64,
+    ) -> Value {
+        packaged_render_plan_with_visibility(input, output, plan_id, width, height, false)
+    }
+
+    #[cfg(windows)]
+    fn assert_packaged_render_frames_are_black(
+        ffmpeg: &Path,
+        output: &Path,
+        expected_frames: u64,
+        width: u64,
+        height: u64,
+    ) {
+        let decoded = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"])
+            .arg(output)
+            .args([
+                "-map", "0:v:0", "-an", "-f", "rawvideo", "-pix_fmt", "gray", "-",
+            ])
+            .output()
+            .expect("packaged FFmpeg must decode the hidden render");
+        assert!(
+            decoded.status.success(),
+            "packaged hidden render must decode: {}",
+            String::from_utf8_lossy(&decoded.stderr)
+        );
+        let expected_samples = expected_frames
+            .checked_mul(width)
+            .and_then(|samples| samples.checked_mul(height))
+            .and_then(|samples| usize::try_from(samples).ok())
+            .expect("packaged hidden render sample count must fit usize");
+        assert_eq!(
+            decoded.stdout.len(),
+            expected_samples,
+            "packaged hidden render must decode the expected number of gray frames"
+        );
+        assert!(
+            decoded.stdout.iter().all(|sample| *sample <= 32),
+            "every decoded packaged hidden-render pixel must be black"
+        );
     }
 
     #[cfg(windows)]
@@ -1583,6 +1643,7 @@ mod tests {
             .expect("canonical packaged media fixture must exist");
         let workspace = tempfile::tempdir().expect("packaged complete workspace must exist");
         let output = workspace.path().join("packaged-complete.mp4");
+        let hidden_output = workspace.path().join("packaged-hidden.mp4");
         let project_path = workspace.path().join("packaged-media.svpvideo");
         let grants = app.state::<video::VideoPathGrants>();
         let source = grants
@@ -1591,6 +1652,13 @@ mod tests {
         let output = grants
             .grant_destination("packaged-complete", video::GrantCategory::Output, &output)
             .expect("packaged output path must be granted");
+        let hidden_output = grants
+            .grant_destination(
+                "packaged-complete",
+                video::GrantCategory::Output,
+                &hidden_output,
+            )
+            .expect("packaged hidden-render output path must be granted");
         grants
             .grant_destination(
                 "packaged-complete",
@@ -1889,6 +1957,87 @@ mod tests {
                 .exists(),
             "completed packaged render must remove its partial"
         );
+        let hidden_captured = capture_render_events(&app);
+        let hidden_started = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_start_render",
+                json!({
+                    "plan": packaged_render_plan_with_visibility(
+                        &source,
+                        &hidden_output,
+                        PACKAGED_HIDDEN_PLAN_ID,
+                        320,
+                        180,
+                        true
+                    ),
+                    "overwrite": false
+                }),
+            ),
+        )
+        .expect("packaged hidden render start IPC must succeed")
+        .deserialize::<Value>()
+        .expect("packaged hidden render start must be JSON");
+        assert_eq!(hidden_started["planId"], PACKAGED_HIDDEN_PLAN_ID);
+        let hidden_job_id = hidden_started["jobId"]
+            .as_str()
+            .expect("packaged hidden render start must return a durable job ID")
+            .to_owned();
+        uuid::Uuid::parse_str(&hidden_job_id)
+            .expect("packaged hidden render job ID must be a UUID");
+
+        let hidden_events = wait_for_render_terminal(&hidden_captured, Duration::from_secs(120));
+        assert!(
+            hidden_events.len() >= 3,
+            "completed hidden render must emit progress: {hidden_events:?}"
+        );
+        assert_render_event_order(
+            &hidden_events,
+            &hidden_job_id,
+            PACKAGED_HIDDEN_PLAN_ID,
+            "completed",
+        );
+        let hidden_completed = hidden_events
+            .last()
+            .expect("completed hidden-render event must exist");
+        assert_eq!(
+            hidden_completed["output"]["outputPath"],
+            hidden_output.to_string_lossy().as_ref()
+        );
+        assert!(
+            hidden_output.is_file(),
+            "packaged hidden render output must exist"
+        );
+        assert_eq!(
+            hidden_completed["output"]["probe"]["videoCodecName"],
+            "h264"
+        );
+        assert_eq!(
+            hidden_completed["output"]["probe"]["durationMicroseconds"],
+            2_000_000
+        );
+        assert_eq!(
+            hidden_completed["output"]["probe"]["audio"]["codecName"], "aac",
+            "packaged hidden render must retain its unmuted audio stream"
+        );
+        assert_eq!(
+            hidden_completed["output"]["probe"]["audio"]["sampleRate"],
+            48_000
+        );
+        assert!(
+            !workspace
+                .path()
+                .join(format!(".svp-part-{PACKAGED_HIDDEN_PLAN_ID}.mp4"))
+                .exists(),
+            "completed packaged hidden render must remove its partial"
+        );
+        let ffmpeg = tauri::async_runtime::block_on(
+            app.state::<video::toolchain::MediaToolchainState>()
+                .verified_ffmpeg(),
+        )
+        .expect("packaged FFmpeg must reverify before hidden-frame decoding");
+        assert_packaged_render_frames_are_black(&ffmpeg, &hidden_output, 60, 320, 180);
+
         drop(webview);
         app.cleanup();
     }

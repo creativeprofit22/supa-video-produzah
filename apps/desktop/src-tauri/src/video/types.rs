@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::DateTime;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -310,6 +310,31 @@ pub struct RenderExpectation {
     pub video_hidden: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenderExpectationV2 {
+    duration_frames: u64,
+    rate: RationalRate,
+    width: u64,
+    height: u64,
+    audio: bool,
+}
+
+fn deserialize_render_expectation_v2<'de, D>(deserializer: D) -> Result<RenderExpectation, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let expected = RenderExpectationV2::deserialize(deserializer)?;
+    Ok(RenderExpectation {
+        duration_frames: expected.duration_frames,
+        rate: expected.rate,
+        width: expected.width,
+        height: expected.height,
+        audio: expected.audio,
+        video_hidden: false,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RenderPlanV1 {
@@ -318,9 +343,95 @@ pub struct RenderPlanV1 {
     pub revision_id: ProjectUuid,
     pub executable: String,
     pub input_path: String,
+    #[serde(default)]
+    pub captions: Vec<RenderCaptionInput>,
     pub output_path: String,
     pub expected: RenderExpectation,
     pub argv: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderVideoInputV2 {
+    pub asset_id: ProjectUuid,
+    pub path: String,
+    pub source_in_microseconds: u64,
+    pub hidden: bool,
+    pub muted: bool,
+    pub has_audio: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderCaptionInput {
+    pub track_id: ProjectUuid,
+    pub caption_id: ProjectUuid,
+    pub start_microseconds: u64,
+    pub end_microseconds: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderPlanV2 {
+    pub schema_version: u64,
+    pub plan_id: ProjectUuid,
+    pub revision_id: ProjectUuid,
+    pub executable: String,
+    pub input_paths_by_asset_id: HashMap<ProjectUuid, String>,
+    pub video_inputs: Vec<RenderVideoInputV2>,
+    #[serde(default)]
+    pub captions: Vec<RenderCaptionInput>,
+    pub output_path: String,
+    #[serde(deserialize_with = "deserialize_render_expectation_v2")]
+    pub expected: RenderExpectation,
+    pub argv: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RenderPlan {
+    V1(RenderPlanV1),
+    V2(RenderPlanV2),
+}
+
+impl RenderPlan {
+    pub fn plan_id(&self) -> &ProjectUuid {
+        match self {
+            Self::V1(plan) => &plan.plan_id,
+            Self::V2(plan) => &plan.plan_id,
+        }
+    }
+    pub fn revision_id(&self) -> &ProjectUuid {
+        match self {
+            Self::V1(plan) => &plan.revision_id,
+            Self::V2(plan) => &plan.revision_id,
+        }
+    }
+    pub fn executable(&self) -> &str {
+        match self {
+            Self::V1(plan) => &plan.executable,
+            Self::V2(plan) => &plan.executable,
+        }
+    }
+    pub fn output_path(&self) -> &str {
+        match self {
+            Self::V1(plan) => &plan.output_path,
+            Self::V2(plan) => &plan.output_path,
+        }
+    }
+    pub fn expected(&self) -> &RenderExpectation {
+        match self {
+            Self::V1(plan) => &plan.expected,
+            Self::V2(plan) => &plan.expected,
+        }
+    }
+    pub fn argv(&self) -> &[String] {
+        match self {
+            Self::V1(plan) => &plan.argv,
+            Self::V2(plan) => &plan.argv,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

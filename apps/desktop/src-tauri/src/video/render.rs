@@ -38,13 +38,16 @@ use super::{
     },
     toolchain::MediaToolchainState,
     types::{
-        RenderPlanV1, VerifiedRenderOutput, VideoRenderEvent, VideoRenderStarted, MAX_SAFE_INTEGER,
+        RenderCaptionInput, RenderPlan, RenderPlanV1, RenderPlanV2, VerifiedRenderOutput,
+        VideoRenderEvent, VideoRenderStarted, MAX_SAFE_INTEGER,
     },
 };
 
 pub const VIDEO_RENDER_EVENT: &str = "video:render-event";
 const MAX_RENDER_ARGUMENTS: usize = 128;
 const MAX_RENDER_ARGUMENT_UTF16: usize = 32_768;
+const MAX_RENDER_CAPTIONS: usize = 100_000;
+const MAX_RENDER_CAPTION_UTF16: usize = 16_384;
 
 pub(crate) type RenderEventSink =
     Arc<dyn Fn(VideoRenderEvent) -> Result<(), VideoCommandError> + Send + Sync + 'static>;
@@ -108,8 +111,8 @@ impl RenderEventIdentity {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ValidatedRenderPlan {
-    pub(crate) plan: RenderPlanV1,
-    pub(crate) input_path: PathBuf,
+    pub(crate) plan: RenderPlan,
+    pub(crate) input_paths: Vec<PathBuf>,
     pub(crate) output_path: PathBuf,
     pub(crate) duration_microseconds: u64,
 }
@@ -124,7 +127,7 @@ struct RenderCompatibilityLifecycle {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PersistedFinalRenderPayload {
     owner_label: String,
-    plan: RenderPlanV1,
+    plan: RenderPlan,
     overwrite: bool,
     output_authorization_present: bool,
 }
@@ -386,7 +389,7 @@ async fn start_validated_render_with_context(
             dedupe_key: render_dedupe_key(&validated, overwrite),
             project_id: None,
             asset_id: None,
-            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            revision_id: Some(validated.plan.revision_id().as_str().to_owned()),
             priority: MediaJobPriority::Export,
             priority_value: 0,
             stage: "queued".to_owned(),
@@ -409,8 +412,8 @@ async fn start_validated_render_with_context(
         .map_err(map_render_job_store_error)?;
     let identity = RenderEventIdentity {
         job_id: enqueued.job.id.clone(),
-        plan_id: validated.plan.plan_id.as_str().to_owned(),
-        revision_id: validated.plan.revision_id.as_str().to_owned(),
+        plan_id: validated.plan.plan_id().as_str().to_owned(),
+        revision_id: validated.plan.revision_id().as_str().to_owned(),
     };
     let response = VideoRenderStarted {
         job_id: identity.job_id.clone(),
@@ -504,11 +507,11 @@ pub(crate) async fn reauthorize_final_render_output_with_context(
             .map_err(|_| VideoCommandError::invalid_render_plan("persisted_payload"))?;
     if payload.owner_label != owner_label
         || !payload.output_authorization_present
-        || stored.public.revision_id.as_deref() != Some(payload.plan.revision_id.as_str())
+        || stored.public.revision_id.as_deref() != Some(payload.plan.revision_id().as_str())
     {
         return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
     }
-    if output_path != payload.plan.output_path {
+    if output_path != payload.plan.output_path() {
         return Err(VideoCommandError::invalid_render_plan(
             "output_path_mismatch",
         ));
@@ -517,14 +520,14 @@ pub(crate) async fn reauthorize_final_render_output_with_context(
     let authorized_output = grants
         .authorize(owner_label, GrantCategory::Output, Path::new(output_path))
         .map_err(|_| VideoCommandError::invalid_render_plan("output_grant"))?;
-    if authorized_output.to_string_lossy() != payload.plan.output_path {
+    if authorized_output.to_string_lossy() != payload.plan.output_path() {
         return Err(VideoCommandError::invalid_render_plan(
             "output_path_normalization",
         ));
     }
 
-    let plan_id = payload.plan.plan_id.as_str().to_owned();
-    let revision_id = payload.plan.revision_id.as_str().to_owned();
+    let plan_id = payload.plan.plan_id().as_str().to_owned();
+    let revision_id = payload.plan.revision_id().as_str().to_owned();
     let validated = validate_persisted_render_plan(payload.plan, owner_label, grants)?;
     if stored.dedupe_key != render_dedupe_key(&validated, payload.overwrite) {
         return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
@@ -666,61 +669,110 @@ pub(crate) fn parse_and_validate_render_plan(
     owner_label: &str,
     grants: &VideoPathGrants,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
-    let plan: RenderPlanV1 = serde_json::from_value(value)
+    let plan: RenderPlan = serde_json::from_value(value)
         .map_err(|_| VideoCommandError::invalid_render_plan("schema"))?;
     validate_render_plan(plan, owner_label, grants)
 }
 
 pub(crate) fn validate_render_plan(
-    plan: RenderPlanV1,
+    plan: RenderPlan,
     owner_label: &str,
     grants: &VideoPathGrants,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
-    let requested_input = Path::new(&plan.input_path);
-    let input_path = grants
-        .authorize(owner_label, GrantCategory::Source, requested_input)
-        .map_err(|_| VideoCommandError::invalid_render_plan("input_grant"))?;
-    validate_render_plan_with_input(plan, owner_label, grants, input_path)
+    let requested_inputs: Vec<&str> = match &plan {
+        RenderPlan::V1(plan) => vec![plan.input_path.as_str()],
+        RenderPlan::V2(plan) => plan
+            .input_paths_by_asset_id
+            .values()
+            .map(String::as_str)
+            .collect(),
+    };
+    let mut input_paths = Vec::with_capacity(requested_inputs.len());
+    for requested_input in requested_inputs {
+        input_paths.push(
+            grants
+                .authorize(
+                    owner_label,
+                    GrantCategory::Source,
+                    Path::new(requested_input),
+                )
+                .map_err(|_| VideoCommandError::invalid_render_plan("input_grant"))?,
+        );
+    }
+    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths)
 }
 
 fn validate_persisted_render_plan(
-    plan: RenderPlanV1,
+    plan: RenderPlan,
     owner_label: &str,
     grants: &VideoPathGrants,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
-    let input_path = normalize_existing_file(
-        Path::new(&plan.input_path),
-        "reauthorize_render",
-        GrantCategory::Source,
-    )
-    .map_err(|_| VideoCommandError::invalid_render_plan("persisted_input"))?;
-    validate_render_plan_with_input(plan, owner_label, grants, input_path)
+    let requested_inputs: Vec<&str> = match &plan {
+        RenderPlan::V1(plan) => vec![plan.input_path.as_str()],
+        RenderPlan::V2(plan) => plan
+            .input_paths_by_asset_id
+            .values()
+            .map(String::as_str)
+            .collect(),
+    };
+    let mut input_paths = Vec::with_capacity(requested_inputs.len());
+    for requested_input in requested_inputs {
+        input_paths.push(
+            normalize_existing_file(
+                Path::new(requested_input),
+                "reauthorize_render",
+                GrantCategory::Source,
+            )
+            .map_err(|_| VideoCommandError::invalid_render_plan("persisted_input"))?,
+        );
+    }
+    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths)
 }
 
-fn validate_render_plan_with_input(
-    plan: RenderPlanV1,
+fn validate_render_plan_with_inputs(
+    plan: RenderPlan,
     owner_label: &str,
     grants: &VideoPathGrants,
-    input_path: PathBuf,
+    input_paths: Vec<PathBuf>,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
-    if plan.schema_version != 1 {
+    let correct_version = matches!(&plan, RenderPlan::V1(value) if value.schema_version == 1)
+        || matches!(&plan, RenderPlan::V2(value) if value.schema_version == 2);
+    if !correct_version {
         return Err(VideoCommandError::invalid_render_plan("schema_version"));
     }
-    if plan.executable != "ffmpeg" {
+    if plan.executable() != "ffmpeg" {
         return Err(VideoCommandError::invalid_render_plan("executable"));
     }
-    validate_expectation(&plan)?;
+    validate_expectation(plan.expected())?;
+    validate_captions(&plan)?;
     validate_argument_text(&plan)?;
 
-    let requested_output = Path::new(&plan.output_path);
     let output_path = grants
-        .authorize(owner_label, GrantCategory::Output, requested_output)
+        .authorize(
+            owner_label,
+            GrantCategory::Output,
+            Path::new(plan.output_path()),
+        )
         .map_err(|_| VideoCommandError::invalid_render_plan("output_grant"))?;
-    if paths_equal(&input_path, &output_path) {
+    if input_paths
+        .iter()
+        .any(|input| paths_equal(input, &output_path))
+    {
         return Err(VideoCommandError::invalid_render_plan("path_alias"));
     }
-    if input_path.to_string_lossy() != plan.input_path
-        || output_path.to_string_lossy() != plan.output_path
+    let requested_inputs: Vec<&str> = match &plan {
+        RenderPlan::V1(plan) => vec![plan.input_path.as_str()],
+        RenderPlan::V2(plan) => plan
+            .input_paths_by_asset_id
+            .values()
+            .map(String::as_str)
+            .collect(),
+    };
+    if input_paths
+        .iter()
+        .zip(requested_inputs)
+        .any(|(normalized, requested)| normalized.to_string_lossy() != requested)
+        || output_path.to_string_lossy() != plan.output_path()
     {
         return Err(VideoCommandError::invalid_render_plan("path_normalization"));
     }
@@ -732,29 +784,38 @@ fn validate_render_plan_with_input(
         return Err(VideoCommandError::invalid_render_plan("output_extension"));
     }
 
-    if plan
-        .argv
-        .get(10)
-        .is_none_or(|value| !is_canonical_fixed_six(value))
-    {
-        return Err(VideoCommandError::invalid_render_plan("source_time"));
-    }
-    let duration_microseconds = expected_duration_microseconds(&plan)?;
-    let expected_arguments = expected_render_arguments(&plan, duration_microseconds);
-    if plan.argv != expected_arguments {
+    let duration_microseconds = expected_duration_microseconds(plan.expected())?;
+    let expected_arguments = match &plan {
+        RenderPlan::V1(plan) => {
+            if plan
+                .argv
+                .get(10)
+                .is_none_or(|value| !is_canonical_fixed_six(value))
+            {
+                return Err(VideoCommandError::invalid_render_plan("source_time"));
+            }
+            expected_render_arguments_v1(plan, duration_microseconds)
+        }
+        RenderPlan::V2(plan) => expected_render_arguments_v2(plan, duration_microseconds)?,
+    };
+    if plan.argv() != expected_arguments {
         return Err(VideoCommandError::invalid_render_plan("argv_grammar"));
     }
 
+    if input_paths.is_empty() {
+        return Err(VideoCommandError::invalid_render_plan("input_paths"));
+    }
     Ok(ValidatedRenderPlan {
         plan,
-        input_path,
+        input_paths,
         output_path,
         duration_microseconds,
     })
 }
 
-fn validate_expectation(plan: &RenderPlanV1) -> Result<(), VideoCommandError> {
-    let expected = &plan.expected;
+fn validate_expectation(
+    expected: &super::types::RenderExpectation,
+) -> Result<(), VideoCommandError> {
     let positive_safe = |value: u64| (1..=MAX_SAFE_INTEGER).contains(&value);
     if !positive_safe(expected.duration_frames)
         || !positive_safe(expected.rate.numerator)
@@ -770,16 +831,48 @@ fn validate_expectation(plan: &RenderPlanV1) -> Result<(), VideoCommandError> {
     Ok(())
 }
 
-fn validate_argument_text(plan: &RenderPlanV1) -> Result<(), VideoCommandError> {
-    if !(1..=MAX_RENDER_ARGUMENTS).contains(&plan.argv.len())
-        || plan.input_path.is_empty()
-        || plan.output_path.is_empty()
-        || [plan.input_path.as_str(), plan.output_path.as_str()]
-            .into_iter()
-            .any(|value| {
-                value.contains('\0') || value.encode_utf16().count() > MAX_RENDER_ARGUMENT_UTF16
-            })
-        || plan.argv.iter().any(|argument| {
+fn validate_captions(plan: &RenderPlan) -> Result<(), VideoCommandError> {
+    let captions = match plan {
+        RenderPlan::V1(plan) => &plan.captions,
+        RenderPlan::V2(plan) => &plan.captions,
+    };
+    if captions.len() > MAX_RENDER_CAPTIONS
+        || captions.iter().any(|caption| {
+            caption.text.is_empty()
+                || caption.text.contains('\0')
+                || caption.text.encode_utf16().count() > MAX_RENDER_CAPTION_UTF16
+                || caption.start_microseconds > MAX_SAFE_INTEGER
+                || caption.end_microseconds > MAX_SAFE_INTEGER
+                || caption.end_microseconds <= caption.start_microseconds
+        })
+    {
+        return Err(VideoCommandError::invalid_render_plan("captions"));
+    }
+    Ok(())
+}
+fn validate_argument_text(plan: &RenderPlan) -> Result<(), VideoCommandError> {
+    let maximum_arguments = if matches!(plan, RenderPlan::V1(_)) {
+        MAX_RENDER_ARGUMENTS
+    } else {
+        10_000
+    };
+    let paths: Vec<&str> = match plan {
+        RenderPlan::V1(plan) => vec![plan.input_path.as_str(), plan.output_path.as_str()],
+        RenderPlan::V2(plan) => plan
+            .input_paths_by_asset_id
+            .values()
+            .map(String::as_str)
+            .chain(std::iter::once(plan.output_path.as_str()))
+            .collect(),
+    };
+    if !(1..=maximum_arguments).contains(&plan.argv().len())
+        || paths.is_empty()
+        || paths.iter().any(|value| {
+            value.is_empty()
+                || value.contains('\0')
+                || value.encode_utf16().count() > MAX_RENDER_ARGUMENT_UTF16
+        })
+        || plan.argv().iter().any(|argument| {
             argument.contains('\0') || argument.encode_utf16().count() > MAX_RENDER_ARGUMENT_UTF16
         })
     {
@@ -789,21 +882,20 @@ fn validate_argument_text(plan: &RenderPlanV1) -> Result<(), VideoCommandError> 
 }
 
 pub(crate) fn expected_duration_microseconds(
-    plan: &RenderPlanV1,
+    expected: &super::types::RenderExpectation,
 ) -> Result<u64, VideoCommandError> {
-    let numerator = u128::from(plan.expected.duration_frames)
-        .checked_mul(u128::from(plan.expected.rate.denominator))
+    let numerator = u128::from(expected.duration_frames)
+        .checked_mul(u128::from(expected.rate.denominator))
         .and_then(|value| value.checked_mul(1_000_000))
         .ok_or_else(|| VideoCommandError::invalid_render_plan("duration_overflow"))?;
-    let denominator = u128::from(plan.expected.rate.numerator);
+    let denominator = u128::from(expected.rate.numerator);
     let quotient = numerator / denominator;
     let remainder = numerator % denominator;
-    let rounded = quotient
+    quotient
         .checked_add(u128::from(remainder.saturating_mul(2) >= denominator))
         .and_then(|value| u64::try_from(value).ok())
         .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
-        .ok_or_else(|| VideoCommandError::invalid_render_plan("duration_overflow"))?;
-    Ok(rounded)
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("duration_overflow"))
 }
 
 fn fixed_six_seconds(microseconds: u64) -> String {
@@ -814,7 +906,29 @@ fn fixed_six_seconds(microseconds: u64) -> String {
     )
 }
 
-fn expected_render_arguments(plan: &RenderPlanV1, duration_microseconds: u64) -> Vec<String> {
+fn escape_drawtext_text(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace(':', "\\:")
+        .replace('%', "\\%")
+        .replace(',', "\\,")
+        .replace(';', "\\;")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+        .replace("\r\n", "\\n")
+        .replace(['\r', '\n'], "\\n")
+}
+
+fn caption_drawtext_filter(caption: &RenderCaptionInput) -> String {
+    format!(
+        "drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,{}\\,{})'",
+        escape_drawtext_text(&caption.text),
+        fixed_six_seconds(caption.start_microseconds),
+        fixed_six_seconds(caption.end_microseconds),
+    )
+}
+
+fn expected_render_arguments_v1(plan: &RenderPlanV1, duration_microseconds: u64) -> Vec<String> {
     let expected = &plan.expected;
     let source_in = plan
         .argv
@@ -827,16 +941,15 @@ fn expected_render_arguments(plan: &RenderPlanV1, duration_microseconds: u64) ->
     } else {
         ""
     };
-    let filter = format!(
+    let mut filter = format!(
         "scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black{},fps={}/{}",
-        expected.width,
-        expected.height,
-        expected.width,
-        expected.height,
-        visibility_filter,
-        expected.rate.numerator,
-        expected.rate.denominator
+        expected.width, expected.height, expected.width, expected.height, visibility_filter,
+        expected.rate.numerator, expected.rate.denominator
     );
+    for caption in &plan.captions {
+        filter.push(',');
+        filter.push_str(&caption_drawtext_filter(caption));
+    }
     let mut arguments = vec![
         "-hide_banner".to_owned(),
         "-nostdin".to_owned(),
@@ -883,6 +996,143 @@ fn expected_render_arguments(plan: &RenderPlanV1, duration_microseconds: u64) ->
     arguments
 }
 
+fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String {
+    let expected = &plan.expected;
+    let duration = fixed_six_seconds(duration_microseconds);
+    let mut parts = vec![format!(
+        "color=c=black:s={}x{}:r={}/{}:d={duration}[base]",
+        expected.width, expected.height, expected.rate.numerator, expected.rate.denominator,
+    )];
+    let mut visible = Vec::new();
+    let mut audible = Vec::new();
+    for (index, input) in plan.video_inputs.iter().enumerate() {
+        if !input.hidden {
+            parts.push(format!(
+                "[{index}:v:0]setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
+                expected.width, expected.height, expected.width, expected.height,
+                expected.rate.numerator, expected.rate.denominator,
+            ));
+            visible.push(index);
+        }
+        if !input.muted && input.has_audio {
+            parts.push(format!("[{index}:a:0]asetpts=PTS-STARTPTS[a{index}]"));
+            audible.push(index);
+        }
+    }
+    let mut base = "base".to_owned();
+    for (stack, index) in visible.iter().rev().enumerate() {
+        let output = format!("stack{stack}");
+        parts.push(format!(
+            "[{base}][v{index}]overlay=0:0:format=auto[{output}]",
+        ));
+        base = output;
+    }
+    for (index, caption) in plan.captions.iter().enumerate() {
+        let output = format!("caption{index}");
+        parts.push(format!(
+            "[{base}]{}[{output}]",
+            caption_drawtext_filter(caption)
+        ));
+        base = output;
+    }
+    parts.push(format!("[{base}]null[vout]"));
+    if audible.len() == 1 {
+        parts.push(format!("[a{}]anull[aout]", audible[0]));
+    } else if audible.len() > 1 {
+        let labels = audible
+            .iter()
+            .map(|index| format!("[a{index}]"))
+            .collect::<String>();
+        parts.push(format!(
+            "{labels}amix=inputs={}:duration=longest:normalize=0[aout]",
+            audible.len(),
+        ));
+    }
+    parts.join(";")
+}
+
+fn expected_render_arguments_v2(
+    plan: &RenderPlanV2,
+    duration_microseconds: u64,
+) -> Result<Vec<String>, VideoCommandError> {
+    let duration = fixed_six_seconds(duration_microseconds);
+    let audible = plan
+        .video_inputs
+        .iter()
+        .any(|input| !input.muted && input.has_audio);
+    if plan.video_inputs.is_empty()
+        || plan.video_inputs.len() > 1_000
+        || plan.expected.audio != audible
+        || plan.video_inputs.iter().any(|input| {
+            input.source_in_microseconds > MAX_SAFE_INTEGER
+                || plan.input_paths_by_asset_id.get(&input.asset_id) != Some(&input.path)
+        })
+        || plan.input_paths_by_asset_id.iter().any(|(asset_id, path)| {
+            !plan
+                .video_inputs
+                .iter()
+                .any(|input| &input.asset_id == asset_id && &input.path == path)
+        })
+    {
+        return Err(VideoCommandError::invalid_render_plan("video_inputs"));
+    }
+
+    let mut arguments = [
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "warning",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    for input in &plan.video_inputs {
+        arguments.extend([
+            "-ss".to_owned(),
+            fixed_six_seconds(input.source_in_microseconds),
+            "-t".to_owned(),
+            duration.clone(),
+            "-i".to_owned(),
+            input.path.clone(),
+        ]);
+    }
+    arguments.extend([
+        "-filter_complex".to_owned(),
+        expected_v2_filter(plan, duration_microseconds),
+        "-map".to_owned(),
+        "[vout]".to_owned(),
+    ]);
+    if audible {
+        arguments.extend(["-map".to_owned(), "[aout]".to_owned()]);
+    } else {
+        arguments.push("-an".to_owned());
+    }
+    arguments.extend([
+        "-t".to_owned(),
+        duration,
+        "-c:v".to_owned(),
+        "libx264".to_owned(),
+        "-pix_fmt".to_owned(),
+        "yuv420p".to_owned(),
+    ]);
+    if audible {
+        arguments.extend([
+            "-c:a".to_owned(),
+            "aac".to_owned(),
+            "-ar".to_owned(),
+            "48000".to_owned(),
+        ]);
+    }
+    arguments.extend([
+        "-movflags".to_owned(),
+        "+faststart".to_owned(),
+        plan.output_path.clone(),
+    ]);
+    Ok(arguments)
+}
+
 fn is_canonical_fixed_six(value: &str) -> bool {
     let Some((whole, fraction)) = value.split_once('.') else {
         return false;
@@ -901,7 +1151,7 @@ pub(crate) fn render_execution_arguments(
     let partial = partial_path
         .to_str()
         .ok_or_else(|| VideoCommandError::invalid_render_plan("partial_path_encoding"))?;
-    let mut arguments = validated.plan.argv.clone();
+    let mut arguments = validated.plan.argv().to_vec();
     let nostdin_index = arguments
         .iter()
         .position(|argument| argument == "-nostdin")
@@ -921,9 +1171,15 @@ pub(crate) fn partial_render_path(
         .output_path
         .parent()
         .ok_or_else(|| VideoCommandError::invalid_render_plan("partial_parent"))?;
-    let partial = parent.join(format!(".svp-part-{}.mp4", validated.plan.plan_id.as_str()));
+    let partial = parent.join(format!(
+        ".svp-part-{}.mp4",
+        validated.plan.plan_id().as_str()
+    ));
     if partial.parent() != Some(parent)
-        || paths_equal(&partial, &validated.input_path)
+        || validated
+            .input_paths
+            .iter()
+            .any(|input| paths_equal(&partial, input))
         || paths_equal(&partial, &validated.output_path)
     {
         return Err(VideoCommandError::invalid_render_plan(
@@ -1007,17 +1263,22 @@ async fn execute_render_worker(
     )
     .await?;
     validate_render_output(&partial_path, &inspected, &request.validated)?;
-    promote_render_partial(partial, &request.validated.output_path, request.overwrite)?;
-
-    let preview_result = prepare_render_preview(
+    let (preview_path, preview_probe) = prepare_render_preview(
         &request.app_cache_dir,
         &request.identity.job_id,
-        &request.validated.output_path,
+        &partial_path,
         &request.validated,
         &request.programs,
+        request.cancellation.clone(),
     )
-    .await;
-    let (preview_path, preview_probe) = preview_result.map_err(map_render_preview_failure)?;
+    .await
+    .map_err(map_render_preview_failure)?;
+    promote_render_partial_if_active(
+        partial,
+        &request.validated.output_path,
+        request.overwrite,
+        &request.cancellation,
+    )?;
     Ok(VerifiedRenderOutput {
         output_path: request.validated.output_path.to_string_lossy().into_owned(),
         preview_path: preview_path.to_string_lossy().into_owned(),
@@ -1025,12 +1286,12 @@ async fn execute_render_worker(
     })
 }
 
-fn remove_owned_render_partial(plan: &RenderPlanV1) -> Result<(), VideoCommandError> {
-    let output_path = Path::new(&plan.output_path);
+fn remove_owned_render_partial(plan: &RenderPlan) -> Result<(), VideoCommandError> {
+    let output_path = Path::new(plan.output_path());
     let parent = output_path
         .parent()
         .ok_or_else(|| VideoCommandError::invalid_render_plan("partial_parent"))?;
-    let partial = parent.join(format!(".svp-part-{}.mp4", plan.plan_id.as_str()));
+    let partial = parent.join(format!(".svp-part-{}.mp4", plan.plan_id().as_str()));
     if partial.parent() != Some(parent) || paths_equal(&partial, output_path) {
         return Err(VideoCommandError::invalid_render_plan(
             "partial_containment",
@@ -1079,7 +1340,7 @@ pub(crate) fn validate_render_output(
 ) -> Result<(), VideoCommandError> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|_| VideoCommandError::invalid_media("verify_render", "metadata"))?;
-    let expected = &validated.plan.expected;
+    let expected = validated.plan.expected();
     let probe = &inspected.probe;
     let valid_audio = match (&probe.audio, expected.audio) {
         (Some(audio), true) => audio.codec_name == "aac" && audio.sample_rate == 48_000,
@@ -1134,8 +1395,40 @@ pub(crate) fn promote_render_partial(
     Ok(())
 }
 
+pub(crate) fn promote_render_partial_if_active(
+    partial: TempPath,
+    destination: &Path,
+    overwrite: bool,
+    cancellation: &ProcessCancellation,
+) -> Result<(), VideoCommandError> {
+    promote_render_partial_if_active_with_hook(partial, destination, overwrite, cancellation, || {})
+}
+
+pub(crate) fn promote_render_partial_if_active_with_hook(
+    partial: TempPath,
+    destination: &Path,
+    overwrite: bool,
+    cancellation: &ProcessCancellation,
+    inside_boundary: impl FnOnce(),
+) -> Result<(), VideoCommandError> {
+    let committed = cancellation.commit_if_active(|| {
+        inside_boundary();
+        promote_render_partial(partial, destination, overwrite)
+    })?;
+    if committed.is_none() {
+        return Err(VideoCommandError::process_cancelled(
+            "publish_render",
+            "ffmpeg",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn map_render_preview_failure(error: VideoCommandError) -> VideoCommandError {
-    if error.code == VideoErrorCode::ToolUnavailable {
+    if matches!(
+        error.code,
+        VideoErrorCode::ToolUnavailable | VideoErrorCode::ProcessCancelled
+    ) {
         error
     } else {
         VideoCommandError::preview_preparation_failed("copy_or_verify")
@@ -1148,6 +1441,7 @@ async fn prepare_render_preview(
     output_path: &Path,
     validated: &ValidatedRenderPlan,
     programs: &MediaPrograms,
+    cancellation: ProcessCancellation,
 ) -> Result<(PathBuf, InspectedMedia), VideoCommandError> {
     let preview_directory = ensure_preview_directory(app_cache_dir, job_id)?;
     let preview_path = preview_directory.join("preview.mp4");
@@ -1166,7 +1460,7 @@ async fn prepare_render_preview(
     let inspected = probe_trusted_media_with_program(
         &temporary_path,
         programs.verified_ffprobe("verify_render_preview").await?,
-        ProcessCancellation::new(),
+        cancellation,
         "verify_render_preview",
     )
     .await?;

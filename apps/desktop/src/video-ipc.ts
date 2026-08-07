@@ -6,7 +6,7 @@ import {
   openedProjectV2Schema,
   projectInspectorSchema,
   projectProjectionSchema,
-  renderPlanV1Schema,
+  renderPlanSchema,
   VideoDomainError,
   videoErrorCodes,
   videoRenderEventSchema,
@@ -20,7 +20,7 @@ import type {
   OpenedProjectV2,
   ProjectInspector,
   ProjectProjection,
-  RenderPlanV1,
+  RenderPlan,
   VideoErrorCode,
   VideoRenderEvent,
   VideoRenderStarted,
@@ -216,10 +216,10 @@ export async function prepareVideoAsset(
 }
 
 export async function startVideoRender(
-  plan: RenderPlanV1,
+  plan: RenderPlan,
   overwrite: boolean,
 ): Promise<VideoRenderStarted> {
-  const validatedPlan = renderPlanV1Schema.parse(plan);
+  const validatedPlan = renderPlanSchema.parse(plan);
   const response = await invokeVideoCommand("video_start_render", {
     plan: validatedPlan,
     overwrite,

@@ -6,10 +6,15 @@ import {
   createRationalRate,
   createRationalTime,
   renderPlanV1Schema,
+  renderPlanV2Schema,
 } from "@supa-video/contracts";
 import { describe, expect, it } from "vitest";
 
-import { compileSingleClipRenderPlan } from "./index.js";
+import {
+  compileActiveSequenceRenderPlan,
+  compileSingleClipRenderPlan,
+  getActiveSequenceRenderEligibility,
+} from "./index.js";
 
 const ids = {
   revision: "00000000-0000-4000-8000-000000000001",
@@ -19,6 +24,12 @@ const ids = {
   clip: "00000000-0000-4000-8000-000000000005",
   plan: "00000000-0000-4000-8000-000000000006",
   captionTrack: "00000000-0000-4000-8000-000000000008",
+  caption: "00000000-0000-4000-8000-00000000000c",
+  asset2: "00000000-0000-4000-8000-000000000009",
+  track2: "00000000-0000-4000-8000-00000000000a",
+  clip2: "00000000-0000-4000-8000-00000000000b",
+  audioTrack: "00000000-0000-4000-8000-00000000000d",
+  audioClip: "00000000-0000-4000-8000-00000000000e",
 } as const;
 const inputPath = "C:\\Media Source\\single clip.mp4";
 const outputPath = "D:\\Rendered Output\\trim result.mp4";
@@ -115,6 +126,7 @@ interface V2RevisionOptions {
   readonly muted?: boolean;
   readonly hidden?: boolean;
   readonly captionHidden?: boolean;
+  readonly dedicatedAudioTrack?: "empty" | "non-empty";
 }
 
 function makeRevision(options: RevisionOptions = {}): ProjectRevision {
@@ -220,6 +232,36 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                 },
               ],
             },
+            ...(options.dedicatedAudioTrack === undefined
+              ? []
+              : [
+                  {
+                    id: ids.audioTrack,
+                    name: "Audio 1",
+                    kind: "audio" as const,
+                    clips:
+                      options.dedicatedAudioTrack === "empty"
+                        ? []
+                        : [
+                            {
+                              id: ids.audioClip,
+                              source: { kind: "asset" as const, assetId: clip.assetId },
+                              timelineStart: clip.timelineStart,
+                              sourceIn: clip.sourceIn,
+                              sourceOut: clip.sourceOut,
+                              transform: {
+                                positionXPermille: 0,
+                                positionYPermille: 0,
+                                scaleXPermille: 1_000,
+                                scaleYPermille: 1_000,
+                                rotationMilliDegrees: 0,
+                                opacityPermille: 1_000,
+                              },
+                              gainMilliDecibels: 0,
+                            },
+                          ],
+                  },
+                ]),
             ...(options.captionHidden === undefined
               ? []
               : [
@@ -228,7 +270,14 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                     name: "Captions 1",
                     kind: "caption" as const,
                     hidden: options.captionHidden,
-                    captions: [],
+                    captions: [
+                      {
+                        id: ids.caption,
+                        start: createRationalTime(15, sequence.rate),
+                        end: createRationalTime(30, sequence.rate),
+                        text: "Speaker: we're ready, 100%",
+                      },
+                    ],
                   },
                 ]),
           ],
@@ -308,11 +357,23 @@ describe("compileSingleClipRenderPlan", () => {
     expect(renderPlanV1Schema.parse(plan)).toEqual(plan);
   });
 
-  it("keeps shown and hidden V2 caption visibility argv-neutral", () => {
+  it("burns shown V2 captions into output and omits hidden caption tracks", () => {
     const shownPlan = compile(makeV2Revision({ captionHidden: false }));
     const hiddenPlan = compile(makeV2Revision({ captionHidden: true }));
+    const expectedCaption = {
+      trackId: ids.captionTrack,
+      captionId: ids.caption,
+      startMicroseconds: 500_500,
+      endMicroseconds: 1_001_000,
+      text: "Speaker: we're ready, 100%",
+    };
 
-    expect(shownPlan.argv).toEqual(avArgv);
+    expect(shownPlan.captions).toEqual([expectedCaption]);
+    expect(hiddenPlan.captions).toEqual([]);
+    expect(shownPlan.argv).not.toEqual(hiddenPlan.argv);
+    expect(shownPlan.argv[shownPlan.argv.indexOf("-vf") + 1]).toBe(
+      `${shownVideoFilter},drawtext=text='Speaker\\: we\\'re ready\\, 100\\%':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,0.500500\\,1.001000)'`,
+    );
     expect(hiddenPlan.argv).toEqual(avArgv);
     expect(shownPlan.expected).toEqual(expectedMetadata(true));
     expect(hiddenPlan.expected).toEqual(expectedMetadata(true));
@@ -476,6 +537,159 @@ describe("compileSingleClipRenderPlan", () => {
         inputPath,
         outputPath: "bad\0path.mp4",
       }),
+    );
+  });
+});
+
+describe("compileActiveSequenceRenderPlan", () => {
+  it("uses the compiler validator for render eligibility", () => {
+    const revision = structuredClone(makeV2Revision());
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+
+    const track = revision.state.sequences[0]!.tracks[0]!;
+    if (track.kind !== "video") throw new Error("expected video track fixture");
+    track.clips.push({ ...structuredClone(track.clips[0]!), id: ids.clip2 });
+
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({
+      eligible: false,
+      reason: "Each video track must contain exactly one direct-asset clip to export",
+    });
+    expectInvalidRenderPlan(() =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      }),
+    );
+  });
+
+  it("keeps an empty dedicated audio track exportable", () => {
+    const revision = makeV2Revision({ dedicatedAudioTrack: "empty" });
+
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+    expect(plan.videoInputs).toHaveLength(1);
+  });
+
+  it("rejects a dedicated audio track containing clips with an actionable error", () => {
+    const revision = makeV2Revision({ dedicatedAudioTrack: "non-empty" });
+    const reason =
+      "Dedicated audio tracks containing clips cannot be exported yet; remove those clips before exporting";
+
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: false, reason });
+    const error = expectInvalidRenderPlan(() =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      }),
+    );
+    expect(error.message).toBe(reason);
+  });
+
+  it("binds shown caption metadata into the final filter graph and omits hidden cues", () => {
+    const shownRevision = makeV2Revision({ captionHidden: false });
+    const hiddenRevision = makeV2Revision({ captionHidden: true });
+    const compileActive = (revision: ReturnType<typeof makeV2Revision>) =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      });
+
+    const shown = compileActive(shownRevision);
+    const hidden = compileActive(hiddenRevision);
+    const shownFilter = shown.argv[shown.argv.indexOf("-filter_complex") + 1]!;
+    const hiddenFilter = hidden.argv[hidden.argv.indexOf("-filter_complex") + 1]!;
+
+    expect(shown.captions).toHaveLength(1);
+    expect(hidden.captions).toEqual([]);
+    expect(shownFilter).toContain("[stack0]drawtext=text='Speaker\\: we\\'re ready\\, 100\\%'");
+    expect(shownFilter).toContain(":enable='between(t\\,0.500500\\,1.001000)'[caption0]");
+    expect(hiddenFilter).not.toContain("drawtext");
+    expect(shown.videoInputs).toEqual(hidden.videoInputs);
+    expect(shown.expected).toEqual(hidden.expected);
+  });
+
+  it("binds canonical track order, visibility, source time, and audio policy into V2 metadata", () => {
+    const revision = structuredClone(makeV2Revision({ muted: true, hidden: false }));
+    const firstAsset = revision.state.assets[0]!;
+    const firstTrack = revision.state.sequences[0]!.tracks[0]!;
+    if (firstTrack.kind !== "video") throw new Error("expected video track fixture");
+    const secondAsset = { ...structuredClone(firstAsset), id: ids.asset2 };
+    const secondTrack = {
+      ...structuredClone(firstTrack),
+      id: ids.track2,
+      hidden: true,
+      muted: false,
+      clips: [
+        {
+          ...structuredClone(firstTrack.clips[0]!),
+          id: ids.clip2,
+          source: { kind: "asset" as const, assetId: ids.asset2 },
+        },
+      ],
+    };
+    revision.state.assets.push(secondAsset);
+    revision.state.sequences[0]!.tracks.push(secondTrack);
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: {
+        [ids.asset]: inputPath,
+        [ids.asset2]: "C:\\Media Source\\bottom.mp4",
+      },
+      outputPath,
+    });
+
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+    expect(plan.videoInputs).toEqual([
+      {
+        assetId: ids.asset,
+        path: inputPath,
+        sourceInMicroseconds: 500_500,
+        hidden: false,
+        muted: true,
+        hasAudio: true,
+      },
+      {
+        assetId: ids.asset2,
+        path: "C:\\Media Source\\bottom.mp4",
+        sourceInMicroseconds: 500_500,
+        hidden: true,
+        muted: false,
+        hasAudio: true,
+      },
+    ]);
+    const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+    expect(filter).toContain("[0:v:0]");
+    expect(filter).not.toContain("[1:v:0]");
+    expect(filter).not.toContain("[0:a:0]");
+    expect(filter).toContain("[1:a:0]");
+    expect(plan.expected.audio).toBe(true);
+
+    secondTrack.hidden = false;
+    const layered = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: plan.inputPathsByAssetId,
+      outputPath,
+    });
+    const layeredFilter = layered.argv[layered.argv.indexOf("-filter_complex") + 1]!;
+    expect(layeredFilter).toContain(
+      "[base][v1]overlay=0:0:format=auto[stack0];[stack0][v0]overlay=0:0:format=auto[stack1];[stack1]null[vout]",
     );
   });
 });

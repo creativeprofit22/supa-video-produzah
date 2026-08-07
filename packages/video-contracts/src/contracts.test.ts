@@ -12,7 +12,7 @@ import {
   type VideoProjectFileV1,
   videoProjectFileV1Schema,
 } from "./project.js";
-import { renderPlanV1Schema } from "./render-plan.js";
+import { renderPlanSchema, renderPlanV1Schema, renderPlanV2Schema } from "./render-plan.js";
 import { createRationalRate, createRationalTime } from "./time.js";
 import { videoToolStatusSchema } from "./tools.js";
 
@@ -208,6 +208,63 @@ describe("project contracts", () => {
     expect(() =>
       renderPlanV1Schema.parse({ ...plan, argv: [outputPath, "-i", inputPath] }),
     ).toThrow("final");
+  });
+
+  it("binds V2 render argv inputs to ordered structured video metadata", () => {
+    const inputPath = "C:\\Media\\top.mp4";
+    const outputPath = "C:\\Exports\\stack.mp4";
+    const plan = {
+      schemaVersion: 2,
+      planId: ids.plan,
+      revisionId: ids.revision,
+      executable: "ffmpeg",
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      videoInputs: [
+        {
+          assetId: ids.asset,
+          path: inputPath,
+          sourceInMicroseconds: 500_000,
+          hidden: false,
+          muted: true,
+          hasAudio: true,
+        },
+      ],
+      outputPath,
+      expected: { durationFrames: 30, rate, width: 640, height: 360, audio: false },
+      argv: ["-i", inputPath, outputPath],
+    } as const;
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+    expect(renderPlanSchema.parse(plan)).toEqual(plan);
+
+    const caption = {
+      trackId: ids.project,
+      captionId: ids.command,
+      startMicroseconds: 0,
+      endMicroseconds: 1_000_000,
+      text: "Strict caption",
+    } as const;
+    const planWithCaption = { ...plan, captions: [caption] } as const;
+    expect(renderPlanV2Schema.parse(planWithCaption)).toEqual(planWithCaption);
+
+    const forbiddenFieldMutations = [
+      { ...plan, surprise: true },
+      { ...plan, expected: { ...plan.expected, videoHidden: false } },
+      { ...plan, expected: { ...plan.expected, surprise: true } },
+      { ...plan, expected: { ...plan.expected, rate: { ...plan.expected.rate, surprise: true } } },
+      { ...plan, videoInputs: [{ ...plan.videoInputs[0], surprise: true }] },
+      { ...planWithCaption, captions: [{ ...caption, surprise: true }] },
+    ];
+    for (const mutation of forbiddenFieldMutations) {
+      expect(renderPlanV2Schema.safeParse(mutation).success).toBe(false);
+      expect(renderPlanSchema.safeParse(mutation).success).toBe(false);
+    }
+
+    expect(() =>
+      renderPlanV2Schema.parse({
+        ...plan,
+        videoInputs: [{ ...plan.videoInputs[0], path: "C:\\Media\\other.mp4" }],
+      }),
+    ).toThrow("match its asset path");
   });
 
   it("leaves trim range semantics to command execution", () => {

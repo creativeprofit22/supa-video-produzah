@@ -70,9 +70,10 @@ use super::{
     render::{
         cancel_render_for_owner, create_owned_partial, ensure_preview_directory,
         map_render_preview_failure, parse_and_validate_render_plan, partial_render_path,
-        promote_render_partial, reauthorize_final_render_output_with_context, render_dedupe_key,
-        render_execution_arguments, run_render_worker, validate_render_output, RenderEventSink,
-        RenderProgress, RenderWorkerRequest,
+        promote_render_partial, promote_render_partial_if_active,
+        promote_render_partial_if_active_with_hook, reauthorize_final_render_output_with_context,
+        render_dedupe_key, render_execution_arguments, run_render_worker, validate_render_output,
+        RenderEventSink, RenderProgress, RenderWorkerRequest,
     },
     toolchain::{
         MediaToolchain, MediaToolchainError, MediaToolchainInspection, MediaToolchainProblem,
@@ -2756,6 +2757,85 @@ fn with_hidden_render_video(mut plan: Value) -> Value {
     plan
 }
 
+fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Value {
+    let top = top.to_string_lossy().into_owned();
+    let bottom = bottom.to_string_lossy().into_owned();
+    let output = output.to_string_lossy().into_owned();
+    let top_asset = "55555555-5555-4555-8555-555555555555";
+    let bottom_asset = "66666666-6666-4666-8666-666666666666";
+    let filter = "color=c=black:s=1280x720:r=30/1:d=2.000000[base];[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v0];[0:a:0]asetpts=PTS-STARTPTS[a0];[1:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v1];[base][v1]overlay=0:0:format=auto[stack0];[stack0][v0]overlay=0:0:format=auto[stack1];[stack1]null[vout];[a0]anull[aout]";
+    serde_json::json!({
+        "schemaVersion": 2,
+        "planId": RENDER_PLAN_ID,
+        "revisionId": RENDER_REVISION_ID,
+        "executable": "ffmpeg",
+        "inputPathsByAssetId": { (top_asset): top, (bottom_asset): bottom },
+        "videoInputs": [
+            { "assetId": top_asset, "path": top, "sourceInMicroseconds": 0, "hidden": false, "muted": false, "hasAudio": true },
+            { "assetId": bottom_asset, "path": bottom, "sourceInMicroseconds": 1_000_000, "hidden": false, "muted": true, "hasAudio": true }
+        ],
+        "outputPath": output,
+        "expected": {
+            "durationFrames": 60,
+            "rate": { "numerator": 30, "denominator": 1 },
+            "width": 1280,
+            "height": 720,
+            "audio": true
+        },
+        "argv": [
+            "-hide_banner", "-nostdin", "-loglevel", "warning", "-progress", "pipe:1", "-nostats",
+            "-ss", "0.000000", "-t", "2.000000", "-i", top,
+            "-ss", "1.000000", "-t", "2.000000", "-i", bottom,
+            "-filter_complex", filter, "-map", "[vout]", "-map", "[aout]", "-t", "2.000000",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000",
+            "-movflags", "+faststart", output
+        ]
+    })
+}
+
+const RENDER_CAPTION_FILTER: &str = "drawtext=text='Path\\\\it\\'s\\: 50\\%\\, \\[yes\\]\\;\\nnext\\nline\\nend':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,0.250000\\,1.750000)'";
+
+fn render_caption_value() -> Value {
+    serde_json::json!({
+        "trackId": "77777777-7777-4777-8777-777777777777",
+        "captionId": "88888888-8888-4888-8888-888888888888",
+        "startMicroseconds": 250_000,
+        "endMicroseconds": 1_750_000,
+        "text": "Path\\it's: 50%, [yes];\r\nnext\rline\nend"
+    })
+}
+
+fn with_exact_render_caption(mut plan: Value) -> Value {
+    plan["captions"] = Value::Array(vec![render_caption_value()]);
+    let schema_version = plan["schemaVersion"]
+        .as_u64()
+        .expect("test render schema version must be numeric");
+    let filter = plan["argv"]
+        .as_array_mut()
+        .and_then(|arguments| {
+            arguments.iter_mut().find(|argument| {
+                argument.as_str().is_some_and(|value| {
+                    value.starts_with(if schema_version == 1 {
+                        "scale="
+                    } else {
+                        "color="
+                    })
+                })
+            })
+        })
+        .expect("test render filter must exist");
+    let current = filter.as_str().expect("test render filter must be text");
+    *filter = Value::String(if schema_version == 1 {
+        format!("{current},{RENDER_CAPTION_FILTER}")
+    } else {
+        current.replace(
+            ";[stack1]null[vout]",
+            &format!(";[stack1]{RENDER_CAPTION_FILTER}[caption0];[caption0]null[vout]"),
+        )
+    });
+    plan
+}
+
 fn validated_render_fixture(
     directory: &Path,
     audio: bool,
@@ -2792,7 +2872,11 @@ fn render_plan_validation_accepts_exact_av_and_video_only_and_rejects_mutations(
             Some(".svp-part-33333333-3333-4333-8333-333333333333.mp4")
         );
         assert!(
-            !validated.plan.argv.iter().any(|argument| argument == "-y"),
+            !validated
+                .plan
+                .argv()
+                .iter()
+                .any(|argument| argument == "-y"),
             "validated plan must retain destination no-clobber semantics"
         );
     }
@@ -2852,6 +2936,262 @@ fn render_plan_validation_accepts_exact_av_and_video_only_and_rejects_mutations(
 }
 
 #[test]
+fn render_caption_metadata_exactly_binds_v1_and_v2_argv_and_escapes_drawtext() {
+    let directory = tempdir().expect("caption render workspace must be created");
+    let source = directory.path().join("caption-source.mp4");
+    let top = directory.path().join("caption-top.mp4");
+    let bottom = directory.path().join("caption-bottom.mp4");
+    let v1_output = directory.path().join("caption-v1-output.mp4");
+    let v2_output = directory.path().join("caption-v2-output.mp4");
+    for (path, bytes) in [
+        (&source, b"source".as_slice()),
+        (&top, b"top".as_slice()),
+        (&bottom, b"bottom".as_slice()),
+    ] {
+        fs::write(path, bytes).expect("caption source must be written");
+    }
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("caption source must grant");
+    let top = grants
+        .grant_existing_file("owner", GrantCategory::Source, &top)
+        .expect("caption top source must grant");
+    let bottom = grants
+        .grant_existing_file("owner", GrantCategory::Source, &bottom)
+        .expect("caption bottom source must grant");
+    let v1_output = grants
+        .grant_destination("owner", GrantCategory::Output, &v1_output)
+        .expect("caption V1 output must grant");
+    let v2_output = grants
+        .grant_destination("owner", GrantCategory::Output, &v2_output)
+        .expect("caption V2 output must grant");
+
+    let v1_without_caption = render_plan_value(&source, &v1_output, true, RENDER_PLAN_ID);
+    assert!(v1_without_caption.get("captions").is_none());
+    let validated_without_caption =
+        parse_and_validate_render_plan(v1_without_caption.clone(), "owner", &grants)
+            .expect("omitted V1 captions must default to an empty exact chain");
+    assert_eq!(
+        serde_json::to_value(&validated_without_caption.plan).unwrap()["captions"],
+        serde_json::json!([])
+    );
+
+    let v1_with_caption = with_exact_render_caption(v1_without_caption.clone());
+    let validated_v1 = parse_and_validate_render_plan(v1_with_caption.clone(), "owner", &grants)
+        .expect("exact shown V1 caption must validate");
+    assert!(validated_v1
+        .plan
+        .argv()
+        .iter()
+        .any(|argument| argument.contains(RENDER_CAPTION_FILTER)));
+
+    let v2_without_caption = multitrack_render_plan_value(&top, &bottom, &v2_output);
+    assert!(v2_without_caption.get("captions").is_none());
+    parse_and_validate_render_plan(v2_without_caption.clone(), "owner", &grants)
+        .expect("omitted V2 captions must use stackN followed by null");
+    let v2_with_caption = with_exact_render_caption(v2_without_caption.clone());
+    let validated_v2 = parse_and_validate_render_plan(v2_with_caption.clone(), "owner", &grants)
+        .expect("exact shown V2 caption chain must validate");
+    assert!(validated_v2
+        .plan
+        .argv()
+        .iter()
+        .any(|argument| argument.contains(&format!(
+            "[stack1]{RENDER_CAPTION_FILTER}[caption0];[caption0]null[vout]"
+        ))));
+
+    let mut metadata_only_v1 = v1_without_caption;
+    metadata_only_v1["captions"] = Value::Array(vec![render_caption_value()]);
+    let mut argv_only_v1 = v1_with_caption;
+    argv_only_v1
+        .as_object_mut()
+        .expect("V1 plan must be an object")
+        .remove("captions");
+    let mut metadata_only_v2 = v2_without_caption;
+    metadata_only_v2["captions"] = Value::Array(vec![render_caption_value()]);
+    let mut argv_only_v2 = v2_with_caption;
+    argv_only_v2
+        .as_object_mut()
+        .expect("V2 plan must be an object")
+        .remove("captions");
+
+    for forged in [
+        metadata_only_v1,
+        argv_only_v1,
+        metadata_only_v2,
+        argv_only_v2,
+    ] {
+        let error = parse_and_validate_render_plan(forged, "owner", &grants)
+            .expect_err("forged caption metadata or argv must fail");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "argv_grammar");
+    }
+}
+
+#[test]
+fn render_caption_validation_rejects_malformed_caption_metadata() {
+    let directory = tempdir().expect("caption validation workspace must be created");
+    let source = directory.path().join("caption-invalid-source.mp4");
+    let output = directory.path().join("caption-invalid-output.mp4");
+    fs::write(&source, b"source").expect("caption source must be written");
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .expect("caption source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("caption output must grant");
+    let base = render_plan_value(&source, &output, true, RENDER_PLAN_ID);
+
+    let mut malformed = Vec::new();
+    for mutate in [
+        ("text", Value::String(String::new())),
+        ("text", Value::String("contains\0nul".to_owned())),
+        ("text", Value::String("😀".repeat(8_193))),
+        ("endMicroseconds", Value::from(250_000)),
+        ("endMicroseconds", Value::from(9_007_199_254_740_992_u64)),
+    ] {
+        let mut caption = render_caption_value();
+        caption[mutate.0] = mutate.1;
+        let mut plan = base.clone();
+        plan["captions"] = Value::Array(vec![caption]);
+        malformed.push(plan);
+    }
+
+    for plan in malformed {
+        let error = parse_and_validate_render_plan(plan, "owner", &grants)
+            .expect_err("malformed caption metadata must fail before argv comparison");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "captions");
+    }
+}
+
+#[test]
+fn multitrack_render_plan_binds_order_visibility_audio_and_source_ranges_to_exact_argv() {
+    let directory = tempdir().expect("multitrack render workspace must be created");
+    let top = directory.path().join("top.mp4");
+    let bottom = directory.path().join("bottom.mp4");
+    let output = directory.path().join("output.mp4");
+    fs::write(&top, b"top").expect("top source must be written");
+    fs::write(&bottom, b"bottom").expect("bottom source must be written");
+    let grants = VideoPathGrants::default();
+    let top = grants
+        .grant_existing_file("owner", GrantCategory::Source, &top)
+        .expect("top source must grant");
+    let bottom = grants
+        .grant_existing_file("owner", GrantCategory::Source, &bottom)
+        .expect("bottom source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("output must grant");
+    let exact = multitrack_render_plan_value(&top, &bottom, &output);
+    parse_and_validate_render_plan(exact.clone(), "owner", &grants)
+        .expect("exact structured multitrack plan must validate");
+
+    let mutations = [
+        {
+            let mut value = exact.clone();
+            value["videoInputs"]
+                .as_array_mut()
+                .expect("video inputs must be an array")
+                .swap(0, 1);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["videoInputs"][1]["hidden"] = Value::Bool(true);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["videoInputs"][1]["muted"] = Value::Bool(false);
+            value
+        },
+        {
+            let mut value = exact;
+            value["videoInputs"][1]["sourceInMicroseconds"] = Value::from(500_000);
+            value
+        },
+    ];
+    for mutation in mutations {
+        let error = parse_and_validate_render_plan(mutation, "owner", &grants)
+            .expect_err("metadata mutation without exact argv regeneration must fail");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "argv_grammar");
+    }
+}
+
+#[test]
+fn render_plan_v2_strict_fields_match_typescript_contract() {
+    let directory = tempdir().expect("strict V2 render workspace must be created");
+    let top = directory.path().join("strict-top.mp4");
+    let bottom = directory.path().join("strict-bottom.mp4");
+    let output = directory.path().join("strict-output.mp4");
+    fs::write(&top, b"top").expect("strict top source must be written");
+    fs::write(&bottom, b"bottom").expect("strict bottom source must be written");
+    let grants = VideoPathGrants::default();
+    let top = grants
+        .grant_existing_file("owner", GrantCategory::Source, &top)
+        .expect("strict top source must grant");
+    let bottom = grants
+        .grant_existing_file("owner", GrantCategory::Source, &bottom)
+        .expect("strict bottom source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("strict output must grant");
+    let exact = multitrack_render_plan_value(&top, &bottom, &output);
+    let validated = parse_and_validate_render_plan(exact.clone(), "owner", &grants)
+        .expect("exact strict V2 plan must validate");
+    assert!(!validated.plan.expected().video_hidden);
+    let serialized = serde_json::to_value(&validated.plan).expect("V2 plan must serialize");
+    assert!(serialized["expected"].get("videoHidden").is_none());
+
+    let exact_with_caption = with_exact_render_caption(exact.clone());
+    parse_and_validate_render_plan(exact_with_caption.clone(), "owner", &grants)
+        .expect("exact strict V2 caption plan must validate");
+
+    let forbidden_field_mutations = [
+        {
+            let mut value = exact.clone();
+            value["surprise"] = Value::Bool(true);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["expected"]["videoHidden"] = Value::Bool(false);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["expected"]["surprise"] = Value::Bool(true);
+            value
+        },
+        {
+            let mut value = exact.clone();
+            value["expected"]["rate"]["surprise"] = Value::Bool(true);
+            value
+        },
+        {
+            let mut value = exact;
+            value["videoInputs"][0]["surprise"] = Value::Bool(true);
+            value
+        },
+        {
+            let mut value = exact_with_caption;
+            value["captions"][0]["surprise"] = Value::Bool(true);
+            value
+        },
+    ];
+    for mutation in forbidden_field_mutations {
+        let error = parse_and_validate_render_plan(mutation, "owner", &grants)
+            .expect_err("every field forbidden by the strict V2 schema must fail");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "schema");
+    }
+}
+
+#[test]
 fn render_visibility_plan_accepts_exact_filter_and_rejects_mutation_removal_or_injection() {
     const DRAWBOX: &str = "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill";
     const EXACT_FILTER: &str = "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill,fps=30000/1001";
@@ -2870,11 +3210,11 @@ fn render_visibility_plan_accepts_exact_filter_and_rejects_mutation_removal_or_i
     let exact = hidden_render_plan_value(&source, &output, true, RENDER_PLAN_ID);
     let validated = parse_and_validate_render_plan(exact.clone(), "owner", &grants)
         .expect("exact hidden render plan must validate");
-    assert!(validated.plan.expected.video_hidden);
+    assert!(validated.plan.expected().video_hidden);
     assert_eq!(
         validated
             .plan
-            .argv
+            .argv()
             .iter()
             .find(|argument| argument.starts_with("scale="))
             .map(String::as_str),
@@ -2967,10 +3307,10 @@ fn render_visibility_legacy_plan_without_hidden_field_remains_compatible() {
 
     let validated = parse_and_validate_render_plan(legacy, "owner", &grants)
         .expect("legacy plan without videoHidden must validate");
-    assert!(!validated.plan.expected.video_hidden);
+    assert!(!validated.plan.expected().video_hidden);
     assert!(validated
         .plan
-        .argv
+        .argv()
         .iter()
         .all(|argument| !argument.contains("drawbox=")));
     let serialized = serde_json::to_value(&validated.plan).unwrap();
@@ -2983,7 +3323,7 @@ fn render_execution_argv_exactly_overwrites_only_the_owned_partial() {
         let directory = tempdir().expect("render execution workspace must be created");
         let (_, validated) = validated_render_fixture(directory.path(), audio, RENDER_PLAN_ID);
         let partial = partial_render_path(&validated).expect("partial path must derive");
-        let source = validated.input_path.to_string_lossy().into_owned();
+        let source = validated.input_paths[0].to_string_lossy().into_owned();
         let partial = partial.to_string_lossy().into_owned();
         let mut expected = vec![
             "-hide_banner".to_owned(),
@@ -3035,7 +3375,7 @@ fn render_execution_argv_exactly_overwrites_only_the_owned_partial() {
             expected
         );
         assert_eq!(
-            validated.plan.argv.last(),
+            validated.plan.argv().last(),
             Some(&validated.output_path.to_string_lossy().into_owned()),
             "the validated plan must still target the final destination"
         );
@@ -3213,6 +3553,12 @@ fn render_preview_preserves_tool_unavailable_but_normalizes_ordinary_failures() 
     assert_eq!(unavailable.code, VideoErrorCode::ToolUnavailable);
     assert_eq!(unavailable.details["category"], "integrity_failed");
 
+    let cancelled = map_render_preview_failure(VideoCommandError::process_cancelled(
+        "verify_render_preview",
+        "ffprobe",
+    ));
+    assert_eq!(cancelled.code, VideoErrorCode::ProcessCancelled);
+
     let ordinary = map_render_preview_failure(VideoCommandError::process_failed(
         "verify_render_preview",
         "ffprobe",
@@ -3340,6 +3686,128 @@ fn render_partial_workflow_precreates_cleans_and_preserves_final_no_clobber() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn render_cancellation_during_post_render_preview_preserves_existing_destination() {
+    let directory = tempdir().expect("cancellation promotion workspace must be created");
+    let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
+    let partial_path = partial_render_path(&validated).expect("partial path must derive");
+    fs::write(&validated.output_path, b"old export").expect("old export must exist");
+    let partial = create_owned_partial(&partial_path).expect("replacement partial must be owned");
+    fs::write(&partial, b"stale replacement").expect("replacement partial must be writable");
+
+    let cancellation = ProcessCancellation::new();
+    let cancellation_trigger = cancellation.clone();
+    let (preview_started_tx, preview_started_rx) = tokio::sync::oneshot::channel();
+    let (preview_finished_tx, preview_finished_rx) = tokio::sync::oneshot::channel();
+    let preview_work = async move {
+        preview_started_tx
+            .send(())
+            .expect("preview start must be observable");
+        preview_finished_rx
+            .await
+            .expect("preview completion must be released after cancellation");
+    };
+    let cancel_during_preview = async {
+        preview_started_rx
+            .await
+            .expect("preview work must start before cancellation");
+        assert_eq!(
+            fs::read(&validated.output_path).expect("old export must remain during preview"),
+            b"old export"
+        );
+        cancellation_trigger.cancel();
+        preview_finished_tx
+            .send(())
+            .expect("cancelled preview work must be released");
+    };
+    tokio::join!(preview_work, cancel_during_preview);
+
+    let error =
+        promote_render_partial_if_active(partial, &validated.output_path, true, &cancellation)
+            .expect_err("a render cancelled during preview must not publish its partial");
+    assert_eq!(error.code, VideoErrorCode::ProcessCancelled);
+    assert_eq!(
+        fs::read(&validated.output_path).expect("old export must survive cancellation"),
+        b"old export"
+    );
+    assert!(
+        !partial_path.exists(),
+        "cancelled publication must clean the stale partial"
+    );
+}
+
+#[test]
+fn render_promotion_and_cancellation_are_atomic_inside_commit_boundary() {
+    let directory = tempdir().expect("atomic promotion workspace must be created");
+    let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
+    let partial_path = partial_render_path(&validated).expect("partial path must derive");
+    fs::write(&validated.output_path, b"old export").expect("old export must exist");
+    let partial = create_owned_partial(&partial_path).expect("replacement partial must be owned");
+    fs::write(&partial, b"committed replacement").expect("replacement partial must be writable");
+
+    let cancellation = ProcessCancellation::new();
+    let promotion_cancellation = cancellation.clone();
+    let cancel_cancellation = cancellation.clone();
+    let destination = validated.output_path.clone();
+    let promotion_destination = destination.clone();
+    let boundary_destination = destination.clone();
+    let (boundary_entered_tx, boundary_entered_rx) = mpsc::channel();
+    let (release_boundary_tx, release_boundary_rx) = mpsc::channel();
+    let promotion = thread::spawn(move || {
+        promote_render_partial_if_active_with_hook(
+            partial,
+            &promotion_destination,
+            true,
+            &promotion_cancellation,
+            || {
+                assert_eq!(
+                    fs::read(&boundary_destination)
+                        .expect("old export must remain inside commit boundary"),
+                    b"old export"
+                );
+                boundary_entered_tx
+                    .send(())
+                    .expect("commit boundary entry must be observable");
+                release_boundary_rx
+                    .recv()
+                    .expect("commit boundary must be released after cancellation starts");
+            },
+        )
+    });
+
+    boundary_entered_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("promotion must pause inside the commit boundary");
+    let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
+    let cancel = thread::spawn(move || {
+        cancel_started_tx
+            .send(())
+            .expect("cancellation attempt must be observable");
+        cancel_cancellation.cancel();
+    });
+    cancel_started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("cancellation must start while promotion owns the boundary");
+    release_boundary_tx
+        .send(())
+        .expect("promotion boundary must be releasable");
+
+    promotion
+        .join()
+        .expect("promotion thread must not panic")
+        .expect("promotion that owns the boundary must commit");
+    cancel.join().expect("cancellation thread must not panic");
+    assert!(
+        !cancellation.is_cancelled(),
+        "cancellation after the commit linearization point must not win"
+    );
+    assert_eq!(
+        fs::read(&destination).expect("committed replacement must exist"),
+        b"committed replacement"
+    );
+    assert!(!partial_path.exists(), "committed partial must be consumed");
+}
+
 const RENDER_INTEGRATION_OWNER: &str = "render-worker-integration";
 const RENDER_AV_PLAN_ID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RENDER_VIDEO_ONLY_PLAN_ID: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -3445,11 +3913,11 @@ fn registered_render_worker(
     programs: MediaPrograms,
 ) -> (RenderWorkerRequest, Arc<Mutex<Vec<VideoRenderEvent>>>) {
     let durable_job_id = uuid::Uuid::new_v4().to_string();
-    assert_ne!(durable_job_id, validated.plan.plan_id.as_str());
+    assert_ne!(durable_job_id, validated.plan.plan_id().as_str());
     let identity = super::render::RenderEventIdentity {
         job_id: durable_job_id,
-        plan_id: validated.plan.plan_id.as_str().to_owned(),
-        revision_id: validated.plan.revision_id.as_str().to_owned(),
+        plan_id: validated.plan.plan_id().as_str().to_owned(),
+        revision_id: validated.plan.revision_id().as_str().to_owned(),
     };
     let captured = Arc::new(Mutex::new(Vec::new()));
     let events_for_sink = captured.clone();
@@ -3559,7 +4027,7 @@ async fn final_render_output_reauthorization_rejects_owner_state_path_and_missin
             dedupe_key: render_dedupe_key(&validated, false),
             project_id: None,
             asset_id: None,
-            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            revision_id: Some(validated.plan.revision_id().as_str().to_owned()),
             priority: MediaJobPriority::Export,
             priority_value: 0,
             stage: "queued".to_owned(),
@@ -3686,8 +4154,8 @@ pub(crate) async fn assert_final_render_restart_reauthorization(programs: MediaP
         RENDER_RESTART_PLAN_ID,
         CANONICAL_RENDER_PROFILE,
     );
-    let persisted_plan_id = validated.plan.plan_id.as_str().to_owned();
-    let persisted_revision_id = validated.plan.revision_id.as_str().to_owned();
+    let persisted_plan_id = validated.plan.plan_id().as_str().to_owned();
+    let persisted_revision_id = validated.plan.revision_id().as_str().to_owned();
     let created_at_ms = current_timestamp_millis();
     let store = MediaJobStore::initialize(local_data_dir.clone())
         .await
@@ -3699,7 +4167,7 @@ pub(crate) async fn assert_final_render_restart_reauthorization(programs: MediaP
             dedupe_key: render_dedupe_key(&validated, false),
             project_id: None,
             asset_id: None,
-            revision_id: Some(validated.plan.revision_id.as_str().to_owned()),
+            revision_id: Some(validated.plan.revision_id().as_str().to_owned()),
             priority: MediaJobPriority::Export,
             priority_value: 0,
             stage: "queued".to_owned(),

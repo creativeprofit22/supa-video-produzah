@@ -3,6 +3,7 @@ import type {
   CommandResult,
   ProjectProjection,
   RenderPlanV1,
+  RenderPlanV2,
 } from "@supa-video/contracts";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -135,6 +136,26 @@ const renderPlan: RenderPlanV1 = {
   },
   argv: ["-i", "C:\\Media\\clip.mp4", "C:\\Exports\\clip.mp4"],
 };
+const multitrackRenderPlan: RenderPlanV2 = {
+  schemaVersion: 2,
+  planId: id(21),
+  revisionId: id(8),
+  executable: "ffmpeg",
+  inputPathsByAssetId: { [id(2)]: "C:\\Media\\clip.mp4" },
+  videoInputs: [
+    {
+      assetId: id(2),
+      path: "C:\\Media\\clip.mp4",
+      sourceInMicroseconds: 0,
+      hidden: false,
+      muted: false,
+      hasAudio: false,
+    },
+  ],
+  outputPath: "C:\\Exports\\clip.mp4",
+  expected: renderPlan.expected,
+  argv: renderPlan.argv,
+};
 
 describe("strict V2 video IPC adapter", () => {
   beforeEach(() => {
@@ -200,6 +221,72 @@ describe("strict V2 video IPC adapter", () => {
     await expect(closeVideoProject(id(1))).resolves.toBeUndefined();
   });
 
+  it("parses a SetTrackHidden request and canonical hidden projection response", async () => {
+    const visibilityRequest: CommandGroupRequest = {
+      groupId: id(60),
+      projectId: id(1),
+      baseRevision: 0,
+      commands: [
+        {
+          type: "SetTrackHidden",
+          commandId: id(61),
+          sequenceId: id(62),
+          trackId: id(63),
+          hidden: true,
+        },
+      ],
+    };
+    const hiddenProjection: ProjectProjection = {
+      ...nextProjection,
+      revision: {
+        ...nextProjection.revision,
+        operationId: visibilityRequest.groupId,
+      },
+      state: {
+        assets: [],
+        activeSequenceId: id(62),
+        sequences: [
+          {
+            id: id(62),
+            name: "Visible sequence",
+            rate: { numerator: 30, denominator: 1 },
+            width: 1920,
+            height: 1080,
+            audioSampleRate: 48_000,
+            tracks: [
+              {
+                id: id(63),
+                name: "Video 1",
+                kind: "video",
+                hidden: true,
+                clips: [],
+              },
+            ],
+            markers: [],
+          },
+        ],
+      },
+    };
+    const visibilityResult: CommandResult = {
+      ...commandResult,
+      operationId: visibilityRequest.groupId,
+      groupId: visibilityRequest.groupId,
+      newRevision: hiddenProjection.revision,
+      projection: hiddenProjection,
+      cacheInvalidations: ["timeline", "preview", "captions", "render_plan"],
+    };
+    invokeMock.mockResolvedValueOnce(visibilityResult);
+
+    await expect(executeVideoProjectGroup(visibilityRequest)).resolves.toEqual(visibilityResult);
+    expect(invokeMock).toHaveBeenCalledWith("video_execute_project_group", {
+      request: visibilityRequest,
+    });
+    expect(visibilityResult.projection.state.sequences[0]?.tracks[0]).toMatchObject({
+      kind: "video",
+      hidden: true,
+    });
+  });
+
   it("rejects a live import without content identity before IPC", async () => {
     await expect(executeVideoProjectGroup(legacyImportRequest)).rejects.toThrow(
       "Live asset imports require a content identity",
@@ -229,6 +316,9 @@ describe("strict V2 video IPC adapter", () => {
     const started = { jobId: id(30), planId: renderPlan.planId, revisionId: renderPlan.revisionId };
     invokeMock.mockResolvedValueOnce(started);
     await expect(startVideoRender(renderPlan, false)).resolves.toEqual(started);
+    const multitrackStarted = { ...started, planId: multitrackRenderPlan.planId };
+    invokeMock.mockResolvedValueOnce(multitrackStarted);
+    await expect(startVideoRender(multitrackRenderPlan, false)).resolves.toEqual(multitrackStarted);
     const unlisten = vi.fn();
     listenMock.mockResolvedValueOnce(unlisten);
     const handler = vi.fn();
