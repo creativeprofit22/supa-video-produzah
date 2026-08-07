@@ -1102,6 +1102,173 @@ const TRACK_VISIBILITY_INITIAL_HASH: &str =
 const TRACK_VISIBILITY_HIDDEN_HASH: &str =
     "02e539620c34f39008f66725282fa5de6f4011235f203c588d863f3b0499ce15";
 
+fn clip_opacity_fixture() -> VideoProjectSnapshotV2 {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap()
+}
+
+fn set_clip_opacity_command(command_id: &str, opacity_permille: u16) -> ProjectCommand {
+    ProjectCommand::SetClipOpacity {
+        command_id: command_id.to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: RIPPLE_TRACK_ID.to_owned(),
+        clip_id: "10000000-0000-4000-8000-000000000008".to_owned(),
+        opacity_permille,
+    }
+}
+
+#[test]
+fn set_clip_opacity_deserializes_with_u16_typing() {
+    let command: ProjectCommand = serde_json::from_value(serde_json::json!({
+        "type": "SetClipOpacity",
+        "commandId": "68000000-0000-4000-8000-000000000001",
+        "sequenceId": RIPPLE_SEQUENCE_ID,
+        "trackId": RIPPLE_TRACK_ID,
+        "clipId": "10000000-0000-4000-8000-000000000008",
+        "opacityPermille": 1_000,
+    }))
+    .unwrap();
+    assert!(matches!(
+        command,
+        ProjectCommand::SetClipOpacity {
+            opacity_permille: 1_000,
+            ..
+        }
+    ));
+
+    let oversized = serde_json::json!({
+        "type": "SetClipOpacity",
+        "commandId": "68000000-0000-4000-8000-000000000002",
+        "sequenceId": RIPPLE_SEQUENCE_ID,
+        "trackId": RIPPLE_TRACK_ID,
+        "clipId": "10000000-0000-4000-8000-000000000008",
+        "opacityPermille": 65_536,
+    });
+    assert!(serde_json::from_value::<ProjectCommand>(oversized).is_err());
+}
+
+#[test]
+fn set_clip_opacity_mutates_only_opacity_and_reports_executor_metadata() {
+    let snapshot = clip_opacity_fixture();
+    let original_clip = snapshot.state.sequences[0].tracks[0].clips().unwrap()[0].clone();
+    let applied = apply_group(
+        &snapshot.state,
+        &[set_clip_opacity_command(
+            "68000000-0000-4000-8000-000000000003",
+            0,
+        )],
+    )
+    .unwrap();
+    let updated_clip = &applied.state.sequences[0].tracks[0].clips().unwrap()[0];
+    let mut expected_clip = original_clip.clone();
+    expected_clip.transform.opacity_permille = 0;
+
+    assert_eq!(updated_clip, &expected_clip);
+    assert_eq!(applied.summary, "Updated clip opacity");
+    assert_eq!(
+        applied.cache_invalidations,
+        vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan]
+    );
+    assert_eq!(
+        applied.affected_ranges,
+        vec![AffectedRange {
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            start: RationalTime {
+                value: 0,
+                rate_numerator: 30,
+                rate_denominator: 1,
+            },
+            end: RationalTime {
+                value: 30,
+                rate_numerator: 30,
+                rate_denominator: 1,
+            },
+        }]
+    );
+    assert!(matches!(
+        applied.inverse_commands.as_slice(),
+        [ProjectCommand::SetClipOpacity {
+            sequence_id,
+            track_id,
+            clip_id,
+            opacity_permille: 1_000,
+            ..
+        }] if sequence_id == RIPPLE_SEQUENCE_ID
+            && track_id == RIPPLE_TRACK_ID
+            && clip_id == "10000000-0000-4000-8000-000000000008"
+    ));
+
+    let restored = apply_group(&applied.state, &applied.inverse_commands).unwrap();
+    assert_eq!(restored.state, snapshot.state);
+    let upper_boundary = apply_group(
+        &applied.state,
+        &[set_clip_opacity_command(
+            "68000000-0000-4000-8000-000000000004",
+            1_000,
+        )],
+    )
+    .unwrap();
+    assert_eq!(upper_boundary.state, snapshot.state);
+}
+
+#[test]
+fn set_clip_opacity_rejects_range_locked_and_non_video_targets() {
+    let snapshot = clip_opacity_fixture();
+    let range_error = apply_group(
+        &snapshot.state,
+        &[set_clip_opacity_command(
+            "68000000-0000-4000-8000-000000000005",
+            1_001,
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(range_error.details["category"], "opacity_permille");
+
+    let mut locked_state = snapshot.state.clone();
+    locked_state.sequences[0].tracks[0].set_locked(true);
+    let locked_error = apply_group(
+        &locked_state,
+        &[set_clip_opacity_command(
+            "68000000-0000-4000-8000-000000000006",
+            500,
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(locked_error.details["category"], "track_locked");
+
+    let mut audio_state = snapshot.state.clone();
+    let video_track = audio_state.sequences[0].tracks.remove(0);
+    let ProjectTrack::Video {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+        ..
+    } = video_track
+    else {
+        unreachable!();
+    };
+    audio_state.sequences[0].tracks.push(ProjectTrack::Audio {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+    });
+    let non_video_error = apply_group(
+        &audio_state,
+        &[set_clip_opacity_command(
+            "68000000-0000-4000-8000-000000000007",
+            500,
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(non_video_error.details["category"], "non_video_track");
+}
+
 fn ripple_clip(template: &ProjectClip, id: String, start: u64, duration: u64) -> ProjectClip {
     let mut clip = template.clone();
     clip.id = id;

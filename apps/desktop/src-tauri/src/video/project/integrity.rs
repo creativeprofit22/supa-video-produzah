@@ -696,6 +696,18 @@ fn valid_command(command: &ProjectCommand) -> bool {
                 && is_canonical_uuid(clip_id)
                 && valid_transform(transform)
         }
+        ProjectCommand::SetClipOpacity {
+            sequence_id,
+            track_id,
+            clip_id,
+            opacity_permille,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(clip_id)
+                && *opacity_permille <= 1_000
+        }
         ProjectCommand::SetClipGain {
             sequence_id,
             track_id,

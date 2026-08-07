@@ -431,6 +431,18 @@ pub enum ProjectCommand {
         clip_id: String,
         transform: ClipTransform,
     },
+    SetClipOpacity {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+        #[serde(rename = "opacityPermille")]
+        opacity_permille: u16,
+    },
     SetClipGain {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -523,6 +535,7 @@ impl ProjectCommand {
             | Self::MoveClip { command_id, .. }
             | Self::TrimClip { command_id, .. }
             | Self::SetClipTransform { command_id, .. }
+            | Self::SetClipOpacity { command_id, .. }
             | Self::SetClipGain { command_id, .. }
             | Self::AddMarker { command_id, .. }
             | Self::RemoveMarker { command_id, .. }

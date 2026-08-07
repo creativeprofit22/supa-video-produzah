@@ -370,6 +370,10 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             "Updated clip transform",
             vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
         ),
+        ProjectCommand::SetClipOpacity { .. } => (
+            "Updated clip opacity",
+            vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
+        ),
         ProjectCommand::SetClipGain { .. } => (
             "Updated clip gain",
             vec![CacheInvalidation::AudioMix, CacheInvalidation::RenderPlan],
@@ -442,6 +446,11 @@ fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
             ..
         }
         | ProjectCommand::SetClipTransform {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetClipOpacity {
             sequence_id,
             track_id,
             ..
@@ -971,6 +980,39 @@ fn apply_one(
                     transform: previous,
                 }],
                 vec![clip_range(sequence_id, clip)?],
+            ))
+        }
+        ProjectCommand::SetClipOpacity {
+            sequence_id,
+            track_id,
+            clip_id,
+            opacity_permille,
+            ..
+        } => {
+            if *opacity_permille > 1_000 {
+                return Err(invalid("opacity_permille"));
+            }
+            let track = find_unlocked_track_mut(state, sequence_id, track_id)?;
+            let ProjectTrack::Video { clips, .. } = track else {
+                return Err(invalid("non_video_track"));
+            };
+            let clip = clips
+                .iter_mut()
+                .find(|clip| clip.id == *clip_id)
+                .ok_or_else(|| invalid("unknown_clip"))?;
+            let affected_range = clip_range(sequence_id, clip)?;
+            let previous = u16::try_from(clip.transform.opacity_permille)
+                .map_err(|_| invalid("opacity_permille"))?;
+            clip.transform.opacity_permille = u64::from(*opacity_permille);
+            Ok((
+                vec![ProjectCommand::SetClipOpacity {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    clip_id: clip_id.clone(),
+                    opacity_permille: previous,
+                }],
+                vec![affected_range],
             ))
         }
         ProjectCommand::SetClipGain {
