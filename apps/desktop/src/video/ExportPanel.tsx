@@ -22,6 +22,12 @@ const renderErrorMessages: Partial<Record<VideoErrorCode, string>> = {
 };
 
 function safeRenderError(error: Error): string {
+  if (
+    error instanceof VideoDomainError &&
+    error.code === "invalid_render_plan" &&
+    error.details["category"] === "unsupported_composition"
+  )
+    return error.message;
   return error instanceof VideoDomainError
     ? (renderErrorMessages[error.code] ?? "The export could not be completed. Try again.")
     : "The desktop service returned an unexpected response. Restart the app and try again.";
@@ -33,6 +39,7 @@ interface ExportPanelProps {
   readonly readiness: ReadinessState;
   readonly destinationPending: boolean;
   readonly destinationError: Error | null;
+  readonly ineligibilityReason?: string | null;
   readonly disabled: boolean;
   readonly onExport: () => void;
   readonly onCancel: () => void;
@@ -46,6 +53,7 @@ export function ExportPanel({
   readiness,
   destinationPending,
   destinationError,
+  ineligibilityReason = null,
   disabled,
   onExport,
   onCancel,
@@ -121,6 +129,9 @@ export function ExportPanel({
             className="primary-button"
             type="button"
             disabled={!toolsReady || disabled || destinationPending || active}
+            aria-describedby={
+              ineligibilityReason === null ? undefined : "export-ineligibility-reason"
+            }
             onClick={onExport}
           >
             {destinationPending || (renderJob === null && render.phase === "starting") ? (
@@ -139,6 +150,16 @@ export function ExportPanel({
           </button>
         )}
       </div>
+
+      {ineligibilityReason !== null ? (
+        <div className="neutral-status" role="status">
+          <AlertCircle size={18} aria-hidden />
+          <div>
+            <strong>Export unavailable for this composition</strong>
+            <p id="export-ineligibility-reason">{ineligibilityReason}</p>
+          </div>
+        </div>
+      ) : null}
 
       {renderJob !== null ? (
         <MediaJobStatus

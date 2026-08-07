@@ -28,6 +28,7 @@ function baseProps() {
     renderJob: null,
     destinationPending: false,
     destinationError: null,
+    ineligibilityReason: null,
     disabled: false,
     onExport: vi.fn(),
     onCancel: vi.fn(),
@@ -39,6 +40,27 @@ function baseProps() {
 afterEach(cleanup);
 
 describe("ExportPanel", () => {
+  it("explains unsupported composition without starting export", () => {
+    const props = baseProps();
+    render(
+      <ExportPanel
+        {...props}
+        disabled
+        ineligibilityReason="Each video track must contain exactly one direct-asset clip to export"
+        render={{ phase: "idle" }}
+      />,
+    );
+
+    expect(screen.getByText("Export unavailable for this composition")).toBeTruthy();
+    expect(
+      screen.getByText("Each video track must contain exactly one direct-asset clip to export"),
+    ).toBeTruthy();
+    const exportButton = screen.getByRole("button", { name: "Export MP4" });
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(exportButton);
+    expect(props.onExport).not.toHaveBeenCalled();
+  });
+
   it("opens a native overwrite dialog with initial focus and returns focus on cancel", async () => {
     const props = baseProps();
     render(

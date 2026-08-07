@@ -1432,12 +1432,15 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimDraft !== null &&
     committedTrim !== null &&
     (trimDraft.inFrame !== committedTrim.inFrame || trimDraft.outFrame !== committedTrim.outFrame);
-  const renderEligible =
-    state.projection !== null &&
-    getActiveSequenceRenderEligibility({
-      revision: state.projection.revision,
-      state: state.projection.state,
-    }).eligible;
+  const renderEligibility =
+    state.projection === null
+      ? null
+      : getActiveSequenceRenderEligibility({
+          revision: state.projection.revision,
+          state: state.projection.state,
+        });
+  const renderIneligibilityReason =
+    renderEligibility !== null && !renderEligibility.eligible ? renderEligibility.reason : null;
   return {
     projectPath: state.projectPath,
     projection: state.projection,
@@ -1463,8 +1466,11 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     editOperation,
     canUndo: state.projection?.canUndo ?? false,
     canRedo: state.projection?.canRedo ?? false,
+    renderIneligibilityReason,
     renderReady:
-      renderEligible && renderInputPaths(state.projection) !== null && state.preparedAsset !== null,
+      renderEligibility?.eligible === true &&
+      renderInputPaths(state.projection) !== null &&
+      state.preparedAsset !== null,
     newProject,
     openProject,
     chooseSource,

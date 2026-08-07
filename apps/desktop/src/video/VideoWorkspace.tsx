@@ -584,6 +584,9 @@ export function VideoWorkspace({
             readiness={readiness}
             destinationPending={controller.destinationPending}
             destinationError={controller.destinationError}
+            ineligibilityReason={
+              controller.renderReady ? null : controller.renderIneligibilityReason
+            }
             disabled={!controller.renderReady || controller.trimChanged || editPending}
             onExport={() => void controller.exportVideo()}
             onCancel={() => void controller.cancelRender()}

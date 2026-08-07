@@ -1522,6 +1522,9 @@ describe("canonical project controller", () => {
     const { result } = renderHook(() => useVideoProject(backend));
 
     await act(() => result.current.openProject());
+    expect(result.current.renderIneligibilityReason).toBe(
+      "Each video track must contain exactly one direct-asset clip to export",
+    );
     expect(result.current.renderReady).toBe(false);
     await act(() => result.current.exportVideo());
 
