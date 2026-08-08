@@ -23,7 +23,7 @@ use super::model::{
 };
 
 pub(crate) const MEDIA_STATE_FILENAME: &str = "media-state-v1.sqlite3";
-pub(crate) const MEDIA_STATE_SCHEMA_VERSION: i64 = 1;
+pub(crate) const MEDIA_STATE_SCHEMA_VERSION: i64 = 2;
 pub(crate) const DEFAULT_CACHE_BUDGET_BYTES: i64 = 20 * 1024 * 1024 * 1024;
 const MEDIA_STATE_APPLICATION_ID: i64 = 0x5356_504A;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -131,6 +131,9 @@ fn migrate(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
     if version == MEDIA_STATE_SCHEMA_VERSION {
         return Ok(());
     }
+    if version == 1 {
+        return migrate_v1_to_v2(connection);
+    }
 
     let transaction = connection.transaction()?;
     transaction.execute_batch(
@@ -198,7 +201,7 @@ fn migrate(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
         CREATE TABLE cache_artifacts (
             artifact_key TEXT PRIMARY KEY NOT NULL CHECK(length(artifact_key) BETWEEN 1 AND 256),
             content_digest TEXT NOT NULL CHECK(length(content_digest) BETWEEN 1 AND 128),
-            kind TEXT NOT NULL CHECK(kind IN ('source_object', 'proxy', 'thumbnail_tile')),
+            kind TEXT NOT NULL CHECK(kind IN ('source_object', 'proxy', 'thumbnail_tile', 'transcript')),
             relative_path TEXT NOT NULL UNIQUE CHECK(length(relative_path) BETWEEN 1 AND 1024),
             byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
             profile_id TEXT CHECK(profile_id IS NULL OR length(profile_id) <= 256),
@@ -239,6 +242,85 @@ fn migrate(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
         [DEFAULT_CACHE_BUDGET_BYTES],
     )?;
     transaction.pragma_update(None, "application_id", MEDIA_STATE_APPLICATION_ID)?;
+    transaction.pragma_update(None, "user_version", MEDIA_STATE_SCHEMA_VERSION)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v1_to_v2(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let artifact_count_before: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM cache_artifacts", [], |row| row.get(0))?;
+    let lease_count_before: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM cache_leases", [], |row| row.get(0))?;
+    transaction.execute_batch(
+        "CREATE TABLE cache_artifacts_v2 (
+            artifact_key TEXT PRIMARY KEY NOT NULL CHECK(length(artifact_key) BETWEEN 1 AND 256),
+            content_digest TEXT NOT NULL CHECK(length(content_digest) BETWEEN 1 AND 128),
+            kind TEXT NOT NULL CHECK(kind IN ('source_object', 'proxy', 'thumbnail_tile', 'transcript')),
+            relative_path TEXT NOT NULL UNIQUE CHECK(length(relative_path) BETWEEN 1 AND 1024),
+            byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
+            profile_id TEXT CHECK(profile_id IS NULL OR length(profile_id) <= 256),
+            toolchain_id TEXT CHECK(toolchain_id IS NULL OR length(toolchain_id) <= 256),
+            recipe_id TEXT CHECK(recipe_id IS NULL OR length(recipe_id) <= 256),
+            availability TEXT NOT NULL CHECK(availability IN ('available', 'reserved', 'missing', 'invalid')),
+            last_verified_at_ms INTEGER NOT NULL CHECK(last_verified_at_ms >= 0),
+            last_accessed_at_ms INTEGER NOT NULL CHECK(last_accessed_at_ms >= 0),
+            created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms)
+        ) STRICT;
+
+        CREATE TABLE cache_leases_v2 (
+            lease_id TEXT PRIMARY KEY NOT NULL CHECK(length(lease_id) BETWEEN 1 AND 64),
+            session_id TEXT NOT NULL CHECK(length(session_id) BETWEEN 1 AND 64),
+            owner_label TEXT NOT NULL CHECK(length(owner_label) BETWEEN 1 AND 128),
+            project_id TEXT CHECK(project_id IS NULL OR length(project_id) BETWEEN 1 AND 64),
+            artifact_key TEXT NOT NULL REFERENCES cache_artifacts_v2(artifact_key) ON DELETE CASCADE,
+            acquired_at_ms INTEGER NOT NULL CHECK(acquired_at_ms >= 0)
+        ) STRICT;
+
+        INSERT INTO cache_artifacts_v2 (
+            artifact_key, content_digest, kind, relative_path, byte_length, profile_id,
+            toolchain_id, recipe_id, availability, last_verified_at_ms, last_accessed_at_ms,
+            created_at_ms, updated_at_ms
+        )
+        SELECT artifact_key, content_digest, kind, relative_path, byte_length, profile_id,
+            toolchain_id, recipe_id, availability, last_verified_at_ms, last_accessed_at_ms,
+            created_at_ms, updated_at_ms
+        FROM cache_artifacts;
+
+        INSERT INTO cache_leases_v2 (
+            lease_id, session_id, owner_label, project_id, artifact_key, acquired_at_ms
+        )
+        SELECT lease_id, session_id, owner_label, project_id, artifact_key, acquired_at_ms
+        FROM cache_leases;
+
+        DROP TABLE cache_leases;
+        DROP TABLE cache_artifacts;
+        ALTER TABLE cache_artifacts_v2 RENAME TO cache_artifacts;
+        ALTER TABLE cache_leases_v2 RENAME TO cache_leases;
+
+        CREATE INDEX cache_artifacts_lru_idx
+            ON cache_artifacts(availability, last_accessed_at_ms, artifact_key);
+        CREATE INDEX cache_leases_session_idx ON cache_leases(session_id, owner_label);
+        CREATE INDEX cache_leases_artifact_idx ON cache_leases(artifact_key);",
+    )?;
+    let artifact_count_after: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM cache_artifacts", [], |row| row.get(0))?;
+    let lease_count_after: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM cache_leases", [], |row| row.get(0))?;
+    let quick_check: String =
+        transaction.pragma_query_value(None, "quick_check", |row| row.get(0))?;
+    let foreign_key_violation = transaction
+        .prepare("PRAGMA foreign_key_check")?
+        .exists([])?;
+    if artifact_count_before != artifact_count_after
+        || lease_count_before != lease_count_after
+        || quick_check != "ok"
+        || foreign_key_violation
+    {
+        return Err(MediaStateStoreError::Integrity);
+    }
     transaction.pragma_update(None, "user_version", MEDIA_STATE_SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())
@@ -1581,19 +1663,196 @@ mod tests {
     }
 
     #[test]
+    fn migrates_v1_cache_rows_and_leases_and_accepts_transcripts() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaStateStore::initialize(directory.path()).unwrap();
+        let connection = store.open_connection().unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE cache_leases;
+                 DROP TABLE cache_artifacts;
+                 CREATE TABLE cache_artifacts (
+                    artifact_key TEXT PRIMARY KEY NOT NULL CHECK(length(artifact_key) BETWEEN 1 AND 256),
+                    content_digest TEXT NOT NULL CHECK(length(content_digest) BETWEEN 1 AND 128),
+                    kind TEXT NOT NULL CHECK(kind IN ('source_object', 'proxy', 'thumbnail_tile')),
+                    relative_path TEXT NOT NULL UNIQUE CHECK(length(relative_path) BETWEEN 1 AND 1024),
+                    byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
+                    profile_id TEXT CHECK(profile_id IS NULL OR length(profile_id) <= 256),
+                    toolchain_id TEXT CHECK(toolchain_id IS NULL OR length(toolchain_id) <= 256),
+                    recipe_id TEXT CHECK(recipe_id IS NULL OR length(recipe_id) <= 256),
+                    availability TEXT NOT NULL CHECK(availability IN ('available', 'reserved', 'missing', 'invalid')),
+                    last_verified_at_ms INTEGER NOT NULL CHECK(last_verified_at_ms >= 0),
+                    last_accessed_at_ms INTEGER NOT NULL CHECK(last_accessed_at_ms >= 0),
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms)
+                 ) STRICT;
+                 CREATE INDEX cache_artifacts_lru_idx
+                    ON cache_artifacts(availability, last_accessed_at_ms, artifact_key);
+                 CREATE TABLE cache_leases (
+                    lease_id TEXT PRIMARY KEY NOT NULL CHECK(length(lease_id) BETWEEN 1 AND 64),
+                    session_id TEXT NOT NULL CHECK(length(session_id) BETWEEN 1 AND 64),
+                    owner_label TEXT NOT NULL CHECK(length(owner_label) BETWEEN 1 AND 128),
+                    project_id TEXT CHECK(project_id IS NULL OR length(project_id) BETWEEN 1 AND 64),
+                    artifact_key TEXT NOT NULL REFERENCES cache_artifacts(artifact_key) ON DELETE CASCADE,
+                    acquired_at_ms INTEGER NOT NULL CHECK(acquired_at_ms >= 0)
+                 ) STRICT;
+                 CREATE INDEX cache_leases_session_idx ON cache_leases(session_id, owner_label);
+                 CREATE INDEX cache_leases_artifact_idx ON cache_leases(artifact_key);",
+            )
+            .unwrap();
+        let artifact_key = "a".repeat(64);
+        let content_digest = "b".repeat(64);
+        connection
+            .execute(
+                "INSERT INTO cache_artifacts VALUES (
+                    ?1, ?2, 'proxy', 'derived/proxy/aa/artifact.mp4', 42,
+                    'profile-v1', 'toolchain-v1', 'recipe-v1', 'reserved', 10, 11, 12, 13
+                 )",
+                params![artifact_key, content_digest],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO cache_leases VALUES (
+                    'lease-v1', 'session-v1', 'owner-v1', 'project-v1', ?1, 14
+                 )",
+                [&artifact_key],
+            )
+            .unwrap();
+        connection
+            .pragma_update(None, "user_version", 1_i64)
+            .unwrap();
+        drop(connection);
+
+        let migrated = MediaStateStore::initialize(directory.path()).unwrap();
+        let connection = migrated.open_connection().unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, MEDIA_STATE_SCHEMA_VERSION);
+        let artifact = connection
+            .query_row(
+                "SELECT artifact_key, content_digest, kind, relative_path, byte_length,
+                    profile_id, toolchain_id, recipe_id, availability, last_verified_at_ms,
+                    last_accessed_at_ms, created_at_ms, updated_at_ms
+                 FROM cache_artifacts WHERE artifact_key = ?1",
+                [&artifact_key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, i64>(11)?,
+                        row.get::<_, i64>(12)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(artifact.0, artifact_key);
+        assert_eq!(artifact.1, content_digest);
+        assert_eq!(artifact.2, "proxy");
+        assert_eq!(artifact.3, "derived/proxy/aa/artifact.mp4");
+        assert_eq!(artifact.4, 42);
+        assert_eq!(artifact.5.as_deref(), Some("profile-v1"));
+        assert_eq!(artifact.6.as_deref(), Some("toolchain-v1"));
+        assert_eq!(artifact.7.as_deref(), Some("recipe-v1"));
+        assert_eq!(artifact.8, "reserved");
+        assert_eq!(artifact.9, 10);
+        assert_eq!(artifact.10, 11);
+        assert_eq!(artifact.11, 12);
+        assert_eq!(artifact.12, 13);
+        let lease = connection
+            .query_row(
+                "SELECT lease_id, session_id, owner_label, project_id, artifact_key, acquired_at_ms
+                 FROM cache_leases",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            lease,
+            (
+                "lease-v1".to_owned(),
+                "session-v1".to_owned(),
+                "owner-v1".to_owned(),
+                Some("project-v1".to_owned()),
+                artifact_key.clone(),
+                14,
+            )
+        );
+        connection
+            .execute(
+                "INSERT INTO cache_artifacts (
+                    artifact_key, content_digest, kind, relative_path, byte_length, availability,
+                    last_verified_at_ms, last_accessed_at_ms, created_at_ms, updated_at_ms
+                 ) VALUES (?1, ?1, 'transcript', ?2, 7, 'available', 20, 20, 20, 20)",
+                params![
+                    "c".repeat(64),
+                    format!("derived/transcript/cc/{}.json", "c".repeat(64))
+                ],
+            )
+            .unwrap();
+        let violations: String = connection
+            .pragma_query_value(None, "integrity_check", |row| row.get(0))
+            .unwrap();
+        assert_eq!(violations, "ok");
+    }
+
+    #[test]
+    fn fresh_schema_accepts_transcript_artifacts() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaStateStore::initialize(directory.path()).unwrap();
+        let connection = store.open_connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO cache_artifacts (
+                    artifact_key, content_digest, kind, relative_path, byte_length, availability,
+                    last_verified_at_ms, last_accessed_at_ms, created_at_ms, updated_at_ms
+                 ) VALUES (?1, ?1, 'transcript', ?2, 7, 'available', 1, 1, 1, 1)",
+                params![
+                    "d".repeat(64),
+                    format!("derived/transcript/dd/{}.json", "d".repeat(64))
+                ],
+            )
+            .unwrap();
+    }
+
+    #[test]
     fn rejects_future_schema_without_modifying_it() {
         let directory = tempfile::tempdir().unwrap();
         let store = MediaStateStore::initialize(directory.path()).unwrap();
         let connection = store.open_connection().unwrap();
         connection
-            .pragma_update(None, "user_version", 2_i64)
+            .pragma_update(None, "user_version", 3_i64)
             .unwrap();
         drop(connection);
 
         assert!(matches!(
             MediaStateStore::initialize(directory.path()),
-            Err(MediaStateStoreError::UnsupportedSchema(2))
+            Err(MediaStateStoreError::UnsupportedSchema(3))
         ));
+        let connection = Connection::open(store.path()).unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
     }
 
     fn new_job(dedupe_key: &str, kind: MediaJobKind, created_at_ms: i64) -> NewMediaJob {

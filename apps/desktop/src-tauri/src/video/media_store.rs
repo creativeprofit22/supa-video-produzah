@@ -89,8 +89,12 @@ impl Drop for StoreLock {
     }
 }
 
+fn invalid_for(operation: &'static str, category: &'static str) -> VideoCommandError {
+    VideoCommandError::invalid_media(operation, category)
+}
+
 fn invalid(category: &'static str) -> VideoCommandError {
-    VideoCommandError::invalid_media("ingest_source", category)
+    invalid_for("ingest_source", category)
 }
 
 fn direct_component(component: &str) -> bool {
@@ -121,46 +125,54 @@ fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
     }
 }
 
-fn canonical_owned_root(app_cache_root: &Path) -> Result<PathBuf, VideoCommandError> {
-    fs::create_dir_all(app_cache_root).map_err(|_| invalid("cache_root"))?;
-    let metadata = fs::symlink_metadata(app_cache_root).map_err(|_| invalid("cache_root"))?;
+fn canonical_owned_root(
+    app_cache_root: &Path,
+    operation: &'static str,
+) -> Result<PathBuf, VideoCommandError> {
+    fs::create_dir_all(app_cache_root).map_err(|_| invalid_for(operation, "cache_root"))?;
+    let metadata =
+        fs::symlink_metadata(app_cache_root).map_err(|_| invalid_for(operation, "cache_root"))?;
     if !metadata.is_dir() || is_reparse_or_symlink(&metadata) {
-        return Err(invalid("cache_root"));
+        return Err(invalid_for(operation, "cache_root"));
     }
     app_cache_root
         .canonicalize()
-        .map_err(|_| invalid("cache_root"))
+        .map_err(|_| invalid_for(operation, "cache_root"))
 }
 
-fn ensure_direct_directory(parent: &Path, component: &str) -> Result<PathBuf, VideoCommandError> {
+fn ensure_direct_directory(
+    parent: &Path,
+    component: &str,
+    operation: &'static str,
+) -> Result<PathBuf, VideoCommandError> {
     if !direct_component(component) {
-        return Err(invalid("store_component"));
+        return Err(invalid_for(operation, "store_component"));
     }
     let canonical_parent = parent
         .canonicalize()
-        .map_err(|_| invalid("store_containment"))?;
+        .map_err(|_| invalid_for(operation, "store_containment"))?;
     let child = canonical_parent.join(component);
     match fs::symlink_metadata(&child) {
         Ok(metadata) => {
             if !metadata.is_dir() || is_reparse_or_symlink(&metadata) {
-                return Err(invalid("store_component"));
+                return Err(invalid_for(operation, "store_component"));
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir(&child).map_err(|_| invalid("store_component"))?;
+            fs::create_dir(&child).map_err(|_| invalid_for(operation, "store_component"))?;
         }
-        Err(_) => return Err(invalid("store_component")),
+        Err(_) => return Err(invalid_for(operation, "store_component")),
     }
     let canonical_child = child
         .canonicalize()
-        .map_err(|_| invalid("store_containment"))?;
+        .map_err(|_| invalid_for(operation, "store_containment"))?;
     if canonical_child.parent() != Some(canonical_parent.as_path()) {
-        return Err(invalid("store_containment"));
+        return Err(invalid_for(operation, "store_containment"));
     }
-    let metadata =
-        fs::symlink_metadata(&canonical_child).map_err(|_| invalid("store_component"))?;
+    let metadata = fs::symlink_metadata(&canonical_child)
+        .map_err(|_| invalid_for(operation, "store_component"))?;
     if !metadata.is_dir() || is_reparse_or_symlink(&metadata) {
-        return Err(invalid("store_component"));
+        return Err(invalid_for(operation, "store_component"));
     }
     Ok(canonical_child)
 }
@@ -287,10 +299,10 @@ fn validate_object(path: &Path, expected_digest: &str, expected_length: u64) -> 
         .unwrap_or(false)
 }
 
-fn open_lock_file(path: &Path) -> Result<File, VideoCommandError> {
+fn open_lock_file(path: &Path, operation: &'static str) -> Result<File, VideoCommandError> {
     if let Ok(metadata) = fs::symlink_metadata(path) {
         if !metadata.is_file() || is_reparse_or_symlink(&metadata) {
-            return Err(invalid("lock_file"));
+            return Err(invalid_for(operation, "lock_file"));
         }
     }
     OpenOptions::new()
@@ -299,20 +311,27 @@ fn open_lock_file(path: &Path) -> Result<File, VideoCommandError> {
         .create(true)
         .truncate(false)
         .open(path)
-        .map_err(|_| invalid("lock_file"))
+        .map_err(|_| invalid_for(operation, "lock_file"))
 }
 
-fn try_lock_file_nonblocking(path: &Path) -> Result<Option<StoreLock>, VideoCommandError> {
-    let file = open_lock_file(path)?;
+fn try_lock_file_nonblocking(
+    path: &Path,
+    operation: &'static str,
+) -> Result<Option<StoreLock>, VideoCommandError> {
+    let file = open_lock_file(path, operation)?;
     match <File as FileExt>::try_lock(&file) {
         Ok(()) => Ok(Some(StoreLock { file })),
         Err(TryLockError::WouldBlock) => Ok(None),
-        Err(TryLockError::Error(_)) => Err(invalid("lock_file")),
+        Err(TryLockError::Error(_)) => Err(invalid_for(operation, "lock_file")),
     }
 }
 
-fn lock_file(path: &Path, timeout: Duration) -> Result<StoreLock, VideoCommandError> {
-    let file = open_lock_file(path)?;
+fn lock_file(
+    path: &Path,
+    timeout: Duration,
+    operation: &'static str,
+) -> Result<StoreLock, VideoCommandError> {
+    let file = open_lock_file(path, operation)?;
     let started = Instant::now();
     loop {
         match <File as FileExt>::try_lock(&file) {
@@ -320,8 +339,8 @@ fn lock_file(path: &Path, timeout: Duration) -> Result<StoreLock, VideoCommandEr
             Err(TryLockError::WouldBlock) if started.elapsed() < timeout => {
                 thread::sleep(OBJECT_LOCK_RETRY);
             }
-            Err(TryLockError::WouldBlock) => return Err(invalid("lock_timeout")),
-            Err(TryLockError::Error(_)) => return Err(invalid("lock_file")),
+            Err(TryLockError::WouldBlock) => return Err(invalid_for(operation, "lock_timeout")),
+            Err(TryLockError::Error(_)) => return Err(invalid_for(operation, "lock_file")),
         }
     }
 }
@@ -498,14 +517,20 @@ fn ingest_publication_error(error: PublicationError) -> VideoCommandError {
     })
 }
 
-fn artifact_publication_error(error: PublicationError) -> VideoCommandError {
-    artifact_invalid(match error {
-        PublicationError::TemporaryContainment => "temporary_containment",
-        PublicationError::DestinationContainment => "artifact_repair",
-        PublicationError::TemporarySync => "artifact_sync",
-        PublicationError::Promotion => "artifact_promotion",
-        PublicationError::DirectorySync => "artifact_directory_sync",
-    })
+fn artifact_publication_error(
+    kind: ArtifactStoreKind,
+    error: PublicationError,
+) -> VideoCommandError {
+    artifact_invalid(
+        kind,
+        match error {
+            PublicationError::TemporaryContainment => "temporary_containment",
+            PublicationError::DestinationContainment => "artifact_repair",
+            PublicationError::TemporarySync => "artifact_sync",
+            PublicationError::Promotion => "artifact_promotion",
+            PublicationError::DirectorySync => "artifact_directory_sync",
+        },
+    )
 }
 
 fn ingest_blocking_with_failpoint(
@@ -535,18 +560,18 @@ fn ingest_blocking_with_failpoint(
         return Err(invalid("source_changed"));
     }
 
-    let cache_root = canonical_owned_root(&app_cache_root)?;
-    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE)?;
-    let objects = ensure_direct_directory(&store_root, "objects")?;
-    let sha256 = ensure_direct_directory(&objects, "sha256")?;
-    let locks = ensure_direct_directory(&store_root, "locks")?;
-    let object_locks = ensure_direct_directory(&locks, "object")?;
+    let cache_root = canonical_owned_root(&app_cache_root, "ingest_source")?;
+    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, "ingest_source")?;
+    let objects = ensure_direct_directory(&store_root, "objects", "ingest_source")?;
+    let sha256 = ensure_direct_directory(&objects, "sha256", "ingest_source")?;
+    let locks = ensure_direct_directory(&store_root, "locks", "ingest_source")?;
+    let object_locks = ensure_direct_directory(&locks, "object", "ingest_source")?;
     let prefix = digest.get(..2).ok_or_else(|| invalid("digest"))?;
-    let object_directory = ensure_direct_directory(&sha256, prefix)?;
-    let lock_directory = ensure_direct_directory(&object_locks, prefix)?;
+    let object_directory = ensure_direct_directory(&sha256, prefix, "ingest_source")?;
+    let lock_directory = ensure_direct_directory(&object_locks, prefix, "ingest_source")?;
     let object_path = object_directory.join(format!("{digest}.blob"));
     let lock_path = lock_directory.join(format!("{digest}.lock"));
-    let _lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT)?;
+    let _lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT, "ingest_source")?;
 
     if !validate_object(&object_path, &digest, pre_read.byte_length) {
         let temporary = copy_source_to_temporary(
@@ -617,6 +642,7 @@ pub(crate) async fn ingest_source(
 pub(crate) enum ArtifactStoreKind {
     Proxy,
     ThumbnailTile,
+    Transcript,
 }
 
 impl ArtifactStoreKind {
@@ -624,6 +650,7 @@ impl ArtifactStoreKind {
         match self {
             Self::Proxy => "proxy",
             Self::ThumbnailTile => "thumbnail_tile",
+            Self::Transcript => "transcript",
         }
     }
 
@@ -631,6 +658,14 @@ impl ArtifactStoreKind {
         match self {
             Self::Proxy => "mp4",
             Self::ThumbnailTile => "jpg",
+            Self::Transcript => "json",
+        }
+    }
+
+    fn operation(self) -> &'static str {
+        match self {
+            Self::Proxy | Self::ThumbnailTile => "prepare_asset",
+            Self::Transcript => "transcribe_asset",
         }
     }
 }
@@ -654,33 +689,34 @@ impl ArtifactBuildGuard {
             .file_stem()
             .and_then(|value| value.to_str())
             .filter(|value| valid_key(value))
-            .ok_or_else(|| artifact_invalid("artifact_key"))?;
+            .ok_or_else(|| artifact_invalid(self.kind, "artifact_key"))?;
         let prefix = format!(".derive-{key}-");
         let suffix = format!(".part.{}", self.kind.extension());
-        for entry in
-            fs::read_dir(&self.directory).map_err(|_| artifact_invalid("temporary_file"))?
+        for entry in fs::read_dir(&self.directory)
+            .map_err(|_| artifact_invalid(self.kind, "temporary_file"))?
         {
-            let entry = entry.map_err(|_| artifact_invalid("temporary_file"))?;
+            let entry = entry.map_err(|_| artifact_invalid(self.kind, "temporary_file"))?;
             let name = entry.file_name();
             let name = name
                 .to_str()
-                .ok_or_else(|| artifact_invalid("temporary_file"))?;
+                .ok_or_else(|| artifact_invalid(self.kind, "temporary_file"))?;
             if !name.starts_with(&prefix) || !name.ends_with(&suffix) {
                 continue;
             }
             let metadata = fs::symlink_metadata(entry.path())
-                .map_err(|_| artifact_invalid("temporary_file"))?;
+                .map_err(|_| artifact_invalid(self.kind, "temporary_file"))?;
             if !metadata.is_file() || is_reparse_or_symlink(&metadata) {
-                return Err(artifact_invalid("temporary_file"));
+                return Err(artifact_invalid(self.kind, "temporary_file"));
             }
-            fs::remove_file(entry.path()).map_err(|_| artifact_invalid("temporary_file"))?;
+            fs::remove_file(entry.path())
+                .map_err(|_| artifact_invalid(self.kind, "temporary_file"))?;
         }
         TempFileBuilder::new()
             .prefix(&prefix)
             .suffix(&suffix)
             .rand_bytes(ARTIFACT_TEMPORARY_RANDOM_BYTES)
             .tempfile_in(&self.directory)
-            .map_err(|_| artifact_invalid("temporary_file"))
+            .map_err(|_| artifact_invalid(self.kind, "temporary_file"))
     }
 
     pub(crate) fn promote(&self, temporary: NamedTempFile) -> Result<(), VideoCommandError> {
@@ -693,7 +729,7 @@ impl ArtifactBuildGuard {
         failpoint: PublicationFailpoint,
     ) -> Result<(), VideoCommandError> {
         durable_publish(temporary, &self.directory, &self.destination, failpoint)
-            .map_err(artifact_publication_error)
+            .map_err(|error| artifact_publication_error(self.kind, error))
     }
 
     #[cfg(test)]
@@ -706,22 +742,24 @@ impl ArtifactBuildGuard {
     }
 
     pub(crate) fn confirm_durable(&self) -> Result<(), VideoCommandError> {
-        sync_publication_directory(&self.directory).map_err(artifact_publication_error)
+        sync_publication_directory(&self.directory)
+            .map_err(|error| artifact_publication_error(self.kind, error))
     }
 
     pub(crate) fn remove_exact(&self) -> Result<(), VideoCommandError> {
         match fs::symlink_metadata(&self.destination) {
             Ok(metadata) if metadata.is_file() && !is_reparse_or_symlink(&metadata) => {
-                fs::remove_file(&self.destination).map_err(|_| artifact_invalid("artifact_repair"))
+                fs::remove_file(&self.destination)
+                    .map_err(|_| artifact_invalid(self.kind, "artifact_repair"))
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            _ => Err(artifact_invalid("artifact_repair")),
+            _ => Err(artifact_invalid(self.kind, "artifact_repair")),
         }
     }
 }
 
-fn artifact_invalid(category: &'static str) -> VideoCommandError {
-    VideoCommandError::invalid_media("prepare_asset", category)
+fn artifact_invalid(kind: ArtifactStoreKind, category: &'static str) -> VideoCommandError {
+    invalid_for(kind.operation(), category)
 }
 
 fn valid_key(key: &str) -> bool {
@@ -749,20 +787,21 @@ fn artifact_directories(
     kind: ArtifactStoreKind,
     key: &str,
 ) -> Result<(PathBuf, PathBuf), VideoCommandError> {
+    let operation = kind.operation();
     if !valid_key(key) {
-        return Err(artifact_invalid("artifact_key"));
+        return Err(artifact_invalid(kind, "artifact_key"));
     }
-    let cache_root = canonical_owned_root(app_cache_root)?;
-    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE)?;
-    let derived = ensure_direct_directory(&store_root, "derived")?;
-    let artifact_kind = ensure_direct_directory(&derived, kind.component())?;
-    let locks = ensure_direct_directory(&store_root, "locks")?;
-    let lock_kind = ensure_direct_directory(&locks, kind.component())?;
+    let cache_root = canonical_owned_root(app_cache_root, operation)?;
+    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, operation)?;
+    let derived = ensure_direct_directory(&store_root, "derived", operation)?;
+    let artifact_kind = ensure_direct_directory(&derived, kind.component(), operation)?;
+    let locks = ensure_direct_directory(&store_root, "locks", operation)?;
+    let lock_kind = ensure_direct_directory(&locks, kind.component(), operation)?;
     let prefix = key
         .get(..2)
-        .ok_or_else(|| artifact_invalid("artifact_key"))?;
-    let directory = ensure_direct_directory(&artifact_kind, prefix)?;
-    let lock_directory = ensure_direct_directory(&lock_kind, prefix)?;
+        .ok_or_else(|| artifact_invalid(kind, "artifact_key"))?;
+    let directory = ensure_direct_directory(&artifact_kind, prefix, operation)?;
+    let lock_directory = ensure_direct_directory(&lock_kind, prefix, operation)?;
     Ok((directory, lock_directory))
 }
 
@@ -773,7 +812,7 @@ pub(crate) fn try_lock_artifact_nonblocking(
 ) -> Result<Option<StoreLock>, VideoCommandError> {
     let (_, lock_directory) = artifact_directories(app_cache_root, kind, key)?;
     let lock_path = lock_directory.join(format!("{key}.lock"));
-    try_lock_file_nonblocking(&lock_path)
+    try_lock_file_nonblocking(&lock_path, kind.operation())
 }
 
 fn acquire_artifact_blocking(
@@ -784,7 +823,7 @@ fn acquire_artifact_blocking(
     let (directory, lock_directory) = artifact_directories(&app_cache_root, kind, &key)?;
     let destination = directory.join(format!("{key}.{}", kind.extension()));
     let lock_path = lock_directory.join(format!("{key}.lock"));
-    let lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT)?;
+    let lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT, kind.operation())?;
     Ok(ArtifactBuildGuard {
         destination,
         directory,
@@ -804,7 +843,7 @@ pub(crate) async fn acquire_artifact(
         acquire_artifact_blocking(app_cache_root, kind, key)
     })
     .await
-    .map_err(|_| artifact_invalid("worker"))?
+    .map_err(|_| artifact_invalid(kind, "worker"))?
 }
 
 #[cfg(test)]
@@ -863,7 +902,7 @@ pub(crate) fn lock_file_for_test(
     path: &Path,
     timeout: Duration,
 ) -> Result<StoreLock, VideoCommandError> {
-    lock_file(path, timeout)
+    lock_file(path, timeout, "ingest_source")
 }
 
 #[cfg(test)]
@@ -871,7 +910,7 @@ pub(crate) fn ensure_direct_directory_for_test(
     parent: &Path,
     component: &str,
 ) -> Result<PathBuf, VideoCommandError> {
-    ensure_direct_directory(parent, component)
+    ensure_direct_directory(parent, component, "ingest_source")
 }
 
 #[cfg(test)]

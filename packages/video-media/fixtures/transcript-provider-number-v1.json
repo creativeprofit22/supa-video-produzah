@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "baseConfiguration": {
+    "schemaVersion": 1,
+    "engineId": "fixture-asr",
+    "engineVersion": "1.0.0",
+    "modelId": "fixture-model",
+    "modelRevision": "fixture-revision",
+    "requestedLanguage": null,
+    "task": "transcribe",
+    "wordTimingRequired": true,
+    "speakerDiarizationMode": "off",
+    "chunkDurationUs": 1000000,
+    "chunkOverlapUs": 100000,
+    "providerSettings": []
+  },
+  "accepted": [
+    {
+      "name": "zero",
+      "value": 0,
+      "expectedDigest": "51ca11a91ca60880f4102d7628f69be4619abd423b64ccfa1a03cd44c44632ff"
+    },
+    {
+      "name": "negative-zero",
+      "value": -0,
+      "expectedDigest": "51ca11a91ca60880f4102d7628f69be4619abd423b64ccfa1a03cd44c44632ff"
+    },
+    {
+      "name": "exponent-form-integer",
+      "value": 1e3,
+      "expectedDigest": "2e7b771440380a4ac0bff46073a5070352f2ef5a5e15d1632d0d95af097c4fb4"
+    },
+    {
+      "name": "maximum-safe-integer",
+      "value": 9007199254740991,
+      "expectedDigest": "ce2e9ee8f6d2c5f59ae750e2e2ad16566705e756297b1aef2d4312141903a2e3"
+    },
+    {
+      "name": "minimum-safe-integer",
+      "value": -9007199254740991,
+      "expectedDigest": "b785934f623bb77a3b3b22c9eda0a367df3903dac22911cdc450c13c2921a9aa"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "decimal",
+      "value": 1.5
+    },
+    {
+      "name": "one-e-minus-six",
+      "value": 1e-6
+    },
+    {
+      "name": "one-e-minus-seven",
+      "value": 1e-7
+    },
+    {
+      "name": "one-e-twenty",
+      "value": 1e20
+    },
+    {
+      "name": "one-e-twenty-one",
+      "value": 1e21
+    },
+    {
+      "name": "above-maximum-safe-integer",
+      "value": 9007199254740992
+    },
+    {
+      "name": "below-minimum-safe-integer",
+      "value": -9007199254740992
+    }
+  ]
+}

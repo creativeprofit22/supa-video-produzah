@@ -11,6 +11,7 @@ pub mod project;
 pub(crate) mod project_io;
 pub(crate) mod render;
 pub(crate) mod toolchain;
+mod transcript;
 mod types;
 
 pub use derived::video_prepare_asset;

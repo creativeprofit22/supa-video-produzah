@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "sourceIdentity": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "byteLength": 123456
+  },
+  "sourceFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "3f93442f2ca6148106623062a8f44483bac6fd0de29fa903dca3da1dd895ee39",
+    "byteLength": 123456,
+    "modifiedUnixSeconds": 1720000000,
+    "modifiedNanoseconds": 123456789
+  },
+  "sourceDurationUs": 1200000,
+  "configuration": {
+    "schemaVersion": 1,
+    "engineId": "whisper.cpp",
+    "engineVersion": "1.7.5",
+    "modelId": "large-v3",
+    "modelRevision": "fixture-model-revision",
+    "requestedLanguage": "auto",
+    "task": "transcribe",
+    "wordTimingRequired": true,
+    "speakerDiarizationMode": "optional",
+    "chunkDurationUs": 700000,
+    "chunkOverlapUs": 200000,
+    "providerSettings": [
+      {
+        "key": "beam_size",
+        "value": 5
+      },
+      {
+        "key": "condition_on_previous_text",
+        "value": false
+      }
+    ]
+  },
+  "chunks": [
+    {
+      "schemaVersion": 1,
+      "chunkId": "chunk-b",
+      "chunkIndex": 1,
+      "sourceStartUs": 500000,
+      "sourceEndUs": 1100000,
+      "words": [
+        {
+          "text": "overlap",
+          "relativeStartUs": 0,
+          "relativeEndUs": 100000,
+          "recognitionConfidence": 0.95,
+          "speakerLabel": "speaker-1",
+          "speakerConfidence": 0.9,
+          "timingProvenance": "aligned"
+        },
+        {
+          "text": "world",
+          "relativeStartUs": 50000,
+          "relativeEndUs": 200000,
+          "recognitionConfidence": null,
+          "speakerLabel": null,
+          "speakerConfidence": null,
+          "timingProvenance": "aligned"
+        },
+        {
+          "text": "late",
+          "relativeStartUs": 250000,
+          "relativeEndUs": 400000,
+          "recognitionConfidence": 0.75,
+          "speakerLabel": "speaker-2",
+          "speakerConfidence": 0.8,
+          "timingProvenance": "aligned"
+        },
+        {
+          "text": "bounded",
+          "relativeStartUs": 550000,
+          "relativeEndUs": 700000,
+          "recognitionConfidence": 0.7,
+          "speakerLabel": "speaker-2",
+          "speakerConfidence": null,
+          "timingProvenance": "aligned"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chunkId": "chunk-a",
+      "chunkIndex": 0,
+      "sourceStartUs": -100000,
+      "sourceEndUs": 700000,
+      "words": [
+        {
+          "text": "hello",
+          "relativeStartUs": 200000,
+          "relativeEndUs": 350000,
+          "recognitionConfidence": 0.98,
+          "speakerLabel": "speaker-1",
+          "speakerConfidence": 0.95,
+          "timingProvenance": "aligned"
+        },
+        {
+          "text": "overlap",
+          "relativeStartUs": 600000,
+          "relativeEndUs": 700000,
+          "recognitionConfidence": 0.9,
+          "speakerLabel": "speaker-1",
+          "speakerConfidence": 0.85,
+          "timingProvenance": "aligned"
+        },
+        {
+          "text": "early",
+          "relativeStartUs": 50000,
+          "relativeEndUs": 150000,
+          "recognitionConfidence": null,
+          "speakerLabel": null,
+          "speakerConfidence": null,
+          "timingProvenance": "estimated"
+        },
+        {
+          "text": "repaired",
+          "relativeStartUs": 500000,
+          "relativeEndUs": 550000,
+          "recognitionConfidence": 0.8,
+          "speakerLabel": "speaker-1",
+          "speakerConfidence": 0.8,
+          "timingProvenance": "estimated"
+        }
+      ]
+    }
+  ],
+  "configurationIdentity": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "77c7a3644d37bd398e89bc6440f24f8e39ce5df250a951b0ffc888406619d088"
+  },
+  "artifact": {
+    "schemaVersion": 1,
+    "identity": {
+      "schemaVersion": 1,
+      "key": "76d3c7fd9700e9403b009a8f1a30ad7cdf73fac9c853a5ffe8623b8d1359eb28",
+      "sourceIdentity": {
+        "schemaVersion": 1,
+        "algorithm": "sha256",
+        "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "byteLength": 123456
+      },
+      "sourceFingerprint": {
+        "schemaVersion": 1,
+        "algorithm": "sha256",
+        "digest": "3f93442f2ca6148106623062a8f44483bac6fd0de29fa903dca3da1dd895ee39",
+        "byteLength": 123456,
+        "modifiedUnixSeconds": 1720000000,
+        "modifiedNanoseconds": 123456789
+      },
+      "configurationIdentity": {
+        "schemaVersion": 1,
+        "algorithm": "sha256",
+        "digest": "77c7a3644d37bd398e89bc6440f24f8e39ce5df250a951b0ffc888406619d088"
+      }
+    },
+    "sourceDurationUs": 1200000,
+    "configuration": {
+      "schemaVersion": 1,
+      "engineId": "whisper.cpp",
+      "engineVersion": "1.7.5",
+      "modelId": "large-v3",
+      "modelRevision": "fixture-model-revision",
+      "requestedLanguage": "auto",
+      "task": "transcribe",
+      "wordTimingRequired": true,
+      "speakerDiarizationMode": "optional",
+      "chunkDurationUs": 700000,
+      "chunkOverlapUs": 200000,
+      "providerSettings": [
+        {
+          "key": "beam_size",
+          "value": 5
+        },
+        {
+          "key": "condition_on_previous_text",
+          "value": false
+        }
+      ]
+    },
+    "chunks": [
+      {
+        "schemaVersion": 1,
+        "chunkId": "chunk-a",
+        "chunkIndex": 0,
+        "sourceStartUs": 0,
+        "sourceEndUs": 700000,
+        "words": [
+          {
+            "wordId": "chunk-a:0",
+            "chunkId": "chunk-a",
+            "chunkIndex": 0,
+            "wordIndex": 0,
+            "text": "hello",
+            "sourceStartUs": 100000,
+            "sourceEndUs": 250000,
+            "recognitionConfidence": 0.98,
+            "speakerLabel": "speaker-1",
+            "speakerConfidence": 0.95,
+            "timingProvenance": "aligned"
+          },
+          {
+            "wordId": "chunk-a:1",
+            "chunkId": "chunk-a",
+            "chunkIndex": 0,
+            "wordIndex": 1,
+            "text": "overlap",
+            "sourceStartUs": 500000,
+            "sourceEndUs": 600000,
+            "recognitionConfidence": 0.9,
+            "speakerLabel": "speaker-1",
+            "speakerConfidence": 0.85,
+            "timingProvenance": "aligned"
+          },
+          {
+            "wordId": "chunk-a:2",
+            "chunkId": "chunk-a",
+            "chunkIndex": 0,
+            "wordIndex": 2,
+            "text": "early",
+            "sourceStartUs": 0,
+            "sourceEndUs": 50000,
+            "recognitionConfidence": null,
+            "speakerLabel": null,
+            "speakerConfidence": null,
+            "timingProvenance": "clamped"
+          },
+          {
+            "wordId": "chunk-a:3",
+            "chunkId": "chunk-a",
+            "chunkIndex": 0,
+            "wordIndex": 3,
+            "text": "repaired",
+            "sourceStartUs": 400000,
+            "sourceEndUs": 450000,
+            "recognitionConfidence": 0.8,
+            "speakerLabel": "speaker-1",
+            "speakerConfidence": 0.8,
+            "timingProvenance": "estimated"
+          }
+        ]
+      },
+      {
+        "schemaVersion": 1,
+        "chunkId": "chunk-b",
+        "chunkIndex": 1,
+        "sourceStartUs": 500000,
+        "sourceEndUs": 1100000,
+        "words": [
+          {
+            "wordId": "chunk-b:0",
+            "chunkId": "chunk-b",
+            "chunkIndex": 1,
+            "wordIndex": 0,
+            "text": "overlap",
+            "sourceStartUs": 500000,
+            "sourceEndUs": 600000,
+            "recognitionConfidence": 0.95,
+            "speakerLabel": "speaker-1",
+            "speakerConfidence": 0.9,
+            "timingProvenance": "aligned"
+          },
+          {
+            "wordId": "chunk-b:1",
+            "chunkId": "chunk-b",
+            "chunkIndex": 1,
+            "wordIndex": 1,
+            "text": "world",
+            "sourceStartUs": 550000,
+            "sourceEndUs": 700000,
+            "recognitionConfidence": null,
+            "speakerLabel": null,
+            "speakerConfidence": null,
+            "timingProvenance": "aligned"
+          },
+          {
+            "wordId": "chunk-b:2",
+            "chunkId": "chunk-b",
+            "chunkIndex": 1,
+            "wordIndex": 2,
+            "text": "late",
+            "sourceStartUs": 750000,
+            "sourceEndUs": 900000,
+            "recognitionConfidence": 0.75,
+            "speakerLabel": "speaker-2",
+            "speakerConfidence": 0.8,
+            "timingProvenance": "aligned"
+          },
+          {
+            "wordId": "chunk-b:3",
+            "chunkId": "chunk-b",
+            "chunkIndex": 1,
+            "wordIndex": 3,
+            "text": "bounded",
+            "sourceStartUs": 1050000,
+            "sourceEndUs": 1100000,
+            "recognitionConfidence": 0.7,
+            "speakerLabel": "speaker-2",
+            "speakerConfidence": null,
+            "timingProvenance": "clamped"
+          }
+        ]
+      }
+    ],
+    "words": [
+      {
+        "wordId": "chunk-a:2",
+        "chunkId": "chunk-a",
+        "chunkIndex": 0,
+        "wordIndex": 2,
+        "text": "early",
+        "sourceStartUs": 0,
+        "sourceEndUs": 50000,
+        "recognitionConfidence": null,
+        "speakerLabel": null,
+        "speakerConfidence": null,
+        "timingProvenance": "clamped"
+      },
+      {
+        "wordId": "chunk-a:0",
+        "chunkId": "chunk-a",
+        "chunkIndex": 0,
+        "wordIndex": 0,
+        "text": "hello",
+        "sourceStartUs": 100000,
+        "sourceEndUs": 250000,
+        "recognitionConfidence": 0.98,
+        "speakerLabel": "speaker-1",
+        "speakerConfidence": 0.95,
+        "timingProvenance": "aligned"
+      },
+      {
+        "wordId": "chunk-a:3",
+        "chunkId": "chunk-a",
+        "chunkIndex": 0,
+        "wordIndex": 3,
+        "text": "repaired",
+        "sourceStartUs": 400000,
+        "sourceEndUs": 450000,
+        "recognitionConfidence": 0.8,
+        "speakerLabel": "speaker-1",
+        "speakerConfidence": 0.8,
+        "timingProvenance": "estimated"
+      },
+      {
+        "wordId": "chunk-b:0",
+        "chunkId": "chunk-b",
+        "chunkIndex": 1,
+        "wordIndex": 0,
+        "text": "overlap",
+        "sourceStartUs": 500000,
+        "sourceEndUs": 600000,
+        "recognitionConfidence": 0.95,
+        "speakerLabel": "speaker-1",
+        "speakerConfidence": 0.9,
+        "timingProvenance": "aligned"
+      },
+      {
+        "wordId": "chunk-b:1",
+        "chunkId": "chunk-b",
+        "chunkIndex": 1,
+        "wordIndex": 1,
+        "text": "world",
+        "sourceStartUs": 550000,
+        "sourceEndUs": 700000,
+        "recognitionConfidence": null,
+        "speakerLabel": null,
+        "speakerConfidence": null,
+        "timingProvenance": "aligned"
+      },
+      {
+        "wordId": "chunk-b:2",
+        "chunkId": "chunk-b",
+        "chunkIndex": 1,
+        "wordIndex": 2,
+        "text": "late",
+        "sourceStartUs": 750000,
+        "sourceEndUs": 900000,
+        "recognitionConfidence": 0.75,
+        "speakerLabel": "speaker-2",
+        "speakerConfidence": 0.8,
+        "timingProvenance": "aligned"
+      },
+      {
+        "wordId": "chunk-b:3",
+        "chunkId": "chunk-b",
+        "chunkIndex": 1,
+        "wordIndex": 3,
+        "text": "bounded",
+        "sourceStartUs": 1050000,
+        "sourceEndUs": 1100000,
+        "recognitionConfidence": 0.7,
+        "speakerLabel": "speaker-2",
+        "speakerConfidence": null,
+        "timingProvenance": "clamped"
+      }
+    ],
+    "uncertaintyCounts": {
+      "missingConfidenceWordCount": 2,
+      "missingSpeakerWordCount": 2,
+      "estimatedTimingWordCount": 1,
+      "clampedTimingWordCount": 2,
+      "retainedOverlapWordCount": 1,
+      "removedExactDuplicateWordCount": 1
+    }
+  }
+}

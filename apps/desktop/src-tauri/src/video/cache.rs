@@ -30,6 +30,7 @@ pub(crate) enum CacheArtifactKind {
     SourceObject,
     Proxy,
     ThumbnailTile,
+    Transcript,
 }
 
 impl CacheArtifactKind {
@@ -38,6 +39,7 @@ impl CacheArtifactKind {
             Self::SourceObject => "source_object",
             Self::Proxy => "proxy",
             Self::ThumbnailTile => "thumbnail_tile",
+            Self::Transcript => "transcript",
         }
     }
 
@@ -57,6 +59,10 @@ impl CacheArtifactKind {
                 .join("thumbnail_tile")
                 .join(prefix)
                 .join(format!("{key}.jpg")),
+            Self::Transcript => PathBuf::from("derived")
+                .join("transcript")
+                .join(prefix)
+                .join(format!("{key}.json")),
         })
     }
 
@@ -74,6 +80,10 @@ impl CacheArtifactKind {
                 .join(format!("{key}.lock")),
             Self::ThumbnailTile => PathBuf::from("locks")
                 .join("thumbnail_tile")
+                .join(prefix)
+                .join(format!("{key}.lock")),
+            Self::Transcript => PathBuf::from("locks")
+                .join("transcript")
                 .join(prefix)
                 .join(format!("{key}.lock")),
         })
@@ -313,6 +323,12 @@ impl MediaCacheService {
             "jpg",
             &mut registrations,
         )?;
+        collect_owned_artifacts(
+            &root.join("derived").join("transcript"),
+            CacheArtifactKind::Transcript,
+            "json",
+            &mut registrations,
+        )?;
         let mut registered = 0_u64;
         for (kind, key, path) in registrations {
             self.register_sync(&CacheArtifactRegistration {
@@ -343,6 +359,11 @@ impl MediaCacheService {
                 CacheArtifactKind::ThumbnailTile,
                 ArtifactStoreKind::ThumbnailTile,
                 "jpg",
+            ),
+            (
+                CacheArtifactKind::Transcript,
+                ArtifactStoreKind::Transcript,
+                "json",
             ),
         ] {
             let kind_root = root.join("derived").join(kind.database_value());
@@ -985,6 +1006,7 @@ fn parse_kind(value: &str) -> rusqlite::Result<CacheArtifactKind> {
         "source_object" => Ok(CacheArtifactKind::SourceObject),
         "proxy" => Ok(CacheArtifactKind::Proxy),
         "thumbnail_tile" => Ok(CacheArtifactKind::ThumbnailTile),
+        "transcript" => Ok(CacheArtifactKind::Transcript),
         _ => Err(rusqlite::Error::InvalidQuery),
     }
 }
@@ -1414,5 +1436,67 @@ pub(crate) mod tests {
             .await
             .is_err());
         assert_eq!(fs::read(unrelated).unwrap(), b"keep");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn transcript_paths_inventory_cleanup_and_eviction_are_supported() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = format!("ef{}", "1".repeat(62));
+        assert_eq!(
+            CacheArtifactKind::Transcript.relative_path(&key).unwrap(),
+            PathBuf::from("derived")
+                .join("transcript")
+                .join("ef")
+                .join(format!("{key}.json"))
+        );
+        assert_eq!(
+            CacheArtifactKind::Transcript
+                .lock_relative_path(&key)
+                .unwrap(),
+            PathBuf::from("locks")
+                .join("transcript")
+                .join("ef")
+                .join(format!("{key}.lock"))
+        );
+        assert_eq!(
+            parse_kind("transcript").unwrap(),
+            CacheArtifactKind::Transcript
+        );
+
+        let cache_root = root.path().join("cache");
+        let guard = acquire_artifact(&cache_root, ArtifactStoreKind::Transcript, &key)
+            .await
+            .unwrap();
+        let destination = guard.path().to_owned();
+        let temporary = guard.temporary().unwrap();
+        fs::write(temporary.path(), br#"{"segments":[]}"#).unwrap();
+        guard.promote(temporary).unwrap();
+        drop(guard);
+        assert!(destination.ends_with(format!("{key}.json")));
+
+        let partial = destination
+            .parent()
+            .unwrap()
+            .join(format!(".derive-{key}-ABC123.part.json"));
+        fs::write(&partial, b"partial").unwrap();
+        assert_eq!(cache.cleanup_stale_builds(Duration::ZERO).await.unwrap(), 1);
+        assert!(!partial.exists());
+        assert_eq!(cache.rebuild_owned_inventory().await.unwrap(), 1);
+        assert_eq!(cache.status().await.unwrap().artifact_count, 1);
+
+        let report = cache.enforce_test_budget(0).await.unwrap();
+        assert_eq!(report.evicted_artifacts, 1);
+        assert!(!destination.exists());
+
+        let transcript_error =
+            acquire_artifact(&cache_root, ArtifactStoreKind::Transcript, "invalid")
+                .await
+                .unwrap_err();
+        assert_eq!(transcript_error.details["operation"], "transcribe_asset");
+        let proxy_error = acquire_artifact(&cache_root, ArtifactStoreKind::Proxy, "invalid")
+            .await
+            .unwrap_err();
+        assert_eq!(proxy_error.details["operation"], "prepare_asset");
     }
 }
