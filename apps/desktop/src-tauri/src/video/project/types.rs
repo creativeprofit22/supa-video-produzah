@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::video::caption::CaptionArtifactV1;
 use crate::video::types::{
     deserialize_optional_non_null, AssetLocator, MediaContentIdentityV1, MediaProbe, RationalRate,
     RationalTime, VideoAsset,
@@ -136,6 +137,12 @@ pub enum ProjectTrack {
         #[serde(default, skip_serializing_if = "is_false")]
         hidden: bool,
         captions: Vec<ProjectCaption>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_optional_non_null",
+            skip_serializing_if = "Option::is_none"
+        )]
+        active_caption_artifact: Option<CaptionArtifactV1>,
     },
 }
 
@@ -493,6 +500,29 @@ pub enum ProjectCommand {
         #[serde(rename = "captionId")]
         caption_id: String,
     },
+    ApplyCaptionArtifact {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        artifact: CaptionArtifactV1,
+    },
+    RestoreActiveCaptionArtifact {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_optional_non_null",
+            skip_serializing_if = "Option::is_none"
+        )]
+        artifact: Option<CaptionArtifactV1>,
+    },
     RelinkAsset {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -541,13 +571,18 @@ impl ProjectCommand {
             | Self::RemoveMarker { command_id, .. }
             | Self::AddCaption { command_id, .. }
             | Self::RemoveCaption { command_id, .. }
+            | Self::ApplyCaptionArtifact { command_id, .. }
+            | Self::RestoreActiveCaptionArtifact { command_id, .. }
             | Self::RelinkAsset { command_id, .. }
             | Self::RemoveAsset { command_id, .. } => command_id,
         }
     }
 
     pub(crate) fn is_private_inverse(&self) -> bool {
-        matches!(self, Self::RestoreRippleDeletedClip { .. })
+        matches!(
+            self,
+            Self::RestoreRippleDeletedClip { .. } | Self::RestoreActiveCaptionArtifact { .. }
+        )
     }
 }
 
@@ -732,6 +767,7 @@ pub struct JournalRecord {
     pub committed_at: String,
     pub base_revision: ProjectRevisionDescriptorV2,
     pub resulting_revision: ProjectRevisionDescriptorV2,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<ProjectCommand>,
     pub history_group: ProjectHistoryEntryV2,
     pub summary: String,
@@ -745,4 +781,18 @@ pub struct JournalRecord {
     pub idempotency_result: Option<Box<CommandResult>>,
     pub previous_record_hash: String,
     pub record_hash: String,
+}
+
+impl JournalRecord {
+    pub fn replay_commands(&self) -> &[ProjectCommand] {
+        if !self.commands.is_empty() {
+            return &self.commands;
+        }
+        match self.kind {
+            JournalRecordKind::Commit | JournalRecordKind::Redo => {
+                &self.history_group.forward_commands
+            }
+            JournalRecordKind::Undo => &self.history_group.inverse_commands,
+        }
+    }
 }

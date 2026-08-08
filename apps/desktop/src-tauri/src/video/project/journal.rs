@@ -6,6 +6,7 @@ use std::{
 
 use fs4::{FileExt, TryLockError};
 use serde::Serialize;
+use serde_json::Value;
 
 use super::{
     hash::{canonical_bytes, canonical_hash},
@@ -94,6 +95,10 @@ pub fn with_record_hash(record: &JournalRecord) -> Result<JournalRecord, VideoCo
     Ok(candidate)
 }
 
+pub fn record_line_bytes(record: &JournalRecord) -> Result<usize, VideoCommandError> {
+    Ok(canonical_bytes(&with_record_hash(record)?)?.len())
+}
+
 fn line_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, VideoCommandError> {
     let mut bytes = canonical_bytes(value)?;
     if bytes.len() > MAX_JOURNAL_LINE_BYTES {
@@ -171,6 +176,27 @@ pub fn append_with_failpoint(
     Ok(record)
 }
 
+fn is_hash_consistent_record_envelope(
+    value: &Value,
+    expected_record_number: u64,
+    previous_record_hash: &str,
+) -> bool {
+    let Some(record) = value.as_object() else {
+        return false;
+    };
+    if record.get("recordNumber").and_then(Value::as_u64) != Some(expected_record_number)
+        || record.get("previousRecordHash").and_then(Value::as_str) != Some(previous_record_hash)
+    {
+        return false;
+    }
+    let Some(record_hash) = record.get("recordHash").and_then(Value::as_str) else {
+        return false;
+    };
+    let mut candidate = value.clone();
+    candidate["recordHash"] = Value::String(String::new());
+    canonical_hash(&candidate).is_ok_and(|candidate_hash| candidate_hash == record_hash)
+}
+
 pub fn scan(path: &Path) -> Result<JournalScan, VideoCommandError> {
     let metadata =
         fs::metadata(path).map_err(|_| error(VideoErrorCode::ProjectIo, "journal_metadata"))?;
@@ -221,9 +247,22 @@ pub fn scan(path: &Path) -> Result<JournalScan, VideoCommandError> {
             corrupt = true;
             break;
         }
-        let Ok(record) = serde_json::from_slice::<JournalRecord>(line) else {
-            corrupt = true;
-            break;
+        let record = match serde_json::from_slice::<JournalRecord>(line) {
+            Ok(record) => record,
+            Err(_) => {
+                let expected_record_number = expected_index as u64 + 1;
+                if serde_json::from_slice::<Value>(line).is_ok_and(|value| {
+                    is_hash_consistent_record_envelope(
+                        &value,
+                        expected_record_number,
+                        &previous_hash,
+                    )
+                }) {
+                    return Err(error(VideoErrorCode::InvalidProject, "record_schema"));
+                }
+                corrupt = true;
+                break;
+            }
         };
         let valid = record.record_number == expected_index as u64 + 1
             && record.previous_record_hash == previous_hash

@@ -178,6 +178,8 @@ function commandSummary(command: ProjectCommandV2): string {
       return command.locked ? "Locked track" : "Unlocked track";
     case "SetTrackHidden":
       return command.hidden ? "Hid track" : "Showed track";
+    case "ApplyCaptionArtifact":
+      return "Apply caption artifact";
     default:
       return "Updated project";
   }
@@ -196,10 +198,55 @@ function lockedMutationTarget(command: ProjectCommandV2) {
     case "SetClipGain":
     case "AddCaption":
     case "RemoveCaption":
+    case "ApplyCaptionArtifact":
+    case "RestoreActiveCaptionArtifact":
       return { sequenceId: command.sequenceId, trackId: command.trackId };
     default:
       return null;
   }
+}
+
+function revisionsMatch(
+  left: ProjectProjection["revision"],
+  right: ProjectProjection["revision"],
+): boolean {
+  return (
+    left.number === right.number &&
+    left.id === right.id &&
+    left.parentId === right.parentId &&
+    left.committedAt === right.committedAt &&
+    left.operationId === right.operationId &&
+    left.stateHash === right.stateHash
+  );
+}
+
+function historyError(code: "invalid_command" | "stale_revision", category: string) {
+  return new VideoDomainError(code, "Project history operation was rejected", {
+    operation: "project_history",
+    category,
+  });
+}
+
+function commandError(category: string, message = "Project command failed its preconditions") {
+  return new VideoDomainError("invalid_command", message, {
+    operation: "execute_project_command",
+    category,
+  });
+}
+
+function addCacheInvalidations(
+  target: CommandResult["cacheInvalidations"],
+  invalidations: CommandResult["cacheInvalidations"],
+): void {
+  for (const invalidation of invalidations) {
+    if (!target.includes(invalidation)) target.push(invalidation);
+  }
+}
+
+function historyCacheInvalidations(
+  summary: string | undefined,
+): CommandResult["cacheInvalidations"] {
+  return summary?.split(", ").includes("Apply caption artifact") ? ["captions", "render_plan"] : [];
 }
 
 function exactTimelineDuration(clip: {
@@ -368,6 +415,33 @@ export function createMockVideoService(
     if (command === "video_prepare_asset") return testPrepared;
     if (command === "video_execute_project_group") {
       const request = (args as { request: CommandGroupRequest }).request;
+      if (request.projectId !== projection.projectId) {
+        throw historyError("invalid_command", "project_mismatch");
+      }
+      if (request.baseRevision !== projection.revision.number) {
+        throw historyError("stale_revision", "base_revision");
+      }
+      if (
+        request.commands.some(
+          (item) =>
+            item.type === "RestoreRippleDeletedClip" ||
+            item.type === "RestoreActiveCaptionArtifact",
+        )
+      ) {
+        throw historyError("invalid_command", "private_inverse");
+      }
+      for (const item of request.commands) {
+        if (
+          item.type === "ApplyCaptionArtifact" &&
+          (item.artifact.trackLink.projectId !== request.projectId ||
+            item.artifact.trackLink.projectId !== projection.projectId ||
+            !revisionsMatch(item.artifact.trackLink.projectRevision, projection.revision) ||
+            item.artifact.trackLink.sequenceId !== item.sequenceId ||
+            item.artifact.trackLink.captionTrackId !== item.trackId)
+        ) {
+          throw historyError("invalid_command", "caption_artifact_track_link");
+        }
+      }
       const prior = structuredClone(projection);
       const next = nextProjection(projection, request.groupId);
       const affectedRanges: CommandResult["affectedRanges"] = [];
@@ -377,7 +451,9 @@ export function createMockVideoService(
         if (lockedTarget !== null) {
           const sequence = next.state.sequences.find(({ id }) => id === lockedTarget.sequenceId);
           const track = sequence?.tracks.find(({ id }) => id === lockedTarget.trackId);
-          if (track !== undefined && isTrackLocked(track)) throw new Error("Track is locked");
+          if (track !== undefined && isTrackLocked(track)) {
+            throw commandError("track_locked", "Track is locked");
+          }
         }
         if (item.type === "ImportAsset") next.state.assets.push(item.asset);
         else if (item.type === "CreateSequence") {
@@ -476,6 +552,21 @@ export function createMockVideoService(
               clip.timelineStart = { ...clip.timelineStart, value };
             }
           }
+        } else if (item.type === "ApplyCaptionArtifact") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (sequence === undefined) throw commandError("unknown_sequence");
+          if (
+            item.artifact.timelineRate.numerator !== sequence.rate.numerator ||
+            item.artifact.timelineRate.denominator !== sequence.rate.denominator
+          ) {
+            throw commandError("caption_artifact_rate");
+          }
+          const track = sequence.tracks.find(({ id }) => id === item.trackId);
+          if (track === undefined) throw commandError("unknown_track");
+          if (isTrackLocked(track)) throw commandError("track_locked", "Track is locked");
+          if (track.kind !== "caption") throw commandError("non_caption_track");
+          track.activeCaptionArtifact = structuredClone(item.artifact);
+          addCacheInvalidations(cacheInvalidations, ["captions", "render_plan"]);
         }
       }
       validateNoClipOverlaps(next);
@@ -511,9 +602,11 @@ export function createMockVideoService(
     if (command === "video_undo_project" || command === "video_redo_project") {
       const prior = structuredClone(projection);
       const operationId = (args as { operationId: string }).operationId;
+      let cacheInvalidations: CommandResult["cacheInvalidations"];
       if (command === "video_undo_project") {
         const target = undo.pop()!;
         redo.push(prior);
+        cacheInvalidations = historyCacheInvalidations(prior.lastCommand?.summary);
         projection = {
           ...target,
           revision: nextProjection(prior, operationId).revision,
@@ -528,6 +621,7 @@ export function createMockVideoService(
       } else {
         const target = redo.pop()!;
         undo.push(prior);
+        cacheInvalidations = historyCacheInvalidations(target.lastCommand?.summary);
         projection = {
           ...target,
           revision: nextProjection(prior, operationId).revision,
@@ -550,7 +644,7 @@ export function createMockVideoService(
         stateHash: projection.revision.stateHash,
         projection: structuredClone(projection),
         affectedRanges: [],
-        cacheInvalidations: [],
+        cacheInvalidations,
         events,
       };
     }

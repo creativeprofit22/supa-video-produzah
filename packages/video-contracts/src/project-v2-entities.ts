@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { captionArtifactV1Schema } from "./caption.js";
 import { projectUuidSchema, videoAssetSchema } from "./project.js";
 import { rationalRateSchema, rationalTimeSchema } from "./time.js";
 
@@ -92,6 +93,7 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
       kind: z.literal("caption"),
       hidden: z.boolean().optional(),
       captions: z.array(projectCaptionSchema).max(100_000),
+      activeCaptionArtifact: captionArtifactV1Schema.optional(),
     })
     .strict(),
 ]);
@@ -146,7 +148,59 @@ export const videoProjectStateV2Schema = z
     const sequenceIds = new Set(state.sequences.map((sequence) => sequence.id));
     state.sequences.forEach((sequence, sequenceIndex) => {
       sequence.tracks.forEach((track, trackIndex) => {
-        if (track.kind === "caption") return;
+        if (track.kind === "caption") {
+          const artifact = track.activeCaptionArtifact;
+          if (artifact !== undefined) {
+            if (artifact.trackLink.sequenceId !== sequence.id) {
+              context.addIssue({
+                code: "custom",
+                path: [
+                  "sequences",
+                  sequenceIndex,
+                  "tracks",
+                  trackIndex,
+                  "activeCaptionArtifact",
+                  "trackLink",
+                  "sequenceId",
+                ],
+                message: "Active caption artifact sequence must match its containing sequence",
+              });
+            }
+            if (artifact.trackLink.captionTrackId !== track.id) {
+              context.addIssue({
+                code: "custom",
+                path: [
+                  "sequences",
+                  sequenceIndex,
+                  "tracks",
+                  trackIndex,
+                  "activeCaptionArtifact",
+                  "trackLink",
+                  "captionTrackId",
+                ],
+                message: "Active caption artifact track must match its containing track",
+              });
+            }
+            if (
+              artifact.timelineRate.numerator !== sequence.rate.numerator ||
+              artifact.timelineRate.denominator !== sequence.rate.denominator
+            ) {
+              context.addIssue({
+                code: "custom",
+                path: [
+                  "sequences",
+                  sequenceIndex,
+                  "tracks",
+                  trackIndex,
+                  "activeCaptionArtifact",
+                  "timelineRate",
+                ],
+                message: "Active caption artifact rate must match its containing sequence",
+              });
+            }
+          }
+          return;
+        }
         track.clips.forEach((clip, clipIndex) => {
           const referenceExists =
             clip.source.kind === "asset"

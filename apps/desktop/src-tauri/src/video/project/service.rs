@@ -17,7 +17,10 @@ use super::{
         undo_transition, HistoryTransition,
     },
     integrity::{is_canonical_uuid, trim_contract_text, validate_snapshot},
-    journal::{acquire_project_lock, append_and_sync, journal_path, scan},
+    journal::{
+        acquire_project_lock, append_and_sync, journal_path, record_line_bytes, scan,
+        MAX_JOURNAL_LINE_BYTES,
+    },
     migration::migrate_v1_bytes,
     recovery::{create_journal_for_snapshot, recover},
     snapshot::{
@@ -235,12 +238,6 @@ fn record_for_transition(
     previous_record_hash: String,
     record_number: u64,
 ) -> JournalRecord {
-    let commands = match transition.kind {
-        JournalRecordKind::Commit | JournalRecordKind::Redo => {
-            transition.history_group.forward_commands.clone()
-        }
-        JournalRecordKind::Undo => transition.history_group.inverse_commands.clone(),
-    };
     let summary = transition_summary(&transition.kind, &transition.history_group.summary);
     JournalRecord {
         kind: transition.kind.clone(),
@@ -250,7 +247,9 @@ fn record_for_transition(
         committed_at: transition.snapshot.updated_at.clone(),
         base_revision: transition.prior_revision.clone(),
         resulting_revision: transition.snapshot.revision.clone(),
-        commands,
+        // Commands are replayable from history_group; omitting this legacy duplicate keeps
+        // large command payloads from being serialized twice in new journal records.
+        commands: Vec::new(),
         history_group: transition.history_group.clone(),
         summary,
         affected_ranges: transition.applied.affected_ranges.clone(),
@@ -273,7 +272,7 @@ fn journal_payload_hash(
             group_id: record.group_id.clone(),
             project_id: project_id.to_owned(),
             base_revision: record.base_revision.number,
-            commands: record.commands.clone(),
+            commands: record.replay_commands().to_vec(),
         }),
         JournalRecordKind::Undo | JournalRecordKind::Redo => canonical_hash(&json!({
             "projectId": project_id,
@@ -609,6 +608,9 @@ impl VideoProjectService {
             session.snapshot.last_record_hash.clone(),
             record_number,
         );
+        if record_line_bytes(&record)? > MAX_JOURNAL_LINE_BYTES {
+            return Err(error(VideoErrorCode::StorageLimit, "journal_record_bytes"));
+        }
         let durable_record = append_and_sync(&journal_path(&session.path)?, &record)?;
         transition.snapshot.last_record_hash = durable_record.record_hash;
         session.snapshot = transition.snapshot;

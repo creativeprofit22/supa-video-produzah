@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { captionArtifactV1Schema } from "./caption.js";
 import {
   clipTransformSchema,
   projectCaptionSchema,
@@ -210,6 +211,60 @@ export const removeCaptionCommandSchemaV2 = z
     captionId: projectUuidSchema,
   })
   .strict();
+export const applyCaptionArtifactCommandSchemaV2 = z
+  .object({
+    type: z.literal("ApplyCaptionArtifact"),
+    ...commandId,
+    ...target,
+    artifact: captionArtifactV1Schema,
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (command.artifact.trackLink.sequenceId !== command.sequenceId) {
+      context.addIssue({
+        code: "custom",
+        path: ["artifact", "trackLink", "sequenceId"],
+        message: "Caption artifact sequence must match the command target",
+      });
+    }
+    if (command.artifact.trackLink.captionTrackId !== command.trackId) {
+      context.addIssue({
+        code: "custom",
+        path: ["artifact", "trackLink", "captionTrackId"],
+        message: "Caption artifact track must match the command target",
+      });
+    }
+  });
+const restoreActiveCaptionArtifactCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreActiveCaptionArtifact"),
+    ...commandId,
+    ...target,
+    artifact: captionArtifactV1Schema.optional(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (
+      command.artifact !== undefined &&
+      command.artifact.trackLink.sequenceId !== command.sequenceId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["artifact", "trackLink", "sequenceId"],
+        message: "Caption artifact sequence must match the command target",
+      });
+    }
+    if (
+      command.artifact !== undefined &&
+      command.artifact.trackLink.captionTrackId !== command.trackId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["artifact", "trackLink", "captionTrackId"],
+        message: "Caption artifact track must match the command target",
+      });
+    }
+  });
 export const relinkAssetCommandSchemaV2 = z
   .object({
     type: z.literal("RelinkAsset"),
@@ -247,6 +302,8 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   removeMarkerCommandSchemaV2,
   addCaptionCommandSchemaV2,
   removeCaptionCommandSchemaV2,
+  applyCaptionArtifactCommandSchemaV2,
+  restoreActiveCaptionArtifactCommandSchemaV2,
   relinkAssetCommandSchemaV2,
   removeAssetCommandSchemaV2,
 ]);
@@ -262,7 +319,10 @@ export const commandGroupRequestSchema = z
   .strict()
   .superRefine((request, context) => {
     for (const [index, command] of request.commands.entries()) {
-      if (command.type === "RestoreRippleDeletedClip") {
+      if (
+        command.type === "RestoreRippleDeletedClip" ||
+        command.type === "RestoreActiveCaptionArtifact"
+      ) {
         context.addIssue({
           code: "custom",
           message: "Private inverse commands cannot be submitted directly",

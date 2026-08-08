@@ -108,6 +108,28 @@ pub fn commit_transition(
     {
         return Err(error(VideoErrorCode::InvalidCommand, "private_inverse"));
     }
+    for command in &request.commands {
+        let ProjectCommand::ApplyCaptionArtifact {
+            sequence_id,
+            track_id,
+            artifact,
+            ..
+        } = command
+        else {
+            continue;
+        };
+        if artifact.track_link.project_id != request.project_id
+            || artifact.track_link.project_id != snapshot.id
+            || artifact.track_link.project_revision != snapshot.revision
+            || artifact.track_link.sequence_id != *sequence_id
+            || artifact.track_link.caption_track_id != *track_id
+        {
+            return Err(error(
+                VideoErrorCode::InvalidCommand,
+                "caption_artifact_track_link",
+            ));
+        }
+    }
     let applied = apply_group(&snapshot.state, &request.commands)?;
     let history_group = ProjectHistoryEntryV2 {
         group_id: request.group_id.clone(),

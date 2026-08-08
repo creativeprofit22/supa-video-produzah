@@ -16,7 +16,7 @@ use super::{
     integrity::{validate_snapshot, validate_state},
     journal::{
         acquire_project_lock, initialize_journal, journal_path, scan, sidecar_path,
-        with_record_hash, TailClassification,
+        with_record_hash, TailClassification, MAX_JOURNAL_LINE_BYTES,
     },
     migration::migrate_v1_bytes,
     recovery::{create_journal_for_snapshot, recover},
@@ -27,6 +27,7 @@ use super::{
         JournalHeader, JournalRecord, JournalRecordKind, ProjectCaption, ProjectClip,
         ProjectCommand, ProjectHistoryEntryV2, ProjectMarker, ProjectTrack, RecoveryStatus,
         TrackMuteError, TrackVisibilityError, VideoProjectSnapshotV2, VideoProjectStateV2,
+        MAX_COMMAND_GROUP_BYTES,
     },
 };
 use crate::video::{
@@ -378,6 +379,7 @@ fn track_mute_serde_defaults_omit_false_and_rejects_caption_targets() {
         locked: false,
         hidden: false,
         captions: vec![],
+        active_caption_artifact: None,
     };
     assert_eq!(caption.is_muted(), Err(TrackMuteError::InvalidTarget));
     assert_eq!(caption.set_muted(true), Err(TrackMuteError::InvalidTarget));
@@ -919,6 +921,7 @@ fn indexed_removal_fixture() -> VideoProjectStateV2 {
             locked: false,
             hidden: false,
             captions,
+            active_caption_artifact: None,
         },
     );
     original_sequence.tracks.push(ProjectTrack::Audio {
@@ -1552,6 +1555,7 @@ fn locked_tracks_reject_every_clip_and_caption_mutation() {
         locked: true,
         hidden: false,
         captions: vec![caption.clone()],
+        active_caption_artifact: None,
     });
     let original = snapshot.state.clone();
     let command_id = |suffix: u64| format!("71000000-0000-4000-8000-{suffix:012}");
@@ -1876,6 +1880,7 @@ fn caption_track_visibility_uses_its_full_range_when_locked() {
             name: "Locked captions".to_owned(),
             locked: true,
             hidden: false,
+            active_caption_artifact: None,
             captions: vec![
                 ProjectCaption {
                     id: "73500000-0000-4000-8000-000000000011".to_owned(),
@@ -1943,6 +1948,7 @@ fn empty_visual_tracks_have_no_visibility_affected_ranges() {
             locked: false,
             hidden: false,
             captions: vec![],
+            active_caption_artifact: None,
         });
 
     for (index, track_id) in [RIPPLE_TRACK_ID.to_owned(), caption_track_id]
@@ -2618,6 +2624,7 @@ fn caption_track_mute_rejection_is_atomic_across_service_and_persistence() {
             locked: false,
             hidden: false,
             captions: vec![],
+            active_caption_artifact: None,
         });
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
     let original_state = snapshot.state.clone();
@@ -3004,8 +3011,8 @@ fn transcript_edit_group_applies_undoes_and_rejects_stale_revision() {
             .collect::<Vec<_>>(),
         vec![(ORIGINAL_CLIP_ID, 0, 10, 0), (TAIL_CLIP_ID, 20, 30, 10)]
     );
-    let first_timeline_end = clips[0].timeline_start.value
-        + (clips[0].source_out.value - clips[0].source_in.value);
+    let first_timeline_end =
+        clips[0].timeline_start.value + (clips[0].source_out.value - clips[0].source_in.value);
     assert_eq!(first_timeline_end, clips[1].timeline_start.value);
 
     let stale_error = service
@@ -3827,4 +3834,1044 @@ fn grouped_commands_roll_back_when_a_later_precondition_fails() {
     }];
     assert!(apply_group(&snapshot.state, &commands).is_err());
     assert_eq!(snapshot.state.sequences[0].markers.len(), 0);
+}
+
+const CAPTION_PROJECT_ID: &str = "11111111-1111-4111-8111-111111111111";
+const CAPTION_SEQUENCE_ID: &str = "33333333-3333-4333-8333-333333333333";
+const CAPTION_TRACK_ID: &str = "44444444-4444-4444-8444-444444444444";
+
+fn caption_artifact_fixture() -> crate::video::caption::CaptionArtifactV1 {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/video-media/fixtures/caption-artifact-v1.json");
+    crate::video::caption::parse_caption_artifact(&fs::read(path).unwrap()).unwrap()
+}
+
+fn caption_project_fixture() -> VideoProjectSnapshotV2 {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/video-contracts/fixtures/project-v2/valid-minimal.svpvideo");
+    let mut snapshot: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    snapshot.id = CAPTION_PROJECT_ID.to_owned();
+    snapshot
+        .state
+        .sequences
+        .push(super::types::VideoSequenceV2 {
+            id: CAPTION_SEQUENCE_ID.to_owned(),
+            name: "Caption sequence".to_owned(),
+            rate: crate::video::types::RationalRate {
+                numerator: 24,
+                denominator: 1,
+            },
+            width: 1_920,
+            height: 1_080,
+            audio_sample_rate: 48_000,
+            tracks: vec![ProjectTrack::Caption {
+                id: CAPTION_TRACK_ID.to_owned(),
+                name: "Captions".to_owned(),
+                locked: false,
+                hidden: false,
+                captions: vec![ProjectCaption {
+                    id: "88888888-8888-4888-8888-888888888888".to_owned(),
+                    start: RationalTime {
+                        value: 0,
+                        rate_numerator: 24,
+                        rate_denominator: 1,
+                    },
+                    end: RationalTime {
+                        value: 30,
+                        rate_numerator: 24,
+                        rate_denominator: 1,
+                    },
+                    text: "Legacy caption remains independent".to_owned(),
+                    language: Some("en".to_owned()),
+                }],
+                active_caption_artifact: None,
+            }],
+            markers: vec![],
+        });
+    snapshot.state.active_sequence_id = Some(CAPTION_SEQUENCE_ID.to_owned());
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    snapshot
+}
+
+fn caption_artifact_for(
+    snapshot: &VideoProjectSnapshotV2,
+    variant: &str,
+) -> crate::video::caption::CaptionArtifactV1 {
+    let mut artifact = caption_artifact_fixture();
+    artifact.track_link.project_id = snapshot.id.clone();
+    artifact.track_link.project_revision = snapshot.revision.clone();
+    artifact.track_link.sequence_id = CAPTION_SEQUENCE_ID.to_owned();
+    artifact.track_link.caption_track_id = CAPTION_TRACK_ID.to_owned();
+    if variant == "B" {
+        artifact.language = "en-US".to_owned();
+    }
+    artifact
+}
+
+fn large_caption_artifact_for(
+    snapshot: &VideoProjectSnapshotV2,
+    cue_count: u64,
+) -> crate::video::caption::CaptionArtifactV1 {
+    let mut artifact = caption_artifact_for(snapshot, "A");
+    let template = artifact.cues[0].clone();
+    artifact.cues = (0..cue_count)
+        .map(|index| {
+            let mut cue = template.clone();
+            cue.cue_id = format!("caption-{index:06}");
+            cue.start.value = index * 24;
+            cue.end.value = (index + 1) * 24;
+            cue.lines = vec!["Boundary caption".to_owned()];
+            cue.source_links[0].source_start_us = index * 1_000_000;
+            cue.source_links[0].source_end_us = (index + 1) * 1_000_000;
+            cue.source_links[0].transcript_word_ids = vec![format!("word-{index:06}")];
+            cue
+        })
+        .collect();
+    artifact
+}
+
+fn active_caption_artifact(
+    state: &VideoProjectStateV2,
+) -> Option<&crate::video::caption::CaptionArtifactV1> {
+    let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = &state.sequences[0].tracks[0]
+    else {
+        panic!("caption track")
+    };
+    active_caption_artifact.as_ref()
+}
+
+fn caption_request(
+    snapshot: &VideoProjectSnapshotV2,
+    group_id: &str,
+    artifact: crate::video::caption::CaptionArtifactV1,
+) -> CommandGroupRequest {
+    CommandGroupRequest {
+        group_id: group_id.to_owned(),
+        project_id: snapshot.id.clone(),
+        base_revision: snapshot.revision.number,
+        commands: vec![ProjectCommand::ApplyCaptionArtifact {
+            command_id: group_id.to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: CAPTION_TRACK_ID.to_owned(),
+            artifact,
+        }],
+    }
+}
+
+#[test]
+fn caption_artifact_optional_fields_require_omission_instead_of_null() {
+    let snapshot = caption_project_fixture();
+    let track_json = serde_json::to_value(&snapshot.state.sequences[0].tracks[0]).unwrap();
+    assert!(track_json.get("activeCaptionArtifact").is_none());
+
+    let omitted_track: ProjectTrack = serde_json::from_value(track_json.clone()).unwrap();
+    let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = &omitted_track
+    else {
+        unreachable!();
+    };
+    assert_eq!(active_caption_artifact, &None);
+    assert!(serde_json::to_value(&omitted_track)
+        .unwrap()
+        .get("activeCaptionArtifact")
+        .is_none());
+
+    let mut null_track = track_json;
+    null_track["activeCaptionArtifact"] = Value::Null;
+    assert!(serde_json::from_value::<ProjectTrack>(null_track).is_err());
+
+    let command_json = serde_json::json!({
+        "type": "RestoreActiveCaptionArtifact",
+        "commandId": "80000000-0000-4000-8000-000000000001",
+        "sequenceId": CAPTION_SEQUENCE_ID,
+        "trackId": CAPTION_TRACK_ID,
+    });
+    let omitted_command: ProjectCommand = serde_json::from_value(command_json.clone()).unwrap();
+    let ProjectCommand::RestoreActiveCaptionArtifact { artifact, .. } = &omitted_command else {
+        unreachable!();
+    };
+    assert_eq!(artifact, &None);
+    assert!(serde_json::to_value(&omitted_command)
+        .unwrap()
+        .get("artifact")
+        .is_none());
+
+    let mut null_command = command_json;
+    null_command["artifact"] = Value::Null;
+    assert!(serde_json::from_value::<ProjectCommand>(null_command).is_err());
+}
+
+#[test]
+fn caption_artifact_install_replace_undo_redo_is_exact_and_deterministic() {
+    let initial = caption_project_fixture();
+    let legacy = initial.state.sequences[0].tracks[0].clone();
+    let artifact_a = caption_artifact_for(&initial, "A");
+    let install = commit_transition(
+        &initial,
+        &caption_request(
+            &initial,
+            "81000000-0000-4000-8000-000000000001",
+            artifact_a.clone(),
+        ),
+        "2026-08-08T00:00:01Z",
+    )
+    .unwrap();
+    assert_eq!(
+        active_caption_artifact(&install.snapshot.state),
+        Some(&artifact_a)
+    );
+    assert_eq!(install.applied.summary, "Apply caption artifact");
+    assert!(install.applied.affected_ranges.is_empty());
+    assert_eq!(
+        install.applied.cache_invalidations,
+        vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan]
+    );
+    let ProjectTrack::Caption {
+        captions: before, ..
+    } = &legacy
+    else {
+        unreachable!()
+    };
+    let ProjectTrack::Caption {
+        captions: after, ..
+    } = &install.snapshot.state.sequences[0].tracks[0]
+    else {
+        unreachable!()
+    };
+    assert_eq!(after, before);
+    let artifact_b = caption_artifact_for(&install.snapshot, "B");
+    assert_eq!(
+        artifact_b.track_link.project_revision,
+        install.snapshot.revision
+    );
+    let replace = commit_transition(
+        &install.snapshot,
+        &caption_request(
+            &install.snapshot,
+            "81000000-0000-4000-8000-000000000002",
+            artifact_b.clone(),
+        ),
+        "2026-08-08T00:00:02Z",
+    )
+    .unwrap();
+    assert_eq!(
+        active_caption_artifact(&replace.snapshot.state),
+        Some(&artifact_b)
+    );
+    assert_eq!(replace.applied.summary, "Apply caption artifact");
+    assert!(replace.applied.affected_ranges.is_empty());
+    assert_eq!(
+        replace.applied.cache_invalidations,
+        vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan]
+    );
+    let repeated_replace = commit_transition(
+        &install.snapshot,
+        &caption_request(
+            &install.snapshot,
+            "81000000-0000-4000-8000-000000000002",
+            artifact_b.clone(),
+        ),
+        "2026-08-08T00:00:02Z",
+    )
+    .unwrap();
+    assert_eq!(
+        repeated_replace.snapshot.revision.state_hash,
+        replace.snapshot.revision.state_hash
+    );
+    let undo = undo_transition(
+        &replace.snapshot,
+        2,
+        "81000000-0000-4000-8000-000000000003",
+        "2026-08-08T00:00:03Z",
+    )
+    .unwrap();
+    let redo = redo_transition(
+        &undo.snapshot,
+        3,
+        "81000000-0000-4000-8000-000000000004",
+        "2026-08-08T00:00:04Z",
+    )
+    .unwrap();
+    assert_eq!(
+        active_caption_artifact(&undo.snapshot.state),
+        Some(&artifact_a)
+    );
+    assert_eq!(undo.history_group.summary, "Apply caption artifact");
+    assert_eq!(undo.applied.summary, "Restore active caption artifact");
+    assert!(undo.applied.affected_ranges.is_empty());
+    assert_eq!(
+        undo.applied.cache_invalidations,
+        vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan]
+    );
+    assert_eq!(
+        active_caption_artifact(&redo.snapshot.state),
+        Some(&artifact_b)
+    );
+    assert_eq!(redo.history_group.summary, "Apply caption artifact");
+    assert_eq!(redo.applied.summary, "Apply caption artifact");
+    assert!(redo.applied.affected_ranges.is_empty());
+    assert_eq!(
+        redo.applied.cache_invalidations,
+        vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan]
+    );
+    assert_eq!(
+        [
+            install.snapshot.revision.number,
+            replace.snapshot.revision.number,
+            undo.snapshot.revision.number,
+            redo.snapshot.revision.number
+        ],
+        [1, 2, 3, 4]
+    );
+    assert_eq!(
+        undo.snapshot.revision.state_hash,
+        install.snapshot.revision.state_hash
+    );
+    assert_eq!(
+        redo.snapshot.revision.state_hash,
+        replace.snapshot.revision.state_hash
+    );
+    assert_eq!(
+        state_hash(&replace.snapshot.state).unwrap(),
+        replace.snapshot.revision.state_hash
+    );
+}
+
+#[test]
+fn caption_artifact_rejection_matrix_is_atomic() {
+    let initial = caption_project_fixture();
+    let artifact_a = caption_artifact_for(&initial, "A");
+    let installed = commit_transition(
+        &initial,
+        &caption_request(&initial, "82000000-0000-4000-8000-000000000001", artifact_a),
+        "2026-08-08T00:01:00Z",
+    )
+    .unwrap()
+    .snapshot;
+    let baseline = (
+        installed.revision.clone(),
+        installed.revision.state_hash.clone(),
+        active_caption_artifact(&installed.state).cloned(),
+    );
+    let valid_b = caption_artifact_for(&installed, "B");
+    let mut cases = Vec::new();
+    let mut stale = caption_request(
+        &installed,
+        "82000000-0000-4000-8000-000000000010",
+        valid_b.clone(),
+    );
+    stale.base_revision -= 1;
+    cases.push(("stale base", installed.clone(), stale));
+    for mutate in 0_u8..11 {
+        let mut artifact = valid_b.clone();
+        match mutate {
+            0 => artifact.track_link.project_id = "99999999-9999-4999-8999-999999999999".to_owned(),
+            1 => artifact.track_link.project_revision.number += 1,
+            2 => {
+                artifact.track_link.project_revision.id =
+                    "99999999-9999-4999-8999-999999999999".to_owned()
+            }
+            3 => {
+                artifact.track_link.project_revision.parent_id =
+                    Some("99999999-9999-4999-8999-999999999998".to_owned())
+            }
+            4 => {
+                artifact.track_link.project_revision.committed_at =
+                    "2026-08-08T00:00:59Z".to_owned()
+            }
+            5 => {
+                artifact.track_link.project_revision.operation_id =
+                    "99999999-9999-4999-8999-999999999997".to_owned()
+            }
+            6 => artifact.track_link.project_revision.state_hash = "f".repeat(64),
+            7 => {
+                artifact.track_link.sequence_id = "99999999-9999-4999-8999-999999999996".to_owned()
+            }
+            8 => {
+                artifact.track_link.caption_track_id =
+                    "99999999-9999-4999-8999-999999999995".to_owned()
+            }
+            9 => artifact.timeline_rate.numerator = 25,
+            10 => artifact.cues[0].lines.clear(),
+            _ => unreachable!(),
+        }
+        cases.push((
+            "artifact metadata/semantic",
+            installed.clone(),
+            caption_request(
+                &installed,
+                &format!("82000000-0000-4000-8000-{number:012}", number = 20 + mutate),
+                artifact,
+            ),
+        ));
+    }
+    for (name, sequence_id, track_id) in [
+        (
+            "missing target",
+            "99999999-9999-4999-8999-999999999996",
+            CAPTION_TRACK_ID,
+        ),
+        (
+            "missing track",
+            CAPTION_SEQUENCE_ID,
+            "99999999-9999-4999-8999-999999999995",
+        ),
+        (
+            "wrong kind",
+            CAPTION_SEQUENCE_ID,
+            "99999999-9999-4999-8999-999999999994",
+        ),
+    ] {
+        let mut snapshot = installed.clone();
+        if name == "wrong kind" {
+            snapshot.state.sequences[0]
+                .tracks
+                .push(ProjectTrack::Video {
+                    id: track_id.to_owned(),
+                    name: "video".to_owned(),
+                    locked: false,
+                    muted: false,
+                    hidden: false,
+                    clips: vec![],
+                });
+        }
+        snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+        let mut artifact = caption_artifact_for(&snapshot, "B");
+        artifact.track_link.sequence_id = sequence_id.to_owned();
+        artifact.track_link.caption_track_id = track_id.to_owned();
+        let mut request =
+            caption_request(&snapshot, "82000000-0000-4000-8000-000000000030", artifact);
+        let ProjectCommand::ApplyCaptionArtifact {
+            sequence_id: command_sequence,
+            track_id: command_track,
+            ..
+        } = &mut request.commands[0]
+        else {
+            unreachable!()
+        };
+        *command_sequence = sequence_id.to_owned();
+        *command_track = track_id.to_owned();
+        cases.push((name, snapshot, request));
+    }
+    let mut locked = installed.clone();
+    locked.state.sequences[0].tracks[0].set_locked(true);
+    locked.revision.state_hash = state_hash(&locked.state).unwrap();
+    let locked_artifact = caption_artifact_for(&locked, "B");
+    cases.push((
+        "locked",
+        locked.clone(),
+        caption_request(
+            &locked,
+            "82000000-0000-4000-8000-000000000031",
+            locked_artifact,
+        ),
+    ));
+    for (name, snapshot, request) in cases {
+        let before = (
+            snapshot.revision.clone(),
+            snapshot.revision.state_hash.clone(),
+            active_caption_artifact(&snapshot.state).cloned(),
+        );
+        assert!(
+            commit_transition(&snapshot, &request, "2026-08-08T00:01:01Z").is_err(),
+            "{name}"
+        );
+        assert_eq!(
+            (
+                snapshot.revision.clone(),
+                snapshot.revision.state_hash.clone(),
+                active_caption_artifact(&snapshot.state).cloned()
+            ),
+            before,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        (
+            installed.revision.clone(),
+            installed.revision.state_hash.clone(),
+            active_caption_artifact(&installed.state).cloned()
+        ),
+        baseline
+    );
+}
+
+#[test]
+fn caption_artifact_checkpoint_and_journal_recovery_preserve_provenance_and_history() {
+    for (name, clean_close) in [("checkpoint", true), ("journal-crash", false)] {
+        let directory = tempfile::tempdir().unwrap();
+        let project_path = directory.path().join(format!("{name}.svpvideo"));
+        let initial = caption_project_fixture();
+        fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+        let grants = crate::video::VideoPathGrants::default();
+        let (artifact_a, artifact_b, hash_b, project_id) = {
+            let service = VideoProjectService::default();
+            let opened = service.open(name, &project_path, &grants).unwrap();
+            let project_id = opened.projection.project_id;
+            let artifact_a = caption_artifact_for(&initial, "A");
+            let a = service
+                .execute(
+                    name,
+                    caption_request(
+                        &initial,
+                        "83000000-0000-4000-8000-000000000001",
+                        artifact_a.clone(),
+                    ),
+                    &grants,
+                )
+                .unwrap();
+            let mut after_a = initial.clone();
+            after_a.revision = a.new_revision;
+            after_a.state = a.projection.state;
+            let artifact_b = caption_artifact_for(&after_a, "B");
+            let b = service
+                .execute(
+                    name,
+                    caption_request(
+                        &after_a,
+                        "83000000-0000-4000-8000-000000000002",
+                        artifact_b.clone(),
+                    ),
+                    &grants,
+                )
+                .unwrap();
+            if clean_close {
+                service.close(name, &project_id).unwrap();
+            }
+            (artifact_a, artifact_b, b.state_hash, project_id)
+        };
+        let service = VideoProjectService::default();
+        let owner = format!("{name}-reopen");
+        let reopened = service.open(&owner, &project_path, &grants).unwrap();
+        assert_eq!(
+            (
+                reopened.projection.revision.number,
+                &reopened.projection.revision.state_hash
+            ),
+            (2, &hash_b)
+        );
+        assert_eq!(
+            active_caption_artifact(&reopened.projection.state),
+            Some(&artifact_b)
+        );
+        assert!(reopened.projection.can_undo);
+        if !clean_close {
+            assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+            assert_eq!(reopened.recovery.replayed_record_count, 2);
+        }
+        let undone = service
+            .undo(
+                &owner,
+                &project_id,
+                2,
+                "83000000-0000-4000-8000-000000000003",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(
+            active_caption_artifact(&undone.projection.state),
+            Some(&artifact_a)
+        );
+        assert!(undone.projection.can_redo);
+        let redone = service
+            .redo(
+                &owner,
+                &project_id,
+                3,
+                "83000000-0000-4000-8000-000000000004",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(redone.state_hash, hash_b);
+        assert_eq!(
+            active_caption_artifact(&redone.projection.state),
+            Some(&artifact_b)
+        );
+    }
+}
+
+#[test]
+fn large_caption_artifact_crossing_legacy_record_limit_persists_reopens_and_undoes() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("large-caption.svpvideo");
+    let initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let artifact = large_caption_artifact_for(&initial, 1_100);
+    let request = caption_request(
+        &initial,
+        "87000000-0000-4000-8000-000000000001",
+        artifact.clone(),
+    );
+    assert!(canonical_bytes(&request).unwrap().len() < MAX_COMMAND_GROUP_BYTES);
+    let grants = crate::video::VideoPathGrants::default();
+
+    let acknowledged = {
+        let service = VideoProjectService::default();
+        service
+            .open("large-caption-owner", &project_path, &grants)
+            .unwrap();
+        let acknowledged = service
+            .execute("large-caption-owner", request.clone(), &grants)
+            .unwrap();
+        assert_eq!(
+            active_caption_artifact(&acknowledged.projection.state),
+            Some(&artifact)
+        );
+
+        let records = scan(&journal_path(&project_path).unwrap()).unwrap().records;
+        assert_eq!(records.len(), 1);
+        assert!(records[0].commands.is_empty());
+        assert!(canonical_bytes(&records[0]).unwrap().len() <= MAX_JOURNAL_LINE_BYTES);
+        let mut legacy_expanded = records[0].clone();
+        legacy_expanded.commands = legacy_expanded.history_group.forward_commands.clone();
+        let legacy_expanded = with_record_hash(&legacy_expanded).unwrap();
+        assert!(
+            canonical_bytes(&legacy_expanded).unwrap().len() > MAX_JOURNAL_LINE_BYTES,
+            "fixture must reproduce the former amplified journal-line failure"
+        );
+        acknowledged
+    };
+
+    let service = VideoProjectService::default();
+    let reopened = service
+        .open("large-caption-reopen", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 1);
+    assert_eq!(
+        active_caption_artifact(&reopened.projection.state),
+        Some(&artifact)
+    );
+    assert_eq!(
+        service
+            .execute("large-caption-reopen", request, &grants)
+            .unwrap(),
+        acknowledged
+    );
+    let undone = service
+        .undo(
+            "large-caption-reopen",
+            &initial.id,
+            1,
+            "87000000-0000-4000-8000-000000000002",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(active_caption_artifact(&undone.projection.state), None);
+}
+
+#[test]
+fn oversized_prospective_caption_record_is_rejected_before_append_or_session_mutation() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("oversized-caption-record.svpvideo");
+    let initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let request = caption_request(
+        &initial,
+        "87000000-0000-4000-8000-000000000010",
+        large_caption_artifact_for(&initial, 1_800),
+    );
+    assert!(canonical_bytes(&request).unwrap().len() < MAX_COMMAND_GROUP_BYTES);
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    service
+        .open("oversized-caption-owner", &project_path, &grants)
+        .unwrap();
+    let journal = journal_path(&project_path).unwrap();
+    let journal_before = fs::read(&journal).unwrap();
+
+    let error = service
+        .execute("oversized-caption-owner", request, &grants)
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::StorageLimit
+    );
+    assert_eq!(error.details["category"], "journal_record_bytes");
+    let inspector = service
+        .inspector("oversized-caption-owner", &initial.id)
+        .unwrap();
+    assert_eq!(inspector.revision, initial.revision);
+    assert!(inspector.last_command.is_none());
+    assert_eq!(fs::read(&journal).unwrap(), journal_before);
+    service
+        .close("oversized-caption-owner", &initial.id)
+        .unwrap();
+    assert_eq!(
+        active_caption_artifact(&read_snapshot(&project_path).unwrap().state),
+        None
+    );
+}
+
+#[test]
+fn tampered_caption_artifact_journal_fails_closed_without_repair() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("tampered-caption-journal.svpvideo");
+    let mut initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    fs::create_dir_all(sidecar_path(&project_path).unwrap()).unwrap();
+    let header = create_journal_for_snapshot(&project_path, &mut initial).unwrap();
+
+    let request = caption_request(
+        &initial,
+        "85000000-0000-4000-8000-000000000001",
+        caption_artifact_for(&initial, "A"),
+    );
+    let transition = commit_transition(&initial, &request, "2026-08-08T00:04:00Z").unwrap();
+    let mut commands = request.commands;
+    let ProjectCommand::ApplyCaptionArtifact { artifact, .. } = &mut commands[0] else {
+        unreachable!()
+    };
+    artifact.cues[0].lines.clear();
+    let record = with_record_hash(&JournalRecord {
+        kind: JournalRecordKind::Commit,
+        record_number: 1,
+        operation_id: transition.operation_id.clone(),
+        group_id: transition.group_id.clone(),
+        committed_at: transition.snapshot.updated_at.clone(),
+        base_revision: transition.prior_revision.clone(),
+        resulting_revision: transition.snapshot.revision.clone(),
+        commands,
+        history_group: transition.history_group.clone(),
+        summary: transition.history_group.summary.clone(),
+        affected_ranges: transition.applied.affected_ranges.clone(),
+        cache_invalidations: transition.applied.cache_invalidations.clone(),
+        previous_state_hash: transition.prior_revision.state_hash.clone(),
+        resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
+        payload_hash: None,
+        idempotency_result: None,
+        previous_record_hash: header.header_hash,
+        record_hash: String::new(),
+    })
+    .unwrap();
+    let journal = journal_path(&project_path).unwrap();
+    let mut record_bytes = canonical_bytes(&record).unwrap();
+    record_bytes.push(b'\n');
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&journal)
+        .unwrap()
+        .write_all(&record_bytes)
+        .unwrap();
+    let scanned = scan(&journal).unwrap();
+    assert_eq!(scanned.tail, TailClassification::Clean);
+    assert_eq!(scanned.records, vec![record]);
+    let journal_before = fs::read(&journal).unwrap();
+
+    let service = VideoProjectService::default();
+    for owner in ["tampered-journal-owner-a", "tampered-journal-owner-b"] {
+        let error = service
+            .open(
+                owner,
+                &project_path,
+                &crate::video::VideoPathGrants::default(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.code,
+            crate::video::error::VideoErrorCode::InvalidProject
+        );
+        assert_eq!(error.details["category"], "record_replay");
+        let close_error = service.close(owner, &initial.id).unwrap_err();
+        assert_eq!(
+            close_error.code,
+            crate::video::error::VideoErrorCode::InvalidProject
+        );
+        assert_eq!(close_error.details["category"], "unknown_session");
+    }
+    assert_eq!(fs::read(&journal).unwrap(), journal_before);
+    assert_eq!(
+        read_snapshot(&project_path).unwrap().revision,
+        initial.revision
+    );
+}
+
+fn caption_journal_record_value(
+    initial: &VideoProjectSnapshotV2,
+    previous_record_hash: String,
+) -> Value {
+    let request = caption_request(
+        initial,
+        "87000000-0000-4000-8000-000000000001",
+        caption_artifact_for(initial, "A"),
+    );
+    let transition = commit_transition(initial, &request, "2026-08-08T00:06:00Z").unwrap();
+    serde_json::to_value(JournalRecord {
+        kind: JournalRecordKind::Commit,
+        record_number: 1,
+        operation_id: transition.operation_id.clone(),
+        group_id: transition.group_id.clone(),
+        committed_at: transition.snapshot.updated_at.clone(),
+        base_revision: transition.prior_revision.clone(),
+        resulting_revision: transition.snapshot.revision.clone(),
+        commands: request.commands,
+        history_group: transition.history_group.clone(),
+        summary: transition.history_group.summary.clone(),
+        affected_ranges: transition.applied.affected_ranges.clone(),
+        cache_invalidations: transition.applied.cache_invalidations.clone(),
+        previous_state_hash: transition.prior_revision.state_hash.clone(),
+        resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
+        payload_hash: None,
+        idempotency_result: None,
+        previous_record_hash,
+        record_hash: String::new(),
+    })
+    .unwrap()
+}
+
+fn set_record_value_hash(record: &mut Value) {
+    record["recordHash"] = Value::String(String::new());
+    record["recordHash"] = Value::String(canonical_hash(record).unwrap());
+}
+
+fn append_journal_value(journal: &Path, value: &Value) {
+    let mut bytes = canonical_bytes(value).unwrap();
+    bytes.push(b'\n');
+    fs::OpenOptions::new()
+        .append(true)
+        .open(journal)
+        .unwrap()
+        .write_all(&bytes)
+        .unwrap();
+}
+
+#[test]
+fn hash_consistent_caption_command_schema_failures_fail_closed_without_repair_or_session() {
+    for case in [
+        "unknown-field",
+        "wrong-type",
+        "explicit-null",
+        "unknown-command-type",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let project_path = directory
+            .path()
+            .join(format!("caption-schema-{case}.svpvideo"));
+        let mut initial = caption_project_fixture();
+        fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+        fs::create_dir_all(sidecar_path(&project_path).unwrap()).unwrap();
+        let header = create_journal_for_snapshot(&project_path, &mut initial).unwrap();
+        let mut record = caption_journal_record_value(&initial, header.header_hash);
+        match case {
+            "unknown-field" => {
+                record
+                    .pointer_mut("/commands/0/artifact")
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("unexpectedField".to_owned(), Value::Bool(true));
+            }
+            "wrong-type" => {
+                *record.pointer_mut("/commands/0/artifact/language").unwrap() = Value::from(7);
+            }
+            "explicit-null" => {
+                *record.pointer_mut("/commands/0/type").unwrap() =
+                    Value::String("RestoreActiveCaptionArtifact".to_owned());
+                *record.pointer_mut("/commands/0/artifact").unwrap() = Value::Null;
+            }
+            "unknown-command-type" => {
+                *record.pointer_mut("/commands/0/type").unwrap() =
+                    Value::String("UnknownCaptionArtifactCommand".to_owned());
+            }
+            _ => unreachable!(),
+        }
+        set_record_value_hash(&mut record);
+        assert!(
+            serde_json::from_value::<JournalRecord>(record.clone()).is_err(),
+            "{case}"
+        );
+        let journal = journal_path(&project_path).unwrap();
+        append_journal_value(&journal, &record);
+        let journal_before = fs::read(&journal).unwrap();
+
+        let scan_error = scan(&journal).unwrap_err();
+        assert_eq!(
+            scan_error.code,
+            crate::video::error::VideoErrorCode::InvalidProject,
+            "{case}"
+        );
+        assert_eq!(scan_error.details["category"], "record_schema", "{case}");
+
+        let service = VideoProjectService::default();
+        for owner_suffix in ["a", "b"] {
+            let owner = format!("caption-schema-{case}-{owner_suffix}");
+            let error = service
+                .open(
+                    &owner,
+                    &project_path,
+                    &crate::video::VideoPathGrants::default(),
+                )
+                .unwrap_err();
+            assert_eq!(
+                error.code,
+                crate::video::error::VideoErrorCode::InvalidProject,
+                "{case}"
+            );
+            assert_eq!(error.details["category"], "record_schema", "{case}");
+            let close_error = service.close(&owner, &initial.id).unwrap_err();
+            assert_eq!(close_error.details["category"], "unknown_session", "{case}");
+            drop(acquire_project_lock(&project_path).unwrap());
+        }
+        assert_eq!(fs::read(&journal).unwrap(), journal_before, "{case}");
+        assert_eq!(
+            read_snapshot(&project_path).unwrap().revision,
+            initial.revision,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn stale_hash_caption_schema_failure_remains_a_repairable_corrupt_tail() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("caption-schema-stale-hash.svpvideo");
+    let mut initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    fs::create_dir_all(sidecar_path(&project_path).unwrap()).unwrap();
+    let header = create_journal_for_snapshot(&project_path, &mut initial).unwrap();
+    let mut record = caption_journal_record_value(&initial, header.header_hash);
+    set_record_value_hash(&mut record);
+    record
+        .pointer_mut("/commands/0/artifact")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("unexpectedField".to_owned(), Value::Bool(true));
+    let journal = journal_path(&project_path).unwrap();
+    append_journal_value(&journal, &record);
+
+    let scanned = scan(&journal).unwrap();
+    assert_eq!(scanned.tail, TailClassification::Corrupt);
+    assert!(scanned.records.is_empty());
+    assert!(scanned.discarded_tail_bytes > 0);
+}
+
+#[test]
+fn tampered_non_caption_journal_fails_closed_without_repair_or_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("tampered-command-journal.svpvideo");
+    let mut initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    fs::create_dir_all(sidecar_path(&project_path).unwrap()).unwrap();
+    let header = create_journal_for_snapshot(&project_path, &mut initial).unwrap();
+
+    let request = CommandGroupRequest {
+        group_id: "86000000-0000-4000-8000-000000000001".to_owned(),
+        project_id: initial.id.clone(),
+        base_revision: initial.revision.number,
+        commands: vec![ProjectCommand::SetTrackHidden {
+            command_id: "86000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: CAPTION_TRACK_ID.to_owned(),
+            hidden: true,
+        }],
+    };
+    let transition = commit_transition(&initial, &request, "2026-08-08T00:05:00Z").unwrap();
+    let mut commands = request.commands;
+    let ProjectCommand::SetTrackHidden { sequence_id, .. } = &mut commands[0] else {
+        unreachable!()
+    };
+    *sequence_id = "86000000-0000-4000-8000-000000000099".to_owned();
+    let record = with_record_hash(&JournalRecord {
+        kind: JournalRecordKind::Commit,
+        record_number: 1,
+        operation_id: transition.operation_id.clone(),
+        group_id: transition.group_id.clone(),
+        committed_at: transition.snapshot.updated_at.clone(),
+        base_revision: transition.prior_revision.clone(),
+        resulting_revision: transition.snapshot.revision.clone(),
+        commands,
+        history_group: transition.history_group.clone(),
+        summary: transition.history_group.summary.clone(),
+        affected_ranges: transition.applied.affected_ranges.clone(),
+        cache_invalidations: transition.applied.cache_invalidations.clone(),
+        previous_state_hash: transition.prior_revision.state_hash.clone(),
+        resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
+        payload_hash: None,
+        idempotency_result: None,
+        previous_record_hash: header.header_hash,
+        record_hash: String::new(),
+    })
+    .unwrap();
+    let journal = journal_path(&project_path).unwrap();
+    let mut record_bytes = canonical_bytes(&record).unwrap();
+    record_bytes.push(b'\n');
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&journal)
+        .unwrap()
+        .write_all(&record_bytes)
+        .unwrap();
+    let scanned = scan(&journal).unwrap();
+    assert_eq!(scanned.tail, TailClassification::Clean);
+    assert_eq!(scanned.records, vec![record]);
+    let journal_before = fs::read(&journal).unwrap();
+
+    let owner = "tampered-command-owner";
+    let service = VideoProjectService::default();
+    let error = service
+        .open(
+            owner,
+            &project_path,
+            &crate::video::VideoPathGrants::default(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::InvalidProject
+    );
+    assert_eq!(error.details["category"], "record_replay");
+    let close_error = service.close(owner, &initial.id).unwrap_err();
+    assert_eq!(
+        close_error.code,
+        crate::video::error::VideoErrorCode::InvalidProject
+    );
+    assert_eq!(close_error.details["category"], "unknown_session");
+    assert_eq!(fs::read(&journal).unwrap(), journal_before);
+    assert_eq!(
+        read_snapshot(&project_path).unwrap().revision,
+        initial.revision
+    );
+}
+
+#[test]
+fn tampered_caption_artifact_snapshot_fails_closed() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("tampered-caption.svpvideo");
+    let initial = caption_project_fixture();
+    let artifact = caption_artifact_for(&initial, "A");
+    let mut snapshot = commit_transition(
+        &initial,
+        &caption_request(&initial, "84000000-0000-4000-8000-000000000001", artifact),
+        "2026-08-08T00:03:00Z",
+    )
+    .unwrap()
+    .snapshot;
+    let ProjectTrack::Caption {
+        active_caption_artifact: Some(artifact),
+        ..
+    } = &mut snapshot.state.sequences[0].tracks[0]
+    else {
+        unreachable!()
+    };
+    artifact.cues[0].lines.clear();
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let error = VideoProjectService::default()
+        .open(
+            "tampered-owner",
+            &project_path,
+            &crate::video::VideoPathGrants::default(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::InvalidProject
+    );
 }

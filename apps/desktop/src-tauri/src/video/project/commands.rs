@@ -12,6 +12,7 @@ use super::{
     },
 };
 use crate::video::{
+    caption::{validate_caption_artifact, CaptionArtifactV1},
     error::{VideoCommandError, VideoErrorCode},
     types::RationalTime,
 };
@@ -76,6 +77,45 @@ fn find_unlocked_track_mut<'a>(
         return Err(invalid("track_locked"));
     }
     Ok(track)
+}
+
+fn replace_active_caption_artifact(
+    state: &mut VideoProjectStateV2,
+    sequence_id: &str,
+    track_id: &str,
+    artifact: Option<&CaptionArtifactV1>,
+) -> Result<Option<CaptionArtifactV1>, VideoCommandError> {
+    if let Some(artifact) = artifact {
+        validate_caption_artifact(artifact).map_err(|_| invalid("caption_artifact"))?;
+        if artifact.track_link.sequence_id != sequence_id
+            || artifact.track_link.caption_track_id != track_id
+        {
+            return Err(invalid("caption_artifact_target"));
+        }
+    }
+    let sequence = find_sequence_mut(state, sequence_id)?;
+    if artifact.is_some_and(|artifact| artifact.timeline_rate != sequence.rate) {
+        return Err(invalid("caption_artifact_rate"));
+    }
+    let track = sequence
+        .tracks
+        .iter_mut()
+        .find(|track| track.id() == track_id)
+        .ok_or_else(|| invalid("unknown_track"))?;
+    if track.is_locked() {
+        return Err(invalid("track_locked"));
+    }
+    let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = track
+    else {
+        return Err(invalid("non_caption_track"));
+    };
+    Ok(std::mem::replace(
+        active_caption_artifact,
+        artifact.cloned(),
+    ))
 }
 
 fn find_clip_mut<'a>(
@@ -390,6 +430,14 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             "Removed caption",
             vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan],
         ),
+        ProjectCommand::ApplyCaptionArtifact { .. } => (
+            "Apply caption artifact",
+            vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan],
+        ),
+        ProjectCommand::RestoreActiveCaptionArtifact { .. } => (
+            "Restore active caption artifact",
+            vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan],
+        ),
         ProjectCommand::RelinkAsset { .. } => (
             "Relinked asset",
             vec![
@@ -466,6 +514,16 @@ fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
             ..
         }
         | ProjectCommand::RemoveCaption {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::ApplyCaptionArtifact {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RestoreActiveCaptionArtifact {
             sequence_id,
             track_id,
             ..
@@ -1136,6 +1194,42 @@ fn apply_one(
                     track_id: track_id.clone(),
                     index: Some(index as u64),
                     caption,
+                }],
+                vec![],
+            ))
+        }
+        ProjectCommand::ApplyCaptionArtifact {
+            sequence_id,
+            track_id,
+            artifact,
+            ..
+        } => {
+            let previous =
+                replace_active_caption_artifact(state, sequence_id, track_id, Some(artifact))?;
+            Ok((
+                vec![ProjectCommand::RestoreActiveCaptionArtifact {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    artifact: previous,
+                }],
+                vec![],
+            ))
+        }
+        ProjectCommand::RestoreActiveCaptionArtifact {
+            sequence_id,
+            track_id,
+            artifact,
+            ..
+        } => {
+            let previous =
+                replace_active_caption_artifact(state, sequence_id, track_id, artifact.as_ref())?;
+            Ok((
+                vec![ProjectCommand::RestoreActiveCaptionArtifact {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    artifact: previous,
                 }],
                 vec![],
             ))

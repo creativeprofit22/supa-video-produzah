@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  captionArtifactV1Schema as contractsCaptionArtifactV1Schema,
+  validateCaptionArtifactV1 as contractsValidateCaptionArtifactV1,
+} from "@supa-video/contracts";
 import { describe, expect, it } from "vitest";
-
 import {
   captionArtifactV1Schema,
   captionValidationResultV1Schema,
@@ -35,6 +38,11 @@ function issueCodes(input: unknown): CaptionValidationIssueCode[] {
 }
 
 describe("caption artifact v1", () => {
+  it("keeps media exports as compatibility aliases of the contracts implementation", () => {
+    expect(captionArtifactV1Schema).toBe(contractsCaptionArtifactV1Schema);
+    expect(validateCaptionArtifactV1).toBe(contractsValidateCaptionArtifactV1);
+  });
+
   it("parses the shared strict fixture with track, style, and rational timing", () => {
     const artifact = fixture();
 

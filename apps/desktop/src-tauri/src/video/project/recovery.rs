@@ -71,7 +71,7 @@ fn replay_record(
                 group_id: record.group_id.clone(),
                 project_id: snapshot.id.clone(),
                 base_revision: record.base_revision.number,
-                commands: record.commands.clone(),
+                commands: record.replay_commands().to_vec(),
             },
             &record.committed_at,
         )?,
@@ -214,55 +214,27 @@ pub fn recover(project_path: &Path) -> Result<RecoveredProject, VideoCommandErro
         .ok_or_else(|| error("no_compatible_snapshot"))?;
     let mut replayed = 0_u64;
     let starting_record_number = snapshot.last_applied_record_number;
-    let mut valid_record_count = starting_record_number as usize;
-    let mut replay_corrupt = false;
     for record in scanned
         .records
         .iter()
         .filter(|record| record.record_number > starting_record_number)
     {
-        match replay_record(&snapshot, record) {
-            Ok(transition) => {
-                snapshot = transition.snapshot;
-                snapshot.last_applied_record_number = record.record_number;
-                snapshot.last_record_hash = record.record_hash.clone();
-                replayed += 1;
-                valid_record_count = record.record_number as usize;
-            }
-            Err(_) => {
-                replay_corrupt = true;
-                break;
-            }
-        }
+        let transition = replay_record(&snapshot, record).map_err(|_| error("record_replay"))?;
+        snapshot = transition.snapshot;
+        snapshot.last_applied_record_number = record.record_number;
+        snapshot.last_record_hash = record.record_hash.clone();
+        replayed += 1;
     }
-    let replay_prefix_len = if replay_corrupt {
-        let complete_prefix_records = valid_record_count + 1;
-        fs::read(&journal)
-            .map_err(|_| error("journal_read"))?
-            .iter()
-            .enumerate()
-            .filter(|(_, byte)| **byte == b'\n')
-            .nth(complete_prefix_records - 1)
-            .map_or(scanned.valid_prefix_len, |(index, _)| index + 1)
-    } else {
-        scanned.valid_prefix_len
-    };
-    let needs_repair = replay_corrupt || scanned.tail != TailClassification::Clean;
-    let status = if replay_corrupt || scanned.tail == TailClassification::Corrupt {
+    let replay_prefix_len = scanned.valid_prefix_len;
+    let needs_repair = scanned.tail != TailClassification::Clean;
+    let status = if scanned.tail == TailClassification::Corrupt {
         RecoveryStatus::Degraded
     } else if used_previous || scanned.tail == TailClassification::Torn || replayed > 0 {
         RecoveryStatus::Recovered
     } else {
         RecoveryStatus::Clean
     };
-    let discarded = if replay_corrupt {
-        fs::metadata(&journal)
-            .map_err(|_| error("journal_metadata"))?
-            .len()
-            .saturating_sub(replay_prefix_len as u64)
-    } else {
-        scanned.discarded_tail_bytes as u64
-    };
+    let discarded = scanned.discarded_tail_bytes as u64;
     let recovery = report(
         status.clone(),
         snapshot.revision.number,

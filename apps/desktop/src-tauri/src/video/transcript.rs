@@ -1029,7 +1029,6 @@ fn count_uncertainty(words: &[TranscriptWordV1], removed: u64) -> TranscriptUnce
     counts
 }
 
-
 fn checked_safe_sum(first: i64, second: i64) -> Result<i64, VideoCommandError> {
     let value = first
         .checked_add(second)
@@ -1240,7 +1239,11 @@ mod tests {
                 configuration_with_provider_number(&fixture.base_configuration, vector.value);
             let error = derive_asr_configuration_identity(&configuration)
                 .expect_err(&format!("{} should be rejected", vector.name));
-            assert_eq!(error.details["category"], "provider_value", "{}", vector.name);
+            assert_eq!(
+                error.details["category"], "provider_value",
+                "{}",
+                vector.name
+            );
         }
 
         let zero = fixture
@@ -1259,12 +1262,10 @@ mod tests {
             zero.value,
         ))
         .unwrap();
-        let negative_zero_identity =
-            derive_asr_configuration_identity(&configuration_with_provider_number(
-                &fixture.base_configuration,
-                negative_zero.value,
-            ))
-            .unwrap();
+        let negative_zero_identity = derive_asr_configuration_identity(
+            &configuration_with_provider_number(&fixture.base_configuration, negative_zero.value),
+        )
+        .unwrap();
         assert_eq!(zero_identity, negative_zero_identity);
     }
 

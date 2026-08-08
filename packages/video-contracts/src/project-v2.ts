@@ -1,28 +1,18 @@
 import { z } from "zod";
 
 import { projectCommandSchemaV2 } from "./project-commands-v2.js";
+import { projectRevisionDescriptorV2Schema } from "./project-revision.js";
 import { projectUuidSchema } from "./project.js";
 import { rationalTimeSchema } from "./time.js";
 import { videoProjectStateV2Schema } from "./project-v2-entities.js";
 
 export * from "./project-v2-entities.js";
+export * from "./project-revision.js";
 
 const dateTimeSchema = z.string().datetime({ offset: true });
 const nonBlankSchema = z.string().trim().min(1).max(512);
 const safeNonNegativeIntegerSchema = z.number().int().safe().nonnegative();
 const stateHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
-
-export const projectRevisionDescriptorV2Schema = z
-  .object({
-    number: safeNonNegativeIntegerSchema,
-    id: projectUuidSchema,
-    parentId: projectUuidSchema.nullable(),
-    committedAt: dateTimeSchema,
-    operationId: projectUuidSchema,
-    stateHash: stateHashSchema,
-  })
-  .strict();
-export type ProjectRevisionDescriptorV2 = z.infer<typeof projectRevisionDescriptorV2Schema>;
 
 export const affectedRangeSchema = z
   .object({
@@ -53,7 +43,11 @@ export const projectHistoryEntryV2Schema = z
   .strict()
   .refine(
     (entry) =>
-      entry.forwardCommands.every((command) => command.type !== "RestoreRippleDeletedClip"),
+      entry.forwardCommands.every(
+        (command) =>
+          command.type !== "RestoreRippleDeletedClip" &&
+          command.type !== "RestoreActiveCaptionArtifact",
+      ),
     { message: "Private inverse commands cannot be stored as forward history" },
   );
 export type ProjectHistoryEntryV2 = z.infer<typeof projectHistoryEntryV2Schema>;
@@ -83,5 +77,67 @@ export const videoProjectSnapshotV2Schema = z
   .refine(
     (snapshot) => Date.parse(snapshot.updatedAt) >= Date.parse(snapshot.createdAt),
     "Project update time cannot precede creation",
-  );
+  )
+  .superRefine((snapshot, context) => {
+    snapshot.state.sequences.forEach((sequence, sequenceIndex) => {
+      sequence.tracks.forEach((track, trackIndex) => {
+        if (
+          track.kind === "caption" &&
+          track.activeCaptionArtifact !== undefined &&
+          track.activeCaptionArtifact.trackLink.projectId !== snapshot.id
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: [
+              "state",
+              "sequences",
+              sequenceIndex,
+              "tracks",
+              trackIndex,
+              "activeCaptionArtifact",
+              "trackLink",
+              "projectId",
+            ],
+            message: "Active caption artifact project must match its containing snapshot",
+          });
+        }
+      });
+    });
+
+    for (const [stackName, entries] of [
+      ["undoStack", snapshot.history.undoStack],
+      ["redoStack", snapshot.history.redoStack],
+    ] as const) {
+      entries.forEach((entry, entryIndex) => {
+        for (const [commandListName, commands] of [
+          ["forwardCommands", entry.forwardCommands],
+          ["inverseCommands", entry.inverseCommands],
+        ] as const) {
+          commands.forEach((command, commandIndex) => {
+            const artifact =
+              command.type === "ApplyCaptionArtifact" ||
+              command.type === "RestoreActiveCaptionArtifact"
+                ? command.artifact
+                : undefined;
+            if (artifact !== undefined && artifact.trackLink.projectId !== snapshot.id) {
+              context.addIssue({
+                code: "custom",
+                path: [
+                  "history",
+                  stackName,
+                  entryIndex,
+                  commandListName,
+                  commandIndex,
+                  "artifact",
+                  "trackLink",
+                  "projectId",
+                ],
+                message: "Historical caption artifact project must match its containing snapshot",
+              });
+            }
+          });
+        }
+      });
+    }
+  });
 export type VideoProjectSnapshotV2 = z.infer<typeof videoProjectSnapshotV2Schema>;

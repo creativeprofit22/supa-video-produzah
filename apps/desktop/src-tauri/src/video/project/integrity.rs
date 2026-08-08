@@ -11,6 +11,7 @@ use super::types::{
     MAX_MARKERS, MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER, MAX_SEQUENCES, MAX_TRACKS, MAX_TRACK_ITEMS,
 };
 use crate::video::{
+    caption::{validate_caption_artifact, CaptionArtifactV1},
     error::{VideoCommandError, VideoErrorCode},
     types::{
         AssetLocator, MediaContentAlgorithm, MediaContentIdentityV1, MediaProbe, RationalRate,
@@ -314,12 +315,19 @@ fn valid_track_shape(track: &ProjectTrack) -> bool {
                 && clips.iter().all(valid_clip_shape)
         }
         ProjectTrack::Caption {
-            id, name, captions, ..
+            id,
+            name,
+            captions,
+            active_caption_artifact,
+            ..
         } => {
             is_canonical_uuid(id)
                 && valid_non_blank(name)
                 && captions.len() <= MAX_TRACK_ITEMS
                 && captions.iter().all(valid_caption_shape)
+                && active_caption_artifact
+                    .as_ref()
+                    .is_none_or(|artifact| validate_caption_artifact(artifact).is_ok())
         }
     }
 }
@@ -389,9 +397,24 @@ fn validate_sequence(
     for track in &sequence.tracks {
         register_id(ids, track.id())?;
         match track {
-            ProjectTrack::Caption { name, captions, .. } => {
+            ProjectTrack::Caption {
+                id,
+                name,
+                captions,
+                active_caption_artifact,
+                ..
+            } => {
                 if !valid_non_blank(name) || captions.len() > MAX_TRACK_ITEMS {
                     return Err(invalid("track_name"));
+                }
+                if let Some(artifact) = active_caption_artifact {
+                    if validate_caption_artifact(artifact).is_err()
+                        || artifact.track_link.sequence_id != sequence.id
+                        || artifact.track_link.caption_track_id != *id
+                        || artifact.timeline_rate != sequence.rate
+                    {
+                        return Err(invalid("active_caption_artifact"));
+                    }
                 }
                 for caption in captions {
                     register_id(ids, &caption.id)?;
@@ -757,6 +780,32 @@ fn valid_command(command: &ProjectCommand) -> bool {
                 && is_canonical_uuid(track_id)
                 && is_canonical_uuid(caption_id)
         }
+        ProjectCommand::ApplyCaptionArtifact {
+            sequence_id,
+            track_id,
+            artifact,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && artifact.track_link.sequence_id == *sequence_id
+                && artifact.track_link.caption_track_id == *track_id
+                && validate_caption_artifact(artifact).is_ok()
+        }
+        ProjectCommand::RestoreActiveCaptionArtifact {
+            sequence_id,
+            track_id,
+            artifact,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && artifact.as_ref().is_none_or(|artifact| {
+                    artifact.track_link.sequence_id == *sequence_id
+                        && artifact.track_link.caption_track_id == *track_id
+                        && validate_caption_artifact(artifact).is_ok()
+                })
+        }
         ProjectCommand::RelinkAsset {
             asset_id,
             locator,
@@ -778,6 +827,14 @@ fn valid_affected_range(range: &AffectedRange) -> bool {
         && valid_time_shape(&range.start)
         && valid_time_shape(&range.end)
         && range.end.value > range.start.value
+}
+
+fn command_caption_artifact(command: &ProjectCommand) -> Option<&CaptionArtifactV1> {
+    match command {
+        ProjectCommand::ApplyCaptionArtifact { artifact, .. } => Some(artifact),
+        ProjectCommand::RestoreActiveCaptionArtifact { artifact, .. } => artifact.as_ref(),
+        _ => None,
+    }
 }
 
 fn valid_history_entry(entry: &ProjectHistoryEntryV2) -> bool {
@@ -802,6 +859,39 @@ fn validate_history(snapshot: &VideoProjectSnapshotV2) -> Result<(), VideoComman
         || !snapshot.history.redo_stack.iter().all(valid_history_entry)
     {
         return Err(invalid("history"));
+    }
+    let historical_artifacts = snapshot
+        .history
+        .undo_stack
+        .iter()
+        .chain(&snapshot.history.redo_stack)
+        .flat_map(|entry| entry.forward_commands.iter().chain(&entry.inverse_commands))
+        .filter_map(command_caption_artifact);
+    if historical_artifacts
+        .into_iter()
+        .any(|artifact| artifact.track_link.project_id != snapshot.id)
+    {
+        return Err(invalid("history_caption_artifact_project"));
+    }
+    Ok(())
+}
+
+fn validate_active_caption_artifact_projects(
+    snapshot: &VideoProjectSnapshotV2,
+) -> Result<(), VideoCommandError> {
+    let project_mismatch = snapshot.state.sequences.iter().any(|sequence| {
+        sequence.tracks.iter().any(|track| {
+            matches!(
+                track,
+                ProjectTrack::Caption {
+                    active_caption_artifact: Some(artifact),
+                    ..
+                } if artifact.track_link.project_id != snapshot.id
+            )
+        })
+    });
+    if project_mismatch {
+        return Err(invalid("active_caption_artifact_project"));
     }
     Ok(())
 }
@@ -832,6 +922,7 @@ pub fn validate_snapshot(snapshot: &VideoProjectSnapshotV2) -> Result<(), VideoC
         return Err(invalid("snapshot_metadata"));
     }
     validate_state(&snapshot.state)?;
+    validate_active_caption_artifact_projects(snapshot)?;
     validate_history(snapshot)?;
     let actual_hash = super::hash::state_hash(&snapshot.state)?;
     if actual_hash != snapshot.revision.state_hash {
