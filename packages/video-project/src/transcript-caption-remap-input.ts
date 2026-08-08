@@ -7,9 +7,11 @@ import {
   rationalRateSchema,
   rationalTimeSchema,
   ratesEqual,
+  videoProjectStateV2Schema,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
   type RationalRate,
+  type VideoProjectStateV2,
 } from "@supa-video/contracts";
 import { captionArtifactV1Schema, type CaptionArtifactV1 } from "@supa-video/media";
 
@@ -122,13 +124,12 @@ function validateOccurrenceRange(
   }
 }
 
-export function validateRemapInput(input: RemapCaptionArtifactV1Input): ValidatedRemapInput {
-  if (input === null || typeof input !== "object") contractInvalid("input");
-  const artifactResult = captionArtifactV1Schema.safeParse(input.artifact);
-  if (!artifactResult.success) contractInvalid("artifact");
-  const projectionResult = projectProjectionSchema.safeParse(input.projection);
-  if (!projectionResult.success) contractInvalid("projection");
-
+function validateRemapInputWithState(
+  input: RemapCaptionArtifactV1Input,
+  artifact: CaptionArtifactV1,
+  projection: ProjectProjection,
+  state: VideoProjectStateV2,
+): ValidatedRemapInput {
   const timeline = input.timeline;
   if (
     timeline === null ||
@@ -145,9 +146,6 @@ export function validateRemapInput(input: RemapCaptionArtifactV1Input): Validate
   ) {
     projectionInvalid("timeline");
   }
-
-  const artifact = artifactResult.data;
-  const projection = projectionResult.data;
   if (
     timeline.projectId !== artifact.trackLink.projectId ||
     projection.projectId !== timeline.projectId
@@ -178,7 +176,7 @@ export function validateRemapInput(input: RemapCaptionArtifactV1Input): Validate
     staleIdentity("timelineLineage");
   }
 
-  const sequence = projection.state.sequences.find(({ id }) => id === timeline.sequenceId);
+  const sequence = state.sequences.find(({ id }) => id === timeline.sequenceId);
   if (sequence === undefined || sequence.id !== artifact.trackLink.sequenceId) {
     staleIdentity("sequenceId");
   }
@@ -316,4 +314,37 @@ export function validateRemapInput(input: RemapCaptionArtifactV1Input): Validate
   }
 
   return { artifact, timeline, projection, occurrences };
+}
+
+export function validateRemapInput(input: RemapCaptionArtifactV1Input): ValidatedRemapInput {
+  if (input === null || typeof input !== "object") contractInvalid("input");
+  const artifactResult = captionArtifactV1Schema.safeParse(input.artifact);
+  if (!artifactResult.success) contractInvalid("artifact");
+  const projectionResult = projectProjectionSchema.safeParse(input.projection);
+  if (!projectionResult.success) contractInvalid("projection");
+  return validateRemapInputWithState(
+    input,
+    artifactResult.data,
+    projectionResult.data,
+    projectionResult.data.state,
+  );
+}
+
+export function validateRemapInputAgainstCandidateState(
+  input: RemapCaptionArtifactV1Input,
+  candidateState: VideoProjectStateV2,
+): ValidatedRemapInput {
+  if (input === null || typeof input !== "object") contractInvalid("input");
+  const artifactResult = captionArtifactV1Schema.safeParse(input.artifact);
+  if (!artifactResult.success) contractInvalid("artifact");
+  const projectionResult = projectProjectionSchema.safeParse(input.projection);
+  if (!projectionResult.success) contractInvalid("projection");
+  const stateResult = videoProjectStateV2Schema.safeParse(candidateState);
+  if (!stateResult.success) contractInvalid("candidateState");
+  return validateRemapInputWithState(
+    input,
+    artifactResult.data,
+    projectionResult.data,
+    stateResult.data,
+  );
 }

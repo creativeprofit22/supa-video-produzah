@@ -3839,6 +3839,8 @@ fn grouped_commands_roll_back_when_a_later_precondition_fails() {
 const CAPTION_PROJECT_ID: &str = "11111111-1111-4111-8111-111111111111";
 const CAPTION_SEQUENCE_ID: &str = "33333333-3333-4333-8333-333333333333";
 const CAPTION_TRACK_ID: &str = "44444444-4444-4444-8444-444444444444";
+const TRIM_CAPTION_SOURCE_TRACK_ID: &str = "10000000-0000-4000-8000-000000000007";
+const TRIM_CAPTION_CLIP_ID: &str = "10000000-0000-4000-8000-000000000008";
 
 fn caption_artifact_fixture() -> crate::video::caption::CaptionArtifactV1 {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -3892,6 +3894,36 @@ fn caption_project_fixture() -> VideoProjectSnapshotV2 {
     snapshot.state.active_sequence_id = Some(CAPTION_SEQUENCE_ID.to_owned());
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
     snapshot
+}
+
+fn trim_caption_project_fixture() -> VideoProjectSnapshotV2 {
+    let mut snapshot = caption_project_fixture();
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let mut source: VideoProjectSnapshotV2 =
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    snapshot.state.assets.append(&mut source.state.assets);
+    let mut source_track = source.state.sequences[0].tracks.remove(0);
+    let ProjectTrack::Video { clips, .. } = &mut source_track else {
+        panic!("source fixture video track")
+    };
+    clips[0].timeline_start = RationalTime {
+        value: 0,
+        rate_numerator: 24,
+        rate_denominator: 1,
+    };
+    snapshot.state.sequences[0].tracks.push(source_track);
+    snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
+    validate_snapshot(&snapshot).unwrap();
+    snapshot
+}
+
+fn trim_caption_clip(state: &VideoProjectStateV2) -> &ProjectClip {
+    let ProjectTrack::Video { clips, .. } = &state.sequences[0].tracks[1] else {
+        panic!("trim caption video track")
+    };
+    &clips[0]
 }
 
 fn caption_artifact_for(
@@ -4394,6 +4426,269 @@ fn caption_artifact_checkpoint_and_journal_recovery_preserve_provenance_and_hist
             Some(&artifact_b)
         );
     }
+}
+
+#[test]
+fn trim_clip_caption_lifecycle_is_atomic_across_history_and_recovery() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("trim-caption-lifecycle.svpvideo");
+    let initial = trim_caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let owner = "trim-caption-owner";
+    let journal = journal_path(&project_path).unwrap();
+
+    let (artifact_a, artifact_b, combined_commands, state_after_group, hash_after_group) = {
+        let service = VideoProjectService::default();
+        service.open(owner, &project_path, &grants).unwrap();
+
+        let artifact_a = caption_artifact_for(&initial, "A");
+        let installed = service
+            .execute(
+                owner,
+                caption_request(
+                    &initial,
+                    "89000000-0000-4000-8000-000000000001",
+                    artifact_a.clone(),
+                ),
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(installed.new_revision.number, 1);
+        assert_eq!(
+            active_caption_artifact(&installed.projection.state),
+            Some(&artifact_a)
+        );
+        let state_after_a = installed.projection.state.clone();
+        let hash_after_a = installed.state_hash.clone();
+        let mut after_a = initial.clone();
+        after_a.revision = installed.new_revision.clone();
+        after_a.state = state_after_a.clone();
+        let artifact_b = caption_artifact_for(&after_a, "B");
+        let combined_commands = vec![
+            ProjectCommand::TrimClip {
+                command_id: "89000000-0000-4000-8000-000000000002".to_owned(),
+                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                track_id: TRIM_CAPTION_SOURCE_TRACK_ID.to_owned(),
+                clip_id: TRIM_CAPTION_CLIP_ID.to_owned(),
+                source_in: RationalTime {
+                    value: 5,
+                    rate_numerator: 30,
+                    rate_denominator: 1,
+                },
+                source_out: RationalTime {
+                    value: 25,
+                    rate_numerator: 30,
+                    rate_denominator: 1,
+                },
+            },
+            ProjectCommand::ApplyCaptionArtifact {
+                command_id: "89000000-0000-4000-8000-000000000003".to_owned(),
+                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                track_id: CAPTION_TRACK_ID.to_owned(),
+                artifact: artifact_b.clone(),
+            },
+        ];
+        let combined = service
+            .execute(
+                owner,
+                CommandGroupRequest {
+                    group_id: "89000000-0000-4000-8000-000000000004".to_owned(),
+                    project_id: initial.id.clone(),
+                    base_revision: 1,
+                    commands: combined_commands.clone(),
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(
+            (combined.prior_revision.number, combined.new_revision.number),
+            (1, 2)
+        );
+        assert_eq!(
+            trim_caption_clip(&combined.projection.state)
+                .source_in
+                .value,
+            5
+        );
+        assert_eq!(
+            trim_caption_clip(&combined.projection.state)
+                .source_out
+                .value,
+            25
+        );
+        assert_eq!(
+            active_caption_artifact(&combined.projection.state),
+            Some(&artifact_b)
+        );
+
+        let committed_records = scan(&journal).unwrap().records;
+        assert_eq!(committed_records.len(), 2);
+        let combined_record = &committed_records[1];
+        assert_eq!(combined_record.kind, JournalRecordKind::Commit);
+        assert_eq!(
+            combined_record.history_group.forward_commands,
+            combined_commands
+        );
+        assert_eq!(combined_record.history_group.inverse_commands.len(), 2);
+        assert!(matches!(
+            combined_record.history_group.inverse_commands[0],
+            ProjectCommand::RestoreActiveCaptionArtifact { .. }
+        ));
+        assert!(matches!(
+            combined_record.history_group.inverse_commands[1],
+            ProjectCommand::TrimClip { .. }
+        ));
+
+        let state_after_group = combined.projection.state.clone();
+        let hash_after_group = combined.state_hash.clone();
+        let undone = service
+            .undo(
+                owner,
+                &initial.id,
+                2,
+                "89000000-0000-4000-8000-000000000005",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(undone.new_revision.number, 3);
+        assert_eq!(undone.projection.state, state_after_a);
+        assert_eq!(undone.state_hash, hash_after_a);
+        assert_eq!(
+            active_caption_artifact(&undone.projection.state),
+            Some(&artifact_a)
+        );
+        assert_eq!(
+            trim_caption_clip(&undone.projection.state).source_in.value,
+            0
+        );
+        assert_eq!(
+            trim_caption_clip(&undone.projection.state).source_out.value,
+            30
+        );
+
+        let redone = service
+            .redo(
+                owner,
+                &initial.id,
+                3,
+                "89000000-0000-4000-8000-000000000006",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(redone.new_revision.number, 4);
+        assert_eq!(redone.projection.state, state_after_group);
+        assert_eq!(redone.state_hash, hash_after_group);
+        assert_eq!(
+            active_caption_artifact(&redone.projection.state),
+            Some(&artifact_b)
+        );
+
+        let records_before_rejection = scan(&journal).unwrap().records;
+        assert_eq!(records_before_rejection.len(), 4);
+        let inspector_before_rejection = service.inspector(owner, &initial.id).unwrap();
+        let rejected = service
+            .execute(
+                owner,
+                CommandGroupRequest {
+                    group_id: "89000000-0000-4000-8000-000000000007".to_owned(),
+                    project_id: initial.id.clone(),
+                    base_revision: 4,
+                    commands: vec![
+                        ProjectCommand::TrimClip {
+                            command_id: "89000000-0000-4000-8000-000000000008".to_owned(),
+                            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                            track_id: TRIM_CAPTION_SOURCE_TRACK_ID.to_owned(),
+                            clip_id: TRIM_CAPTION_CLIP_ID.to_owned(),
+                            source_in: RationalTime {
+                                value: 6,
+                                rate_numerator: 30,
+                                rate_denominator: 1,
+                            },
+                            source_out: RationalTime {
+                                value: 24,
+                                rate_numerator: 30,
+                                rate_denominator: 1,
+                            },
+                        },
+                        ProjectCommand::ApplyCaptionArtifact {
+                            command_id: "89000000-0000-4000-8000-000000000009".to_owned(),
+                            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                            track_id: CAPTION_TRACK_ID.to_owned(),
+                            artifact: artifact_b.clone(),
+                        },
+                    ],
+                },
+                &grants,
+            )
+            .unwrap_err();
+        assert_eq!(
+            rejected.code,
+            crate::video::error::VideoErrorCode::InvalidCommand
+        );
+        assert_eq!(
+            service.inspector(owner, &initial.id).unwrap(),
+            inspector_before_rejection
+        );
+        assert_eq!(scan(&journal).unwrap().records, records_before_rejection);
+
+        (
+            artifact_a,
+            artifact_b,
+            combined_commands,
+            state_after_group,
+            hash_after_group,
+        )
+    };
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("trim-caption-reopen", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 4);
+    assert_eq!(reopened.projection.revision.number, 4);
+    assert_eq!(reopened.projection.revision.state_hash, hash_after_group);
+    assert_eq!(reopened.projection.state, state_after_group);
+    assert_eq!(
+        trim_caption_clip(&reopened.projection.state)
+            .source_in
+            .value,
+        5
+    );
+    assert_eq!(
+        trim_caption_clip(&reopened.projection.state)
+            .source_out
+            .value,
+        25
+    );
+    assert_eq!(
+        active_caption_artifact(&reopened.projection.state),
+        Some(&artifact_b)
+    );
+    assert_ne!(
+        active_caption_artifact(&reopened.projection.state),
+        Some(&artifact_a)
+    );
+    assert_eq!(
+        artifact_b.track_link.project_revision.number, 1,
+        "corrected artifact provenance remains linked to the combined group's base revision"
+    );
+    assert!(reopened.projection.can_undo);
+    assert!(!reopened.projection.can_redo);
+    reopened_service
+        .close("trim-caption-reopen", &initial.id)
+        .unwrap();
+
+    let checkpointed = read_snapshot(&project_path).unwrap();
+    assert_eq!(checkpointed.state, state_after_group);
+    assert_eq!(checkpointed.revision.state_hash, hash_after_group);
+    assert_eq!(checkpointed.history.undo_stack.len(), 2);
+    assert!(checkpointed.history.redo_stack.is_empty());
+    assert_eq!(
+        checkpointed.history.undo_stack[1].forward_commands,
+        combined_commands
+    );
 }
 
 #[test]

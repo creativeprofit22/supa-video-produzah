@@ -6,11 +6,13 @@ import {
   rateOf,
   ratesEqual,
   rescaleRationalTime,
+  videoProjectStateV2Schema,
   type MediaContentIdentityV1,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
   type RationalRate,
   type RationalTime,
+  type VideoProjectStateV2,
 } from "@supa-video/contracts";
 import {
   transcriptArtifactV1Schema,
@@ -142,10 +144,12 @@ function occurrenceId(input: {
     .join("|");
 }
 
-export function resolveScope(input: ProjectTranscriptScopeInput) {
-  transcriptArtifactV1Schema.parse(input.artifact);
-  const projection = projectProjectionSchema.parse(input.projection);
-  const sequence = projection.state.sequences.find(({ id }) => id === input.sequenceId);
+function resolveScopeFromState(
+  input: ProjectTranscriptScopeInput,
+  projection: ProjectProjection,
+  state: VideoProjectStateV2,
+) {
+  const sequence = state.sequences.find(({ id }) => id === input.sequenceId);
   if (sequence === undefined) {
     throw transcriptError(
       "invalid_project",
@@ -188,7 +192,7 @@ export function resolveScope(input: ProjectTranscriptScopeInput) {
     );
   }
 
-  const matchingAssets = projection.state.assets.filter(
+  const matchingAssets = state.assets.filter(
     (asset) =>
       asset.contentIdentity !== undefined &&
       identitiesEqual(asset.contentIdentity, input.artifact.identity.sourceIdentity),
@@ -202,6 +206,12 @@ export function resolveScope(input: ProjectTranscriptScopeInput) {
     );
   }
   return { projection, sequence, track, matchingAssets };
+}
+
+export function resolveScope(input: ProjectTranscriptScopeInput) {
+  transcriptArtifactV1Schema.parse(input.artifact);
+  const projection = projectProjectionSchema.parse(input.projection);
+  return resolveScopeFromState(input, projection, projection.state);
 }
 
 export function mapTranscriptToSource(
@@ -290,10 +300,10 @@ function projectWordToClip(
   });
 }
 
-export function projectTranscriptToTimeline(
+function projectTranscriptWithScope(
   input: ProjectTranscriptScopeInput,
+  scope: ReturnType<typeof resolveScopeFromState>,
 ): TranscriptTimelineProjection {
-  const scope = resolveScope(input);
   const occurrences = input.artifact.words
     .flatMap((word) =>
       scope.track.clips.flatMap((clip) => {
@@ -314,4 +324,20 @@ export function projectTranscriptToTimeline(
     timelineRate: scope.sequence.rate,
     occurrences: Object.freeze(occurrences),
   });
+}
+
+export function projectTranscriptToTimeline(
+  input: ProjectTranscriptScopeInput,
+): TranscriptTimelineProjection {
+  return projectTranscriptWithScope(input, resolveScope(input));
+}
+
+export function projectTranscriptToCandidateTimeline(
+  input: ProjectTranscriptScopeInput,
+  candidateState: VideoProjectStateV2,
+): TranscriptTimelineProjection {
+  transcriptArtifactV1Schema.parse(input.artifact);
+  const projection = projectProjectionSchema.parse(input.projection);
+  const state = videoProjectStateV2Schema.parse(candidateState);
+  return projectTranscriptWithScope(input, resolveScopeFromState(input, projection, state));
 }
