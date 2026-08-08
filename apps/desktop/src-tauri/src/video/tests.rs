@@ -2763,7 +2763,7 @@ fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Val
     let output = output.to_string_lossy().into_owned();
     let top_asset = "55555555-5555-4555-8555-555555555555";
     let bottom_asset = "66666666-6666-4666-8666-666666666666";
-    let filter = "color=c=black:s=1280x720:r=30/1:d=2.000000[base];[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v0];[0:a:0]asetpts=PTS-STARTPTS[a0];[1:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v1];[base][v1]overlay=0:0:format=auto[stack0];[stack0][v0]overlay=0:0:format=auto[stack1];[stack1]null[vout];[a0]anull[aout]";
+    let filter = "color=c=black:s=1280x720:r=30/1:d=2.000000[base];[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.425,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v0];[0:a:0]asetpts=PTS-STARTPTS[a0];[1:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.000,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v1];[base][v1]overlay=0:0:format=auto[stack0];[stack0][v0]overlay=0:0:format=auto[stack1];[stack1]null[vout];[a0]anull[aout]";
     serde_json::json!({
         "schemaVersion": 2,
         "planId": RENDER_PLAN_ID,
@@ -2771,8 +2771,8 @@ fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Val
         "executable": "ffmpeg",
         "inputPathsByAssetId": { (top_asset): top, (bottom_asset): bottom },
         "videoInputs": [
-            { "assetId": top_asset, "path": top, "sourceInMicroseconds": 0, "hidden": false, "muted": false, "hasAudio": true },
-            { "assetId": bottom_asset, "path": bottom, "sourceInMicroseconds": 1_000_000, "hidden": false, "muted": true, "hasAudio": true }
+            { "assetId": top_asset, "path": top, "sourceInMicroseconds": 0, "opacityPermille": 425, "hidden": false, "muted": false, "hasAudio": true },
+            { "assetId": bottom_asset, "path": bottom, "sourceInMicroseconds": 1_000_000, "opacityPermille": 0, "hidden": false, "muted": true, "hasAudio": true }
         ],
         "outputPath": output,
         "expected": {
@@ -2791,6 +2791,39 @@ fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Val
             "-movflags", "+faststart", output
         ]
     })
+}
+
+fn granted_multitrack_render_plan(directory: &Path) -> (VideoPathGrants, Value) {
+    let top = directory.join("opacity-top.mp4");
+    let bottom = directory.join("opacity-bottom.mp4");
+    let output = directory.join("opacity-output.mp4");
+    fs::write(&top, b"top").expect("opacity top source must be written");
+    fs::write(&bottom, b"bottom").expect("opacity bottom source must be written");
+    let grants = VideoPathGrants::default();
+    let top = grants
+        .grant_existing_file("owner", GrantCategory::Source, &top)
+        .expect("opacity top source must grant");
+    let bottom = grants
+        .grant_existing_file("owner", GrantCategory::Source, &bottom)
+        .expect("opacity bottom source must grant");
+    let output = grants
+        .grant_destination("owner", GrantCategory::Output, &output)
+        .expect("opacity output must grant");
+    let plan = multitrack_render_plan_value(&top, &bottom, &output);
+    (grants, plan)
+}
+
+fn multitrack_filter_mut(plan: &mut Value) -> &mut Value {
+    plan["argv"]
+        .as_array_mut()
+        .and_then(|arguments| {
+            arguments.iter_mut().find(|argument| {
+                argument
+                    .as_str()
+                    .is_some_and(|value| value.starts_with("color="))
+            })
+        })
+        .expect("multitrack filter must exist")
 }
 
 const RENDER_CAPTION_FILTER: &str = "drawtext=text='Path\\\\it\\'s\\: 50\\%\\, \\[yes\\]\\;\\nnext\\nline\\nend':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,0.250000\\,1.750000)'";
@@ -3120,6 +3153,109 @@ fn multitrack_render_plan_binds_order_visibility_audio_and_source_ranges_to_exac
         assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
         assert_eq!(error.details["category"], "argv_grammar");
     }
+}
+
+#[test]
+fn render_opacity_partial_uses_exact_integer_filter_and_filter_order() {
+    let directory = tempdir().expect("opacity render workspace must be created");
+    let (grants, exact) = granted_multitrack_render_plan(directory.path());
+    let validated = parse_and_validate_render_plan(exact.clone(), "owner", &grants)
+        .expect("partial and zero opacity must validate");
+    let serialized = serde_json::to_value(&validated.plan).expect("render plan must serialize");
+    assert_eq!(serialized["videoInputs"][0]["opacityPermille"], 425);
+    assert_eq!(serialized["videoInputs"][1]["opacityPermille"], 0);
+
+    let filter = validated
+        .plan
+        .argv()
+        .iter()
+        .find(|argument| argument.starts_with("color="))
+        .expect("validated multitrack filter must exist");
+    assert!(filter.contains("format=rgba,colorchannelmixer=aa=0.425,pad="));
+    assert!(filter.contains("format=rgba,colorchannelmixer=aa=0.000,pad="));
+
+    let mut reordered = exact;
+    let filter = multitrack_filter_mut(&mut reordered);
+    *filter = Value::String(filter.as_str().unwrap().replace(
+        "format=rgba,colorchannelmixer=aa=0.425,pad=",
+        "colorchannelmixer=aa=0.425,format=rgba,pad=",
+    ));
+    let error = parse_and_validate_render_plan(reordered, "owner", &grants)
+        .expect_err("reordered opacity filter must fail");
+    assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+    assert_eq!(error.details["category"], "argv_grammar");
+}
+
+#[test]
+fn render_opacity_enforces_inclusive_permille_bounds() {
+    let directory = tempdir().expect("opacity bounds workspace must be created");
+    let (grants, exact) = granted_multitrack_render_plan(directory.path());
+
+    let mut upper_bound = exact.clone();
+    upper_bound["videoInputs"][0]["opacityPermille"] = Value::from(1_000);
+    let filter = multitrack_filter_mut(&mut upper_bound);
+    *filter = Value::String(filter.as_str().unwrap().replace("aa=0.425", "aa=1.000"));
+    parse_and_validate_render_plan(upper_bound, "owner", &grants)
+        .expect("one-thousand permille opacity must validate");
+
+    let mut missing = exact.clone();
+    missing["videoInputs"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("opacityPermille");
+    let mut negative = exact.clone();
+    negative["videoInputs"][0]["opacityPermille"] = Value::from(-1);
+    let mut above_maximum = exact;
+    above_maximum["videoInputs"][0]["opacityPermille"] = Value::from(1_001);
+
+    for invalid in [missing, negative, above_maximum] {
+        let error = parse_and_validate_render_plan(invalid, "owner", &grants)
+            .expect_err("missing or out-of-range opacity must fail schema validation");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "schema");
+    }
+}
+
+#[test]
+fn render_opacity_rejects_metadata_filter_mismatches_and_preserves_audio_at_zero() {
+    let directory = tempdir().expect("opacity mismatch workspace must be created");
+    let (grants, exact) = granted_multitrack_render_plan(directory.path());
+
+    let mut metadata_only = exact.clone();
+    metadata_only["videoInputs"][0]["opacityPermille"] = Value::from(426);
+
+    let mut missing_filter = exact.clone();
+    let filter = multitrack_filter_mut(&mut missing_filter);
+    *filter = Value::String(
+        filter
+            .as_str()
+            .unwrap()
+            .replace("colorchannelmixer=aa=0.425,", ""),
+    );
+
+    let mut tampered_filter = exact.clone();
+    let filter = multitrack_filter_mut(&mut tampered_filter);
+    *filter = Value::String(filter.as_str().unwrap().replace("aa=0.425", "aa=0.426"));
+
+    for invalid in [metadata_only, missing_filter, tampered_filter] {
+        let error = parse_and_validate_render_plan(invalid, "owner", &grants)
+            .expect_err("opacity metadata and filter arguments must match exactly");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(error.details["category"], "argv_grammar");
+    }
+
+    let mut zero_opacity_with_audio = exact;
+    zero_opacity_with_audio["videoInputs"][0]["opacityPermille"] = Value::from(0);
+    let filter = multitrack_filter_mut(&mut zero_opacity_with_audio);
+    *filter = Value::String(filter.as_str().unwrap().replace("aa=0.425", "aa=0.000"));
+    let validated = parse_and_validate_render_plan(zero_opacity_with_audio, "owner", &grants)
+        .expect("zero opacity must not mute an independently audible input");
+    assert!(validated.plan.expected().audio);
+    assert!(validated
+        .plan
+        .argv()
+        .iter()
+        .any(|argument| argument.contains("[0:a:0]asetpts=PTS-STARTPTS[a0]")));
 }
 
 #[test]

@@ -52,6 +52,19 @@ where
     Ok(value)
 }
 
+fn deserialize_opacity_permille<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    if value > 1_000 {
+        return Err(de::Error::custom(
+            "expected opacity permille from 0 to 1000",
+        ));
+    }
+    Ok(value)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MediaContentAlgorithm {
@@ -356,6 +369,8 @@ pub struct RenderVideoInputV2 {
     pub asset_id: ProjectUuid,
     pub path: String,
     pub source_in_microseconds: u64,
+    #[serde(deserialize_with = "deserialize_opacity_permille")]
+    pub opacity_permille: u64,
     pub hidden: bool,
     pub muted: bool,
     pub has_audio: bool,

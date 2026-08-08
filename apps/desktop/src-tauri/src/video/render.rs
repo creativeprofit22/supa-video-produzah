@@ -906,6 +906,14 @@ fn fixed_six_seconds(microseconds: u64) -> String {
     )
 }
 
+fn fixed_three_opacity(opacity_permille: u64) -> String {
+    format!(
+        "{}.{:03}",
+        opacity_permille / 1_000,
+        opacity_permille % 1_000
+    )
+}
+
 fn escape_drawtext_text(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('\'', "\\'")
@@ -1008,9 +1016,14 @@ fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String
     for (index, input) in plan.video_inputs.iter().enumerate() {
         if !input.hidden {
             parts.push(format!(
-                "[{index}:v:0]setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
-                expected.width, expected.height, expected.width, expected.height,
-                expected.rate.numerator, expected.rate.denominator,
+                "[{index}:v:0]setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa={},pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
+                expected.width,
+                expected.height,
+                fixed_three_opacity(input.opacity_permille),
+                expected.width,
+                expected.height,
+                expected.rate.numerator,
+                expected.rate.denominator,
             ));
             visible.push(index);
         }
@@ -1065,6 +1078,7 @@ fn expected_render_arguments_v2(
         || plan.expected.audio != audible
         || plan.video_inputs.iter().any(|input| {
             input.source_in_microseconds > MAX_SAFE_INTEGER
+                || input.opacity_permille > 1_000
                 || plan.input_paths_by_asset_id.get(&input.asset_id) != Some(&input.path)
         })
         || plan.input_paths_by_asset_id.iter().any(|(asset_id, path)| {
