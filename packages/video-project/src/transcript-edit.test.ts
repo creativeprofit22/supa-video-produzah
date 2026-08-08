@@ -351,6 +351,18 @@ describe("transcript source and timeline mapping", () => {
     expect(new Set(timeline.occurrences.map(({ occurrenceId }) => occurrenceId)).size).toBe(3);
   });
 
+  it("exposes the exact sequence timeline rate with and without mapped words", () => {
+    const mapped = projectTranscriptToTimeline(
+      scope(artifact([{ startUs: 100_000, endUs: 200_000 }]), projection()),
+    );
+    const empty = projectTranscriptToTimeline(scope(artifact([]), projection()));
+
+    expect(mapped.timelineRate).toEqual(rate);
+    expect(mapped.occurrences).not.toHaveLength(0);
+    expect(empty.timelineRate).toEqual(rate);
+    expect(empty.occurrences).toEqual([]);
+  });
+
   it("rejects a transcript whose source identity is not committed in the project", async () => {
     const value = artifact([{ startUs: 100_000, endUs: 200_000 }]);
     const otherIdentity = { ...sourceIdentity, digest: "ff".repeat(32) };

@@ -9,6 +9,7 @@ import {
   type MediaContentIdentityV1,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
+  type RationalRate,
   type RationalTime,
 } from "@supa-video/contracts";
 import {
@@ -46,6 +47,7 @@ export interface TranscriptTimelineProjection {
   readonly projectRevision: ProjectRevisionDescriptorV2;
   readonly sequenceId: string;
   readonly trackId: string;
+  readonly timelineRate: RationalRate;
   readonly occurrences: readonly TranscriptTimelineOccurrence[];
 }
 
@@ -72,6 +74,19 @@ export function transcriptError(
 
 export function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function compareTranscriptTimelineOccurrences(
+  left: TranscriptTimelineOccurrence,
+  right: TranscriptTimelineOccurrence,
+): number {
+  return (
+    left.timelineRange.start.value - right.timelineRange.start.value ||
+    left.timelineRange.end.value - right.timelineRange.end.value ||
+    left.sourceRange.start.value - right.sourceRange.start.value ||
+    compareStrings(left.clipId, right.clipId) ||
+    compareStrings(left.wordId, right.wordId)
+  );
 }
 
 export function identitiesEqual(
@@ -286,14 +301,7 @@ export function projectTranscriptToTimeline(
         return occurrence === null ? [] : [occurrence];
       }),
     )
-    .sort(
-      (left, right) =>
-        left.timelineRange.start.value - right.timelineRange.start.value ||
-        left.timelineRange.end.value - right.timelineRange.end.value ||
-        left.sourceRange.start.value - right.sourceRange.start.value ||
-        compareStrings(left.clipId, right.clipId) ||
-        compareStrings(left.wordId, right.wordId),
-    );
+    .sort(compareTranscriptTimelineOccurrences);
 
   return Object.freeze({
     schemaVersion: 1,
@@ -303,6 +311,7 @@ export function projectTranscriptToTimeline(
     projectRevision: scope.projection.revision,
     sequenceId: scope.sequence.id,
     trackId: scope.track.id,
+    timelineRate: scope.sequence.rate,
     occurrences: Object.freeze(occurrences),
   });
 }
