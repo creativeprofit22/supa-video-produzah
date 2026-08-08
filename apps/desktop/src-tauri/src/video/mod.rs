@@ -1,5 +1,7 @@
 pub(crate) mod cache;
 #[allow(dead_code)]
+mod caption;
+#[allow(dead_code)]
 pub(crate) mod derived;
 mod error;
 mod grants;

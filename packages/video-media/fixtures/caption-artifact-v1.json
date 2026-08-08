@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "trackLink": {
+    "schemaVersion": 1,
+    "projectId": "11111111-1111-4111-8111-111111111111",
+    "projectRevision": {
+      "number": 7,
+      "id": "22222222-2222-4222-8222-222222222222",
+      "parentId": null,
+      "committedAt": "2026-08-08T00:00:00.000Z",
+      "operationId": "33333333-3333-4333-8333-333333333333",
+      "stateHash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    },
+    "sequenceId": "44444444-4444-4444-8444-444444444444",
+    "captionTrackId": "55555555-5555-4555-8555-555555555555"
+  },
+  "sourceIdentity": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "byteLength": 1048576
+  },
+  "transcriptArtifactIdentityKey": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "language": "en-US",
+  "timelineRate": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "style": {
+    "schemaVersion": 1,
+    "typography": {
+      "fontFamily": "Inter",
+      "fontSizePx": 48,
+      "fontWeight": 600,
+      "fontStyle": "normal",
+      "lineHeightPermille": 1200,
+      "foregroundColorRgba": "#ffffffff"
+    },
+    "alignment": {
+      "horizontal": "center",
+      "vertical": "bottom"
+    }
+  },
+  "validationProfile": {
+    "schemaVersion": 1,
+    "maxLinesPerCue": 2,
+    "maxCharactersPerLine": 42,
+    "maxCharactersPerSecond": 20,
+    "minimumCueDuration": {
+      "value": 1,
+      "rateNumerator": 2,
+      "rateDenominator": 1
+    },
+    "maximumCueDuration": {
+      "value": 7,
+      "rateNumerator": 1,
+      "rateDenominator": 1
+    },
+    "safeArea": {
+      "topPermille": 50,
+      "rightPermille": 50,
+      "bottomPermille": 100,
+      "leftPermille": 50
+    }
+  },
+  "cues": [
+    {
+      "schemaVersion": 1,
+      "cueId": "caption-0001",
+      "start": {
+        "value": 0,
+        "rateNumerator": 24,
+        "rateDenominator": 1
+      },
+      "end": {
+        "value": 24,
+        "rateNumerator": 24,
+        "rateDenominator": 1
+      },
+      "lines": ["Hello 👋🏽"],
+      "anchor": {
+        "xPermille": 500,
+        "yPermille": 900
+      },
+      "sourceLinks": [
+        {
+          "transcriptArtifactIdentityKey": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          "sourceStartUs": 0,
+          "sourceEndUs": 1000000,
+          "transcriptWordIds": ["chunk-0000:0", "chunk-0000:1"]
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "cueId": "caption-0002",
+      "start": {
+        "value": 24,
+        "rateNumerator": 24,
+        "rateDenominator": 1
+      },
+      "end": {
+        "value": 72,
+        "rateNumerator": 24,
+        "rateDenominator": 1
+      },
+      "lines": ["Unicode stays exact", "across both mirrors."],
+      "anchor": {
+        "xPermille": 500,
+        "yPermille": 900
+      },
+      "sourceLinks": [
+        {
+          "transcriptArtifactIdentityKey": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          "sourceStartUs": 1000000,
+          "sourceEndUs": 2500000,
+          "transcriptWordIds": ["chunk-0000:2", "chunk-0000:3", "chunk-0000:4"]
+        }
+      ]
+    }
+  ]
+}
