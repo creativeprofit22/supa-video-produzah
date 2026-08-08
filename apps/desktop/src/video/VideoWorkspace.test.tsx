@@ -34,6 +34,7 @@ vi.mock("./ProgramMonitor", () => ({
     readonly sourceLayers: readonly {
       readonly clipId: string;
       readonly canonicalTrackIndex: number;
+      readonly opacityPermille: number;
       readonly hidden: boolean;
       readonly muted: boolean;
     }[];
@@ -64,6 +65,7 @@ const previewClipId = id(3);
 function canonicalProjection(
   previewOwnerMuted = true,
   previewOwnerHidden = true,
+  opacityPermille = { other: 1_000, preview: 425, following: 0 },
 ): ProjectProjection {
   return {
     projectId: id(10),
@@ -108,7 +110,7 @@ function canonicalProjection(
                   timelineStart: time(0),
                   sourceIn: time(50),
                   sourceOut: time(75),
-                  transform,
+                  transform: { ...transform, opacityPermille: opacityPermille.other },
                   gainMilliDecibels: 0,
                 },
               ],
@@ -138,7 +140,7 @@ function canonicalProjection(
                   timelineStart: time(25),
                   sourceIn: time(0),
                   sourceOut: time(25),
-                  transform,
+                  transform: { ...transform, opacityPermille: opacityPermille.preview },
                   gainMilliDecibels: 0,
                 },
                 {
@@ -147,7 +149,7 @@ function canonicalProjection(
                   timelineStart: time(50),
                   sourceIn: time(25),
                   sourceOut: time(50),
-                  transform,
+                  transform: { ...transform, opacityPermille: opacityPermille.following },
                   gainMilliDecibels: 0,
                 },
               ],
@@ -285,11 +287,17 @@ describe("VideoWorkspace", () => {
       cancelRender: vi.fn(),
     } as unknown as ComponentProps<typeof VideoWorkspace>["controller"];
 
-    const workspace = (value: ComponentProps<typeof VideoWorkspace>["controller"]) => (
+    const workspace = (
+      value: ComponentProps<typeof VideoWorkspace>["controller"],
+      selectedClipOpacityDraft: ComponentProps<
+        typeof VideoWorkspace
+      >["selectedClipOpacityDraft"] = null,
+    ) => (
       <CommandProvider>
         <VideoWorkspace
           controller={value}
           mediaJobs={[]}
+          selectedClipOpacityDraft={selectedClipOpacityDraft}
           project={legacyProject()}
           readiness={{
             phase: "loaded",
@@ -311,11 +319,19 @@ describe("VideoWorkspace", () => {
     expect(captureProgramMonitorProps).toHaveBeenCalled();
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
       sourceLayers: [
-        { canonicalTrackIndex: 0, timelineStartFrame: 0, hidden: false, muted: false },
+        {
+          clipId: id(21),
+          canonicalTrackIndex: 0,
+          timelineStartFrame: 0,
+          opacityPermille: 1_000,
+          hidden: false,
+          muted: false,
+        },
         {
           clipId: previewClipId,
           canonicalTrackIndex: 3,
           timelineStartFrame: 25,
+          opacityPermille: 425,
           hidden: true,
           muted: true,
         },
@@ -323,12 +339,31 @@ describe("VideoWorkspace", () => {
           clipId: id(36),
           canonicalTrackIndex: 3,
           timelineStartFrame: 50,
+          opacityPermille: 0,
           hidden: true,
           muted: true,
         },
       ],
       activeCaptions: [],
     });
+    rerender(workspace(controller, { clipId: previewClipId, opacityPermille: 875 }));
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
+      sourceLayers: [
+        { clipId: id(21), opacityPermille: 1_000 },
+        { clipId: previewClipId, opacityPermille: 425 },
+        { clipId: id(36), opacityPermille: 0 },
+      ],
+    });
+
+    rerender(workspace(controller, { clipId: id(21), opacityPermille: 333 }));
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
+      sourceLayers: [
+        { clipId: id(21), opacityPermille: 333 },
+        { clipId: previewClipId, opacityPermille: 425 },
+        { clipId: id(36), opacityPermille: 0 },
+      ],
+    });
+
     const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
       { readonly onSetTrackHidden: (trackId: string, hidden: boolean) => void } | undefined;
     timelineProps?.onSetTrackHidden(id(30), false);
@@ -344,11 +379,45 @@ describe("VideoWorkspace", () => {
     rerender(workspace(controllerWithMutedAndHiddenNonOwner));
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
       sourceLayers: [
-        { canonicalTrackIndex: 0, hidden: true, muted: true },
-        { clipId: previewClipId, canonicalTrackIndex: 3, hidden: false, muted: false },
-        { clipId: id(36), canonicalTrackIndex: 3, hidden: false, muted: false },
+        {
+          canonicalTrackIndex: 0,
+          opacityPermille: 1_000,
+          hidden: true,
+          muted: true,
+        },
+        {
+          clipId: previewClipId,
+          canonicalTrackIndex: 3,
+          opacityPermille: 425,
+          hidden: false,
+          muted: false,
+        },
+        {
+          clipId: id(36),
+          canonicalTrackIndex: 3,
+          opacityPermille: 0,
+          hidden: false,
+          muted: false,
+        },
       ],
       activeCaptions: [{ captionId: id(32), text: "Shown cue" }],
+    });
+
+    const reconciledController = {
+      ...controllerWithMutedAndHiddenNonOwner,
+      projection: canonicalProjection(false, false, {
+        other: 600,
+        preview: 425,
+        following: 0,
+      }),
+    } as ComponentProps<typeof VideoWorkspace>["controller"];
+    rerender(workspace(reconciledController));
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
+      sourceLayers: [
+        { clipId: id(21), opacityPermille: 600 },
+        { clipId: previewClipId, opacityPermille: 425 },
+        { clipId: id(36), opacityPermille: 0 },
+      ],
     });
   });
 });

@@ -174,6 +174,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 10,
             sourceOutFrame: 90,
+            opacityPermille: 1_000,
             hidden: true,
             muted: false,
             hasAudio: true,
@@ -185,6 +186,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 10,
             sourceOutFrame: 90,
+            opacityPermille: 1_000,
             hidden: false,
             muted: true,
             hasAudio: true,
@@ -209,6 +211,133 @@ describe("ProgramMonitor", () => {
     expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
   });
 
+  it("applies full, partial, and zero opacity while preserving layer reveal, hidden, audio, and caption behavior", () => {
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        activeCaptions={[{ captionId: "opacity-cue", text: "Opacity cue" }]}
+        sourceLayers={[
+          {
+            clipId: "transparent-top",
+            path: "/cache/top.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            opacityPermille: 0,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+          {
+            clipId: "partial-middle",
+            path: "/cache/middle.mp4",
+            canonicalTrackIndex: 1,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            opacityPermille: 425,
+            hidden: false,
+            muted: true,
+            hasAudio: true,
+          },
+          {
+            clipId: "opaque-bottom",
+            path: "/cache/bottom.mp4",
+            canonicalTrackIndex: 2,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            opacityPermille: 1_000,
+            hidden: false,
+            muted: true,
+            hasAudio: false,
+          },
+          {
+            clipId: "hidden-layer",
+            path: "/cache/hidden.mp4",
+            canonicalTrackIndex: 3,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            opacityPermille: 750,
+            hidden: true,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={100}
+        playhead={0}
+        onPlayheadChange={vi.fn()}
+      />,
+    );
+
+    const layer = (clipId: string) =>
+      container.querySelector<HTMLVideoElement>(`[data-clip-id="${clipId}"]`)!;
+    expect(layer("transparent-top").dataset.opacityPermille).toBe("0");
+    expect(layer("transparent-top").style.opacity).toBe("0");
+    expect(layer("transparent-top").style.visibility).toBe("visible");
+    expect(layer("transparent-top").style.zIndex).toBe("3");
+    expect(layer("partial-middle").dataset.opacityPermille).toBe("425");
+    expect(layer("partial-middle").style.opacity).toBe("0.425");
+    expect(layer("opaque-bottom").dataset.opacityPermille).toBe("1000");
+    expect(layer("opaque-bottom").style.opacity).toBe("1");
+    expect(layer("opaque-bottom").style.visibility).toBe("visible");
+    expect(layer("hidden-layer").style.visibility).toBe("hidden");
+    expect(screen.getByLabelText("Active captions").textContent).toContain("Opacity cue");
+    expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
+  });
+
+  it("does not reapply source-layer opacity to the rendered final preview", () => {
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath="/cache/final-preview.mp4"
+        hasAudio={false}
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        sourceLayers={[
+          {
+            clipId: "partial-source",
+            path: "/cache/source.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            opacityPermille: 250,
+            hidden: false,
+            muted: false,
+            hasAudio: false,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={100}
+        playhead={0}
+        onPlayheadChange={vi.fn()}
+      />,
+    );
+    const sourceLayer = container.querySelector<HTMLVideoElement>(
+      '[data-clip-id="partial-source"]',
+    )!;
+    expect(sourceLayer.style.opacity).toBe("0.25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Final" }));
+
+    const finalPreview = screen.getByLabelText("Verified final video preview") as HTMLVideoElement;
+    expect(finalPreview.style.opacity).toBe("");
+    expect(finalPreview.hasAttribute("data-opacity-permille")).toBe(false);
+    expect(container.querySelector("[data-clip-id]")).toBeNull();
+  });
+
   it("densely stacks visible video layers across caption, audio, and hidden canonical slots", () => {
     const { container } = render(
       <ProgramMonitor
@@ -225,6 +354,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: false,
@@ -236,6 +366,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            opacityPermille: 1_000,
             hidden: true,
             muted: false,
             hasAudio: false,
@@ -247,6 +378,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: false,
@@ -258,6 +390,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: false,
@@ -311,6 +444,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 100,
             sourceInFrame: 10,
             sourceOutFrame: 20,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: true,
@@ -354,6 +488,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 25,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: true,
@@ -365,6 +500,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 25,
             sourceInFrame: 25,
             sourceOutFrame: 50,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: true,
@@ -414,6 +550,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 50,
+            opacityPermille: 1_000,
             hidden: true,
             muted: false,
             hasAudio: true,
@@ -425,6 +562,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 40,
             sourceInFrame: 10,
             sourceOutFrame: 30,
+            opacityPermille: 1_000,
             hidden: false,
             muted: false,
             hasAudio: true,

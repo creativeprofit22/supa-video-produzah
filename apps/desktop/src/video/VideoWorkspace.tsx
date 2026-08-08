@@ -29,11 +29,17 @@ import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
 import type { ReadinessState } from "./VideoProjectOpener";
 
+export interface SelectedClipOpacityDraft {
+  readonly clipId: string;
+  readonly opacityPermille: number;
+}
+
 interface VideoWorkspaceProps {
   readonly controller: ReturnType<typeof useVideoProject>;
   readonly mediaJobs: readonly MediaJobRecord[];
   readonly project: Readonly<VideoProjectFileV1>;
   readonly readiness: ReadinessState;
+  readonly selectedClipOpacityDraft?: SelectedClipOpacityDraft | null;
   readonly onCheckTools: () => void;
   readonly onOpenJobCenter: (jobId: string) => void;
 }
@@ -141,6 +147,7 @@ export function VideoWorkspace({
   mediaJobs,
   project,
   readiness,
+  selectedClipOpacityDraft = null,
   onCheckTools,
   onOpenJobCenter,
 }: VideoWorkspaceProps) {
@@ -184,6 +191,14 @@ export function VideoWorkspace({
             timelineStartFrame: canonicalClip.timelineStart.value,
             sourceInFrame: canonicalClip.sourceIn.value,
             sourceOutFrame: canonicalClip.sourceOut.value,
+            opacityPermille:
+              selectedClipOpacityDraft?.clipId === selectedClipId &&
+              selectedClipOpacityDraft.clipId === canonicalClip.id &&
+              Number.isInteger(selectedClipOpacityDraft.opacityPermille) &&
+              selectedClipOpacityDraft.opacityPermille >= 0 &&
+              selectedClipOpacityDraft.opacityPermille <= 1_000
+                ? selectedClipOpacityDraft.opacityPermille
+                : canonicalClip.transform.opacityPermille,
             hidden: isTrackHidden(track),
             muted: isTrackMuted(track),
             hasAudio: canonicalAsset.probe.audio !== null,
@@ -191,7 +206,13 @@ export function VideoWorkspace({
         ];
       });
     });
-  }, [canonicalSequence, controller.preparedAssetsById, controller.projection]);
+  }, [
+    canonicalSequence,
+    controller.preparedAssetsById,
+    controller.projection,
+    selectedClipId,
+    selectedClipOpacityDraft,
+  ]);
   const sourceHasAudio = sourceLayers.some((layer) => layer.hasAudio && !layer.muted);
   const legacyTimelinePlayheadFrame = timelineFrameForPreviewSourceFrame(
     canonicalSequence,

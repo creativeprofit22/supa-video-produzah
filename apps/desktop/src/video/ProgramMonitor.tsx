@@ -20,6 +20,7 @@ export interface ProgramMonitorLayer {
   readonly timelineStartFrame: number;
   readonly sourceInFrame: number;
   readonly sourceOutFrame: number;
+  readonly opacityPermille: number;
   readonly hidden: boolean;
   readonly muted: boolean;
   readonly hasAudio: boolean;
@@ -569,9 +570,11 @@ export function ProgramMonitor({
                     aria-label={`Canonical video layer ${layer.canonicalTrackIndex + 1}`}
                     data-clip-id={layer.clipId}
                     data-track-index={layer.canonicalTrackIndex}
+                    data-opacity-permille={layer.opacityPermille}
                     data-hidden={layer.hidden ? "true" : "false"}
                     data-active={isActiveLayer ? "true" : "false"}
                     style={{
+                      opacity: layer.opacityPermille / 1_000,
                       visibility: isActiveLayer ? "visible" : "hidden",
                       zIndex,
                     }}
