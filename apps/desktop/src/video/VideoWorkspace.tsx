@@ -1,5 +1,6 @@
 import {
   isTrackHidden,
+  isTrackLocked,
   isTrackMuted,
   rescaleRationalTime,
   type ProjectClip,
@@ -15,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
 import { AssetPanel } from "./AssetPanel";
+import { ClipInspector, type ClipOpacityDraft, type SelectedVideoClip } from "./ClipInspector";
 import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
@@ -29,17 +31,11 @@ import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
 import type { ReadinessState } from "./VideoProjectOpener";
 
-export interface SelectedClipOpacityDraft {
-  readonly clipId: string;
-  readonly opacityPermille: number;
-}
-
 interface VideoWorkspaceProps {
   readonly controller: ReturnType<typeof useVideoProject>;
   readonly mediaJobs: readonly MediaJobRecord[];
   readonly project: Readonly<VideoProjectFileV1>;
   readonly readiness: ReadinessState;
-  readonly selectedClipOpacityDraft?: SelectedClipOpacityDraft | null;
   readonly onCheckTools: () => void;
   readonly onOpenJobCenter: (jobId: string) => void;
 }
@@ -147,13 +143,16 @@ export function VideoWorkspace({
   mediaJobs,
   project,
   readiness,
-  selectedClipOpacityDraft = null,
   onCheckTools,
   onOpenJobCenter,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [selectedClipOpacityDraft, setSelectedClipOpacityDraft] = useState<ClipOpacityDraft | null>(
+    null,
+  );
+  const opacityCommitPending = useRef(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
@@ -169,6 +168,36 @@ export function VideoWorkspace({
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
   const canonicalPreview = findCanonicalPreviewClip(canonicalSequence, clip ?? null);
+  const selectedVideoClip = useMemo<SelectedVideoClip | null>(() => {
+    if (canonicalSequence === null || selectedClipId === null) return null;
+    for (const track of canonicalSequence.tracks) {
+      if (track.kind !== "video") continue;
+      const selectedClip = track.clips.find((candidate) => candidate.id === selectedClipId);
+      if (selectedClip === undefined) continue;
+      const selectedAssetId =
+        selectedClip.source.kind === "asset" ? selectedClip.source.assetId : null;
+      const selectedAsset = controller.projection?.state.assets.find(
+        (candidate) => candidate.id === selectedAssetId,
+      );
+      return {
+        sequenceId: canonicalSequence.id,
+        trackId: track.id,
+        clipId: selectedClip.id,
+        clipLabel: selectedAsset?.displayName ?? "Video clip",
+        trackLabel: track.name,
+        opacityPermille: selectedClip.transform.opacityPermille,
+        locked: isTrackLocked(track),
+      };
+    }
+    return null;
+  }, [canonicalSequence, controller.projection?.state.assets, selectedClipId]);
+  const inspectedOpacityPermille =
+    selectedVideoClip !== null &&
+    selectedClipOpacityDraft?.sequenceId === selectedVideoClip.sequenceId &&
+    selectedClipOpacityDraft.trackId === selectedVideoClip.trackId &&
+    selectedClipOpacityDraft.clipId === selectedVideoClip.clipId
+      ? selectedClipOpacityDraft.opacityPermille
+      : (selectedVideoClip?.opacityPermille ?? null);
   const timelineAudioMuted =
     canonicalPreview === null ? false : isTrackMuted(canonicalPreview.track);
   const timelineVideoHidden =
@@ -192,7 +221,9 @@ export function VideoWorkspace({
             sourceInFrame: canonicalClip.sourceIn.value,
             sourceOutFrame: canonicalClip.sourceOut.value,
             opacityPermille:
-              selectedClipOpacityDraft?.clipId === selectedClipId &&
+              selectedClipOpacityDraft?.sequenceId === canonicalSequence.id &&
+              selectedClipOpacityDraft.trackId === track.id &&
+              selectedClipOpacityDraft.clipId === selectedClipId &&
               selectedClipOpacityDraft.clipId === canonicalClip.id &&
               Number.isInteger(selectedClipOpacityDraft.opacityPermille) &&
               selectedClipOpacityDraft.opacityPermille >= 0 &&
@@ -271,6 +302,14 @@ export function VideoWorkspace({
   const draft = controller.trimDraft;
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
+  const opacitySaving =
+    controller.editOperation.phase === "saving" &&
+    controller.editOperation.operation === "clip-opacity";
+  const opacityError =
+    controller.editOperation.phase === "error" &&
+    controller.editOperation.operation === "clip-opacity"
+      ? controller.editOperation.error
+      : null;
   const projectPending = controller.projectOperation.phase === "pending";
   useCommandHandler("history.undo", {
     canExecute: controller.projection !== null && controller.canUndo && !editPending,
@@ -343,6 +382,33 @@ export function VideoWorkspace({
       current !== null && clipIds.includes(current) ? current : (clipIds[0] ?? null),
     );
   }, [canonicalSequence]);
+
+  useEffect(() => {
+    setSelectedClipOpacityDraft(null);
+  }, [
+    controller.projection?.revision.id,
+    selectedVideoClip?.clipId,
+    selectedVideoClip?.opacityPermille,
+    selectedVideoClip?.sequenceId,
+    selectedVideoClip?.trackId,
+  ]);
+
+  const commitClipOpacity = async (opacityDraft: ClipOpacityDraft) => {
+    if (opacityCommitPending.current) return;
+    opacityCommitPending.current = true;
+    try {
+      await controller.setTimelineClipOpacity(opacityDraft);
+    } finally {
+      setSelectedClipOpacityDraft((current) =>
+        current?.sequenceId === opacityDraft.sequenceId &&
+        current.trackId === opacityDraft.trackId &&
+        current.clipId === opacityDraft.clipId
+          ? null
+          : current,
+      );
+      opacityCommitPending.current = false;
+    }
+  };
 
   useEffect(() => {
     if (preparationJob?.state !== "complete" || controller.preparation.phase === "success") return;
@@ -621,6 +687,15 @@ export function VideoWorkspace({
             onOpenJobCenter={onOpenJobCenter}
             onRetryPreparation={() => void controller.retryPreparation()}
             onRelinkSource={() => void controller.regrantSourceAccess()}
+          />
+          <ClipInspector
+            selection={selectedVideoClip}
+            opacityPermille={inspectedOpacityPermille}
+            disabled={editPending}
+            saving={opacitySaving}
+            error={opacityError}
+            onDraftChange={setSelectedClipOpacityDraft}
+            onCommit={(opacityDraft) => void commitClipOpacity(opacityDraft)}
           />
           {draft !== null ? (
             <TrimInspector

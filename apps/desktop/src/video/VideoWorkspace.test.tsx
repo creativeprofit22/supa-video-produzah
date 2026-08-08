@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ProjectProjection, VideoProjectFileV1 } from "@supa-video/contracts";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -66,6 +66,7 @@ function canonicalProjection(
   previewOwnerMuted = true,
   previewOwnerHidden = true,
   opacityPermille = { other: 1_000, preview: 425, following: 0 },
+  otherTrackLocked = false,
 ): ProjectProjection {
   return {
     projectId: id(10),
@@ -103,6 +104,7 @@ function canonicalProjection(
               kind: "video",
               muted: !previewOwnerMuted,
               hidden: !previewOwnerHidden,
+              locked: otherTrackLocked,
               clips: [
                 {
                   id: id(21),
@@ -125,7 +127,17 @@ function canonicalProjection(
               id: id(38),
               name: "Interleaved audio",
               kind: "audio",
-              clips: [],
+              clips: [
+                {
+                  id: id(39),
+                  source: { kind: "asset", assetId },
+                  timelineStart: time(0),
+                  sourceIn: time(0),
+                  sourceOut: time(25),
+                  transform,
+                  gainMilliDecibels: 0,
+                },
+              ],
             },
             {
               id: id(30),
@@ -238,6 +250,77 @@ function legacyProject(): VideoProjectFileV1 {
   };
 }
 
+type WorkspaceController = ComponentProps<typeof VideoWorkspace>["controller"];
+
+function createController(overrides: Partial<WorkspaceController> = {}): WorkspaceController {
+  return {
+    projectPath: "C:\\Projects\\workspace.svpvideo",
+    projection: canonicalProjection(),
+    recovery: null,
+    checkpointWarning: null,
+    source: null,
+    preparedAsset: { proxyPath: "/cache/shared-proxy.mp4" },
+    preparedAssetsById: { [assetId]: { proxyPath: "/cache/shared-proxy.mp4" } },
+    preparation: { phase: "idle" },
+    projectOperation: { phase: "idle" },
+    render: { phase: "idle" },
+    destinationPending: false,
+    destinationError: null,
+    trimDraft: { inFrame: 0, outFrame: 25 },
+    sourceFrameCount: 25,
+    trimValid: true,
+    trimChanged: false,
+    editOperation: { phase: "idle" },
+    canUndo: true,
+    canRedo: false,
+    renderReady: false,
+    retryPreparation: vi.fn(),
+    updateTrimDraft: vi.fn(),
+    applyTrim: vi.fn(),
+    splitTimelineClip: vi.fn(),
+    moveTimelineClip: vi.fn(),
+    trimTimelineClip: vi.fn(),
+    rippleDeleteTimelineClip: vi.fn(),
+    setTimelineClipOpacity: vi.fn().mockResolvedValue(true),
+    setTimelineTrackLocked: vi.fn(),
+    setTimelineTrackMuted: vi.fn(),
+    setTimelineTrackHidden: vi.fn(),
+    undoEdit: vi.fn(),
+    redoEdit: vi.fn(),
+    convertCachePath: (path: string) => path,
+    chooseSource: vi.fn(),
+    regrantSourceAccess: vi.fn(),
+    exportVideo: vi.fn(),
+    confirmOverwrite: vi.fn(),
+    cancelRender: vi.fn(),
+    ...overrides,
+  } as unknown as WorkspaceController;
+}
+
+function workspace(controller: WorkspaceController) {
+  return (
+    <CommandProvider>
+      <VideoWorkspace
+        controller={controller}
+        mediaJobs={[]}
+        project={legacyProject()}
+        readiness={{
+          phase: "loaded",
+          value: {
+            source: "bundled",
+            toolchainId: "ffmpeg-test-v1",
+            ffmpeg: { available: true, version: "8.1.2" },
+            ffprobe: { available: true, version: "8.1.2" },
+            ready: true,
+          },
+        }}
+        onCheckTools={vi.fn()}
+        onOpenJobCenter={vi.fn()}
+      />
+    </CommandProvider>
+  );
+}
+
 afterEach(() => {
   cleanup();
   captureProgramMonitorProps.mockClear();
@@ -246,74 +329,7 @@ afterEach(() => {
 
 describe("VideoWorkspace", () => {
   it("passes every canonical video layer in stacking order with independent visibility and mute", () => {
-    const controller = {
-      projectPath: "C:\\Projects\\workspace.svpvideo",
-      projection: canonicalProjection(),
-      recovery: null,
-      checkpointWarning: null,
-      source: null,
-      preparedAsset: { proxyPath: "/cache/shared-proxy.mp4" },
-      preparedAssetsById: { [assetId]: { proxyPath: "/cache/shared-proxy.mp4" } },
-      preparation: { phase: "idle" },
-      projectOperation: { phase: "idle" },
-      render: { phase: "idle" },
-      destinationPending: false,
-      destinationError: null,
-      trimDraft: { inFrame: 0, outFrame: 25 },
-      sourceFrameCount: 25,
-      trimValid: true,
-      trimChanged: false,
-      editOperation: { phase: "idle" },
-      canUndo: true,
-      canRedo: false,
-      renderReady: false,
-      retryPreparation: vi.fn(),
-      updateTrimDraft: vi.fn(),
-      applyTrim: vi.fn(),
-      splitTimelineClip: vi.fn(),
-      moveTimelineClip: vi.fn(),
-      trimTimelineClip: vi.fn(),
-      rippleDeleteTimelineClip: vi.fn(),
-      setTimelineTrackLocked: vi.fn(),
-      setTimelineTrackMuted: vi.fn(),
-      setTimelineTrackHidden: vi.fn(),
-      undoEdit: vi.fn(),
-      redoEdit: vi.fn(),
-      convertCachePath: (path: string) => path,
-      chooseSource: vi.fn(),
-      regrantSourceAccess: vi.fn(),
-      exportVideo: vi.fn(),
-      confirmOverwrite: vi.fn(),
-      cancelRender: vi.fn(),
-    } as unknown as ComponentProps<typeof VideoWorkspace>["controller"];
-
-    const workspace = (
-      value: ComponentProps<typeof VideoWorkspace>["controller"],
-      selectedClipOpacityDraft: ComponentProps<
-        typeof VideoWorkspace
-      >["selectedClipOpacityDraft"] = null,
-    ) => (
-      <CommandProvider>
-        <VideoWorkspace
-          controller={value}
-          mediaJobs={[]}
-          selectedClipOpacityDraft={selectedClipOpacityDraft}
-          project={legacyProject()}
-          readiness={{
-            phase: "loaded",
-            value: {
-              source: "bundled",
-              toolchainId: "ffmpeg-test-v1",
-              ffmpeg: { available: true, version: "8.1.2" },
-              ffprobe: { available: true, version: "8.1.2" },
-              ready: true,
-            },
-          }}
-          onCheckTools={vi.fn()}
-          onOpenJobCenter={vi.fn()}
-        />
-      </CommandProvider>
-    );
+    const controller = createController();
     const { rerender } = render(workspace(controller));
 
     expect(captureProgramMonitorProps).toHaveBeenCalled();
@@ -345,23 +361,6 @@ describe("VideoWorkspace", () => {
         },
       ],
       activeCaptions: [],
-    });
-    rerender(workspace(controller, { clipId: previewClipId, opacityPermille: 875 }));
-    expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
-      sourceLayers: [
-        { clipId: id(21), opacityPermille: 1_000 },
-        { clipId: previewClipId, opacityPermille: 425 },
-        { clipId: id(36), opacityPermille: 0 },
-      ],
-    });
-
-    rerender(workspace(controller, { clipId: id(21), opacityPermille: 333 }));
-    expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
-      sourceLayers: [
-        { clipId: id(21), opacityPermille: 333 },
-        { clipId: previewClipId, opacityPermille: 425 },
-        { clipId: id(36), opacityPermille: 0 },
-      ],
     });
 
     const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
@@ -419,5 +418,135 @@ describe("VideoWorkspace", () => {
         { clipId: id(36), opacityPermille: 0 },
       ],
     });
+  });
+
+  it("drafts only the selected video and clears the draft when selection changes", () => {
+    const controller = createController();
+    render(workspace(controller));
+    const slider = screen.getByRole("slider", { name: "Opacity" });
+
+    expect((slider as HTMLInputElement).value).toBe("1000");
+    fireEvent.change(slider, { target: { value: "333" } });
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers.slice(0, 2)).toMatchObject([
+      { clipId: id(21), opacityPermille: 333 },
+      { clipId: previewClipId, opacityPermille: 425 },
+    ]);
+
+    const timeline = captureTimelineProps.mock.lastCall?.[0] as {
+      readonly onSelectClip: (clipId: string) => void;
+    };
+    act(() => timeline.onSelectClip(previewClipId));
+
+    expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).value).toBe("425");
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers.slice(0, 2)).toMatchObject([
+      { clipId: id(21), opacityPermille: 1_000 },
+      { clipId: previewClipId, opacityPermille: 425 },
+    ]);
+  });
+
+  it("shows an empty inspector for an audio selection and locked guidance for a locked video", () => {
+    const controller = createController();
+    const { rerender } = render(workspace(controller));
+    const timeline = captureTimelineProps.mock.lastCall?.[0] as {
+      readonly onSelectClip: (clipId: string) => void;
+    };
+
+    act(() => timeline.onSelectClip(id(39)));
+    expect(screen.queryByRole("slider", { name: "Opacity" })).toBeNull();
+    expect(screen.getByText("Select a video clip to edit its appearance.")).not.toBeNull();
+
+    rerender(
+      workspace(
+        createController({
+          projection: canonicalProjection(true, true, undefined, true),
+        }),
+      ),
+    );
+    const updatedTimeline = captureTimelineProps.mock.lastCall?.[0] as {
+      readonly onSelectClip: (clipId: string) => void;
+    };
+    act(() => updatedTimeline.onSelectClip(id(21)));
+    expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText("Unlock this track to change clip opacity.")).not.toBeNull();
+  });
+
+  it("disables the control while opacity saves and exposes opacity controller failures", () => {
+    const savingController = createController({
+      editOperation: { phase: "saving", operation: "clip-opacity" },
+    });
+    const { rerender } = render(workspace(savingController));
+
+    expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText("Saving opacity").textContent).toBe("Saving opacity");
+
+    rerender(
+      workspace(
+        createController({
+          editOperation: {
+            phase: "error",
+            operation: "clip-opacity",
+            error: new Error("The revision changed."),
+          },
+        }),
+      ),
+    );
+    expect(screen.getByRole("alert").textContent).toContain("The revision changed.");
+    expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("commits the exact selected target on pointer release and rolls back after failure", async () => {
+    const setTimelineClipOpacity = vi.fn().mockResolvedValue(false);
+    const controller = createController({ setTimelineClipOpacity });
+    render(workspace(controller));
+    const slider = screen.getByRole("slider", { name: "Opacity" });
+
+    fireEvent.change(slider, { target: { value: "610" } });
+    expect(setTimelineClipOpacity).not.toHaveBeenCalled();
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers[0]).toMatchObject({
+      clipId: id(21),
+      opacityPermille: 610,
+    });
+
+    fireEvent.pointerUp(slider);
+    await waitFor(() =>
+      expect(setTimelineClipOpacity).toHaveBeenCalledWith({
+        sequenceId,
+        trackId: id(20),
+        clipId: id(21),
+        opacityPermille: 610,
+      }),
+    );
+    await waitFor(() =>
+      expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).value).toBe(
+        "1000",
+      ),
+    );
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers[0]).toMatchObject({
+      clipId: id(21),
+      opacityPermille: 1_000,
+    });
+  });
+
+  it("commits keyboard drafts on Enter and blur", async () => {
+    const setTimelineClipOpacity = vi.fn().mockResolvedValue(true);
+    render(workspace(createController({ setTimelineClipOpacity })));
+    const slider = screen.getByRole("slider", { name: "Opacity" });
+
+    fireEvent.change(slider, { target: { value: "700" } });
+    fireEvent.keyDown(slider, { key: "Enter" });
+    await waitFor(() => expect(setTimelineClipOpacity).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(slider, { target: { value: "800" } });
+    fireEvent.blur(slider);
+    await waitFor(() => expect(setTimelineClipOpacity).toHaveBeenCalledTimes(2));
+    expect(setTimelineClipOpacity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clipId: id(21), opacityPermille: 800 }),
+    );
   });
 });
