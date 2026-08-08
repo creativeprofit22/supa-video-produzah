@@ -252,7 +252,8 @@ describe("project contracts", () => {
         }).success,
       ).toBe(false);
     }
-    const { opacityPermille: _opacityPermille, ...videoInputWithoutOpacity } = plan.videoInputs[0];
+    const videoInputWithoutOpacity = { ...plan.videoInputs[0] } as Record<string, unknown>;
+    delete videoInputWithoutOpacity.opacityPermille;
     expect(
       renderPlanV2Schema.safeParse({ ...plan, videoInputs: [videoInputWithoutOpacity] }).success,
     ).toBe(false);
