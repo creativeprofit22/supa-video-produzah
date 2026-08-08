@@ -41,7 +41,14 @@ export interface TrimDraft {
   readonly outFrame: number;
 }
 export type TimelineEditOperation =
-  "split" | "move" | "trim" | "ripple-delete" | "track-lock" | "track-mute" | "track-visibility";
+  | "split"
+  | "move"
+  | "trim"
+  | "ripple-delete"
+  | "clip-opacity"
+  | "track-lock"
+  | "track-mute"
+  | "track-visibility";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -58,6 +65,12 @@ export interface TrimTimelineClipInput {
 }
 export interface RippleDeleteTimelineClipInput {
   readonly clipId: string;
+}
+export interface SetTimelineClipOpacityInput {
+  readonly sequenceId: string;
+  readonly trackId: string;
+  readonly clipId: string;
+  readonly opacityPermille: number;
 }
 export interface SetTimelineTrackLockedInput {
   readonly trackId: string;
@@ -1199,6 +1212,43 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTimelineClipOpacity = useCallback(
+    async ({
+      sequenceId,
+      trackId,
+      clipId,
+      opacityPermille,
+    }: SetTimelineClipOpacityInput): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        sequence.id !== sequenceId ||
+        track?.kind !== "video" ||
+        isTrackLocked(track) ||
+        !Number.isSafeInteger(opacityPermille) ||
+        opacityPermille < 0 ||
+        opacityPermille > 1_000 ||
+        editOperationPendingRef.current
+      )
+        return false;
+      const clip = track.clips.find((candidate) => candidate.id === clipId);
+      if (clip === undefined || clip.transform.opacityPermille === opacityPermille) return false;
+      return executeTimelineCommandGroup(base, "clip-opacity", [
+        {
+          type: "SetClipOpacity",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          trackId: track.id,
+          clipId: clip.id,
+          opacityPermille,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const setTimelineTrackLocked = useCallback(
     async ({ trackId, locked }: SetTimelineTrackLockedInput) => {
       const base = stateRef.current.projection;
@@ -1483,6 +1533,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     moveTimelineClip,
     trimTimelineClip,
     rippleDeleteTimelineClip,
+    setTimelineClipOpacity,
     setTimelineTrackLocked,
     setTimelineTrackMuted,
     setTimelineTrackHidden,

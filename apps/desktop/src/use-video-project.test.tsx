@@ -577,6 +577,320 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("sets clip opacity against each latest canonical revision and recomputes render readiness from the refresh", async () => {
+    let active: ProjectProjection = clipProjection(1);
+    const returnedProjections: ProjectProjection[] = [];
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const command = request.commands[0];
+      if (command?.type !== "SetClipOpacity") throw new Error("Expected clip opacity command");
+      const next = structuredClone(active);
+      const track = next.state.sequences[0]?.tracks.find(
+        ({ id: candidateTrackId }) => candidateTrackId === command.trackId,
+      );
+      if (track?.kind !== "video") throw new Error("Expected video track fixture");
+      const clip = track.clips.find(
+        ({ id: candidateClipId }) => candidateClipId === command.clipId,
+      );
+      if (clip === undefined) throw new Error("Expected clip fixture");
+      clip.transform.opacityPermille = command.opacityPermille;
+      if (active.revision.number === 1) clip.transform.positionXPermille = 1;
+      next.revision = {
+        ...emptyProjection(active.revision.number + 1).revision,
+        parentId: active.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(active, next, request.groupId);
+      active = next;
+      returnedProjections.push(next);
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: active,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    expect(result.current.renderReady).toBe(true);
+
+    let firstResult: boolean | undefined;
+    let secondResult: boolean | undefined;
+    await act(async () => {
+      firstResult = await result.current.setTimelineClipOpacity({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: 425,
+      });
+    });
+    expect(firstResult).toBe(true);
+    expect(result.current.projection).toBe(returnedProjections[0]);
+    const refreshedTrack = result.current.projection?.state.sequences[0]?.tracks[0];
+    expect(
+      refreshedTrack?.kind === "video"
+        ? refreshedTrack.clips[0]?.transform.positionXPermille
+        : null,
+    ).toBe(1);
+    expect(result.current.renderReady).toBe(false);
+    await act(async () => {
+      secondResult = await result.current.setTimelineClipOpacity({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: 250,
+      });
+    });
+
+    expect([firstResult, secondResult]).toEqual([true, true]);
+    expect(execute.mock.calls.map(([request]) => request)).toEqual([
+      {
+        groupId: expect.any(String),
+        projectId: id(1),
+        baseRevision: 1,
+        commands: [
+          {
+            type: "SetClipOpacity",
+            commandId: expect.any(String),
+            sequenceId: id(3),
+            trackId: id(4),
+            clipId: id(5),
+            opacityPermille: 425,
+          },
+        ],
+      },
+      {
+        groupId: expect.any(String),
+        projectId: id(1),
+        baseRevision: 2,
+        commands: [
+          {
+            type: "SetClipOpacity",
+            commandId: expect.any(String),
+            sequenceId: id(3),
+            trackId: id(4),
+            clipId: id(5),
+            opacityPermille: 250,
+          },
+        ],
+      },
+    ]);
+    expect(returnedProjections.map(({ revision }) => revision)).toEqual([
+      expect.objectContaining({ number: 2, id: id(102), parentId: id(101) }),
+      expect.objectContaining({ number: 3, id: id(103), parentId: id(102) }),
+    ]);
+    expect(result.current.projection).toBe(returnedProjections[1]);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips[0]?.transform.opacityPermille
+        : null,
+    ).toBe(250);
+    expect(result.current.renderReady).toBe(false);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects unchanged, out-of-bounds, non-video, unresolved, and locked clip opacity edits", async () => {
+    const opened = clipProjection(1);
+    const sequence = opened.state.sequences[0]!;
+    const videoTrack = sequence.tracks[0]!;
+    if (videoTrack.kind !== "video") throw new Error("Expected video track fixture");
+    sequence.tracks.push({
+      ...structuredClone(videoTrack),
+      id: id(6),
+      name: "Audio 1",
+      kind: "audio",
+      clips: [{ ...structuredClone(videoTrack.clips[0]!), id: id(7) }],
+    });
+    sequence.tracks.push({
+      ...structuredClone(videoTrack),
+      id: id(8),
+      name: "Locked video",
+      locked: true,
+      clips: [{ ...structuredClone(videoTrack.clips[0]!), id: id(9) }],
+    });
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    const inputs = [
+      { sequenceId: id(3), trackId: id(4), clipId: id(5), opacityPermille: 1_000 },
+      { sequenceId: id(3), trackId: id(4), clipId: id(5), opacityPermille: -1 },
+      { sequenceId: id(3), trackId: id(4), clipId: id(5), opacityPermille: 1_001 },
+      { sequenceId: id(3), trackId: id(4), clipId: id(5), opacityPermille: 1.5 },
+      { sequenceId: id(3), trackId: id(4), clipId: id(5), opacityPermille: Number.NaN },
+      {
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: Number.POSITIVE_INFINITY,
+      },
+      { sequenceId: id(30), trackId: id(4), clipId: id(5), opacityPermille: 500 },
+      { sequenceId: id(3), trackId: id(40), clipId: id(5), opacityPermille: 500 },
+      { sequenceId: id(3), trackId: id(4), clipId: id(50), opacityPermille: 500 },
+      { sequenceId: id(3), trackId: id(6), clipId: id(7), opacityPermille: 500 },
+      { sequenceId: id(3), trackId: id(8), clipId: id(9), opacityPermille: 500 },
+    ] as const;
+    const outcomes: boolean[] = [];
+    await act(async () => {
+      for (const input of inputs) outcomes.push(await result.current.setTimelineClipOpacity(input));
+    });
+
+    expect(outcomes).toEqual(inputs.map(() => false));
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects duplicate clip opacity work while the canonical edit is pending", async () => {
+    const opened = clipProjection(1);
+    let releaseExecution: (() => void) | undefined;
+    const executionGate = new Promise<void>((resolve) => {
+      releaseExecution = resolve;
+    });
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      await executionGate;
+      const command = request.commands[0];
+      if (command?.type !== "SetClipOpacity") throw new Error("Expected clip opacity command");
+      const next = structuredClone(opened);
+      const track = next.state.sequences[0]?.tracks[0];
+      if (track?.kind !== "video") throw new Error("Expected video track fixture");
+      track.clips[0]!.transform.opacityPermille = command.opacityPermille;
+      next.revision = {
+        ...emptyProjection(2).revision,
+        parentId: opened.revision.id,
+        operationId: request.groupId,
+      };
+      return commandResult(opened, next, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let acceptedRequest: Promise<boolean> | undefined;
+    act(() => {
+      acceptedRequest = result.current.setTimelineClipOpacity({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: 425,
+      });
+    });
+    await waitFor(() =>
+      expect(result.current.editOperation).toEqual({ phase: "saving", operation: "clip-opacity" }),
+    );
+    expect(result.current.projection).toBe(opened);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips[0]?.transform.opacityPermille
+        : null,
+    ).toBe(1_000);
+    let pendingResult: boolean | undefined;
+    await act(async () => {
+      pendingResult = await result.current.setTimelineClipOpacity({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: 250,
+      });
+    });
+    let acceptedResult: boolean | undefined;
+    await act(async () => {
+      releaseExecution?.();
+      acceptedResult = await acceptedRequest;
+    });
+
+    expect(pendingResult).toBe(false);
+    expect(acceptedResult).toBe(true);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rolls a failed clip opacity edit back to the canonical projection and exposes the error", async () => {
+    const opened = clipProjection(1);
+    const failure = new Error("Opacity save failed");
+    const execute = vi.fn(async () => {
+      throw failure;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    const canonicalProjection = result.current.projection;
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.setTimelineClipOpacity({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        opacityPermille: 425,
+      });
+    });
+
+    expect(outcome).toBe(false);
+    expect(result.current.projection).toBe(canonicalProjection);
+    expect(result.current.projection?.revision).toBe(opened.revision);
+    expect(
+      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
+        ? result.current.projection.state.sequences[0].tracks[0].clips[0]?.transform.opacityPermille
+        : null,
+    ).toBe(1_000);
+    expect(result.current.renderReady).toBe(true);
+    expect(result.current.editOperation).toEqual({
+      phase: "error",
+      operation: "clip-opacity",
+      error: failure,
+    });
+  });
+
   it("locks and unlocks a timeline track through one revision per toggle", async () => {
     let active = clipProjection(1);
     const execute = vi.fn(async (request: CommandGroupRequest) => {
