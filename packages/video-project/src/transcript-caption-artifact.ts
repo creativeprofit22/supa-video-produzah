@@ -17,7 +17,7 @@ import {
   type ValidatedCaptionInput,
 } from "./transcript-caption-internal.js";
 
-function sourceLinks(
+export function sourceLinks(
   occurrences: readonly LogicalOccurrence[],
   artifactIdentityKey: string,
 ): readonly CaptionSourceLinkV1[] {

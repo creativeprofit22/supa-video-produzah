@@ -141,7 +141,7 @@ function canStitch(previous: LogicalOccurrence, current: TranscriptTimelineOccur
   );
 }
 
-function stitchOccurrences(
+export function stitchOccurrences(
   occurrences: readonly TranscriptTimelineOccurrence[],
 ): readonly LogicalOccurrence[] {
   const stitched: LogicalOccurrence[] = [];
@@ -279,27 +279,28 @@ export function validateCaptionInput(input: GenerateCaptionArtifactV1Input): Val
   };
 }
 
-export function frameConstraints(input: ValidatedCaptionInput): FrameConstraints {
+export function frameConstraintsFor(
+  validationProfile: ValidatedCaptionInput["validationProfile"],
+  timelineRate: RationalRate,
+  hasOccurrences: boolean,
+): FrameConstraints {
   try {
     const minimumDurationFrames = rescaleRationalTime(
-      input.validationProfile.minimumCueDuration,
-      input.timeline.timelineRate,
+      validationProfile.minimumCueDuration,
+      timelineRate,
       "ceil",
     ).value;
     const maximumDurationFrames = rescaleRationalTime(
-      input.validationProfile.maximumCueDuration,
-      input.timeline.timelineRate,
+      validationProfile.maximumCueDuration,
+      timelineRate,
       "floor",
     ).value;
     const oneSecondFrames = rescaleRationalTime(
       createRationalTime(1, { numerator: 1, denominator: 1 }),
-      input.timeline.timelineRate,
+      timelineRate,
       "ceil",
     ).value;
-    if (
-      input.occurrences.length > 0 &&
-      maximumDurationFrames < Math.max(1, minimumDurationFrames)
-    ) {
+    if (hasOccurrences && maximumDurationFrames < Math.max(1, minimumDurationFrames)) {
       contractInvalid("durationProfile");
     }
     return { minimumDurationFrames, maximumDurationFrames, oneSecondFrames };
@@ -309,4 +310,12 @@ export function frameConstraints(input: ValidatedCaptionInput): FrameConstraints
     }
     contractInvalid("durationProfile");
   }
+}
+
+export function frameConstraints(input: ValidatedCaptionInput): FrameConstraints {
+  return frameConstraintsFor(
+    input.validationProfile,
+    input.timeline.timelineRate,
+    input.occurrences.length > 0,
+  );
 }

@@ -10,6 +10,15 @@ import {
 } from "./transcript-caption-input.js";
 
 export type { GenerateCaptionArtifactV1Input } from "./transcript-caption-input.js";
+export { remapCaptionArtifactV1 } from "./transcript-caption-remap.js";
+export type {
+  CaptionCueRemapRecord,
+  CaptionRemapOutcome,
+  CaptionRemapReport,
+  CaptionRemapTargetCue,
+  RemapCaptionArtifactV1Input,
+  RemapCaptionArtifactV1Result,
+} from "./transcript-caption-remap.js";
 
 export function generateCaptionArtifactV1(
   generatorInput: GenerateCaptionArtifactV1Input,
