@@ -226,14 +226,15 @@ describe("App Phase 3B durable workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     const workspace = await screen.findByRole("main");
     workspace.focus();
-    const toggle = screen.getByRole("button", { name: "Toggle project inspector" });
+    expect(screen.getByRole("complementary", { name: "Editing controls" })).toBeTruthy();
+    const toggle = screen.getByRole("button", { name: "Toggle project diagnostics" });
     fireEvent.click(toggle);
-    expect(await screen.findByRole("heading", { name: "Project inspector" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Project diagnostics" })).toBeTruthy();
     const close = screen.getByRole("button", { name: "Close" });
     expect(document.activeElement).toBe(close);
     fireEvent.click(close);
     await waitFor(() => expect(document.activeElement).toBe(toggle));
-    expect(screen.queryByRole("heading", { name: "Project inspector" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Project diagnostics" })).toBeNull();
   });
 
   it("suppresses the inspector shortcut while a form control owns focus", async () => {
@@ -248,7 +249,7 @@ describe("App Phase 3B durable workspace", () => {
     const input = screen.getByRole("spinbutton", { name: "Trim in" });
     input.focus();
     fireEvent.keyDown(input, { code: "KeyD", ctrlKey: true, altKey: true });
-    expect(screen.queryByRole("heading", { name: "Project inspector" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Project diagnostics" })).toBeNull();
   });
 
   it("shows irreversible V1 history reset outside the inspector", async () => {
@@ -266,7 +267,7 @@ describe("App Phase 3B durable workspace", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Legacy undo history was permanently reset");
     expect(alert.textContent).toContain("cannot be undone");
-    fireEvent.click(screen.getByRole("button", { name: "Toggle project inspector" }));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle project diagnostics" }));
     expect(await screen.findByText("Reset permanently")).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
   });
@@ -285,7 +286,7 @@ describe("App Phase 3B durable workspace", () => {
     const { container } = render(<App />);
     await screen.findByRole("heading", { name: "Ready for video work" });
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Toggle project inspector" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Toggle project diagnostics" }));
     expect(await screen.findByText("32 bytes")).toBeTruthy();
     expect(screen.getByText("Project recovered from durable journal data.")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
@@ -303,7 +304,7 @@ describe("App Phase 3B durable workspace", () => {
     const { container } = render(<App />);
     await screen.findByRole("heading", { name: "Ready for video work" });
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Toggle project inspector" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Toggle project diagnostics" }));
     expect(await screen.findByText("journal recreated")).toBeTruthy();
     expect(
       screen.getByText("Recovery journal recreated from the validated snapshot."),

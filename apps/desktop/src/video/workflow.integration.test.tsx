@@ -215,7 +215,7 @@ describe("complete mocked Phase 2 workflow", () => {
     ]);
 
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
-    const inspector = (await screen.findByRole("heading", { name: "Project inspector" })).closest(
+    const inspector = (await screen.findByRole("heading", { name: "Project diagnostics" })).closest(
       "section",
     )!;
     expect(within(inspector).getByText("Split clip")).toBeTruthy();
@@ -225,7 +225,7 @@ describe("complete mocked Phase 2 workflow", () => {
     await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Undid Split clip"));
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     const undoInspector = screen
-      .getByRole("heading", { name: "Project inspector" })
+      .getByRole("heading", { name: "Project diagnostics" })
       .closest("section")!;
     expect(await within(undoInspector).findByText("Undid Split clip")).toBeTruthy();
     fireEvent.click(within(undoInspector).getByRole("button", { name: "Close" }));
@@ -234,7 +234,7 @@ describe("complete mocked Phase 2 workflow", () => {
     await waitFor(() => expect(service.projection.lastCommand?.summary).toBe("Redid Split clip"));
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     const redoInspector = screen
-      .getByRole("heading", { name: "Project inspector" })
+      .getByRole("heading", { name: "Project diagnostics" })
       .closest("section")!;
     expect(await within(redoInspector).findByText("Redid Split clip")).toBeTruthy();
     expect(invokeMock.mock.calls.some(([command]) => command === "video_undo_project")).toBe(true);

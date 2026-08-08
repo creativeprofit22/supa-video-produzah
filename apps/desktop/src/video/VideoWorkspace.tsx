@@ -515,7 +515,7 @@ export function VideoWorkspace({
         aria-keyshortcuts={inspectorCommand.ariaKeyShortcuts}
         onClick={inspectorCommand.execute}
       >
-        Toggle project inspector
+        Toggle project diagnostics
       </button>
 
       {inspectorOpen && controller.projection !== null ? (
@@ -675,7 +675,7 @@ export function VideoWorkspace({
           ) : null}
         </div>
 
-        <aside className="inspector-column" aria-label="Project controls">
+        <aside className="inspector-column" aria-label="Editing controls">
           <AssetPanel
             probe={asset?.probe ?? null}
             source={controller.source}

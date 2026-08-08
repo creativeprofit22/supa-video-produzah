@@ -85,7 +85,8 @@ describe("ProjectInspector", () => {
   it("renders sanitized recovered details, focuses Close, and has no axe violations", async () => {
     const onClose = vi.fn();
     const { container } = render(inspector(projection, recovered, onClose));
-    expect(screen.getByRole("heading", { name: "Project inspector" })).toBeTruthy();
+    expect(screen.getByText("Read-only project state")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Project diagnostics" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Recovery report" })).toBeTruthy();
     expect(screen.getByText(projection.revision.stateHash)).toBeTruthy();
     expect(screen.getByText("snapshot pending")).toBeTruthy();

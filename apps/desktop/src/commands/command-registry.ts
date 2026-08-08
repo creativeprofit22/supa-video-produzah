@@ -112,7 +112,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = Object.freeze([
   },
   {
     id: "view.toggleProjectInspector",
-    label: "Toggle project inspector",
+    label: "Toggle project diagnostics",
     defaultShortcut: primary("KeyD", { alt: true }),
     keyboardContext: "application",
     allowRepeat: false,

@@ -58,8 +58,8 @@ export function ProjectInspector({ projection, recovery }: ProjectInspectorProps
     <section className="project-inspector" aria-labelledby="project-inspector-title">
       <div className="project-inspector-heading">
         <div>
-          <p className="state-kicker">Developer diagnostics</p>
-          <h2 id="project-inspector-title">Project inspector</h2>
+          <p className="state-kicker">Read-only project state</p>
+          <h2 id="project-inspector-title">Project diagnostics</h2>
         </div>
         <button
           ref={closeRef}

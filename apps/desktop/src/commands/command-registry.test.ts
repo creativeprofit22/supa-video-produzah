@@ -44,6 +44,9 @@ describe("command registry", () => {
     expect(COMMAND_REGISTRY.map(({ id }) => id)).toEqual(COMMAND_IDS);
     expect(new Set(COMMAND_IDS).size).toBe(COMMAND_IDS.length);
     expect(COMMAND_REGISTRY.every(({ label }) => label.trim().length > 0)).toBe(true);
+    expect(
+      COMMAND_REGISTRY.find(({ id }) => id === "view.toggleProjectInspector")?.label,
+    ).toBe("Toggle project diagnostics");
     expect(validateShortcutMap(createDefaultShortcutMap())).toEqual({ valid: true });
   });
 
