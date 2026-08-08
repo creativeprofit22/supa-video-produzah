@@ -13,10 +13,7 @@ import {
   type ProjectCommandV2,
   type ProjectProjection,
 } from "@supa-video/contracts";
-import {
-  transcriptArtifactV1Schema,
-  type TranscriptArtifactV1,
-} from "@supa-video/media";
+import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
 import {
   identitiesEqual,

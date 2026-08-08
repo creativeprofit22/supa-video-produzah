@@ -349,57 +349,109 @@ describe("prepareTrimClipCaptionLifecycleV1", () => {
   });
 
   it.each([
-    ["invalid geometry", "trim_geometry_invalid", (input: ReturnType<typeof fixture>) => {
-      input.trimCommand.sourceOut = createRationalTime(1, rate);
-    }],
-    ["out-of-media geometry", "trim_geometry_invalid", (input: ReturnType<typeof fixture>) => {
-      input.trimCommand.sourceOut = createRationalTime(11, rate);
-    }],
-    ["unrelated target clip", "trim_clip_source_lineage_mismatch", (input: ReturnType<typeof fixture>) => {
-      const targetAsset = input.projection.state.assets[0]!;
-      input.projection.state.assets.push({
-        ...structuredClone(targetAsset),
-        id: ids.unknown,
-      });
-      targetAsset.contentIdentity = {
-        ...targetAsset.contentIdentity!,
-        digest: "ef".repeat(32),
-      };
-    }],
-    ["no-op geometry", "trim_geometry_no_op", (input: ReturnType<typeof fixture>) => {
-      input.trimCommand.sourceIn = createRationalTime(0, rate);
-      input.trimCommand.sourceOut = createRationalTime(6, rate);
-    }],
-    ["missing source track", "trim_source_track_missing", (input: ReturnType<typeof fixture>) => {
-      input.trimCommand.trackId = ids.unknown;
-    }],
-    ["locked source track", "trim_source_track_locked", (input: ReturnType<typeof fixture>) => {
-      sourceTrack(input).locked = true;
-    }],
-    ["missing caption track", "caption_track_missing", (input: ReturnType<typeof fixture>) => {
-      input.captionTrackId = ids.unknown;
-    }],
-    ["locked caption track", "caption_track_locked", (input: ReturnType<typeof fixture>) => {
-      captionTrack(input).locked = true;
-    }],
-    ["missing active artifact", "active_caption_artifact_missing", (input: ReturnType<typeof fixture>) => {
-      delete captionTrack(input).activeCaptionArtifact;
-    }],
-    ["equal artifact revision", "caption_remap_stale_revision", (input: ReturnType<typeof fixture>) => {
-      captionTrack(input).activeCaptionArtifact!.trackLink.projectRevision = revision(8);
-    }],
-    ["transcript key mismatch", "caption_transcript_lineage_mismatch", (input: ReturnType<typeof fixture>) => {
-      input.transcript.identity.key = "cd".repeat(32);
-    }],
-    ["source identity mismatch", "caption_transcript_lineage_mismatch", (input: ReturnType<typeof fixture>) => {
-      input.transcript.identity.sourceIdentity.digest = "ef".repeat(32);
-    }],
-    ["unsatisfied remap constraint", "caption_remap_constraints_unsatisfied", (input: ReturnType<typeof fixture>) => {
-      const artifact = captionTrack(input).activeCaptionArtifact!;
-      artifact.validationProfile.maxLinesPerCue = 1;
-      artifact.validationProfile.maxCharactersPerLine = 2;
-      artifact.cues[0]!.lines = ["ok"];
-    }],
+    [
+      "invalid geometry",
+      "trim_geometry_invalid",
+      (input: ReturnType<typeof fixture>) => {
+        input.trimCommand.sourceOut = createRationalTime(1, rate);
+      },
+    ],
+    [
+      "out-of-media geometry",
+      "trim_geometry_invalid",
+      (input: ReturnType<typeof fixture>) => {
+        input.trimCommand.sourceOut = createRationalTime(11, rate);
+      },
+    ],
+    [
+      "unrelated target clip",
+      "trim_clip_source_lineage_mismatch",
+      (input: ReturnType<typeof fixture>) => {
+        const targetAsset = input.projection.state.assets[0]!;
+        input.projection.state.assets.push({
+          ...structuredClone(targetAsset),
+          id: ids.unknown,
+        });
+        targetAsset.contentIdentity = {
+          ...targetAsset.contentIdentity!,
+          digest: "ef".repeat(32),
+        };
+      },
+    ],
+    [
+      "no-op geometry",
+      "trim_geometry_no_op",
+      (input: ReturnType<typeof fixture>) => {
+        input.trimCommand.sourceIn = createRationalTime(0, rate);
+        input.trimCommand.sourceOut = createRationalTime(6, rate);
+      },
+    ],
+    [
+      "missing source track",
+      "trim_source_track_missing",
+      (input: ReturnType<typeof fixture>) => {
+        input.trimCommand.trackId = ids.unknown;
+      },
+    ],
+    [
+      "locked source track",
+      "trim_source_track_locked",
+      (input: ReturnType<typeof fixture>) => {
+        sourceTrack(input).locked = true;
+      },
+    ],
+    [
+      "missing caption track",
+      "caption_track_missing",
+      (input: ReturnType<typeof fixture>) => {
+        input.captionTrackId = ids.unknown;
+      },
+    ],
+    [
+      "locked caption track",
+      "caption_track_locked",
+      (input: ReturnType<typeof fixture>) => {
+        captionTrack(input).locked = true;
+      },
+    ],
+    [
+      "missing active artifact",
+      "active_caption_artifact_missing",
+      (input: ReturnType<typeof fixture>) => {
+        delete captionTrack(input).activeCaptionArtifact;
+      },
+    ],
+    [
+      "equal artifact revision",
+      "caption_remap_stale_revision",
+      (input: ReturnType<typeof fixture>) => {
+        captionTrack(input).activeCaptionArtifact!.trackLink.projectRevision = revision(8);
+      },
+    ],
+    [
+      "transcript key mismatch",
+      "caption_transcript_lineage_mismatch",
+      (input: ReturnType<typeof fixture>) => {
+        input.transcript.identity.key = "cd".repeat(32);
+      },
+    ],
+    [
+      "source identity mismatch",
+      "caption_transcript_lineage_mismatch",
+      (input: ReturnType<typeof fixture>) => {
+        input.transcript.identity.sourceIdentity.digest = "ef".repeat(32);
+      },
+    ],
+    [
+      "unsatisfied remap constraint",
+      "caption_remap_constraints_unsatisfied",
+      (input: ReturnType<typeof fixture>) => {
+        const artifact = captionTrack(input).activeCaptionArtifact!;
+        artifact.validationProfile.maxLinesPerCue = 1;
+        artifact.validationProfile.maxCharactersPerLine = 2;
+        artifact.cues[0]!.lines = ["ok"];
+      },
+    ],
   ] as const)("fails closed for %s", (_name, reason, mutate) => {
     const input = fixture();
     mutate(input);
