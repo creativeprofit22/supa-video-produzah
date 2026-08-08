@@ -15,7 +15,8 @@
     "test": "vitest run src"
   },
   "dependencies": {
-    "@supa-video/contracts": "workspace:*"
+    "@supa-video/contracts": "workspace:*",
+    "@supa-video/media": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.3",

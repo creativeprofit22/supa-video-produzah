@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
-import { commandGroupRequestSchema } from "@supa-video/contracts";
+import { commandGroupRequestSchema, VideoDomainError } from "@supa-video/contracts";
 import type {
   CommandGroupRequest,
   CommandResult,
   ProjectProjection,
   RenderPlan,
 } from "@supa-video/contracts";
+import { transcriptArtifactV1Schema } from "@supa-video/media";
+import { createTranscriptEditProposal, projectTranscriptToTimeline } from "@supa-video/project";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -147,6 +149,108 @@ function clipProjection(revision = 1, sourceIn = 0, sourceOut = 60): ProjectProj
       activeSequenceId: id(3),
     },
     sources: [{ assetId: id(2), status: "resolved", resolvedPath: "C:\\Media\\clip.mp4" }],
+  };
+}
+
+const transcriptWord = {
+  wordId: "chunk-0:0",
+  chunkId: "chunk-0",
+  chunkIndex: 0,
+  wordIndex: 0,
+  text: "remove",
+  sourceStartUs: 0,
+  sourceEndUs: probe.durationMicroseconds,
+  recognitionConfidence: 0.99,
+  speakerLabel: null,
+  speakerConfidence: null,
+  timingProvenance: "aligned",
+} as const;
+
+const transcriptArtifact = transcriptArtifactV1Schema.parse({
+  schemaVersion: 1,
+  identity: {
+    schemaVersion: 1,
+    key: "9a".repeat(32),
+    sourceIdentity,
+    sourceFingerprint: {
+      schemaVersion: 1,
+      algorithm: "sha256",
+      digest: "bc".repeat(32),
+      byteLength: probe.fileSizeBytes,
+      modifiedUnixSeconds: 1_720_000_000,
+      modifiedNanoseconds: 42,
+    },
+    configurationIdentity: {
+      schemaVersion: 1,
+      algorithm: "sha256",
+      digest: "de".repeat(32),
+    },
+  },
+  sourceDurationUs: probe.durationMicroseconds,
+  configuration: {
+    schemaVersion: 1,
+    engineId: "test-asr",
+    engineVersion: "1.0.0",
+    modelId: "test-model",
+    modelRevision: "test-revision",
+    requestedLanguage: "en",
+    task: "transcribe",
+    wordTimingRequired: true,
+    speakerDiarizationMode: "off",
+    chunkDurationUs: probe.durationMicroseconds,
+    chunkOverlapUs: 0,
+    providerSettings: [],
+  },
+  chunks: [
+    {
+      schemaVersion: 1,
+      chunkId: "chunk-0",
+      chunkIndex: 0,
+      sourceStartUs: 0,
+      sourceEndUs: probe.durationMicroseconds,
+      words: [transcriptWord],
+    },
+  ],
+  words: [transcriptWord],
+  uncertaintyCounts: {
+    missingConfidenceWordCount: 0,
+    missingSpeakerWordCount: 1,
+    estimatedTimingWordCount: 0,
+    clampedTimingWordCount: 0,
+    retainedOverlapWordCount: 0,
+    removedExactDuplicateWordCount: 0,
+  },
+});
+
+async function transcriptEditProposal(projection: ProjectProjection) {
+  const timeline = projectTranscriptToTimeline({
+    artifact: transcriptArtifact,
+    projection,
+    sequenceId: id(3),
+    trackId: id(4),
+  });
+  const occurrence = timeline.occurrences[0];
+  if (occurrence === undefined) throw new Error("Expected transcript occurrence fixture");
+  return createTranscriptEditProposal({
+    artifact: transcriptArtifact,
+    projection,
+    sequenceId: id(3),
+    trackId: id(4),
+    deletedOccurrenceIds: [occurrence.occurrenceId],
+  });
+}
+
+function cleanOpenResult(projection: ProjectProjection) {
+  return {
+    projection,
+    recovery: {
+      status: "clean" as const,
+      recoveredRevision: projection.revision.number,
+      replayedRecordCount: 0,
+      discardedTailBytes: 0,
+      message: "Clean",
+      legacyHistoryReset: false,
+    },
   };
 }
 
@@ -1500,6 +1604,137 @@ describe("canonical project controller", () => {
     expect(result.current.projection).toBe(opened);
     expect(result.current.projection?.revision.number).toBe(1);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("submits the generated transcript command group at its base revision and installs the backend projection", async () => {
+    const opened = clipProjection(1);
+    const proposal = await transcriptEditProposal(opened);
+    const committed = structuredClone(opened);
+    const track = committed.state.sequences[0]!.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected media track fixture");
+    track.clips = [];
+    committed.revision = {
+      ...emptyProjection(2).revision,
+      parentId: opened.revision.id,
+      operationId: proposal.commandGroup.groupId,
+    };
+    committed.canUndo = true;
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      return commandResult(opened, committed, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.applyTranscriptEditProposal(proposal, transcriptArtifact));
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]![0]).toBe(proposal.commandGroup);
+    expect(execute.mock.calls[0]![0].baseRevision).toBe(proposal.projectRevision.number);
+    expect(result.current.projection).toBe(committed);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("uses existing undo to recover the projection changed by a generated transcript edit", async () => {
+    const opened = clipProjection(1);
+    const proposal = await transcriptEditProposal(opened);
+    const committed = structuredClone(opened);
+    const committedTrack = committed.state.sequences[0]!.tracks[0]!;
+    if (committedTrack.kind === "caption") throw new Error("Expected media track fixture");
+    committedTrack.clips = [];
+    committed.revision = {
+      ...emptyProjection(2).revision,
+      parentId: opened.revision.id,
+      operationId: proposal.commandGroup.groupId,
+    };
+    committed.canUndo = true;
+    const recovered = structuredClone(opened);
+    recovered.revision = { ...emptyProjection(3).revision, parentId: committed.revision.id };
+    recovered.canUndo = false;
+    recovered.canRedo = true;
+    const undo = vi.fn(async (_projectId: string, _baseRevision: number, operationId: string) =>
+      commandResult(committed, recovered, operationId),
+    );
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: vi.fn(async (request: CommandGroupRequest) =>
+        commandResult(opened, committed, request.groupId),
+      ),
+      undoVideoProject: undo,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.applyTranscriptEditProposal(proposal, transcriptArtifact));
+    expect(result.current.projection).toBe(committed);
+
+    await act(() => result.current.undoEdit());
+
+    expect(undo).toHaveBeenCalledOnce();
+    expect(undo).toHaveBeenCalledWith(opened.projectId, 2, expect.any(String));
+    expect(result.current.projection).toBe(recovered);
+    expect(result.current.projection?.state).toEqual(opened.state);
+    expect(result.current.projection?.sources).toEqual(opened.sources);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects a renderer-stale generated transcript proposal without calling the backend", async () => {
+    const proposal = await transcriptEditProposal(clipProjection(1));
+    const opened = clipProjection(2);
+    const execute = vi.fn(async () => {
+      throw new Error("unexpected stale transcript submission");
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.applyTranscriptEditProposal(proposal, transcriptArtifact));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "transcript-edit",
+      error: {
+        name: "VideoDomainError",
+        code: "invalid_project",
+        details: { reason: "stale_revision" },
+      },
+    });
+  });
+
+  it("keeps the active projection when the backend rejects a generated transcript proposal as stale", async () => {
+    const opened = clipProjection(1);
+    const proposal = await transcriptEditProposal(opened);
+    const staleError = new VideoDomainError("stale_revision", "Command base revision is stale", {
+      expected: 2,
+      received: proposal.commandGroup.baseRevision,
+    });
+    const execute = vi.fn(async () => {
+      throw staleError;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.applyTranscriptEditProposal(proposal, transcriptArtifact));
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.editOperation).toEqual({
+      phase: "error",
+      operation: "transcript-edit",
+      error: staleError,
+    });
   });
 
   it("ripple deletes through one command and one revision with exact undo and redo", async () => {

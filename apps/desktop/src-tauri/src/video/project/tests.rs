@@ -2928,6 +2928,122 @@ fn ripple_delete_commit_undo_redo_are_monotonic_and_have_readable_labels() {
 }
 
 #[test]
+fn transcript_edit_group_applies_undoes_and_rejects_stale_revision() {
+    const ORIGINAL_CLIP_ID: &str = "10000000-0000-4000-8000-000000000008";
+    const MIDDLE_CLIP_ID: &str = "76000000-0000-4000-8000-000000000003";
+    const TAIL_CLIP_ID: &str = "76000000-0000-4000-8000-000000000005";
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../packages/video-contracts/fixtures/project-v2/valid-relative-source.svpvideo",
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("transcript-edit.svpvideo");
+    fs::copy(fixture, &project_path).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let owner = "transcript-edit-owner";
+    let opened = service.open(owner, &project_path, &grants).unwrap();
+    let project_id = opened.projection.project_id.clone();
+    let original_state = opened.projection.state.clone();
+    let original_hash = opened.projection.revision.state_hash.clone();
+    let source_time = |value| RationalTime {
+        value,
+        rate_numerator: 30,
+        rate_denominator: 1,
+    };
+
+    let committed = service
+        .execute(
+            owner,
+            CommandGroupRequest {
+                group_id: "76000000-0000-4000-8000-000000000001".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![
+                    ProjectCommand::SplitClip {
+                        command_id: "76000000-0000-4000-8000-000000000002".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: RIPPLE_TRACK_ID.to_owned(),
+                        clip_id: ORIGINAL_CLIP_ID.to_owned(),
+                        split_at: source_time(10),
+                        right_clip_id: MIDDLE_CLIP_ID.to_owned(),
+                    },
+                    ProjectCommand::SplitClip {
+                        command_id: "76000000-0000-4000-8000-000000000004".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: RIPPLE_TRACK_ID.to_owned(),
+                        clip_id: MIDDLE_CLIP_ID.to_owned(),
+                        split_at: source_time(20),
+                        right_clip_id: TAIL_CLIP_ID.to_owned(),
+                    },
+                    ProjectCommand::RippleDeleteClip {
+                        command_id: "76000000-0000-4000-8000-000000000006".to_owned(),
+                        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+                        track_id: RIPPLE_TRACK_ID.to_owned(),
+                        clip_id: MIDDLE_CLIP_ID.to_owned(),
+                    },
+                ],
+            },
+            &grants,
+        )
+        .unwrap();
+
+    assert_eq!(committed.new_revision.number, 1);
+    let clips = committed.projection.state.sequences[0].tracks[0]
+        .clips()
+        .unwrap();
+    assert_eq!(
+        clips
+            .iter()
+            .map(|clip| (
+                clip.id.as_str(),
+                clip.source_in.value,
+                clip.source_out.value,
+                clip.timeline_start.value,
+            ))
+            .collect::<Vec<_>>(),
+        vec![(ORIGINAL_CLIP_ID, 0, 10, 0), (TAIL_CLIP_ID, 20, 30, 10)]
+    );
+    let first_timeline_end = clips[0].timeline_start.value
+        + (clips[0].source_out.value - clips[0].source_in.value);
+    assert_eq!(first_timeline_end, clips[1].timeline_start.value);
+
+    let stale_error = service
+        .execute(
+            owner,
+            CommandGroupRequest {
+                group_id: "76000000-0000-4000-8000-000000000007".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![set_clip_opacity_command(
+                    "76000000-0000-4000-8000-000000000008",
+                    500,
+                )],
+            },
+            &grants,
+        )
+        .unwrap_err();
+    assert_eq!(
+        stale_error.code,
+        crate::video::error::VideoErrorCode::StaleRevision
+    );
+    assert_eq!(stale_error.details["category"], "base_revision");
+
+    let undone = service
+        .undo(
+            owner,
+            &project_id,
+            committed.new_revision.number,
+            "76000000-0000-4000-8000-000000000009",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.projection.state, original_state);
+    assert_eq!(undone.state_hash, original_hash);
+    assert_eq!(undone.projection.revision.state_hash, original_hash);
+}
+
+#[test]
 fn private_ripple_restore_is_rejected_as_a_forward_commit() {
     let snapshot = ripple_fixture(1);
     let applied = apply_group(

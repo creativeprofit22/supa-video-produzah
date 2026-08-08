@@ -140,6 +140,9 @@ importers:
       '@supa-video/contracts':
         specifier: workspace:*
         version: link:../video-contracts
+      '@supa-video/media':
+        specifier: workspace:*
+        version: link:../video-media
     devDependencies:
       typescript:
         specifier: 6.0.3

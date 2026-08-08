@@ -16,8 +16,17 @@ import {
   type VideoSourceRecord,
   videoProjectFileV1Schema,
 } from "@supa-video/contracts";
-import type { PreparedVideoAsset, PrepareVideoAssetRequest } from "@supa-video/media";
-import { buildCommandGroup, buildProjectCommand } from "@supa-video/project";
+import type {
+  PreparedVideoAsset,
+  PrepareVideoAssetRequest,
+  TranscriptArtifactV1,
+} from "@supa-video/media";
+import {
+  assertTranscriptEditProposalCurrent,
+  buildCommandGroup,
+  buildProjectCommand,
+  type TranscriptEditProposal,
+} from "@supa-video/project";
 import {
   compileActiveSequenceRenderPlan,
   getActiveSequenceRenderEligibility,
@@ -45,6 +54,7 @@ export type TimelineEditOperation =
   | "move"
   | "trim"
   | "ripple-delete"
+  | "transcript-edit"
   | "clip-opacity"
   | "track-lock"
   | "track-mute"
@@ -1082,6 +1092,38 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [activateEditResult, backend],
   );
+  const applyTranscriptEditProposal = useCallback(
+    async (proposal: TranscriptEditProposal, artifact: TranscriptArtifactV1): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current) return false;
+      try {
+        assertTranscriptEditProposalCurrent({ proposal, artifact, projection: base });
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "transcript-edit", error: asError(error) });
+        return false;
+      }
+
+      const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
+      setEditOperation({ phase: "saving", operation: "transcript-edit" });
+      const request = proposal.commandGroup;
+      try {
+        const result = await backend.executeVideoProjectGroup(request);
+        if (result.groupId !== request.groupId)
+          throw new Error("The desktop service returned a mismatched transcript edit");
+        const activated = activateEditResult(base, result, operation);
+        if (activated) setEditOperation({ phase: "idle" });
+        return activated;
+      } catch (error) {
+        if (operation === editOperationRef.current)
+          setEditOperation({ phase: "error", operation: "transcript-edit", error: asError(error) });
+        return false;
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
+      }
+    },
+    [activateEditResult, backend],
+  );
   const splitTimelineClip = useCallback(
     async ({ clipId, sourceFrame }: SplitTimelineClipInput) => {
       const base = stateRef.current.projection;
@@ -1533,6 +1575,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     moveTimelineClip,
     trimTimelineClip,
     rippleDeleteTimelineClip,
+    applyTranscriptEditProposal,
     setTimelineClipOpacity,
     setTimelineTrackLocked,
     setTimelineTrackMuted,
