@@ -12,6 +12,7 @@ import {
   type VideoProjectFileV1,
   videoProjectFileV1Schema,
 } from "./project.js";
+import { DEFAULT_CLIP_TRANSFORM_GEOMETRY } from "./project-v2-entities.js";
 import { renderPlanSchema, renderPlanV1Schema, renderPlanV2Schema } from "./render-plan.js";
 import { createRationalRate, createRationalTime } from "./time.js";
 import { videoToolStatusSchema } from "./tools.js";
@@ -224,6 +225,7 @@ describe("project contracts", () => {
           assetId: ids.asset,
           path: inputPath,
           sourceInMicroseconds: 500_000,
+          ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
           opacityPermille: 1_000,
           hidden: false,
           muted: true,
@@ -252,11 +254,62 @@ describe("project contracts", () => {
         }).success,
       ).toBe(false);
     }
-    const videoInputWithoutOpacity = { ...plan.videoInputs[0] } as Record<string, unknown>;
-    delete videoInputWithoutOpacity.opacityPermille;
-    expect(
-      renderPlanV2Schema.safeParse({ ...plan, videoInputs: [videoInputWithoutOpacity] }).success,
-    ).toBe(false);
+    const boundedGeometryCases = [
+      {
+        positionXPermille: -1_000_000,
+        positionYPermille: 1_000_000,
+        scaleXPermille: 1,
+        scaleYPermille: 1_000_000,
+        rotationMilliDegrees: -360_000_000,
+      },
+      {
+        positionXPermille: 125,
+        positionYPermille: -250,
+        scaleXPermille: 1_500,
+        scaleYPermille: 750,
+        rotationMilliDegrees: 45_000,
+      },
+    ] as const;
+    for (const geometry of boundedGeometryCases) {
+      const boundedPlan = {
+        ...plan,
+        videoInputs: [{ ...plan.videoInputs[0], ...geometry }],
+      } as const;
+      expect(renderPlanV2Schema.parse(boundedPlan)).toEqual(boundedPlan);
+    }
+
+    const invalidGeometryCases = [
+      { positionXPermille: -1_000_001 },
+      { positionYPermille: 1_000_001 },
+      { scaleXPermille: 0 },
+      { scaleYPermille: 1_000_001 },
+      { rotationMilliDegrees: -360_000_001 },
+      { rotationMilliDegrees: 360_000_001 },
+      { positionXPermille: 0.5 },
+    ] as const;
+    for (const geometry of invalidGeometryCases) {
+      expect(
+        renderPlanV2Schema.safeParse({
+          ...plan,
+          videoInputs: [{ ...plan.videoInputs[0], ...geometry }],
+        }).success,
+      ).toBe(false);
+    }
+
+    for (const requiredField of [
+      "positionXPermille",
+      "positionYPermille",
+      "scaleXPermille",
+      "scaleYPermille",
+      "rotationMilliDegrees",
+      "opacityPermille",
+    ] as const) {
+      const videoInputWithoutField = { ...plan.videoInputs[0] } as Record<string, unknown>;
+      delete videoInputWithoutField[requiredField];
+      expect(
+        renderPlanV2Schema.safeParse({ ...plan, videoInputs: [videoInputWithoutField] }).success,
+      ).toBe(false);
+    }
 
     const caption = {
       trackId: ids.project,

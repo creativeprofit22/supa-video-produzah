@@ -17,13 +17,56 @@ export const clipSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("asset"), assetId: projectUuidSchema }).strict(),
   z.object({ kind: z.literal("sequence"), sequenceId: projectUuidSchema }).strict(),
 ]);
-export const clipTransformSchema = z
+/**
+ * Canonical clip geometry composition: contain-fit the source into a canvas-sized RGBA
+ * layer, scale around its center, rotate around that center, then translate by a canvas
+ * width/height permille offset. Positive rotation is visually clockwise. The canvas clips
+ * the result; opacity and audio are independent of geometry.
+ */
+export const clipTransformGeometrySchema = z
   .object({
     positionXPermille: z.number().int().safe().min(-1_000_000).max(1_000_000),
     positionYPermille: z.number().int().safe().min(-1_000_000).max(1_000_000),
     scaleXPermille: z.number().int().safe().positive().max(1_000_000),
     scaleYPermille: z.number().int().safe().positive().max(1_000_000),
     rotationMilliDegrees: z.number().int().safe().min(-360_000_000).max(360_000_000),
+  })
+  .strict();
+export type ClipTransformGeometry = z.infer<typeof clipTransformGeometrySchema>;
+
+export const DEFAULT_CLIP_TRANSFORM_GEOMETRY: ClipTransformGeometry = Object.freeze({
+  positionXPermille: 0,
+  positionYPermille: 0,
+  scaleXPermille: 1_000,
+  scaleYPermille: 1_000,
+  rotationMilliDegrees: 0,
+});
+
+function formatThousandths(value: number): string {
+  if (!Number.isSafeInteger(value))
+    throw new RangeError("Fixed-point values must be safe integers");
+  const sign = value < 0 ? "-" : "";
+  const magnitude = Math.abs(value);
+  return `${sign}${Math.floor(magnitude / 1_000)}.${(magnitude % 1_000).toString().padStart(3, "0")}`;
+}
+
+/** Formats a permille value as an exact decimal multiplier without floating-point rounding. */
+export function formatPermilleDecimal(value: number): string {
+  return formatThousandths(value);
+}
+
+/** Formats a canvas-relative permille offset as an exact CSS percentage. */
+export function formatPermillePercentage(value: number): string {
+  return `${formatThousandths(value * 100)}%`;
+}
+
+/** Formats milli-degrees as exact decimal degrees without floating-point rounding. */
+export function formatMilliDegreesAsDegrees(value: number): string {
+  return formatThousandths(value);
+}
+
+export const clipTransformSchema = clipTransformGeometrySchema
+  .extend({
     opacityPermille: z.number().int().safe().min(0).max(1_000),
   })
   .strict();

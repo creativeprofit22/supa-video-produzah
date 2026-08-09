@@ -1,11 +1,13 @@
 import {
   canToggleTrackVisibility,
+  clipTransformSchema,
   createRationalTime,
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
   microsecondsToSourceFrames,
   VideoDomainError,
+  type ClipTransform,
   type CommandResult,
   type ProjectCommandV2,
   type ProjectProjection,
@@ -56,6 +58,7 @@ export type TimelineEditOperation =
   | "ripple-delete"
   | "transcript-edit"
   | "clip-opacity"
+  | "clip-transform"
   | "track-lock"
   | "track-mute"
   | "track-visibility";
@@ -81,6 +84,12 @@ export interface SetTimelineClipOpacityInput {
   readonly trackId: string;
   readonly clipId: string;
   readonly opacityPermille: number;
+}
+export interface SetTimelineClipTransformInput {
+  readonly sequenceId: string;
+  readonly trackId: string;
+  readonly clipId: string;
+  readonly transform: ClipTransform;
 }
 export interface SetTimelineTrackLockedInput {
   readonly trackId: string;
@@ -1291,6 +1300,50 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTimelineClipTransform = useCallback(
+    async ({
+      sequenceId,
+      trackId,
+      clipId,
+      transform,
+    }: SetTimelineClipTransformInput): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        sequence.id !== sequenceId ||
+        track?.kind !== "video" ||
+        isTrackLocked(track) ||
+        !clipTransformSchema.safeParse(transform).success ||
+        editOperationPendingRef.current
+      )
+        return false;
+      const clip = track.clips.find((candidate) => candidate.id === clipId);
+      if (clip === undefined) return false;
+      if (
+        clip.transform.positionXPermille === transform.positionXPermille &&
+        clip.transform.positionYPermille === transform.positionYPermille &&
+        clip.transform.scaleXPermille === transform.scaleXPermille &&
+        clip.transform.scaleYPermille === transform.scaleYPermille &&
+        clip.transform.rotationMilliDegrees === transform.rotationMilliDegrees &&
+        clip.transform.opacityPermille === transform.opacityPermille
+      )
+        return false;
+      return executeTimelineCommandGroup(base, "clip-transform", [
+        {
+          type: "SetClipTransform",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          trackId: track.id,
+          clipId: clip.id,
+          transform,
+        },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const setTimelineTrackLocked = useCallback(
     async ({ trackId, locked }: SetTimelineTrackLockedInput) => {
       const base = stateRef.current.projection;
@@ -1577,6 +1630,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     rippleDeleteTimelineClip,
     applyTranscriptEditProposal,
     setTimelineClipOpacity,
+    setTimelineClipTransform,
     setTimelineTrackLocked,
     setTimelineTrackMuted,
     setTimelineTrackHidden,

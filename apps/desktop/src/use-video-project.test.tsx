@@ -681,7 +681,7 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
-  it("sets clip opacity against each latest canonical revision and recomputes render readiness from the refresh", async () => {
+  it("sets clip opacity against each latest canonical revision and keeps transformed render readiness", async () => {
     let active: ProjectProjection = clipProjection(1);
     const returnedProjections: ProjectProjection[] = [];
     const execute = vi.fn(async (request: CommandGroupRequest) => {
@@ -745,7 +745,7 @@ describe("canonical project controller", () => {
         ? refreshedTrack.clips[0]?.transform.positionXPermille
         : null,
     ).toBe(1);
-    expect(result.current.renderReady).toBe(false);
+    expect(result.current.renderReady).toBe(true);
     await act(async () => {
       secondResult = await result.current.setTimelineClipOpacity({
         sequenceId: id(3),
@@ -798,7 +798,84 @@ describe("canonical project controller", () => {
         ? result.current.projection.state.sequences[0].tracks[0].clips[0]?.transform.opacityPermille
         : null,
     ).toBe(250);
-    expect(result.current.renderReady).toBe(false);
+    expect(result.current.renderReady).toBe(true);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("dispatches one complete clip transform and adopts the canonical projection", async () => {
+    const opened = clipProjection(1);
+    let canonicalProjection = opened;
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const command = request.commands[0];
+      if (command?.type !== "SetClipTransform") throw new Error("Expected clip transform command");
+      const next = structuredClone(canonicalProjection);
+      const track = next.state.sequences[0]?.tracks[0];
+      if (track?.kind !== "video" || track.clips[0] === undefined)
+        throw new Error("Expected video clip fixture");
+      track.clips[0].transform = command.transform;
+      next.revision = {
+        ...emptyProjection(2).revision,
+        parentId: canonicalProjection.revision.id,
+        operationId: request.groupId,
+      };
+      const response = commandResult(canonicalProjection, next, request.groupId);
+      canonicalProjection = next;
+      return response;
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    const transform = {
+      positionXPermille: 125,
+      positionYPermille: -250,
+      scaleXPermille: 1_500,
+      scaleYPermille: 750,
+      rotationMilliDegrees: 45_000,
+      opacityPermille: 425,
+    };
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.setTimelineClipTransform({
+        sequenceId: id(3),
+        trackId: id(4),
+        clipId: id(5),
+        transform,
+      });
+    });
+
+    expect(outcome).toBe(true);
+    expect(execute).toHaveBeenCalledWith({
+      groupId: expect.any(String),
+      projectId: id(1),
+      baseRevision: 1,
+      commands: [
+        {
+          type: "SetClipTransform",
+          commandId: expect.any(String),
+          sequenceId: id(3),
+          trackId: id(4),
+          clipId: id(5),
+          transform,
+        },
+      ],
+    });
+    expect(result.current.projection).toBe(canonicalProjection);
+    expect(result.current.renderReady).toBe(true);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 

@@ -1,4 +1,9 @@
-import type { RationalRate } from "@supa-video/contracts";
+import {
+  formatMilliDegreesAsDegrees,
+  formatPermilleDecimal,
+  formatPermillePercentage,
+  type RationalRate,
+} from "@supa-video/contracts";
 import {
   Pause,
   Play,
@@ -20,6 +25,11 @@ export interface ProgramMonitorLayer {
   readonly timelineStartFrame: number;
   readonly sourceInFrame: number;
   readonly sourceOutFrame: number;
+  readonly positionXPermille: number;
+  readonly positionYPermille: number;
+  readonly scaleXPermille: number;
+  readonly scaleYPermille: number;
+  readonly rotationMilliDegrees: number;
   readonly opacityPermille: number;
   readonly hidden: boolean;
   readonly muted: boolean;
@@ -571,10 +581,17 @@ export function ProgramMonitor({
                     data-clip-id={layer.clipId}
                     data-track-index={layer.canonicalTrackIndex}
                     data-opacity-permille={layer.opacityPermille}
+                    data-position-x-permille={layer.positionXPermille}
+                    data-position-y-permille={layer.positionYPermille}
+                    data-scale-x-permille={layer.scaleXPermille}
+                    data-scale-y-permille={layer.scaleYPermille}
+                    data-rotation-milli-degrees={layer.rotationMilliDegrees}
                     data-hidden={layer.hidden ? "true" : "false"}
                     data-active={isActiveLayer ? "true" : "false"}
                     style={{
                       opacity: layer.opacityPermille / 1_000,
+                      transform: `translate(${formatPermillePercentage(layer.positionXPermille)}, ${formatPermillePercentage(layer.positionYPermille)}) rotate(${formatMilliDegreesAsDegrees(layer.rotationMilliDegrees)}deg) scale(${formatPermilleDecimal(layer.scaleXPermille)}, ${formatPermilleDecimal(layer.scaleYPermille)})`,
+                      transformOrigin: "center",
                       visibility: isActiveLayer ? "visible" : "hidden",
                       zIndex,
                     }}

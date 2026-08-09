@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { videoCommandErrorSchema } from "./errors.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
+import { clipTransformGeometrySchema } from "./project-v2-entities.js";
 import { rationalRateSchema } from "./time.js";
 
 const safePositiveIntegerSchema = z.number().int().safe().positive();
@@ -79,11 +80,17 @@ export const renderPlanV1Schema = z
 
 export type RenderPlanV1 = z.infer<typeof renderPlanV1Schema>;
 
+/**
+ * Geometry values use the canonical clip composition semantics declared by
+ * clipTransformGeometrySchema. Render metadata carries exact integers so preview and
+ * export cannot disagree through floating-point serialization or implicit defaults.
+ */
 export const renderVideoInputV2Schema = z
   .object({
     assetId: projectUuidSchema,
     path: pathSchema,
     sourceInMicroseconds: safeNonNegativeIntegerSchema,
+    ...clipTransformGeometrySchema.shape,
     opacityPermille: z.number().int().safe().min(0).max(1_000),
     hidden: z.boolean(),
     muted: z.boolean(),

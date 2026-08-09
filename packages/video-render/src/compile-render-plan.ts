@@ -1,4 +1,6 @@
 import {
+  DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+  type ClipTransform,
   type ProjectRevision,
   type ProjectRevisionDescriptorV2,
   type RationalRate,
@@ -9,6 +11,8 @@ import {
   type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
+  formatMilliDegreesAsDegrees,
+  formatPermilleDecimal,
   isTrackHidden,
   isTrackMuted,
   microsecondsToSourceFrames,
@@ -75,12 +79,6 @@ function formatMicrosecondsAsSeconds(microseconds: number): string {
   const wholeSeconds = Math.floor(microseconds / 1_000_000);
   const fractionalMicroseconds = microseconds % 1_000_000;
   return `${wholeSeconds}.${fractionalMicroseconds.toString().padStart(6, "0")}`;
-}
-
-function formatOpacityPermille(opacityPermille: number): string {
-  const whole = Math.floor(opacityPermille / 1_000);
-  const fractional = opacityPermille % 1_000;
-  return `${whole}.${fractional.toString().padStart(3, "0")}`;
 }
 
 function escapeDrawtextText(text: string): string {
@@ -415,15 +413,66 @@ interface ValidatedActiveSequenceRevision {
 export type ActiveSequenceRenderEligibility =
   { readonly eligible: true } | { readonly eligible: false; readonly reason: string };
 
-function hasSupportedTransformAndGain(clip: V2Clip): boolean {
+function hasDefaultGeometry(transform: ClipTransform): boolean {
   return (
-    clip.transform.positionXPermille === 0 &&
-    clip.transform.positionYPermille === 0 &&
-    clip.transform.scaleXPermille === 1_000 &&
-    clip.transform.scaleYPermille === 1_000 &&
-    clip.transform.rotationMilliDegrees === 0 &&
-    clip.gainMilliDecibels === 0
+    transform.positionXPermille === DEFAULT_CLIP_TRANSFORM_GEOMETRY.positionXPermille &&
+    transform.positionYPermille === DEFAULT_CLIP_TRANSFORM_GEOMETRY.positionYPermille &&
+    transform.scaleXPermille === DEFAULT_CLIP_TRANSFORM_GEOMETRY.scaleXPermille &&
+    transform.scaleYPermille === DEFAULT_CLIP_TRANSFORM_GEOMETRY.scaleYPermille &&
+    transform.rotationMilliDegrees === DEFAULT_CLIP_TRANSFORM_GEOMETRY.rotationMilliDegrees
   );
+}
+
+function transformedClipFilter(inputIndex: number, clip: V2Clip, sequence: V2Sequence): string {
+  const { transform } = clip;
+  const frameRate = `${sequence.rate.numerator}/${sequence.rate.denominator}`;
+  const contain = `scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos`;
+  if (hasDefaultGeometry(transform)) {
+    return `[${inputIndex}:v:0]setpts=PTS-STARTPTS,${contain},format=rgba,colorchannelmixer=aa=${formatPermilleDecimal(transform.opacityPermille)},pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${frameRate}[v${inputIndex}]`;
+  }
+
+  const filters = [
+    "setpts=PTS-STARTPTS",
+    contain,
+    "format=rgba",
+    `pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0`,
+  ];
+  if (
+    transform.scaleXPermille !== DEFAULT_CLIP_TRANSFORM_GEOMETRY.scaleXPermille ||
+    transform.scaleYPermille !== DEFAULT_CLIP_TRANSFORM_GEOMETRY.scaleYPermille
+  ) {
+    filters.push(
+      `scale=w='max(1\\,round(iw*${formatPermilleDecimal(transform.scaleXPermille)}))':h='max(1\\,round(ih*${formatPermilleDecimal(transform.scaleYPermille)}))':flags=lanczos`,
+    );
+  }
+  if (transform.rotationMilliDegrees !== DEFAULT_CLIP_TRANSFORM_GEOMETRY.rotationMilliDegrees) {
+    filters.push(
+      `rotate=angle=${formatMilliDegreesAsDegrees(transform.rotationMilliDegrees)}*PI/180:ow=rotw(iw):oh=roth(ih):c=black@0`,
+    );
+  }
+  filters.push(
+    `colorchannelmixer=aa=${formatPermilleDecimal(transform.opacityPermille)}`,
+    `fps=${frameRate}`,
+  );
+  return `[${inputIndex}:v:0]${filters.join(",")}[v${inputIndex}]`;
+}
+
+function overlayCoordinate(axis: "x" | "y", positionPermille: number): string {
+  const mainSize = axis === "x" ? "main_w" : "main_h";
+  const overlaySize = axis === "x" ? "overlay_w" : "overlay_h";
+  const centered = `(${mainSize}-${overlaySize})/2`;
+  if (positionPermille === 0) return centered;
+  const operator = positionPermille < 0 ? "-" : "+";
+  return `${centered}${operator}${mainSize}*${formatPermilleDecimal(Math.abs(positionPermille))}`;
+}
+
+function transformedOverlayFilter(transform: ClipTransform): string {
+  if (hasDefaultGeometry(transform)) return "overlay=0:0:format=auto";
+  return `overlay=x='${overlayCoordinate("x", transform.positionXPermille)}':y='${overlayCoordinate("y", transform.positionYPermille)}':format=auto`;
+}
+
+function hasSupportedGain(clip: V2Clip): boolean {
+  return clip.gainMilliDecibels === 0;
 }
 
 function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequenceRevision {
@@ -476,10 +525,8 @@ function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequence
         trackIndex,
       });
     }
-    if (!hasSupportedTransformAndGain(directClip)) {
-      invalidRenderPlan("Canonical multi-track export requires default geometry and gain", {
-        trackIndex,
-      });
+    if (!hasSupportedGain(directClip)) {
+      invalidRenderPlan("Canonical multi-track export requires default gain", { trackIndex });
     }
     const clipDuration = directClip.sourceOut.value - directClip.sourceIn.value;
     if (clipDuration <= 0 || (durationFrames !== undefined && clipDuration !== durationFrames)) {
@@ -558,6 +605,11 @@ export function compileActiveSequenceRenderPlan(
       assetId: asset.id,
       path: inputPath,
       sourceInMicroseconds: rationalTimeToMicroseconds(clip.sourceIn, "nearestTiesAwayFromZero"),
+      positionXPermille: clip.transform.positionXPermille,
+      positionYPermille: clip.transform.positionYPermille,
+      scaleXPermille: clip.transform.scaleXPermille,
+      scaleYPermille: clip.transform.scaleYPermille,
+      rotationMilliDegrees: clip.transform.rotationMilliDegrees,
       opacityPermille: clip.transform.opacityPermille,
       hidden: isTrackHidden(track),
       muted: isTrackMuted(track),
@@ -581,9 +633,7 @@ export function compileActiveSequenceRenderPlan(
     const audibleTrackIndices: number[] = [];
     clips.forEach(({ track, clip, asset }, trackIndex) => {
       if (!isTrackHidden(track)) {
-        filterParts.push(
-          `[${trackIndex}:v:0]setpts=PTS-STARTPTS,scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=${formatOpacityPermille(clip.transform.opacityPermille)},pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${sequence.rate.numerator}/${sequence.rate.denominator}[v${trackIndex}]`,
-        );
+        filterParts.push(transformedClipFilter(trackIndex, clip, sequence));
         visibleTrackIndices.push(trackIndex);
       }
       if (!isTrackMuted(track) && asset.probe.audio !== null) {
@@ -595,7 +645,10 @@ export function compileActiveSequenceRenderPlan(
     let baseLabel = "base";
     [...visibleTrackIndices].reverse().forEach((trackIndex, stackIndex) => {
       const outputLabel = `stack${stackIndex}`;
-      filterParts.push(`[${baseLabel}][v${trackIndex}]overlay=0:0:format=auto[${outputLabel}]`);
+      const transform = clips[trackIndex]!.clip.transform;
+      filterParts.push(
+        `[${baseLabel}][v${trackIndex}]${transformedOverlayFilter(transform)}[${outputLabel}]`,
+      );
       baseLabel = outputLabel;
     });
     captions.forEach((caption, captionIndex) => {

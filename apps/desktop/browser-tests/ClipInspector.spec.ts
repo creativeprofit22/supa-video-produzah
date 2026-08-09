@@ -90,9 +90,10 @@ for (const viewport of viewports) {
     await expectNoHorizontalOverflow(page);
     await expectNoAxeViolations(page);
 
+    const positionX = page.getByRole("spinbutton", { name: "X position" });
     await page.keyboard.press("Tab");
-    await expect(slider).toBeFocused();
-    const focusStyles = await slider.evaluate((element) => {
+    await expect(positionX).toBeFocused();
+    const focusStyles = await positionX.evaluate((element) => {
       const styles = getComputedStyle(element);
       return {
         outlineStyle: styles.outlineStyle,
@@ -107,6 +108,29 @@ for (const viewport of viewports) {
     await page.screenshot({ path: viewport.screenshot, animations: "disabled" });
   });
 
+  test(`applies and resets transform geometry at ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await openFixture(page);
+
+    const positionX = page.getByRole("spinbutton", { name: "X position" });
+    const scaleY = page.getByRole("spinbutton", { name: "Y scale" });
+    const apply = page.getByRole("button", { name: "Apply transform" });
+    await expect(apply).toBeDisabled();
+
+    await positionX.fill("12.5");
+    await scaleY.fill("75");
+    await expect(apply).toBeEnabled();
+    await apply.click();
+    await expect(page.getByText("Saving clip appearance")).toBeVisible();
+    await expect(page.getByText("Saving clip appearance")).toBeHidden({ timeout: 2_000 });
+
+    await page.getByRole("button", { name: "Reset transform" }).click();
+    await expect(positionX).toHaveValue("0");
+    await expect(scaleY).toHaveValue("100");
+    await expect(apply).toBeEnabled();
+    await expectNoAxeViolations(page);
+  });
+
   test(`supports keyboard percentage changes and announcements at ${viewport.name}`, async ({
     page,
   }) => {
@@ -116,7 +140,7 @@ for (const viewport of viewports) {
     const panel = page.locator(".clip-inspector-panel");
     const slider = page.getByRole("slider", { name: "Opacity" });
     const percentage = page.locator(".opacity-control-heading output");
-    await page.keyboard.press("Tab");
+    await slider.focus();
     await expect(slider).toBeFocused();
 
     await page.keyboard.press("ArrowRight");
@@ -136,7 +160,9 @@ for (const viewport of viewports) {
 
     await page.keyboard.press("Enter");
     await expect(panel).toHaveAttribute("aria-busy", "true");
-    await expect(page.getByRole("status").filter({ hasText: "Saving opacity" })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Saving clip appearance" }),
+    ).toBeVisible();
     await expect(slider).toBeDisabled();
     await expect(panel).toHaveAttribute("aria-busy", "false");
     await expect(slider).toBeEnabled();
@@ -150,21 +176,23 @@ for (const viewport of viewports) {
     await openFixture(page, "locked");
     const lockedSlider = page.getByRole("slider", { name: "Opacity" });
     await expect(lockedSlider).toBeDisabled();
-    await expect(lockedSlider).toHaveAttribute("aria-describedby", "clip-opacity-locked");
-    await expect(page.getByText("Unlock this track to change clip opacity.")).toBeVisible();
+    await expect(lockedSlider).toHaveAttribute("aria-describedby", "clip-appearance-locked");
+    await expect(page.getByText("Unlock this track to change clip appearance.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectNoAxeViolations(page);
 
     await openFixture(page, "saving");
     await expect(page.locator(".clip-inspector-panel")).toHaveAttribute("aria-busy", "true");
     await expect(page.getByRole("slider", { name: "Opacity" })).toBeDisabled();
-    await expect(page.getByRole("status").filter({ hasText: "Saving opacity" })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Saving clip appearance" }),
+    ).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectNoAxeViolations(page);
 
     await openFixture(page, "error");
     const alert = page.getByRole("alert");
-    await expect(alert.getByText("Could not save opacity")).toBeVisible();
+    await expect(alert.getByText("Could not save clip appearance")).toBeVisible();
     await expect(
       alert.getByText("The saved revision changed. Review the current clip and try again."),
     ).toBeVisible();

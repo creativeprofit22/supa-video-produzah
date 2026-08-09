@@ -2771,8 +2771,8 @@ fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Val
         "executable": "ffmpeg",
         "inputPathsByAssetId": { (top_asset): top, (bottom_asset): bottom },
         "videoInputs": [
-            { "assetId": top_asset, "path": top, "sourceInMicroseconds": 0, "opacityPermille": 425, "hidden": false, "muted": false, "hasAudio": true },
-            { "assetId": bottom_asset, "path": bottom, "sourceInMicroseconds": 1_000_000, "opacityPermille": 0, "hidden": false, "muted": true, "hasAudio": true }
+            { "assetId": top_asset, "path": top, "sourceInMicroseconds": 0, "positionXPermille": 0, "positionYPermille": 0, "scaleXPermille": 1_000, "scaleYPermille": 1_000, "rotationMilliDegrees": 0, "opacityPermille": 425, "hidden": false, "muted": false, "hasAudio": true },
+            { "assetId": bottom_asset, "path": bottom, "sourceInMicroseconds": 1_000_000, "positionXPermille": 0, "positionYPermille": 0, "scaleXPermille": 1_000, "scaleYPermille": 1_000, "rotationMilliDegrees": 0, "opacityPermille": 0, "hidden": false, "muted": true, "hasAudio": true }
         ],
         "outputPath": output,
         "expected": {
@@ -3152,6 +3152,54 @@ fn multitrack_render_plan_binds_order_visibility_audio_and_source_ranges_to_exac
             .expect_err("metadata mutation without exact argv regeneration must fail");
         assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
         assert_eq!(error.details["category"], "argv_grammar");
+    }
+}
+
+#[test]
+fn render_transform_geometry_requires_exact_metadata_and_filter_graph() {
+    let directory = tempdir().expect("transform render workspace must be created");
+    let (grants, exact) = granted_multitrack_render_plan(directory.path());
+    let mut transformed = exact.clone();
+    let input = &mut transformed["videoInputs"][0];
+    input["positionXPermille"] = Value::from(125);
+    input["positionYPermille"] = Value::from(-250);
+    input["scaleXPermille"] = Value::from(1_500);
+    input["scaleYPermille"] = Value::from(750);
+    input["rotationMilliDegrees"] = Value::from(45_000);
+    let filter = multitrack_filter_mut(&mut transformed);
+    let transformed_filter = filter
+        .as_str()
+        .unwrap()
+        .replace(
+            "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=0.425,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30/1[v0]",
+            "scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,scale=w='max(1\\,round(iw*1.500))':h='max(1\\,round(ih*0.750))':flags=lanczos,rotate=angle=45.000*PI/180:ow=rotw(iw):oh=roth(ih):c=black@0,colorchannelmixer=aa=0.425,fps=30/1[v0]",
+        )
+        .replace(
+            "[stack0][v0]overlay=0:0:format=auto[stack1]",
+            "[stack0][v0]overlay=x='(main_w-overlay_w)/2+main_w*0.125':y='(main_h-overlay_h)/2-main_h*0.250':format=auto[stack1]",
+        );
+    *filter = Value::String(transformed_filter);
+    parse_and_validate_render_plan(transformed.clone(), "owner", &grants)
+        .expect("matching transformed metadata and graph must validate");
+
+    let mut metadata_only = exact.clone();
+    metadata_only["videoInputs"][0]["positionXPermille"] = Value::from(125);
+    let error = parse_and_validate_render_plan(metadata_only, "owner", &grants)
+        .expect_err("geometry metadata without a matching graph must fail");
+    assert_eq!(error.details["category"], "argv_grammar");
+
+    for (field, invalid) in [
+        ("positionXPermille", Value::from(1_000_001)),
+        ("positionYPermille", Value::from(-1_000_001)),
+        ("scaleXPermille", Value::from(0)),
+        ("scaleYPermille", Value::from(1_000_001)),
+        ("rotationMilliDegrees", Value::from(360_000_001)),
+    ] {
+        let mut malformed = exact.clone();
+        malformed["videoInputs"][0][field] = invalid;
+        let error = parse_and_validate_render_plan(malformed, "owner", &grants)
+            .expect_err("out-of-bounds geometry metadata must fail schema validation");
+        assert_eq!(error.details["category"], "schema");
     }
 }
 

@@ -1,9 +1,10 @@
-import type {
-  CommandGroupRequest,
-  CommandResult,
-  ProjectProjection,
-  RenderPlanV1,
-  RenderPlanV2,
+import {
+  DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+  type CommandGroupRequest,
+  type CommandResult,
+  type ProjectProjection,
+  type RenderPlanV1,
+  type RenderPlanV2,
 } from "@supa-video/contracts";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -147,6 +148,7 @@ const multitrackRenderPlan: RenderPlanV2 = {
       assetId: id(2),
       path: "C:\\Media\\clip.mp4",
       sourceInMicroseconds: 0,
+      ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
       opacityPermille: 1_000,
       hidden: false,
       muted: false,

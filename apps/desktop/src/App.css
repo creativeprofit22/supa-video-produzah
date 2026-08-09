@@ -1206,6 +1206,82 @@ video {
   color: var(--text);
   font-size: 0.8rem;
 }
+.clip-transform-controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-block-start: 1px solid var(--border);
+}
+.clip-transform-controls legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 620;
+}
+.clip-transform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.clip-transform-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--quiet);
+  font-size: 0.7rem;
+}
+.clip-transform-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding-inline: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--quiet);
+}
+.clip-transform-input:focus-within {
+  border-color: var(--focus);
+  outline: 1px solid var(--focus);
+}
+.clip-transform-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font:
+    0.76rem "Geist Mono Variable",
+    "Cascadia Code",
+    monospace;
+}
+.clip-transform-input input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.clip-transform-controls:disabled {
+  opacity: 0.55;
+}
+.clip-transform-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.clip-transform-validation {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.clip-transform-reset {
+  justify-self: start;
+}
 .opacity-control {
   display: grid;
   gap: 7px;

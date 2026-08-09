@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::{
-    integrity::{is_canonical_uuid, validate_state},
+    integrity::{is_canonical_uuid, valid_transform, validate_state},
     types::{
         AffectedRange, CacheInvalidation, ProjectClip, ProjectCommand, ProjectTrack,
         TrackMuteError, TrackVisibilityError, VideoProjectStateV2, MAX_NON_BLANK_UTF16,
@@ -1027,7 +1027,18 @@ fn apply_one(
             transform,
             ..
         } => {
-            let clip = find_clip_mut(state, sequence_id, track_id, clip_id)?;
+            if !valid_transform(transform) {
+                return Err(invalid("clip_transform"));
+            }
+            let track = find_unlocked_track_mut(state, sequence_id, track_id)?;
+            let ProjectTrack::Video { clips, .. } = track else {
+                return Err(invalid("non_video_track"));
+            };
+            let clip = clips
+                .iter_mut()
+                .find(|clip| clip.id == *clip_id)
+                .ok_or_else(|| invalid("unknown_clip"))?;
+            let affected_range = clip_range(sequence_id, clip)?;
             let previous = std::mem::replace(&mut clip.transform, transform.clone());
             Ok((
                 vec![ProjectCommand::SetClipTransform {
@@ -1037,7 +1048,7 @@ fn apply_one(
                     clip_id: clip_id.clone(),
                     transform: previous,
                 }],
-                vec![clip_range(sequence_id, clip)?],
+                vec![affected_range],
             ))
         }
         ProjectCommand::SetClipOpacity {

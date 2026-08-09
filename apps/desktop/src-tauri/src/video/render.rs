@@ -914,6 +914,103 @@ fn fixed_three_opacity(opacity_permille: u64) -> String {
     )
 }
 
+fn fixed_three_signed(value: i64) -> String {
+    let sign = if value < 0 { "-" } else { "" };
+    let magnitude = value.unsigned_abs();
+    format!("{sign}{}.{:03}", magnitude / 1_000, magnitude % 1_000)
+}
+
+fn has_default_geometry(input: &super::types::RenderVideoInputV2) -> bool {
+    input.position_x_permille == 0
+        && input.position_y_permille == 0
+        && input.scale_x_permille == 1_000
+        && input.scale_y_permille == 1_000
+        && input.rotation_milli_degrees == 0
+}
+
+fn transformed_video_filter(
+    index: usize,
+    input: &super::types::RenderVideoInputV2,
+    expected: &super::types::RenderExpectation,
+) -> String {
+    let contain = format!(
+        "scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos",
+        expected.width, expected.height
+    );
+    if has_default_geometry(input) {
+        return format!(
+            "[{index}:v:0]setpts=PTS-STARTPTS,{contain},format=rgba,colorchannelmixer=aa={},pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
+            fixed_three_opacity(input.opacity_permille),
+            expected.width,
+            expected.height,
+            expected.rate.numerator,
+            expected.rate.denominator,
+        );
+    }
+
+    let mut filters = vec![
+        "setpts=PTS-STARTPTS".to_owned(),
+        contain,
+        "format=rgba".to_owned(),
+        format!(
+            "pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0",
+            expected.width, expected.height
+        ),
+    ];
+    if input.scale_x_permille != 1_000 || input.scale_y_permille != 1_000 {
+        filters.push(format!(
+            "scale=w='max(1\\,round(iw*{}))':h='max(1\\,round(ih*{}))':flags=lanczos",
+            fixed_three_signed(input.scale_x_permille),
+            fixed_three_signed(input.scale_y_permille),
+        ));
+    }
+    if input.rotation_milli_degrees != 0 {
+        filters.push(format!(
+            "rotate=angle={}*PI/180:ow=rotw(iw):oh=roth(ih):c=black@0",
+            fixed_three_signed(input.rotation_milli_degrees)
+        ));
+    }
+    filters.extend([
+        format!(
+            "colorchannelmixer=aa={}",
+            fixed_three_opacity(input.opacity_permille)
+        ),
+        format!(
+            "fps={}/{}",
+            expected.rate.numerator, expected.rate.denominator
+        ),
+    ]);
+    format!("[{index}:v:0]{}[v{index}]", filters.join(","))
+}
+
+fn overlay_coordinate(axis: char, position_permille: i64) -> String {
+    let (main_size, overlay_size) = if axis == 'x' {
+        ("main_w", "overlay_w")
+    } else {
+        ("main_h", "overlay_h")
+    };
+    let centered = format!("({main_size}-{overlay_size})/2");
+    if position_permille == 0 {
+        return centered;
+    }
+    let operator = if position_permille < 0 { '-' } else { '+' };
+    format!(
+        "{centered}{operator}{main_size}*{}",
+        fixed_three_signed(position_permille.abs())
+    )
+}
+
+fn transformed_overlay_filter(input: &super::types::RenderVideoInputV2) -> String {
+    if has_default_geometry(input) {
+        return "overlay=0:0:format=auto".to_owned();
+    }
+    format!(
+        "overlay=x='{}':y='{}':format=auto",
+        overlay_coordinate('x', input.position_x_permille),
+        overlay_coordinate('y', input.position_y_permille)
+    )
+}
+
 fn escape_drawtext_text(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('\'', "\\'")
@@ -1015,16 +1112,7 @@ fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String
     let mut audible = Vec::new();
     for (index, input) in plan.video_inputs.iter().enumerate() {
         if !input.hidden {
-            parts.push(format!(
-                "[{index}:v:0]setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa={},pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
-                expected.width,
-                expected.height,
-                fixed_three_opacity(input.opacity_permille),
-                expected.width,
-                expected.height,
-                expected.rate.numerator,
-                expected.rate.denominator,
-            ));
+            parts.push(transformed_video_filter(index, input, expected));
             visible.push(index);
         }
         if !input.muted && input.has_audio {
@@ -1036,7 +1124,8 @@ fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String
     for (stack, index) in visible.iter().rev().enumerate() {
         let output = format!("stack{stack}");
         parts.push(format!(
-            "[{base}][v{index}]overlay=0:0:format=auto[{output}]",
+            "[{base}][v{index}]{}[{output}]",
+            transformed_overlay_filter(&plan.video_inputs[*index])
         ));
         base = output;
     }
@@ -1079,6 +1168,11 @@ fn expected_render_arguments_v2(
         || plan.video_inputs.iter().any(|input| {
             input.source_in_microseconds > MAX_SAFE_INTEGER
                 || input.opacity_permille > 1_000
+                || !(-1_000_000..=1_000_000).contains(&input.position_x_permille)
+                || !(-1_000_000..=1_000_000).contains(&input.position_y_permille)
+                || !(1..=1_000_000).contains(&input.scale_x_permille)
+                || !(1..=1_000_000).contains(&input.scale_y_permille)
+                || !(-360_000_000..=360_000_000).contains(&input.rotation_milli_degrees)
                 || plan.input_paths_by_asset_id.get(&input.asset_id) != Some(&input.path)
         })
         || plan.input_paths_by_asset_id.iter().any(|(asset_id, path)| {

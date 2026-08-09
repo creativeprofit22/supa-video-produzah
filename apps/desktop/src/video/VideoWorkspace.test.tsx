@@ -469,7 +469,7 @@ describe("VideoWorkspace", () => {
     expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).disabled).toBe(
       true,
     );
-    expect(screen.getByText("Unlock this track to change clip opacity.")).not.toBeNull();
+    expect(screen.getByText("Unlock this track to change clip appearance.")).not.toBeNull();
   });
 
   it("disables the control while opacity saves and exposes opacity controller failures", () => {
@@ -481,7 +481,7 @@ describe("VideoWorkspace", () => {
     expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).disabled).toBe(
       true,
     );
-    expect(screen.getByText("Saving opacity").textContent).toBe("Saving opacity");
+    expect(screen.getByText("Saving clip appearance").textContent).toBe("Saving clip appearance");
 
     rerender(
       workspace(

@@ -9,6 +9,7 @@ import {
   type RenderResult,
 } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
+import { DEFAULT_CLIP_TRANSFORM_GEOMETRY } from "@supa-video/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandProvider } from "../commands/CommandProvider";
@@ -174,6 +175,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 10,
             sourceOutFrame: 90,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: true,
             muted: false,
@@ -186,6 +188,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 10,
             sourceOutFrame: 90,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: true,
@@ -228,6 +231,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 0,
             hidden: false,
             muted: false,
@@ -240,6 +244,12 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+            positionXPermille: 125,
+            positionYPermille: -250,
+            scaleXPermille: 1_500,
+            scaleYPermille: 750,
+            rotationMilliDegrees: 45_000,
             opacityPermille: 425,
             hidden: false,
             muted: true,
@@ -252,6 +262,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: true,
@@ -264,6 +275,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 750,
             hidden: true,
             muted: false,
@@ -287,6 +299,9 @@ describe("ProgramMonitor", () => {
     expect(layer("transparent-top").style.zIndex).toBe("3");
     expect(layer("partial-middle").dataset.opacityPermille).toBe("425");
     expect(layer("partial-middle").style.opacity).toBe("0.425");
+    expect(layer("partial-middle").style.transform).toBe(
+      "translate(12.500%, -25.000%) rotate(45.000deg) scale(1.500, 0.750)",
+    );
     expect(layer("opaque-bottom").dataset.opacityPermille).toBe("1000");
     expect(layer("opaque-bottom").style.opacity).toBe("1");
     expect(layer("opaque-bottom").style.visibility).toBe("visible");
@@ -311,6 +326,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 250,
             hidden: false,
             muted: false,
@@ -354,6 +370,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -366,6 +383,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: true,
             muted: false,
@@ -378,6 +396,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -390,6 +409,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 100,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -444,6 +464,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 100,
             sourceInFrame: 10,
             sourceOutFrame: 20,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -488,6 +509,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 25,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -500,6 +522,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 25,
             sourceInFrame: 25,
             sourceOutFrame: 50,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,
@@ -550,6 +573,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 0,
             sourceInFrame: 0,
             sourceOutFrame: 50,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: true,
             muted: false,
@@ -562,6 +586,7 @@ describe("ProgramMonitor", () => {
             timelineStartFrame: 40,
             sourceInFrame: 10,
             sourceOutFrame: 30,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
             opacityPermille: 1_000,
             hidden: false,
             muted: false,

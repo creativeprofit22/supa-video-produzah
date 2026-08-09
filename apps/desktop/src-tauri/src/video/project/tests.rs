@@ -1124,7 +1124,7 @@ fn clip_opacity_fixture() -> VideoProjectSnapshotV2 {
     snapshot
 }
 
-fn projected_opacity_transform(state: &VideoProjectStateV2) -> &ClipTransform {
+fn projected_clip_transform(state: &VideoProjectStateV2) -> &ClipTransform {
     let sequence = state
         .sequences
         .iter()
@@ -1152,6 +1152,273 @@ fn set_clip_opacity_command(command_id: &str, opacity_permille: u16) -> ProjectC
         clip_id: "10000000-0000-4000-8000-000000000008".to_owned(),
         opacity_permille,
     }
+}
+
+fn set_clip_transform_command(command_id: &str, transform: ClipTransform) -> ProjectCommand {
+    ProjectCommand::SetClipTransform {
+        command_id: command_id.to_owned(),
+        sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+        track_id: RIPPLE_TRACK_ID.to_owned(),
+        clip_id: "10000000-0000-4000-8000-000000000008".to_owned(),
+        transform,
+    }
+}
+
+fn replacement_clip_transform() -> ClipTransform {
+    ClipTransform {
+        position_x_permille: 125_000,
+        position_y_permille: -250_000,
+        scale_x_permille: 1_500,
+        scale_y_permille: 750,
+        rotation_milli_degrees: 45_000,
+        opacity_permille: 1_000,
+    }
+}
+
+#[test]
+fn set_clip_transform_replaces_atomically_and_preserves_clip_siblings() {
+    let snapshot = clip_opacity_fixture();
+    let original_clip = snapshot.state.sequences[0].tracks[0].clips().unwrap()[0].clone();
+    let replacement = replacement_clip_transform();
+    let applied = apply_group(
+        &snapshot.state,
+        &[set_clip_transform_command(
+            "69000000-0000-4000-8000-000000000001",
+            replacement.clone(),
+        )],
+    )
+    .unwrap();
+    let updated_clip = &applied.state.sequences[0].tracks[0].clips().unwrap()[0];
+
+    assert_eq!(updated_clip.transform, replacement);
+    assert_eq!(updated_clip.source_in, original_clip.source_in);
+    assert_eq!(updated_clip.source_out, original_clip.source_out);
+    assert_eq!(updated_clip.timeline_start, original_clip.timeline_start);
+    assert_eq!(
+        updated_clip.gain_milli_decibels,
+        original_clip.gain_milli_decibels
+    );
+    assert_eq!(applied.summary, "Updated clip transform");
+    assert_eq!(
+        applied.cache_invalidations,
+        vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan]
+    );
+    assert!(matches!(
+        applied.inverse_commands.as_slice(),
+        [ProjectCommand::SetClipTransform { transform, .. }] if transform == &original_clip.transform
+    ));
+    let restored = apply_group(&applied.state, &applied.inverse_commands).unwrap();
+    assert_eq!(restored.state, snapshot.state);
+}
+
+#[test]
+fn set_clip_transform_rejects_invalid_locked_and_non_video_targets() {
+    let snapshot = clip_opacity_fixture();
+    let invalid_transforms = [
+        ClipTransform {
+            position_x_permille: -1_000_001,
+            ..replacement_clip_transform()
+        },
+        ClipTransform {
+            position_y_permille: 1_000_001,
+            ..replacement_clip_transform()
+        },
+        ClipTransform {
+            scale_x_permille: 0,
+            ..replacement_clip_transform()
+        },
+        ClipTransform {
+            scale_y_permille: 1_000_001,
+            ..replacement_clip_transform()
+        },
+        ClipTransform {
+            rotation_milli_degrees: 360_000_001,
+            ..replacement_clip_transform()
+        },
+        ClipTransform {
+            opacity_permille: 1_001,
+            ..replacement_clip_transform()
+        },
+    ];
+    for (index, transform) in invalid_transforms.into_iter().enumerate() {
+        let error = apply_group(
+            &snapshot.state,
+            &[set_clip_transform_command(
+                &format!("69000000-0000-4000-8000-{index:012}"),
+                transform,
+            )],
+        )
+        .unwrap_err();
+        assert_eq!(error.details["category"], "clip_transform");
+        assert_eq!(snapshot.state, clip_opacity_fixture().state);
+    }
+
+    let mut locked_state = snapshot.state.clone();
+    locked_state.sequences[0].tracks[0].set_locked(true);
+    let locked_error = apply_group(
+        &locked_state,
+        &[set_clip_transform_command(
+            "69000000-0000-4000-8000-000000000010",
+            replacement_clip_transform(),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(locked_error.details["category"], "track_locked");
+
+    let mut audio_state = snapshot.state.clone();
+    let video_track = audio_state.sequences[0].tracks.remove(0);
+    let ProjectTrack::Video {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+        ..
+    } = video_track
+    else {
+        unreachable!();
+    };
+    audio_state.sequences[0].tracks.push(ProjectTrack::Audio {
+        id,
+        name,
+        locked,
+        muted,
+        clips,
+    });
+    let non_video_error = apply_group(
+        &audio_state,
+        &[set_clip_transform_command(
+            "69000000-0000-4000-8000-000000000011",
+            replacement_clip_transform(),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(non_video_error.details["category"], "non_video_track");
+}
+
+#[test]
+fn clip_transform_service_projection_has_deterministic_undo_redo_hashes() {
+    let snapshot = clip_opacity_fixture();
+    let initial_transform = projected_clip_transform(&snapshot.state).clone();
+    let initial_hash = snapshot.revision.state_hash.clone();
+    let replacement = replacement_clip_transform();
+    let mut expected_state = snapshot.state.clone();
+    expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0].transform = replacement.clone();
+    let expected_hash = state_hash(&expected_state).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("clip-transform-history.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    let opened = service
+        .open("clip-transform-history-owner", &project_path, &grants)
+        .unwrap();
+    let project_id = opened.projection.project_id.clone();
+
+    let committed = service
+        .execute(
+            "clip-transform-history-owner",
+            CommandGroupRequest {
+                group_id: "69000000-0000-4000-8000-000000000020".to_owned(),
+                project_id: project_id.clone(),
+                base_revision: 0,
+                commands: vec![set_clip_transform_command(
+                    "69000000-0000-4000-8000-000000000021",
+                    replacement.clone(),
+                )],
+            },
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(committed.state_hash, expected_hash);
+    assert_eq!(
+        projected_clip_transform(&committed.projection.state),
+        &replacement
+    );
+
+    let undone = service
+        .undo(
+            "clip-transform-history-owner",
+            &project_id,
+            1,
+            "69000000-0000-4000-8000-000000000022",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.state_hash, initial_hash);
+    assert_eq!(
+        projected_clip_transform(&undone.projection.state),
+        &initial_transform
+    );
+
+    let redone = service
+        .redo(
+            "clip-transform-history-owner",
+            &project_id,
+            2,
+            "69000000-0000-4000-8000-000000000023",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(redone.state_hash, expected_hash);
+    assert_eq!(
+        projected_clip_transform(&redone.projection.state),
+        &replacement
+    );
+}
+
+#[test]
+fn clip_transform_journal_recovers_projection_after_unclean_reopen() {
+    let snapshot = clip_opacity_fixture();
+    let replacement = replacement_clip_transform();
+    let mut expected_state = snapshot.state.clone();
+    expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0].transform = replacement.clone();
+    let expected_hash = state_hash(&expected_state).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("clip-transform-recovery.svpvideo");
+    fs::write(&project_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+
+    let project_id = {
+        let service = VideoProjectService::default();
+        let opened = service
+            .open("clip-transform-crash-owner", &project_path, &grants)
+            .unwrap();
+        let project_id = opened.projection.project_id.clone();
+        let committed = service
+            .execute(
+                "clip-transform-crash-owner",
+                CommandGroupRequest {
+                    group_id: "69000000-0000-4000-8000-000000000030".to_owned(),
+                    project_id: project_id.clone(),
+                    base_revision: 0,
+                    commands: vec![set_clip_transform_command(
+                        "69000000-0000-4000-8000-000000000031",
+                        replacement.clone(),
+                    )],
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(committed.state_hash, expected_hash);
+        project_id
+    };
+
+    assert_eq!(read_snapshot(&project_path).unwrap().revision.number, 0);
+    let reopened = VideoProjectService::default()
+        .open("clip-transform-recovery-owner", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 1);
+    assert_eq!(reopened.projection.project_id, project_id);
+    assert_eq!(reopened.projection.revision.number, 1);
+    assert_eq!(reopened.projection.revision.state_hash, expected_hash);
+    assert_eq!(reopened.projection.state, expected_state);
+    assert_eq!(
+        projected_clip_transform(&reopened.projection.state),
+        &replacement
+    );
+    assert!(reopened.projection.can_undo);
 }
 
 #[test]
@@ -1307,14 +1574,14 @@ fn set_clip_opacity_rejects_range_locked_and_non_video_targets() {
 #[test]
 fn clip_opacity_service_projection_preserves_siblings_and_undo_redo_hashes() {
     let snapshot = clip_opacity_fixture();
-    let initial_transform = projected_opacity_transform(&snapshot.state).clone();
+    let initial_transform = projected_clip_transform(&snapshot.state).clone();
     let initial_hash = snapshot.revision.state_hash.clone();
     let command = set_clip_opacity_command("68000000-0000-4000-8000-000000000020", 425);
     let mut expected_state = snapshot.state.clone();
     expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0]
         .transform
         .opacity_permille = 425;
-    let expected_transform = projected_opacity_transform(&expected_state).clone();
+    let expected_transform = projected_clip_transform(&expected_state).clone();
     let expected_hash = state_hash(&expected_state).unwrap();
     assert_eq!(expected_transform.opacity_permille, 425);
 
@@ -1348,7 +1615,7 @@ fn clip_opacity_service_projection_preserves_siblings_and_undo_redo_hashes() {
         expected_hash
     );
     assert_eq!(
-        projected_opacity_transform(&committed.projection.state),
+        projected_clip_transform(&committed.projection.state),
         &expected_transform
     );
 
@@ -1366,7 +1633,7 @@ fn clip_opacity_service_projection_preserves_siblings_and_undo_redo_hashes() {
     assert_eq!(undone.new_revision.state_hash, initial_hash);
     assert_eq!(state_hash(&undone.projection.state).unwrap(), initial_hash);
     assert_eq!(
-        projected_opacity_transform(&undone.projection.state),
+        projected_clip_transform(&undone.projection.state),
         &initial_transform
     );
 
@@ -1384,7 +1651,7 @@ fn clip_opacity_service_projection_preserves_siblings_and_undo_redo_hashes() {
     assert_eq!(redone.new_revision.state_hash, expected_hash);
     assert_eq!(state_hash(&redone.projection.state).unwrap(), expected_hash);
     assert_eq!(
-        projected_opacity_transform(&redone.projection.state),
+        projected_clip_transform(&redone.projection.state),
         &expected_transform
     );
 }
@@ -1397,7 +1664,7 @@ fn clip_opacity_journal_recovers_projection_after_unclean_reopen() {
     expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0]
         .transform
         .opacity_permille = 0;
-    let expected_transform = projected_opacity_transform(&expected_state).clone();
+    let expected_transform = projected_clip_transform(&expected_state).clone();
     let expected_hash = state_hash(&expected_state).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("clip-opacity-recovery.svpvideo");
@@ -1424,7 +1691,7 @@ fn clip_opacity_journal_recovers_projection_after_unclean_reopen() {
             .unwrap();
         assert_eq!(committed.state_hash, expected_hash);
         assert_eq!(
-            projected_opacity_transform(&committed.projection.state),
+            projected_clip_transform(&committed.projection.state),
             &expected_transform
         );
         project_id
@@ -1446,7 +1713,7 @@ fn clip_opacity_journal_recovers_projection_after_unclean_reopen() {
     );
     assert_eq!(reopened.projection.state, expected_state);
     assert_eq!(
-        projected_opacity_transform(&reopened.projection.state),
+        projected_clip_transform(&reopened.projection.state),
         &expected_transform
     );
     assert!(reopened.projection.can_undo);

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CLIP_TRANSFORM_GEOMETRY,
   type ProjectRevision,
   type RationalRate,
   type VideoTrack,
@@ -126,6 +127,11 @@ interface V2RevisionOptions {
   readonly muted?: boolean;
   readonly hidden?: boolean;
   readonly opacityPermille?: number;
+  readonly positionXPermille?: number;
+  readonly positionYPermille?: number;
+  readonly scaleXPermille?: number;
+  readonly scaleYPermille?: number;
+  readonly rotationMilliDegrees?: number;
   readonly captionHidden?: boolean;
   readonly dedicatedAudioTrack?: "empty" | "non-empty";
 }
@@ -222,11 +228,11 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                   sourceIn: clip.sourceIn,
                   sourceOut: clip.sourceOut,
                   transform: {
-                    positionXPermille: 0,
-                    positionYPermille: 0,
-                    scaleXPermille: 1_000,
-                    scaleYPermille: 1_000,
-                    rotationMilliDegrees: 0,
+                    positionXPermille: options.positionXPermille ?? 0,
+                    positionYPermille: options.positionYPermille ?? 0,
+                    scaleXPermille: options.scaleXPermille ?? 1_000,
+                    scaleYPermille: options.scaleYPermille ?? 1_000,
+                    rotationMilliDegrees: options.rotationMilliDegrees ?? 0,
                     opacityPermille: options.opacityPermille ?? 1_000,
                   },
                   gainMilliDecibels: 0,
@@ -576,6 +582,7 @@ describe("compileActiveSequenceRenderPlan", () => {
           assetId: ids.asset,
           path: inputPath,
           sourceInMicroseconds: 500_500,
+          ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
           opacityPermille,
           hidden: false,
           muted: false,
@@ -588,6 +595,45 @@ describe("compileActiveSequenceRenderPlan", () => {
       expect(plan.expected.audio).toBe(true);
     },
   );
+
+  it("compiles position, non-uniform scale, and rotation in canonical order", () => {
+    const revision = makeV2Revision({
+      positionXPermille: 125,
+      positionYPermille: -250,
+      scaleXPermille: 1_500,
+      scaleYPermille: 750,
+      rotationMilliDegrees: 45_000,
+      opacityPermille: 425,
+    });
+
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+
+    expect(plan.videoInputs[0]).toMatchObject({
+      positionXPermille: 125,
+      positionYPermille: -250,
+      scaleXPermille: 1_500,
+      scaleYPermille: 750,
+      rotationMilliDegrees: 45_000,
+      opacityPermille: 425,
+    });
+    expect(plan.argv[plan.argv.indexOf("-filter_complex") + 1]).toBe(
+      [
+        "color=c=black:s=1280x720:r=30000/1001:d=2.502500[base]",
+        "[0:v:0]setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black@0,scale=w='max(1\\,round(iw*1.500))':h='max(1\\,round(ih*0.750))':flags=lanczos,rotate=angle=45.000*PI/180:ow=rotw(iw):oh=roth(ih):c=black@0,colorchannelmixer=aa=0.425,fps=30000/1001[v0]",
+        "[0:a:0]asetpts=PTS-STARTPTS[a0]",
+        "[base][v0]overlay=x='(main_w-overlay_w)/2+main_w*0.125':y='(main_h-overlay_h)/2-main_h*0.250':format=auto[stack0]",
+        "[stack0]null[vout]",
+        "[a0]anull[aout]",
+      ].join(";"),
+    );
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+  });
 
   it("keeps zero-opacity clip audio independent from visual alpha", () => {
     const audibleRevision = makeV2Revision({ opacityPermille: 0 });
@@ -735,6 +781,7 @@ describe("compileActiveSequenceRenderPlan", () => {
         assetId: ids.asset,
         path: inputPath,
         sourceInMicroseconds: 500_500,
+        ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
         opacityPermille: 425,
         hidden: false,
         muted: true,
@@ -744,6 +791,7 @@ describe("compileActiveSequenceRenderPlan", () => {
         assetId: ids.asset2,
         path: "C:\\Media Source\\bottom.mp4",
         sourceInMicroseconds: 500_500,
+        ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
         opacityPermille: 0,
         hidden: true,
         muted: false,

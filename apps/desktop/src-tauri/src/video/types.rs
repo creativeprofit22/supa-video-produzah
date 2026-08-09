@@ -52,6 +52,50 @@ where
     Ok(value)
 }
 
+fn deserialize_bounded_geometry_integer<'de, D>(
+    deserializer: D,
+    minimum: i64,
+    maximum: i64,
+    label: &str,
+) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = i64::deserialize(deserializer)?;
+    if !(minimum..=maximum).contains(&value) {
+        return Err(de::Error::custom(format!(
+            "expected {label} from {minimum} to {maximum}"
+        )));
+    }
+    Ok(value)
+}
+
+fn deserialize_position_permille<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_geometry_integer(deserializer, -1_000_000, 1_000_000, "position permille")
+}
+
+fn deserialize_scale_permille<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_geometry_integer(deserializer, 1, 1_000_000, "scale permille")
+}
+
+fn deserialize_rotation_milli_degrees<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_geometry_integer(
+        deserializer,
+        -360_000_000,
+        360_000_000,
+        "rotation milli-degrees",
+    )
+}
+
 fn deserialize_opacity_permille<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -369,6 +413,16 @@ pub struct RenderVideoInputV2 {
     pub asset_id: ProjectUuid,
     pub path: String,
     pub source_in_microseconds: u64,
+    #[serde(deserialize_with = "deserialize_position_permille")]
+    pub position_x_permille: i64,
+    #[serde(deserialize_with = "deserialize_position_permille")]
+    pub position_y_permille: i64,
+    #[serde(deserialize_with = "deserialize_scale_permille")]
+    pub scale_x_permille: i64,
+    #[serde(deserialize_with = "deserialize_scale_permille")]
+    pub scale_y_permille: i64,
+    #[serde(deserialize_with = "deserialize_rotation_milli_degrees")]
+    pub rotation_milli_degrees: i64,
     #[serde(deserialize_with = "deserialize_opacity_permille")]
     pub opacity_permille: u64,
     pub hidden: bool,

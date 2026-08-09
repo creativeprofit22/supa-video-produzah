@@ -211,7 +211,7 @@ fn rescale_frames_exact(
         .filter(|duration| *duration <= MAX_SAFE_INTEGER)
 }
 
-fn valid_transform(transform: &ClipTransform) -> bool {
+pub(super) fn valid_transform(transform: &ClipTransform) -> bool {
     transform.position_x_permille.unsigned_abs() <= 1_000_000
         && transform.position_y_permille.unsigned_abs() <= 1_000_000
         && (1..=1_000_000).contains(&transform.scale_x_permille)
