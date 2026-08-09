@@ -2,7 +2,7 @@
 
 - **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 9 August 2026 (Phase 5 trim-, split-, standalone MoveClip-, and standalone RippleDeleteClip-caption lifecycle slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
+- **Implementation audit:** 9 August 2026 (Phase 5 trim-, split-, standalone MoveClip-, standalone RippleDeleteClip-caption lifecycle, and exact-key managed transcript read-boundary slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -637,6 +637,7 @@ Completed foundation slices:
 - Split-caption lifecycle preparation and desktop integration: a standalone contiguous `SplitClip` replays and validates the candidate state, requires retained and artifact-invariant captions, and persists no replacement artifact; transcript-generated edits preserve right-to-left `SplitClip` → optional `SplitClip` → `RippleDeleteClip` geometry, remap once against the complete candidate state, then append deterministic `ApplyCaptionArtifact` commands in caption-track order. Missing, stale, ambiguous, inexact, unsupported, unsafe, or over-100-command groups fail closed before backend submission; caption-free splits and proposals retain bare geometry. Native commit, undo, redo, rejection, journal replay, and checkpoint tests verify atomic ordering and caption provenance.
 - Standalone MoveClip-caption lifecycle preparation and desktop integration: the candidate `MoveClip` is contract-validated, replayed, and geometry-checked before submission; every active caption artifact is remapped against that candidate state and one deterministic atomic group is ordered `MoveClip` → `ApplyCaptionArtifact[]` in caption-track order. Missing, stale, mismatched, or ambiguous lineage; locked source or caption targets; invalid or inexact geometry; unsafe integer bounds; and groups over 100 commands fail closed before backend submission. Caption-free moves retain one validated bare `MoveClip`. Native proof covers one-revision atomic commit, exact inverse ordering, undo, redo, journal recovery, and close-time checkpoint persistence.
 - Standalone RippleDeleteClip-caption lifecycle preparation and desktop integration: native-equivalent candidate replay validates index-based target deletion and suffix shifts before submission, and only active caption artifacts whose exact source lineage occurs in the deleted/shifted clip set are remapped. Atomic groups are ordered `RippleDeleteClip` → `ApplyCaptionArtifact[]` in sequence caption-track order; caption-free and unrelated-caption edits retain one validated bare command. Distinct affected transcript keys/source identities require exact artifacts, one exact transcript may serve multiple tracks, disappearing lineage persists an empty-cue replacement, and incomplete, invalid, duplicate, stale, ambiguous, locked, inexact, underflowing, remap-invalid, or over-100-command preparation fails before backend submission. Native proof covers mixed-source suffix shifts, two caption artifacts, one-revision commit, reverse caption inverses before ripple restoration, exact undo/redo, invalid-group rollback, unclean recovery, and close-time checkpoint persistence.
+- Exact-key managed transcript read boundary: desktop callers can request one lowercase SHA-256 artifact key through a deny-unknown-fields Tauri command registered in production and test invoke handlers. The command derives the artifact path only from the initialized managed cache root, preserves bounded reads and identity verification, and returns the typed transcript artifact. Frontend IPC validates the key, parses the response with the shared transcript artifact schema, exposes the method through `VideoBackend`, and sanitizes unstructured command failures. Arbitrary paths, publishing, ASR execution, automatic transcript resolution, UI, and lifecycle wiring remain excluded.
 
 Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
 
@@ -681,6 +682,17 @@ Open Phase 5 scope remains planned; this checkpoint does not claim completion of
 - `pnpm exec prettier --check packages/video-project/src/ripple-delete-clip-caption-lifecycle.ts packages/video-project/src/ripple-delete-clip-caption-lifecycle.test.ts packages/video-project/src/index.ts apps/desktop/src/use-video-project.ts apps/desktop/src/use-video-project.test.tsx` — passed
 - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` — passed
 - `git diff --check` — passed
+
+### Verification actually run for the closed exact-key managed transcript read-boundary slice
+
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml video::transcript::tests:: --lib` — 10 passed
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features tauri-ipc-test managed_transcript_exact_key_command_returns_the_checked_artifact --lib` — 1 passed
+- `pnpm --filter @supa-video/desktop exec vitest run src/video-ipc.test.ts` — 1 file and 17 tests passed
+- `pnpm --filter @supa-video/media exec vitest run src/transcript.test.ts` — 1 file and 5 tests passed
+- `pnpm --filter @supa-video/media check && pnpm --filter @supa-video/media build` — passed
+- `pnpm --filter @supa-video/desktop check && pnpm --filter @supa-video/desktop exec vite build` — passed
+- Focused Rustfmt and Prettier checks plus `git diff --check` — passed
+- The failed accidentally broad desktop test run is explicitly excluded and is not verification evidence for this slice.
 
 ## Scope
 

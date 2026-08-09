@@ -144,6 +144,10 @@ impl MediaCacheService {
         }
     }
 
+    pub(super) fn app_cache_root(&self) -> &Path {
+        &self.app_cache_root
+    }
+
     pub(crate) async fn register(
         &self,
         registration: CacheArtifactRegistration,

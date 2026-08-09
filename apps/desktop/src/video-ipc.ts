@@ -41,6 +41,7 @@ import {
   prepareVideoAssetRequestSchema,
   preparedVideoAssetSchema,
   reauthorizeMediaJobOutputRequestSchema,
+  transcriptArtifactV1Schema,
 } from "@supa-video/media";
 import type {
   ClearLegacyMediaCacheRequest,
@@ -57,6 +58,7 @@ import type {
   PreparedVideoAsset,
   PrepareVideoAssetRequest,
   ReauthorizeMediaJobOutputRequest,
+  TranscriptArtifactV1,
 } from "@supa-video/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -65,6 +67,7 @@ import { z } from "zod";
 
 const selectedPathSchema = absoluteNativePathSchema.nullable();
 const emptyCommandResponseSchema = z.null();
+const managedTranscriptArtifactKeySchema = z.string().regex(/^[0-9a-f]{64}$/u);
 const videoErrorCodeSet = new Set<string>(videoErrorCodes);
 const VIDEO_RENDER_EVENT = "video:render-event";
 const VIDEO_MEDIA_JOB_EVENT = "video:media-job-event";
@@ -290,6 +293,16 @@ export async function clearLegacyMediaCache(
   return parseResponse(clearLegacyMediaCacheResponseSchema.safeParse(response));
 }
 
+export async function loadManagedTranscriptArtifact(
+  artifactKey: string,
+): Promise<TranscriptArtifactV1> {
+  const validatedKey = managedTranscriptArtifactKeySchema.parse(artifactKey);
+  const response = await invokeVideoCommand("video_load_managed_transcript_artifact", {
+    request: { artifactKey: validatedKey },
+  });
+  return parseResponse(transcriptArtifactV1Schema.safeParse(response));
+}
+
 type FailedVideoRenderEvent = Extract<VideoRenderEvent, { type: "failed" }>;
 
 export type VideoRenderNotification =
@@ -371,11 +384,12 @@ export interface VideoBackend {
   readonly reauthorizeMediaJobOutput: typeof reauthorizeMediaJobOutput;
   readonly getMediaCacheStatus: typeof getMediaCacheStatus;
   readonly clearLegacyMediaCache: typeof clearLegacyMediaCache;
+  readonly loadManagedTranscriptArtifact?: typeof loadManagedTranscriptArtifact;
   readonly listenMediaJobEvents: typeof listenMediaJobEvents;
   readonly convertFileSrc: typeof convertFileSrc;
 }
 
-export const tauriVideoBackend: VideoBackend = {
+export const tauriVideoBackend = {
   getVideoToolStatus,
   pickNewVideoProjectPath,
   createVideoProject,
@@ -400,6 +414,7 @@ export const tauriVideoBackend: VideoBackend = {
   reauthorizeMediaJobOutput,
   getMediaCacheStatus,
   clearLegacyMediaCache,
+  loadManagedTranscriptArtifact,
   listenMediaJobEvents,
   convertFileSrc,
-};
+} satisfies VideoBackend;

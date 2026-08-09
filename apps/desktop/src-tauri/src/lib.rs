@@ -77,6 +77,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
         .invoke_handler(tauri::generate_handler![
             video::probe::video_ffmpeg_status,
             video::probe::video_probe_media,
+            video::video_load_managed_transcript_artifact,
             video::project_io::video_pick_source,
             video::derived::video_prepare_asset,
             video::render::video_start_render,
@@ -303,6 +304,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 video::probe::video_ffmpeg_status,
                 video::probe::video_probe_media,
+                video::video_load_managed_transcript_artifact,
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
@@ -347,6 +349,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 video::probe::video_ffmpeg_status,
                 video::probe::video_probe_media,
+                video::video_load_managed_transcript_artifact,
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
@@ -416,6 +419,53 @@ mod tests {
             state.phase_for_test(),
             video::toolchain::MediaToolchainProblemOrPhase::Ready
         );
+    }
+
+    #[test]
+    fn managed_transcript_exact_key_command_returns_the_checked_artifact() {
+        let app = mock_video_app();
+        let fixture: Value = serde_json::from_slice(include_bytes!(
+            "../../../../packages/video-media/fixtures/transcript-artifact-v1.json"
+        ))
+        .expect("transcript fixture must be valid JSON");
+        let artifact = fixture["artifact"].clone();
+        let artifact_key = artifact["identity"]["key"]
+            .as_str()
+            .expect("transcript fixture must have an artifact key");
+        let jobs = app.state::<video::jobs::MediaJobService>();
+        let guard = tauri::async_runtime::block_on(video::media_store::acquire_artifact(
+            video::managed_cache_root_for_test(jobs.inner()),
+            video::media_store::ArtifactStoreKind::Transcript,
+            artifact_key,
+        ))
+        .expect("managed transcript destination must be acquired");
+        fs::write(
+            guard.path(),
+            serde_json::to_vec(&artifact).expect("transcript artifact must serialize"),
+        )
+        .expect("managed transcript fixture must be written");
+        guard
+            .confirm_durable()
+            .expect("managed transcript fixture must be durable");
+        drop(guard);
+        let webview = WebviewWindowBuilder::new(&app, "transcript-ipc", Default::default())
+            .build()
+            .expect("transcript IPC webview must build");
+
+        let response = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_load_managed_transcript_artifact",
+                json!({ "request": { "artifactKey": artifact_key } }),
+            ),
+        )
+        .expect("managed transcript command must load an exact key")
+        .deserialize::<Value>()
+        .expect("managed transcript command response must be JSON");
+
+        assert_eq!(response["schemaVersion"], 1);
+        assert_eq!(response["identity"]["key"], artifact_key);
+        assert!(response.get("artifactPath").is_none());
     }
 
     #[test]
@@ -1178,6 +1228,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 video::probe::video_ffmpeg_status,
                 video::probe::video_probe_media,
+                video::video_load_managed_transcript_artifact,
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,

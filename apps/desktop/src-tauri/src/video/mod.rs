@@ -16,6 +16,27 @@ pub(crate) mod toolchain;
 mod transcript;
 mod types;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct LoadManagedTranscriptArtifactRequest {
+    artifact_key: String,
+}
+
+#[tauri::command]
+pub(crate) async fn video_load_managed_transcript_artifact(
+    jobs: tauri::State<'_, jobs::MediaJobService>,
+    request: LoadManagedTranscriptArtifactRequest,
+) -> Result<transcript::TranscriptArtifactV1, VideoCommandError> {
+    let app_cache_root = jobs.cache().app_cache_root().to_path_buf();
+    transcript::load_managed_transcript_artifact_for_key(&app_cache_root, &request.artifact_key)
+        .await
+}
+
+#[cfg(test)]
+pub(crate) fn managed_cache_root_for_test(jobs: &jobs::MediaJobService) -> &std::path::Path {
+    jobs.cache().app_cache_root()
+}
+
 pub use derived::video_prepare_asset;
 pub use error::{VideoCommandError, VideoErrorCode};
 pub use grants::{GrantCategory, VideoPathGrants};

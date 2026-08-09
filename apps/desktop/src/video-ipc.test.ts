@@ -10,6 +10,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import transcriptArtifactFixture from "../../../packages/video-media/fixtures/transcript-artifact-v1.json";
 import {
   cancelMediaJob,
   cancelVideoRender,
@@ -23,6 +24,7 @@ import {
   listenMediaJobEvents,
   listenVideoRenderEvents,
   listMediaJobs,
+  loadManagedTranscriptArtifact,
   openVideoProject,
   redoVideoProject,
   reauthorizeMediaJobOutput,
@@ -434,6 +436,51 @@ describe("strict V2 video IPC adapter", () => {
         outputPath: "C:\\Exports\\launch.mp4",
       },
     });
+  });
+
+  it("sends only the exact managed transcript artifact key", async () => {
+    const artifact = transcriptArtifactFixture.artifact;
+    invokeMock.mockResolvedValueOnce(artifact);
+
+    await expect(loadManagedTranscriptArtifact(artifact.identity.key)).resolves.toEqual(artifact);
+    expect(invokeMock).toHaveBeenCalledWith("video_load_managed_transcript_artifact", {
+      request: { artifactKey: artifact.identity.key },
+    });
+  });
+
+  it("rejects a managed transcript artifact that fails the shared schema", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ...transcriptArtifactFixture.artifact,
+      artifactPath: "C:\\private\\artifact.json",
+    });
+
+    const error = await loadManagedTranscriptArtifact(
+      transcriptArtifactFixture.artifact.identity.key,
+    ).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(VideoIpcResponseError);
+    expect(String(error)).not.toContain("private");
+  });
+
+  it("exposes exact managed transcript loading through VideoBackend", async () => {
+    invokeMock.mockResolvedValueOnce(transcriptArtifactFixture.artifact);
+
+    await expect(
+      tauriVideoBackend.loadManagedTranscriptArtifact(
+        transcriptArtifactFixture.artifact.identity.key,
+      ),
+    ).resolves.toEqual(transcriptArtifactFixture.artifact);
+  });
+
+  it("sanitizes unstructured managed transcript command failures", async () => {
+    invokeMock.mockRejectedValueOnce("C:\\private\\artifact.json could not be opened");
+
+    const error = await loadManagedTranscriptArtifact(
+      transcriptArtifactFixture.artifact.identity.key,
+    ).catch((reason: unknown) => reason);
+
+    expect(error).toEqual(new Error("The desktop command failed unexpectedly"));
+    expect(String(error)).not.toContain("private");
   });
 
   it("keeps cache status, legacy clearing, and media job events strict", async () => {

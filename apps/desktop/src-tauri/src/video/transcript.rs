@@ -590,7 +590,7 @@ pub(crate) async fn load_managed_transcript_artifact(
     Ok(artifact)
 }
 
-pub(crate) async fn load_managed_transcript_artifact_for_key(
+pub(super) async fn load_managed_transcript_artifact_for_key(
     app_cache_root: &Path,
     expected_key: &str,
 ) -> Result<TranscriptArtifactV1, VideoCommandError> {
@@ -1282,6 +1282,78 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn exact_key_loader_rejects_a_malformed_key_before_touching_the_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let cache_root = root.path().join("cache");
+
+        let error = load_managed_transcript_artifact_for_key(&cache_root, "../artifact.json")
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.details["category"], "expected_key");
+        assert!(!cache_root.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn exact_key_loader_reports_a_missing_managed_artifact() {
+        let fixture = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let cache_root = root.path().join("cache");
+
+        let error =
+            load_managed_transcript_artifact_for_key(&cache_root, &fixture.artifact.identity.key)
+                .await
+                .unwrap_err();
+
+        assert_eq!(error.details["category"], "json_open");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn exact_key_loader_rejects_an_artifact_with_another_identity() {
+        let fixture = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let expected_key = "f".repeat(64);
+        let guard = acquire_artifact(root.path(), ArtifactStoreKind::Transcript, &expected_key)
+            .await
+            .unwrap();
+        fs::write(guard.path(), serde_json::to_vec(&fixture.artifact).unwrap()).unwrap();
+
+        guard.confirm_durable().unwrap();
+        drop(guard);
+
+        let error = load_managed_transcript_artifact_for_key(root.path(), &expected_key)
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.details["category"], "load_identity_mismatch");
+    }
+
+    #[test]
+    fn exact_key_request_cannot_supply_an_arbitrary_path() {
+        let fixture = fixture();
+        let result = serde_json::from_value::<super::super::LoadManagedTranscriptArtifactRequest>(
+            serde_json::json!({
+                "artifactKey": fixture.artifact.identity.key,
+                "path": "../../outside/artifact.json",
+            }),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn exact_key_response_serializes_as_the_checked_artifact_contract() {
+        let fixture = fixture();
+        let serialized = serde_json::to_vec(&fixture.artifact).unwrap();
+        let response = serde_json::from_slice::<TranscriptArtifactV1>(&serialized).unwrap();
+
+        assert_eq!(response, fixture.artifact);
+        assert!(!String::from_utf8(serialized)
+            .unwrap()
+            .contains("artifactPath"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn immutable_publish_reuses_identical_bytes_and_rejects_conflicts() {
         let fixture = fixture();
         let root = tempfile::tempdir().unwrap();
@@ -1341,7 +1413,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn managed_loader_derives_a_contained_path() {
+    async fn exact_key_loader_returns_a_valid_artifact_from_the_contained_managed_path() {
         let fixture = fixture();
         let root = tempfile::tempdir().unwrap();
         let (_store, cache, cache_root) = cache_service(root.path()).await;
@@ -1354,9 +1426,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let loaded = load_managed_transcript_artifact(&cache_root, &fixture.artifact.identity)
-            .await
-            .unwrap();
+        let loaded =
+            load_managed_transcript_artifact_for_key(&cache_root, &fixture.artifact.identity.key)
+                .await
+                .unwrap();
         assert_eq!(loaded, fixture.artifact);
         let managed_root = fs::canonicalize(cache_root.join(MEDIA_STORE_NAMESPACE)).unwrap();
         assert!(published.path.starts_with(&managed_root));
