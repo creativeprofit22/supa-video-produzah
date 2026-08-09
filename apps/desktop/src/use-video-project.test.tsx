@@ -751,6 +751,70 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
+  it("validates a captioned manual split and submits only SplitClip", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      const next = structuredClone(opened);
+      next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+      return commandResult(opened, next, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() =>
+      result.current.splitTimelineClip({
+        clipId: id(5),
+        sourceFrame: 20,
+        transcriptArtifact,
+      }),
+    );
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]![0].commands.map(({ type }) => type)).toEqual(["SplitClip"]);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("fails captioned manual splits before backend submission for missing or stale lineage", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn(async () => {
+      throw new Error("unexpected split submission");
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.splitTimelineClip({ clipId: id(5), sourceFrame: 20 }));
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "split",
+      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+    });
+
+    const staleTranscript = structuredClone(transcriptArtifact);
+    staleTranscript.identity.key = "ff".repeat(32);
+    await act(() =>
+      result.current.splitTimelineClip({
+        clipId: id(5),
+        sourceFrame: 20,
+        transcriptArtifact: staleTranscript,
+      }),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "split",
+      error: { details: { reason: "caption_lifecycle_transcript_lineage_mismatch" } },
+    });
+  });
+
   it("submits trim, move, and caption correction atomically and undoes them together", async () => {
     const opened = captionedProjection(1);
     const originalCaption = structuredClone(
@@ -1898,6 +1962,29 @@ describe("canonical project controller", () => {
     expect(result.current.projection).toBe(opened);
     expect(result.current.projection?.revision.number).toBe(1);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("submits captioned transcript geometry and ApplyCaptionArtifact in one request", async () => {
+    const opened = captionedProjection(1);
+    const proposal = await transcriptEditProposal(opened);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      const next = structuredClone(opened);
+      next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+      return commandResult(opened, next, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.applyTranscriptEditProposal(proposal, transcriptArtifact));
+
+    expect(execute).toHaveBeenCalledOnce();
+    const submittedTypes = execute.mock.calls[0]![0].commands.map(({ type }) => type);
+    expect(submittedTypes.at(-1)).toBe("ApplyCaptionArtifact");
+    expect(submittedTypes.slice(0, -1).every((type) => type !== "ApplyCaptionArtifact")).toBe(true);
   });
 
   it("submits the generated transcript command group at its base revision and installs the backend projection", async () => {

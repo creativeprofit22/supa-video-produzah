@@ -27,6 +27,7 @@ import {
   assertTranscriptEditProposalCurrent,
   buildCommandGroup,
   buildProjectCommand,
+  prepareSplitClipCaptionLifecycleV1,
   prepareTrimClipCaptionLifecycleV1,
   type TranscriptEditProposal,
 } from "@supa-video/project";
@@ -66,6 +67,7 @@ export type TimelineEditOperation =
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
+  readonly transcriptArtifact?: TranscriptArtifactV1;
 }
 export interface MoveTimelineClipInput {
   readonly clipId: string;
@@ -1141,7 +1143,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [activateEditResult, backend],
   );
   const splitTimelineClip = useCallback(
-    async ({ clipId, sourceFrame }: SplitTimelineClipInput) => {
+    async ({ clipId, sourceFrame, transcriptArtifact }: SplitTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
       if (
@@ -1151,21 +1153,30 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         sourceFrame <= selection.clip.sourceIn.value ||
         sourceFrame >= selection.clip.sourceOut.value
       )
-        return;
-      await executeTimelineCommandGroup(base, "split", [
-        {
-          type: "SplitClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-          splitAt: createRationalTime(sourceFrame, {
-            numerator: selection.clip.sourceIn.rateNumerator,
-            denominator: selection.clip.sourceIn.rateDenominator,
-          }),
-          rightClipId: newId(),
-        },
-      ]);
+        return false;
+      const command: Extract<ProjectCommandV2, { readonly type: "SplitClip" }> = {
+        type: "SplitClip",
+        commandId: newId(),
+        sequenceId: selection.sequence.id,
+        trackId: selection.track.id,
+        clipId: selection.clip.id,
+        splitAt: createRationalTime(sourceFrame, {
+          numerator: selection.clip.sourceIn.rateNumerator,
+          denominator: selection.clip.sourceIn.rateDenominator,
+        }),
+        rightClipId: newId(),
+      };
+      try {
+        const commands = prepareSplitClipCaptionLifecycleV1({
+          projection: base,
+          ...(transcriptArtifact === undefined ? {} : { transcriptArtifact }),
+          command,
+        });
+        return await executeTimelineCommandGroup(base, "split", commands);
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "split", error: asError(error) });
+        return false;
+      }
     },
     [executeTimelineCommandGroup],
   );

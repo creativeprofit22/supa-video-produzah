@@ -6,7 +6,11 @@ import {
   type ProjectProjection,
   type ProjectTrack,
 } from "@supa-video/contracts";
-import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
+import {
+  captionArtifactV1Schema,
+  transcriptArtifactV1Schema,
+  type TranscriptArtifactV1,
+} from "@supa-video/media";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -238,6 +242,79 @@ function projection(
   };
 }
 
+function activateCaptionTrack(
+  project: ProjectProjection,
+  value: TranscriptArtifactV1,
+): ProjectProjection {
+  const result = structuredClone(project);
+  const sequence = result.state.sequences[0]!;
+  sequence.tracks.push({
+    id: id(11),
+    name: "Captions",
+    kind: "caption",
+    captions: [],
+    activeCaptionArtifact: captionArtifactV1Schema.parse({
+      schemaVersion: 1,
+      trackLink: {
+        schemaVersion: 1,
+        projectId: result.projectId,
+        projectRevision: { ...result.revision, number: result.revision.number - 1 },
+        sequenceId: sequence.id,
+        captionTrackId: id(11),
+      },
+      sourceIdentity: value.identity.sourceIdentity,
+      transcriptArtifactIdentityKey: value.identity.key,
+      language: "en-US",
+      timelineRate: rate,
+      style: {
+        schemaVersion: 1,
+        typography: {
+          fontFamily: "Inter",
+          fontSizePx: 48,
+          fontWeight: 600,
+          fontStyle: "normal",
+          lineHeightPermille: 1_200,
+          foregroundColorRgba: "#ffffffff",
+        },
+        alignment: { horizontal: "center", vertical: "bottom" },
+      },
+      validationProfile: {
+        schemaVersion: 1,
+        maxLinesPerCue: 4,
+        maxCharactersPerLine: 100,
+        maxCharactersPerSecond: 1_000,
+        minimumCueDuration: createRationalTime(0, rate),
+        maximumCueDuration: createRationalTime(100, rate),
+        safeArea: {
+          topPermille: 30,
+          rightPermille: 80,
+          bottomPermille: 70,
+          leftPermille: 40,
+        },
+      },
+      cues: [
+        {
+          schemaVersion: 1,
+          cueId: "cue-1",
+          start: createRationalTime(1, rate),
+          end: createRationalTime(2, rate),
+          lines: [value.words[0]?.text ?? "word"],
+          anchor: { xPermille: 500, yPermille: 900 },
+          sourceLinks: [
+            {
+              transcriptArtifactIdentityKey: value.identity.key,
+              sourceStartUs: value.words[0]?.sourceStartUs ?? 100_000,
+              sourceEndUs: value.words[0]?.sourceEndUs ?? 200_000,
+              transcriptWordIds: [value.words[0]?.wordId ?? "words:0"],
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  return result;
+}
+
 function scope(value: TranscriptArtifactV1, project: ProjectProjection) {
   return { artifact: value, projection: project, sequenceId: id(2), trackId: id(10) };
 }
@@ -433,6 +510,27 @@ describe("transcript edit proposals", () => {
     ]);
   });
 
+  it("appends a corrected caption artifact after all captioned proposal geometry", async () => {
+    const value = artifact([
+      { startUs: 100_000, endUs: 200_000, text: "delete" },
+      { startUs: 400_000, endUs: 500_000, text: "keep" },
+    ]);
+    const project = activateCaptionTrack(projection(), value);
+
+    const result = await proposalForWordIds(value, project, ["words:0"]);
+
+    expect(result.commandGroup.commands.at(-1)?.type).toBe("ApplyCaptionArtifact");
+    expect(
+      result.commandGroup.commands
+        .slice(0, -1)
+        .every(({ type }) => type !== "ApplyCaptionArtifact"),
+    ).toBe(true);
+    const apply = result.commandGroup.commands.at(-1);
+    if (apply?.type !== "ApplyCaptionArtifact") throw new Error("Missing caption application");
+    expect(apply.trackId).toBe(id(11));
+    expect(apply.artifact.cues).toEqual([]);
+  });
+
   it("produces canonical deterministic proposals, command IDs, and fragment IDs", async () => {
     const value = artifact([
       { startUs: 100_000, endUs: 200_000 },
@@ -469,6 +567,12 @@ describe("transcript edit proposals", () => {
     ).toBe(true);
     expect(new Set(generatedIds).size).toBe(generatedIds.length);
     expect(Object.isFrozen(one)).toBe(true);
+
+    const captionedProject = activateCaptionTrack(project, value);
+    const captionedOne = await proposalForWordIds(value, captionedProject, ["words:0"]);
+    const captionedTwo = await proposalForWordIds(value, captionedProject, ["words:0"]);
+    expect(captionedOne).toEqual(captionedTwo);
+    expect(captionedOne.commandGroup.commands.at(-1)?.type).toBe("ApplyCaptionArtifact");
   });
 
   it("compiles whole, leading, trailing, and middle removals into linked command shapes", async () => {

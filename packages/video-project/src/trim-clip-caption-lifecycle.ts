@@ -1,8 +1,6 @@
 import {
-  VideoDomainError,
   commandGroupRequestSchema,
   createRationalTime,
-  isTrackLocked,
   moveClipCommandSchemaV2,
   projectProjectionSchema,
   rateOf,
@@ -17,9 +15,13 @@ import {
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
 import {
-  identitiesEqual,
-  projectTranscriptToCandidateTimeline,
-} from "./transcript-edit-mapping.js";
+  buildApplyCaptionArtifactCommand,
+  captionLifecycleError,
+  freezeLifecycleResult,
+  resolveCaptionLifecycleContext,
+  type CaptionLifecycleFailureReasons,
+} from "./caption-lifecycle-context.js";
+import { projectTranscriptToCandidateTimeline } from "./transcript-edit-mapping.js";
 import { remapCaptionArtifactV1AgainstCandidateState } from "./transcript-caption-remap.js";
 import type { CaptionRemapReport } from "./transcript-caption-remap-result.js";
 
@@ -41,22 +43,22 @@ export interface PrepareTrimClipCaptionLifecycleV1Result {
   readonly report: CaptionRemapReport;
 }
 
-function lifecycleError(
-  code: "invalid_project" | "invalid_range",
-  message: string,
-  reason: string,
-  details: Readonly<Record<string, unknown>> = {},
-): VideoDomainError {
-  return new VideoDomainError(code, message, { reason, ...details });
-}
-
-function freezeDeep<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) freezeDeep(child);
-    Object.freeze(value);
-  }
-  return value;
-}
+const trimCaptionLifecycleFailureReasons = Object.freeze({
+  sequenceMissing: "trim_sequence_missing",
+  sourceTrackMissing: "trim_source_track_missing",
+  sourceTrackLocked: "trim_source_track_locked",
+  sourceClipMissing: "trim_clip_missing",
+  sourceLineageMismatch: "trim_clip_source_lineage_mismatch",
+  sourceLineageAmbiguous: "trim_clip_source_lineage_mismatch",
+  captionTrackMissing: "caption_track_missing",
+  captionTrackLocked: "caption_track_locked",
+  activeArtifactMissing: "active_caption_artifact_missing",
+  captionProjectMismatch: "caption_project_mismatch",
+  captionSequenceMismatch: "caption_remap_stale_identity",
+  captionTrackMismatch: "caption_remap_stale_identity",
+  captionRevisionStale: "caption_remap_stale_revision",
+  transcriptLineageMismatch: "caption_transcript_lineage_mismatch",
+} satisfies CaptionLifecycleFailureReasons);
 
 function timesEqual(
   left: TrimClipCommandV2["sourceIn"],
@@ -79,56 +81,20 @@ export function prepareTrimClipCaptionLifecycleV1(
     input.moveCommand === undefined ? undefined : moveClipCommandSchemaV2.parse(input.moveCommand);
   const candidateState = videoProjectStateV2Schema.parse(projection.state);
 
-  const sequence = candidateState.sequences.find(({ id }) => id === trimCommand.sequenceId);
-  if (sequence === undefined) {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target sequence does not exist",
-      "trim_sequence_missing",
-      { sequenceId: trimCommand.sequenceId },
-    );
-  }
-
-  const sourceTrack = sequence.tracks.find(({ id }) => id === trimCommand.trackId);
-  if (sourceTrack === undefined || sourceTrack.kind === "caption") {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target media track does not exist",
-      "trim_source_track_missing",
-      { trackId: trimCommand.trackId },
-    );
-  }
-  if (isTrackLocked(sourceTrack)) {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target media track is locked",
-      "trim_source_track_locked",
-      { trackId: sourceTrack.id },
-    );
-  }
-
-  const clip = sourceTrack.clips.find(({ id }) => id === trimCommand.clipId);
-  if (clip === undefined) {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target clip does not exist",
-      "trim_clip_missing",
-      { clipId: trimCommand.clipId },
-    );
-  }
-  const sourceAssetId = clip.source.kind === "asset" ? clip.source.assetId : undefined;
-  const sourceAsset =
-    sourceAssetId === undefined
-      ? undefined
-      : candidateState.assets.find(({ id }) => id === sourceAssetId);
-  if (sourceAsset?.contentIdentity === undefined) {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target clip does not have an identified media source",
-      "trim_clip_source_lineage_mismatch",
-      { clipId: clip.id },
-    );
-  }
+  const context = resolveCaptionLifecycleContext({
+    projection,
+    transcript,
+    state: candidateState,
+    sequenceId: trimCommand.sequenceId,
+    sourceTrackId: trimCommand.trackId,
+    sourceClipId: trimCommand.clipId,
+    captionTrackIds: [input.captionTrackId],
+    reasons: trimCaptionLifecycleFailureReasons,
+  });
+  const { sequence, sourceTrack, sourceAsset } = context;
+  const clip = context.sourceClip!;
+  const activeCaption = context.activeCaptionTracks[0]!;
+  const { track: captionTrack, artifact: activeArtifact } = activeCaption;
   const sourceDuration = rescaleRationalTime(
     createRationalTime(sourceAsset.probe.durationMicroseconds, {
       numerator: 1_000_000,
@@ -143,7 +109,7 @@ export function prepareTrimClipCaptionLifecycleV1(
     !ratesEqual(rateOf(trimCommand.sourceIn), rateOf(trimCommand.sourceOut)) ||
     !ratesEqual(rateOf(trimCommand.sourceIn), rateOf(clip.sourceIn))
   ) {
-    throw lifecycleError(
+    throw captionLifecycleError(
       "invalid_range",
       "Trim source geometry is invalid",
       "trim_geometry_invalid",
@@ -159,7 +125,7 @@ export function prepareTrimClipCaptionLifecycleV1(
       moveCommand.trackId !== trimCommand.trackId ||
       moveCommand.clipId !== trimCommand.clipId
     ) {
-      throw lifecycleError(
+      throw captionLifecycleError(
         "invalid_project",
         "Trim move must target the same clip",
         "trim_move_target_mismatch",
@@ -170,7 +136,7 @@ export function prepareTrimClipCaptionLifecycleV1(
       moveCommand.timelineStart.value < 0 ||
       !ratesEqual(rateOf(moveCommand.timelineStart), rateOf(clip.timelineStart))
     ) {
-      throw lifecycleError(
+      throw captionLifecycleError(
         "invalid_range",
         "Trim move geometry is invalid",
         "trim_move_geometry_invalid",
@@ -181,64 +147,10 @@ export function prepareTrimClipCaptionLifecycleV1(
   const moveChangesTimeline =
     moveCommand !== undefined && !timesEqual(moveCommand.timelineStart, clip.timelineStart);
   if (!trimChangesSource && !moveChangesTimeline) {
-    throw lifecycleError(
+    throw captionLifecycleError(
       "invalid_range",
       "Trim geometry does not change the clip",
       "trim_geometry_no_op",
-      { clipId: clip.id },
-    );
-  }
-
-  const captionTrack = sequence.tracks.find(({ id }) => id === input.captionTrackId);
-  if (captionTrack === undefined || captionTrack.kind !== "caption") {
-    throw lifecycleError(
-      "invalid_project",
-      "Caption target track does not exist",
-      "caption_track_missing",
-      { trackId: input.captionTrackId },
-    );
-  }
-  if (isTrackLocked(captionTrack)) {
-    throw lifecycleError(
-      "invalid_project",
-      "Caption target track is locked",
-      "caption_track_locked",
-      { trackId: captionTrack.id },
-    );
-  }
-  const activeArtifact = captionTrack.activeCaptionArtifact;
-  if (activeArtifact === undefined) {
-    throw lifecycleError(
-      "invalid_project",
-      "Caption target track has no active artifact",
-      "active_caption_artifact_missing",
-      { trackId: captionTrack.id },
-    );
-  }
-  if (activeArtifact.trackLink.projectId !== projection.projectId) {
-    throw lifecycleError(
-      "invalid_project",
-      "Active caption artifact belongs to another project",
-      "caption_project_mismatch",
-      { trackId: captionTrack.id },
-    );
-  }
-  if (
-    transcript.identity.key !== activeArtifact.transcriptArtifactIdentityKey ||
-    !identitiesEqual(transcript.identity.sourceIdentity, activeArtifact.sourceIdentity)
-  ) {
-    throw lifecycleError(
-      "invalid_project",
-      "Transcript lineage does not match the active caption artifact",
-      "caption_transcript_lineage_mismatch",
-      { trackId: captionTrack.id },
-    );
-  }
-  if (!identitiesEqual(sourceAsset.contentIdentity, transcript.identity.sourceIdentity)) {
-    throw lifecycleError(
-      "invalid_project",
-      "Trim target clip does not match the caption transcript source",
-      "trim_clip_source_lineage_mismatch",
       { clipId: clip.id },
     );
   }
@@ -267,15 +179,13 @@ export function prepareTrimClipCaptionLifecycleV1(
     commands: [
       trimCommand,
       ...(moveCommand === undefined ? [] : [moveCommand]),
-      {
-        type: "ApplyCaptionArtifact",
-        commandId: input.applyCaptionArtifactCommandId,
-        sequenceId: sequence.id,
-        trackId: captionTrack.id,
-        artifact: remapped.artifact,
-      },
+      buildApplyCaptionArtifactCommand(
+        input.applyCaptionArtifactCommandId,
+        captionTrack,
+        remapped.artifact,
+      ),
     ],
   });
 
-  return freezeDeep({ commandGroup, report: remapped.report });
+  return freezeLifecycleResult({ commandGroup, report: remapped.report });
 }

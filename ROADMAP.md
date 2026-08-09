@@ -2,7 +2,7 @@
 
 - **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 9 August 2026 (Phase 5 trim-caption lifecycle verified and closed; broader Phase 4 and Phase 5 scope remains open)
+- **Implementation audit:** 9 August 2026 (Phase 5 trim- and split-caption lifecycle slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -634,6 +634,7 @@ Completed foundation slices:
 - Versioned caption contracts, deterministic caption generation, and candidate-state remapping
 - Persistent `ApplyCaptionArtifact` command handling with grouped-command undo, redo, journal replay, and stale-lineage rejection
 - Trim-caption lifecycle preparation and desktop integration: complete trim geometry includes optional `MoveClip`; caption-aware groups are ordered `TrimClip` → optional `MoveClip` → `ApplyCaptionArtifact`; missing, ambiguous, or stale transcript lineage fails closed; caption-free timelines retain the bare-trim fallback
+- Split-caption lifecycle preparation and desktop integration: a standalone contiguous `SplitClip` replays and validates the candidate state, requires retained and artifact-invariant captions, and persists no replacement artifact; transcript-generated edits preserve right-to-left `SplitClip` → optional `SplitClip` → `RippleDeleteClip` geometry, remap once against the complete candidate state, then append deterministic `ApplyCaptionArtifact` commands in caption-track order. Missing, stale, ambiguous, inexact, unsupported, unsafe, or over-100-command groups fail closed before backend submission; caption-free splits and proposals retain bare geometry. Native commit, undo, redo, rejection, journal replay, and checkpoint tests verify atomic ordering and caption provenance.
 
 Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
 
@@ -645,6 +646,15 @@ Open Phase 5 scope remains planned; this checkpoint does not claim completion of
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml trim_clip_caption_lifecycle_is_atomic_across_history_and_recovery --lib` — 1 passed
 - `pnpm --filter @supa-video/desktop exec tsc -b --pretty false` — passed
 - `pnpm exec prettier --check apps/desktop/src/use-video-project.ts apps/desktop/src/use-video-project.test.tsx packages/video-project/src/trim-clip-caption-lifecycle.ts packages/video-project/src/trim-clip-caption-lifecycle.test.ts` and `git diff --check` — passed
+
+### Verification actually run for the closed split-caption slice
+
+- `pnpm --filter @supa-video/project exec vitest run src/transcript-caption-remap.test.ts src/split-clip-caption-lifecycle.test.ts src/transcript-edit.test.ts` — 50 passed
+- `pnpm --filter @supa-video/desktop exec vitest run src/use-video-project.test.tsx` — 36 passed
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml split_clip_caption_lifecycle --lib` — 1 passed
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml transcript_edit_caption_lifecycle --lib` — 1 passed
+- `pnpm --filter @supa-video/project check && pnpm --filter @supa-video/desktop check` — passed
+- `pnpm exec prettier --check` on the changed TypeScript files, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, and `git diff --check` — passed
 
 ## Scope
 

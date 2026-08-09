@@ -13,6 +13,7 @@ import {
 } from "@supa-video/contracts";
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
+import { prepareTranscriptEditCaptionLifecycleV1 } from "./split-clip-caption-lifecycle.js";
 import {
   compileCommandDrafts,
   derivedUuid,
@@ -342,7 +343,14 @@ export async function createTranscriptEditProposal(
       { commandCount: drafts.length, commandLimit: 100 },
     );
   }
-  const commands = await materializeCommands(drafts, seed);
+  const geometryCommands = await materializeCommands(drafts, seed);
+  const commands = await prepareTranscriptEditCaptionLifecycleV1({
+    projection: scope.projection,
+    transcriptArtifact: input.artifact,
+    commands: geometryCommands,
+    createCommandId: (captionTrackId, ordinal) =>
+      derivedUuid(seed, `caption-application:${ordinal}:${captionTrackId}`),
+  });
   const groupId = await derivedUuid(seed, "command-group");
   const commandGroup = commandGroupRequestSchema.parse({
     groupId,
