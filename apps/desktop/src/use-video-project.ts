@@ -39,6 +39,10 @@ import {
 } from "@supa-video/render";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  resolveManagedTranscriptArtifacts,
+  selectAffectedCaptionReferences,
+} from "./managed-transcript-resolution";
 import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
 
 export type PreparationState =
@@ -69,27 +73,19 @@ export type TimelineEditOperation =
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
-  readonly transcriptArtifact?: TranscriptArtifactV1;
 }
 export interface MoveTimelineClipInput {
   readonly clipId: string;
   readonly timelineStartFrame: number;
-  readonly transcriptArtifact?: TranscriptArtifactV1;
-}
-export interface TrimCaptionContext {
-  readonly captionTrackId: string;
-  readonly transcript: TranscriptArtifactV1;
 }
 export interface TrimTimelineClipInput {
   readonly clipId: string;
   readonly sourceInFrame: number;
   readonly sourceOutFrame: number;
   readonly timelineStartFrame: number;
-  readonly captionContext?: TrimCaptionContext;
 }
 export interface RippleDeleteTimelineClipInput {
   readonly clipId: string;
-  readonly transcriptArtifacts?: readonly TranscriptArtifactV1[];
 }
 export interface SetTimelineClipOpacityInput {
   readonly sequenceId: string;
@@ -1081,23 +1077,51 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [activateProjection, cancelRenderForProjectSwitch],
   );
-  const executeTimelineCommandGroup = useCallback(
+  const runTimelineEdit = useCallback(
     async (
       base: ProjectProjection,
       operationKind: TimelineEditOperation,
-      commands: readonly ProjectCommandV2[],
-      groupId = newId(),
-    ) => {
+      prepare: (isCurrent: () => boolean) =>
+        | Promise<{
+            readonly commands: readonly ProjectCommandV2[];
+            readonly groupId?: string;
+          } | null>
+        | {
+            readonly commands: readonly ProjectCommandV2[];
+            readonly groupId?: string;
+          }
+        | null,
+    ): Promise<boolean> => {
+      if (editOperationPendingRef.current || stateRef.current.projection !== base) return false;
+
       const operation = ++editOperationRef.current;
       editOperationPendingRef.current = true;
       setEditOperation({ phase: "saving", operation: operationKind });
-      const request = buildCommandGroup({
-        groupId,
-        projectId: base.projectId,
-        baseRevision: base.revision.number,
-        commands: commands.map((command) => buildProjectCommand(command)),
-      });
+      const isCurrent = (): boolean => {
+        if (operation !== editOperationRef.current) return false;
+        const current = stateRef.current.projection;
+        if (current === base && current.revision.number === base.revision.number) return true;
+        throw new VideoDomainError(
+          "stale_revision",
+          "The project changed while the timeline edit was being prepared",
+          {
+            reason: "timeline_edit_stale_revision",
+            baseRevision: base.revision.number,
+            currentRevision: current?.revision.number,
+          },
+        );
+      };
+
       try {
+        const prepared = await prepare(isCurrent);
+        if (prepared === null || !isCurrent()) return false;
+        const request = buildCommandGroup({
+          groupId: prepared.groupId ?? newId(),
+          projectId: base.projectId,
+          baseRevision: base.revision.number,
+          commands: prepared.commands.map((command) => buildProjectCommand(command)),
+        });
+        if (!isCurrent()) return false;
         const result = await backend.executeVideoProjectGroup(request);
         if (result.groupId !== request.groupId)
           throw new Error("The desktop service returned a mismatched edit");
@@ -1113,6 +1137,15 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       }
     },
     [activateEditResult, backend],
+  );
+  const executeTimelineCommandGroup = useCallback(
+    (
+      base: ProjectProjection,
+      operationKind: TimelineEditOperation,
+      commands: readonly ProjectCommandV2[],
+      groupId = newId(),
+    ) => runTimelineEdit(base, operationKind, () => ({ commands, groupId })),
+    [runTimelineEdit],
   );
   const applyTranscriptEditProposal = useCallback(
     async (proposal: TranscriptEditProposal, artifact: TranscriptArtifactV1): Promise<boolean> => {
@@ -1147,7 +1180,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [activateEditResult, backend],
   );
   const splitTimelineClip = useCallback(
-    async ({ clipId, sourceFrame, transcriptArtifact }: SplitTimelineClipInput) => {
+    async ({ clipId, sourceFrame }: SplitTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
       if (
@@ -1170,22 +1203,44 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         }),
         rightClipId: newId(),
       };
-      try {
+      return runTimelineEdit(base, "split", async (isCurrent) => {
+        const captionReferences = selectAffectedCaptionReferences(base, {
+          type: "split",
+          sequenceId: command.sequenceId,
+        });
+        const transcriptKeys = new Set(
+          captionReferences.map(
+            ({ activeCaptionArtifact }) => activeCaptionArtifact.transcriptArtifactIdentityKey,
+          ),
+        );
+        if (transcriptKeys.size > 1)
+          throw new VideoDomainError(
+            "invalid_project",
+            "Split cannot update active caption artifacts from multiple transcripts",
+            {
+              reason: "managed_transcript_context_ambiguous",
+              transcriptArtifactCount: transcriptKeys.size,
+            },
+          );
+        const [resolvedTranscript] = await resolveManagedTranscriptArtifacts(
+          captionReferences,
+          backend.loadManagedTranscriptArtifact,
+        );
+        if (!isCurrent()) return null;
         const commands = prepareSplitClipCaptionLifecycleV1({
           projection: base,
-          ...(transcriptArtifact === undefined ? {} : { transcriptArtifact }),
+          ...(resolvedTranscript === undefined
+            ? {}
+            : { transcriptArtifact: resolvedTranscript.artifact }),
           command,
         });
-        return await executeTimelineCommandGroup(base, "split", commands);
-      } catch (error) {
-        setEditOperation({ phase: "error", operation: "split", error: asError(error) });
-        return false;
-      }
+        return { commands };
+      });
     },
-    [executeTimelineCommandGroup],
+    [backend, runTimelineEdit],
   );
   const moveTimelineClip = useCallback(
-    async ({ clipId, timelineStartFrame, transcriptArtifact }: MoveTimelineClipInput) => {
+    async ({ clipId, timelineStartFrame }: MoveTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
       if (
@@ -1207,20 +1262,43 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           denominator: selection.clip.timelineStart.rateDenominator,
         }),
       };
-      try {
+      return runTimelineEdit(base, "move", async (isCurrent) => {
+        const captionReferences = selectAffectedCaptionReferences(base, {
+          type: "move",
+          sequenceId: command.sequenceId,
+        });
+        const transcriptKeys = new Set(
+          captionReferences.map(
+            ({ activeCaptionArtifact }) => activeCaptionArtifact.transcriptArtifactIdentityKey,
+          ),
+        );
+        if (transcriptKeys.size > 1)
+          throw new VideoDomainError(
+            "invalid_project",
+            "Move cannot update active caption artifacts from multiple transcripts",
+            {
+              reason: "managed_transcript_context_ambiguous",
+              transcriptArtifactCount: transcriptKeys.size,
+            },
+          );
+        const [resolvedTranscript] = await resolveManagedTranscriptArtifacts(
+          captionReferences,
+          backend.loadManagedTranscriptArtifact,
+        );
+        if (!isCurrent()) return null;
         const commands = await prepareMoveClipCaptionLifecycleV1({
           projection: base,
-          ...(transcriptArtifact === undefined ? {} : { transcriptArtifact }),
+          ...(resolvedTranscript === undefined
+            ? {}
+            : { transcriptArtifact: resolvedTranscript.artifact }),
           command,
           createCommandId: () => newId(),
         });
-        return executeTimelineCommandGroup(base, "move", commands);
-      } catch (error) {
-        setEditOperation({ phase: "error", operation: "move", error: asError(error) });
-        return false;
-      }
+        if (!isCurrent()) return null;
+        return { commands };
+      });
     },
-    [executeTimelineCommandGroup],
+    [backend, runTimelineEdit],
   );
   const trimTimelineClip = useCallback(
     async ({
@@ -1228,7 +1306,6 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       sourceInFrame,
       sourceOutFrame,
       timelineStartFrame,
-      captionContext,
     }: TrimTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
@@ -1279,59 +1356,50 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         trimCommand,
         ...(moveCommand === undefined ? [] : [moveCommand]),
       ];
-      const activeCaptionTracks = selection.sequence.tracks.filter(
-        (track) => track.kind === "caption" && track.activeCaptionArtifact !== undefined,
-      );
-      if (activeCaptionTracks.length === 0)
-        return executeTimelineCommandGroup(base, "trim", commands);
-
-      try {
-        if (activeCaptionTracks.length !== 1)
+      return runTimelineEdit(base, "trim", async (isCurrent) => {
+        const captionReferences = selectAffectedCaptionReferences(base, {
+          type: "trim",
+          sequenceId: trimCommand.sequenceId,
+        });
+        if (captionReferences.length === 0) return { commands };
+        if (captionReferences.length !== 1)
           throw new VideoDomainError(
             "invalid_project",
             "Trim cannot update multiple active caption artifacts from one transcript context",
             {
               reason: "trim_caption_context_ambiguous",
-              captionTrackCount: activeCaptionTracks.length,
+              captionTrackCount: captionReferences.length,
             },
           );
-        const activeCaptionTrack = activeCaptionTracks[0]!;
-        if (captionContext === undefined)
+        const captionReference = captionReferences[0]!;
+        const [resolvedTranscript] = await resolveManagedTranscriptArtifacts(
+          captionReferences,
+          backend.loadManagedTranscriptArtifact,
+        );
+        if (!isCurrent()) return null;
+        if (resolvedTranscript === undefined)
           throw new VideoDomainError(
             "invalid_project",
-            "Trim requires transcript context while captions are active",
-            { reason: "trim_caption_context_missing", captionTrackId: activeCaptionTrack.id },
-          );
-        if (captionContext.captionTrackId !== activeCaptionTrack.id)
-          throw new VideoDomainError(
-            "invalid_project",
-            "Trim transcript context does not identify the active caption track",
-            {
-              reason: "trim_caption_context_mismatch",
-              activeCaptionTrackId: activeCaptionTrack.id,
-              contextCaptionTrackId: captionContext.captionTrackId,
-            },
+            "Trim requires a managed transcript while captions are active",
+            { reason: "managed_transcript_artifact_missing" },
           );
         const groupId = newId();
         const prepared = prepareTrimClipCaptionLifecycleV1({
           projection: base,
-          transcript: captionContext.transcript,
+          transcript: resolvedTranscript.artifact,
           trimCommand,
           ...(moveCommand === undefined ? {} : { moveCommand }),
-          captionTrackId: activeCaptionTrack.id,
+          captionTrackId: captionReference.captionTrackId,
           groupId,
           applyCaptionArtifactCommandId: newId(),
         });
-        return executeTimelineCommandGroup(base, "trim", prepared.commandGroup.commands, groupId);
-      } catch (error) {
-        setEditOperation({ phase: "error", operation: "trim", error: asError(error) });
-        return false;
-      }
+        return { commands: prepared.commandGroup.commands, groupId };
+      });
     },
-    [executeTimelineCommandGroup],
+    [backend, runTimelineEdit],
   );
   const rippleDeleteTimelineClip = useCallback(
-    async ({ clipId, transcriptArtifacts }: RippleDeleteTimelineClipInput): Promise<boolean> => {
+    async ({ clipId }: RippleDeleteTimelineClipInput): Promise<boolean> => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
       if (base === null || selection === null) return false;
@@ -1342,20 +1410,29 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         trackId: selection.track.id,
         clipId: selection.clip.id,
       };
-      try {
+      return runTimelineEdit(base, "ripple-delete", async (isCurrent) => {
+        const captionReferences = selectAffectedCaptionReferences(base, {
+          type: "ripple-delete",
+          sequenceId: command.sequenceId,
+          trackId: command.trackId,
+          clipId: command.clipId,
+        });
+        const resolvedTranscripts = await resolveManagedTranscriptArtifacts(
+          captionReferences,
+          backend.loadManagedTranscriptArtifact,
+        );
+        if (!isCurrent()) return null;
         const commands = await prepareRippleDeleteClipCaptionLifecycleV1({
           projection: base,
-          ...(transcriptArtifacts === undefined ? {} : { transcriptArtifacts }),
+          transcriptArtifacts: resolvedTranscripts.map(({ artifact }) => artifact),
           command,
           createCommandId: () => newId(),
         });
-        return executeTimelineCommandGroup(base, "ripple-delete", commands);
-      } catch (error) {
-        setEditOperation({ phase: "error", operation: "ripple-delete", error: asError(error) });
-        return false;
-      }
+        if (!isCurrent()) return null;
+        return { commands };
+      });
     },
-    [executeTimelineCommandGroup],
+    [backend, runTimelineEdit],
   );
   const setTimelineClipOpacity = useCallback(
     async ({

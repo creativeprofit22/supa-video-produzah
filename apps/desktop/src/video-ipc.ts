@@ -384,7 +384,7 @@ export interface VideoBackend {
   readonly reauthorizeMediaJobOutput: typeof reauthorizeMediaJobOutput;
   readonly getMediaCacheStatus: typeof getMediaCacheStatus;
   readonly clearLegacyMediaCache: typeof clearLegacyMediaCache;
-  readonly loadManagedTranscriptArtifact?: typeof loadManagedTranscriptArtifact;
+  readonly loadManagedTranscriptArtifact: typeof loadManagedTranscriptArtifact;
   readonly listenMediaJobEvents: typeof listenMediaJobEvents;
   readonly convertFileSrc: typeof convertFileSrc;
 }

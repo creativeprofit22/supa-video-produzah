@@ -222,6 +222,19 @@ const transcriptArtifact = transcriptArtifactV1Schema.parse({
   },
 });
 
+function managedTranscriptLoader(...artifacts: readonly (typeof transcriptArtifact)[]) {
+  const artifactsByKey = new Map(artifacts.map((artifact) => [artifact.identity.key, artifact]));
+  return vi.fn<VideoBackend["loadManagedTranscriptArtifact"]>(async (key) => {
+    const artifact = artifactsByKey.get(key);
+    if (artifact === undefined)
+      throw new VideoDomainError("invalid_project", "Managed transcript fixture is missing", {
+        category: "cache_miss",
+        path: "C:\\private\\transcripts",
+      });
+    return structuredClone(artifact);
+  });
+}
+
 function captionedProjection(revision = 1): ProjectProjection {
   const projection = clipProjection(revision);
   const sequence = projection.state.sequences[0]!;
@@ -524,6 +537,9 @@ function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
     clearLegacyMediaCache: vi.fn(async () => {
       throw new Error("unexpected legacy cache clear");
     }),
+    loadManagedTranscriptArtifact: vi.fn(async () => {
+      throw new Error("unexpected managed transcript load");
+    }),
     listenMediaJobEvents: vi.fn(async () => () => undefined),
     convertFileSrc: vi.fn((path: string) => `asset:${path}`),
     ...overrides,
@@ -718,6 +734,7 @@ describe("canonical project controller", () => {
       active = next;
       return response;
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => ({
         projection: active,
@@ -731,6 +748,7 @@ describe("canonical project controller", () => {
         },
       })),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -755,6 +773,7 @@ describe("canonical project controller", () => {
     );
 
     const requests = execute.mock.calls.map(([request]) => request);
+    expect(loadManagedTranscriptArtifact).not.toHaveBeenCalled();
     expect(requests.map(({ baseRevision }) => baseRevision)).toEqual([1, 2, 3, 4]);
     expect(new Set(requests.map(({ groupId }) => groupId))).toHaveLength(4);
     expect(requests[0]!.commands).toEqual([
@@ -785,16 +804,18 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
-  it("validates a captioned manual split and submits only SplitClip", async () => {
+  it("loads a captioned split transcript automatically and submits only SplitClip", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn(async (request: CommandGroupRequest) => {
       const next = structuredClone(opened);
       next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
       return commandResult(opened, next, request.groupId);
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -803,23 +824,26 @@ describe("canonical project controller", () => {
       result.current.splitTimelineClip({
         clipId: id(5),
         sourceFrame: 20,
-        transcriptArtifact,
       }),
     );
 
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledOnce();
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledWith(transcriptArtifact.identity.key);
     expect(execute).toHaveBeenCalledOnce();
     expect(execute.mock.calls[0]![0].commands.map(({ type }) => type)).toEqual(["SplitClip"]);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
-  it("fails captioned manual splits before backend submission for missing or stale lineage", async () => {
+  it("fails captioned splits before submission for missing, stale, or mismatched artifacts", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn(async () => {
       throw new Error("unexpected split submission");
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader();
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -829,16 +853,16 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toMatchObject({
       phase: "error",
       operation: "split",
-      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+      error: { details: { reason: "managed_transcript_artifact_missing" } },
     });
 
     const staleTranscript = structuredClone(transcriptArtifact);
-    staleTranscript.identity.key = "ff".repeat(32);
+    staleTranscript.identity.sourceIdentity = secondarySourceIdentity;
+    loadManagedTranscriptArtifact.mockResolvedValue(staleTranscript);
     await act(() =>
       result.current.splitTimelineClip({
         clipId: id(5),
         sourceFrame: 20,
-        transcriptArtifact: staleTranscript,
       }),
     );
     expect(execute).not.toHaveBeenCalled();
@@ -847,9 +871,75 @@ describe("canonical project controller", () => {
       operation: "split",
       error: { details: { reason: "caption_lifecycle_transcript_lineage_mismatch" } },
     });
+
+    const mismatchedTranscript = structuredClone(transcriptArtifact);
+    mismatchedTranscript.identity.key = secondaryTranscriptKey;
+    loadManagedTranscriptArtifact.mockResolvedValue(mismatchedTranscript);
+    await act(() => result.current.splitTimelineClip({ clipId: id(5), sourceFrame: 20 }));
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "split",
+      error: { details: { reason: "managed_transcript_artifact_key_mismatch" } },
+    });
+    expect(result.current.projection).toBe(opened);
   });
 
-  it("submits a standalone move before its caption correction in one atomic group", async () => {
+  it("owns pending state across managed loading and abandons a stale continuation", async () => {
+    const opened = captionedProjection(1);
+    const newer = captionedProjection(2);
+    let resolveLoad!: (artifact: typeof transcriptArtifact) => void;
+    const loadManagedTranscriptArtifact = vi.fn<VideoBackend["loadManagedTranscriptArtifact"]>(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    const execute = vi.fn();
+    const openVideoProject = vi
+      .fn<VideoBackend["openVideoProject"]>()
+      .mockResolvedValueOnce(cleanOpenResult(opened))
+      .mockResolvedValueOnce(cleanOpenResult(newer));
+    const backend = createBackend({
+      openVideoProject,
+      executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let pendingEdit!: Promise<boolean>;
+    act(() => {
+      pendingEdit = result.current.splitTimelineClip({ clipId: id(5), sourceFrame: 20 });
+    });
+    await waitFor(() =>
+      expect(result.current.editOperation).toEqual({ phase: "saving", operation: "split" }),
+    );
+
+    let secondOutcome: boolean | undefined;
+    await act(async () => {
+      secondOutcome = await result.current.moveTimelineClip({
+        clipId: id(5),
+        timelineStartFrame: 5,
+      });
+    });
+    expect(secondOutcome).toBe(false);
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+
+    await act(() => result.current.openProject());
+    expect(result.current.projection).toBe(newer);
+    await act(async () => {
+      resolveLoad(transcriptArtifact);
+      expect(await pendingEdit).toBe(false);
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(newer);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("loads a standalone move transcript before its caption correction in one atomic group", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn(async (request: CommandGroupRequest) => {
       commandGroupRequestSchema.parse(request);
@@ -857,9 +947,11 @@ describe("canonical project controller", () => {
       next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
       return commandResult(opened, next, request.groupId);
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -868,10 +960,10 @@ describe("canonical project controller", () => {
       result.current.moveTimelineClip({
         clipId: id(5),
         timelineStartFrame: 5,
-        transcriptArtifact,
       }),
     );
 
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledWith(transcriptArtifact.identity.key);
     expect(execute).toHaveBeenCalledOnce();
     const request = execute.mock.calls[0]![0];
     expect(request.commands.map(({ type }) => type)).toEqual(["MoveClip", "ApplyCaptionArtifact"]);
@@ -891,12 +983,14 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
-  it("rejects captioned standalone moves before submission when lineage is missing or stale", async () => {
+  it("rejects captioned standalone moves for a missing artifact or stale lineage", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn();
+    const loadManagedTranscriptArtifact = managedTranscriptLoader();
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -906,16 +1000,16 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toMatchObject({
       phase: "error",
       operation: "move",
-      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+      error: { details: { reason: "managed_transcript_artifact_missing" } },
     });
 
     const staleTranscript = structuredClone(transcriptArtifact);
-    staleTranscript.identity.key = "cd".repeat(32);
+    staleTranscript.identity.sourceIdentity = secondarySourceIdentity;
+    loadManagedTranscriptArtifact.mockResolvedValue(staleTranscript);
     await act(() =>
       result.current.moveTimelineClip({
         clipId: id(5),
         timelineStartFrame: 5,
-        transcriptArtifact: staleTranscript,
       }),
     );
     expect(execute).not.toHaveBeenCalled();
@@ -962,10 +1056,12 @@ describe("canonical project controller", () => {
       undone.canRedo = true;
       return commandResult(applied, undone, operationId);
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
       undoVideoProject: undo,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -976,10 +1072,10 @@ describe("canonical project controller", () => {
         sourceInFrame: 10,
         sourceOutFrame: 50,
         timelineStartFrame: 5,
-        captionContext: { captionTrackId: id(6), transcript: transcriptArtifact },
       }),
     );
 
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledWith(transcriptArtifact.identity.key);
     expect(execute).toHaveBeenCalledOnce();
     const request = execute.mock.calls[0]![0];
     expect(request.commands.map(({ type }) => type)).toEqual([
@@ -1015,14 +1111,15 @@ describe("canonical project controller", () => {
   it("rejects stale transcript lineage without submitting a trim", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn();
+    const staleTranscript = structuredClone(transcriptArtifact);
+    staleTranscript.identity.sourceIdentity = secondarySourceIdentity;
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact: managedTranscriptLoader(staleTranscript),
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
-    const staleTranscript = structuredClone(transcriptArtifact);
-    staleTranscript.identity.key = "ff".repeat(32);
 
     await act(() =>
       result.current.trimTimelineClip({
@@ -1030,7 +1127,6 @@ describe("canonical project controller", () => {
         sourceInFrame: 10,
         sourceOutFrame: 50,
         timelineStartFrame: 0,
-        captionContext: { captionTrackId: id(6), transcript: staleTranscript },
       }),
     );
 
@@ -1046,7 +1142,7 @@ describe("canonical project controller", () => {
     expect(result.current.projection).toEqual(opened);
   });
 
-  it("fails closed when active captions have no transcript context", async () => {
+  it("fails closed when an active caption managed transcript is missing", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn();
     const backend = createBackend({
@@ -1069,9 +1165,49 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toMatchObject({
       phase: "error",
       operation: "trim",
-      error: { details: { reason: "trim_caption_context_missing" } },
+      error: { details: { reason: "managed_transcript_artifact_missing" } },
     });
     expect(result.current.projection).toEqual(opened);
+  });
+
+  it("preserves the ambiguous multi-caption trim failure without reading a transcript", async () => {
+    const opened = captionedProjection(1);
+    const sequence = opened.state.sequences[0]!;
+    const firstCaptionTrack = sequence.tracks.find((track) => track.kind === "caption");
+    if (firstCaptionTrack?.kind !== "caption") throw new Error("Expected caption track fixture");
+    const secondCaptionTrack = structuredClone(firstCaptionTrack);
+    secondCaptionTrack.id = id(7);
+    if (secondCaptionTrack.activeCaptionArtifact === undefined)
+      throw new Error("Expected active caption artifact fixture");
+    secondCaptionTrack.activeCaptionArtifact.trackLink.captionTrackId = id(7);
+    sequence.tracks.push(secondCaptionTrack);
+    const execute = vi.fn();
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 10,
+        sourceOutFrame: 50,
+        timelineStartFrame: 0,
+      }),
+    );
+
+    expect(loadManagedTranscriptArtifact).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "trim",
+      error: { details: { reason: "trim_caption_context_ambiguous" } },
+    });
+    expect(result.current.projection).toBe(opened);
   });
 
   it("sets clip opacity against each latest canonical revision and keeps transformed render readiness", async () => {
@@ -2261,11 +2397,13 @@ describe("canonical project controller", () => {
     const redo = vi.fn(async (_projectId: string, _base: number, operationId: string) =>
       commandResult(undone, redone, operationId),
     );
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
       undoVideoProject: undo,
       redoVideoProject: redo,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
@@ -2276,6 +2414,7 @@ describe("canonical project controller", () => {
     });
 
     expect(outcome).toBe(true);
+    expect(loadManagedTranscriptArtifact).not.toHaveBeenCalled();
     expect(execute).toHaveBeenCalledOnce();
     const request = execute.mock.calls[0]![0];
     expect(request.baseRevision).toBe(1);
@@ -2323,22 +2462,23 @@ describe("canonical project controller", () => {
       commandGroupRequestSchema.parse(request);
       return commandResult(opened, committed, request.groupId);
     });
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
 
     let outcome: boolean | undefined;
     await act(async () => {
-      outcome = await result.current.rippleDeleteTimelineClip({
-        clipId: id(5),
-        transcriptArtifacts: [transcriptArtifact],
-      });
+      outcome = await result.current.rippleDeleteTimelineClip({ clipId: id(5) });
     });
 
     expect(outcome).toBe(true);
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledOnce();
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledWith(transcriptArtifact.identity.key);
     expect(execute).toHaveBeenCalledOnce();
     const request = execute.mock.calls[0]![0];
     expect(request.commands.map(({ type }) => type)).toEqual([
@@ -2367,22 +2507,22 @@ describe("canonical project controller", () => {
     const execute = vi.fn(async (request: CommandGroupRequest) =>
       commandResult(opened, committed, request.groupId),
     );
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
 
     let outcome: boolean | undefined;
     await act(async () => {
-      outcome = await result.current.rippleDeleteTimelineClip({
-        clipId: id(5),
-        transcriptArtifacts: [transcriptArtifact],
-      });
+      outcome = await result.current.rippleDeleteTimelineClip({ clipId: id(5) });
     });
 
     expect(outcome).toBe(true);
+    expect(loadManagedTranscriptArtifact).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledOnce();
     const commands = execute.mock.calls[0]![0].commands;
     expect(commands.map(({ type }) => type)).toEqual([
@@ -2402,6 +2542,59 @@ describe("canonical project controller", () => {
       [id(11), transcriptArtifact.identity.key],
       [id(10), transcriptArtifact.identity.key],
     ]);
+  });
+
+  it("loads each mixed-source ripple transcript once and applies every affected caption", async () => {
+    const opened = rippleCaptionedProjection(1);
+    const sequence = opened.state.sequences[0]!;
+    const sourceTrack = sequence.tracks[0]!;
+    if (sourceTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    const secondaryAssetId = id(20);
+    opened.state.assets.push({
+      ...structuredClone(opened.state.assets[0]!),
+      id: secondaryAssetId,
+      displayName: "secondary.mp4",
+      contentIdentity: secondarySourceIdentity,
+    });
+    opened.sources.push({
+      assetId: secondaryAssetId,
+      status: "resolved",
+      resolvedPath: "C:\\Media\\secondary.mp4",
+    });
+    sourceTrack.clips[1]!.source = { kind: "asset", assetId: secondaryAssetId };
+    addRippleCaptionTrack(opened, id(12), secondarySourceIdentity, secondaryTranscriptKey);
+    const secondaryTranscript = structuredClone(transcriptArtifact);
+    secondaryTranscript.identity.key = secondaryTranscriptKey;
+    secondaryTranscript.identity.sourceIdentity = secondarySourceIdentity;
+    const committed = structuredClone(opened);
+    committed.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+    const execute = vi.fn(async (request: CommandGroupRequest) =>
+      commandResult(opened, committed, request.groupId),
+    );
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(
+      transcriptArtifact,
+      secondaryTranscript,
+    );
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.rippleDeleteTimelineClip({ clipId: id(5) }));
+
+    expect(loadManagedTranscriptArtifact.mock.calls.map(([key]) => key)).toEqual([
+      transcriptArtifact.identity.key,
+      secondaryTranscriptKey,
+    ]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(
+      execute.mock.calls[0]![0].commands.map((command) =>
+        command.type === "ApplyCaptionArtifact" ? command.trackId : command.type,
+      ),
+    ).toEqual(["RippleDeleteClip", id(10), id(12)]);
   });
 
   it("fails closed when one mixed-source caption transcript is missing", async () => {
@@ -2424,19 +2617,18 @@ describe("canonical project controller", () => {
     sourceTrack.clips[1]!.source = { kind: "asset", assetId: secondaryAssetId };
     addRippleCaptionTrack(opened, id(12), secondarySourceIdentity, secondaryTranscriptKey);
     const execute = vi.fn();
+    const loadManagedTranscriptArtifact = managedTranscriptLoader(transcriptArtifact);
     const backend = createBackend({
       openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
+      loadManagedTranscriptArtifact,
     });
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
 
     let outcome: boolean | undefined;
     await act(async () => {
-      outcome = await result.current.rippleDeleteTimelineClip({
-        clipId: id(5),
-        transcriptArtifacts: [transcriptArtifact],
-      });
+      outcome = await result.current.rippleDeleteTimelineClip({ clipId: id(5) });
     });
 
     expect(outcome).toBe(false);
@@ -2444,7 +2636,7 @@ describe("canonical project controller", () => {
     expect(result.current.editOperation).toMatchObject({
       phase: "error",
       operation: "ripple-delete",
-      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+      error: { details: { reason: "managed_transcript_artifact_missing" } },
     });
     expect(result.current.projection).toBe(opened);
   });
@@ -2461,10 +2653,7 @@ describe("canonical project controller", () => {
 
     let outcome: boolean | undefined;
     await act(async () => {
-      outcome = await result.current.rippleDeleteTimelineClip({
-        clipId: id(999),
-        transcriptArtifacts: [transcriptArtifact],
-      });
+      outcome = await result.current.rippleDeleteTimelineClip({ clipId: id(999) });
     });
 
     expect(outcome).toBe(false);

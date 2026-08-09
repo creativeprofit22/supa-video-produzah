@@ -34,6 +34,56 @@ export interface PrepareRippleDeleteClipCaptionLifecycleV1Input {
 }
 
 export type PrepareRippleDeleteClipCaptionLifecycleV1Result = readonly ProjectCommandV2[];
+export type RippleDeleteAffectedCaptionTrackV1 = CaptionProjectTrack;
+
+export interface SelectRippleDeleteAffectedCaptionTracksV1Input {
+  readonly projection: ProjectProjection;
+  readonly sequenceId: string;
+  readonly trackId: string;
+  readonly clipId: string;
+}
+
+export function selectRippleDeleteAffectedCaptionTracksV1({
+  projection,
+  sequenceId,
+  trackId,
+  clipId,
+}: SelectRippleDeleteAffectedCaptionTracksV1Input): readonly RippleDeleteAffectedCaptionTrackV1[] {
+  const sequence = projection.state.sequences.find(({ id }) => id === sequenceId);
+  const track = sequence?.tracks.find(({ id }) => id === trackId);
+  if (sequence === undefined || track === undefined || track.kind === "caption") return [];
+
+  const targetIndex = track.clips.findIndex(({ id }) => id === clipId);
+  if (targetIndex < 0) return [];
+
+  const changedSourceIdentities: MediaContentIdentityV1[] = [];
+  for (const clip of track.clips.slice(targetIndex)) {
+    if (clip.source.kind !== "asset") continue;
+    const assetId = clip.source.assetId;
+    const identity = projection.state.assets.find(({ id }) => id === assetId)?.contentIdentity;
+    if (
+      identity !== undefined &&
+      !changedSourceIdentities.some((candidate) => identitiesEqual(candidate, identity))
+    ) {
+      changedSourceIdentities.push(identity);
+    }
+  }
+
+  const affectedCaptionTracks: CaptionProjectTrack[] = [];
+  for (const candidateTrack of sequence.tracks) {
+    if (candidateTrack.kind !== "caption") continue;
+    const activeArtifact = candidateTrack.activeCaptionArtifact;
+    if (
+      activeArtifact !== undefined &&
+      changedSourceIdentities.some((identity) =>
+        identitiesEqual(identity, activeArtifact.sourceIdentity),
+      )
+    ) {
+      affectedCaptionTracks.push(candidateTrack);
+    }
+  }
+  return affectedCaptionTracks;
+}
 
 function rippleFailure(
   reason: string,
@@ -126,33 +176,13 @@ export async function prepareRippleDeleteClipCaptionLifecycleV1(
     );
   }
 
-  const changedSourceIdentities: MediaContentIdentityV1[] = [];
-  for (const clip of track.clips.slice(targetIndex)) {
-    if (clip.source.kind !== "asset") continue;
-    const assetId = clip.source.assetId;
-    const identity = projection.state.assets.find(({ id }) => id === assetId)?.contentIdentity;
-    if (
-      identity !== undefined &&
-      !changedSourceIdentities.some((candidate) => identitiesEqual(candidate, identity))
-    ) {
-      changedSourceIdentities.push(identity);
-    }
-  }
-
+  const affectedCaptionTracks = selectRippleDeleteAffectedCaptionTracksV1({
+    projection,
+    sequenceId: command.sequenceId,
+    trackId: command.trackId,
+    clipId: command.clipId,
+  });
   const candidateState = replaySplitDeleteCommandsAgainstCandidateState(projection, [command]);
-  const affectedCaptionTracks: CaptionProjectTrack[] = [];
-  for (const candidateTrack of sequence.tracks) {
-    if (candidateTrack.kind !== "caption") continue;
-    const activeArtifact = candidateTrack.activeCaptionArtifact;
-    if (
-      activeArtifact !== undefined &&
-      changedSourceIdentities.some((identity) =>
-        identitiesEqual(identity, activeArtifact.sourceIdentity),
-      )
-    ) {
-      affectedCaptionTracks.push(candidateTrack);
-    }
-  }
   if (affectedCaptionTracks.length === 0) {
     return freezeLifecycleResult([command]);
   }

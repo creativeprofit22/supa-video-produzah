@@ -78,6 +78,9 @@ function mediaBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
         legacyClearAvailable: false,
       },
     })),
+    loadManagedTranscriptArtifact: vi.fn(async () => {
+      throw new Error("unexpected managed transcript load");
+    }),
     listenMediaJobEvents: vi.fn(async () => () => undefined),
     ...overrides,
   };

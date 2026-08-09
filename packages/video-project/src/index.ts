@@ -7,10 +7,15 @@ export type {
   PrepareMoveClipCaptionLifecycleV1Input,
   PrepareMoveClipCaptionLifecycleV1Result,
 } from "./move-clip-caption-lifecycle.js";
-export { prepareRippleDeleteClipCaptionLifecycleV1 } from "./ripple-delete-clip-caption-lifecycle.js";
+export {
+  prepareRippleDeleteClipCaptionLifecycleV1,
+  selectRippleDeleteAffectedCaptionTracksV1,
+} from "./ripple-delete-clip-caption-lifecycle.js";
 export type {
   PrepareRippleDeleteClipCaptionLifecycleV1Input,
   PrepareRippleDeleteClipCaptionLifecycleV1Result,
+  RippleDeleteAffectedCaptionTrackV1,
+  SelectRippleDeleteAffectedCaptionTracksV1Input,
 } from "./ripple-delete-clip-caption-lifecycle.js";
 export {
   prepareSplitClipCaptionLifecycleV1,
