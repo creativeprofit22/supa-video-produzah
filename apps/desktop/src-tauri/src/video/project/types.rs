@@ -108,6 +108,8 @@ fn is_false(value: &bool) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+// Keep fields inline because this enum's stable serde/wire shape must remain unchanged.
+#[allow(clippy::large_enum_variant)]
 pub enum ProjectTrack {
     Video {
         id: String,
