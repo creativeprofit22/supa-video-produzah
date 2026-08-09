@@ -3,6 +3,7 @@ import {
   commandGroupRequestSchema,
   createRationalTime,
   isTrackLocked,
+  moveClipCommandSchemaV2,
   projectProjectionSchema,
   rateOf,
   ratesEqual,
@@ -23,11 +24,13 @@ import { remapCaptionArtifactV1AgainstCandidateState } from "./transcript-captio
 import type { CaptionRemapReport } from "./transcript-caption-remap-result.js";
 
 export type TrimClipCommandV2 = Extract<ProjectCommandV2, { readonly type: "TrimClip" }>;
+export type MoveClipCommandV2 = Extract<ProjectCommandV2, { readonly type: "MoveClip" }>;
 
 export interface PrepareTrimClipCaptionLifecycleV1Input {
   readonly projection: ProjectProjection;
   readonly transcript: TranscriptArtifactV1;
   readonly trimCommand: TrimClipCommandV2;
+  readonly moveCommand?: MoveClipCommandV2;
   readonly captionTrackId: string;
   readonly groupId: string;
   readonly applyCaptionArtifactCommandId: string;
@@ -72,6 +75,8 @@ export function prepareTrimClipCaptionLifecycleV1(
   const projection = projectProjectionSchema.parse(input.projection);
   const transcript = transcriptArtifactV1Schema.parse(input.transcript);
   const trimCommand = trimClipCommandSchemaV2.parse(input.trimCommand);
+  const moveCommand =
+    input.moveCommand === undefined ? undefined : moveClipCommandSchemaV2.parse(input.moveCommand);
   const candidateState = videoProjectStateV2Schema.parse(projection.state);
 
   const sequence = candidateState.sequences.find(({ id }) => id === trimCommand.sequenceId);
@@ -145,13 +150,40 @@ export function prepareTrimClipCaptionLifecycleV1(
       { clipId: clip.id },
     );
   }
-  if (
-    timesEqual(trimCommand.sourceIn, clip.sourceIn) &&
-    timesEqual(trimCommand.sourceOut, clip.sourceOut)
-  ) {
+  const trimChangesSource =
+    !timesEqual(trimCommand.sourceIn, clip.sourceIn) ||
+    !timesEqual(trimCommand.sourceOut, clip.sourceOut);
+  if (moveCommand !== undefined) {
+    if (
+      moveCommand.sequenceId !== trimCommand.sequenceId ||
+      moveCommand.trackId !== trimCommand.trackId ||
+      moveCommand.clipId !== trimCommand.clipId
+    ) {
+      throw lifecycleError(
+        "invalid_project",
+        "Trim move must target the same clip",
+        "trim_move_target_mismatch",
+        { clipId: trimCommand.clipId },
+      );
+    }
+    if (
+      moveCommand.timelineStart.value < 0 ||
+      !ratesEqual(rateOf(moveCommand.timelineStart), rateOf(clip.timelineStart))
+    ) {
+      throw lifecycleError(
+        "invalid_range",
+        "Trim move geometry is invalid",
+        "trim_move_geometry_invalid",
+        { clipId: trimCommand.clipId },
+      );
+    }
+  }
+  const moveChangesTimeline =
+    moveCommand !== undefined && !timesEqual(moveCommand.timelineStart, clip.timelineStart);
+  if (!trimChangesSource && !moveChangesTimeline) {
     throw lifecycleError(
       "invalid_range",
-      "Trim source geometry does not change the clip",
+      "Trim geometry does not change the clip",
       "trim_geometry_no_op",
       { clipId: clip.id },
     );
@@ -213,6 +245,7 @@ export function prepareTrimClipCaptionLifecycleV1(
 
   clip.sourceIn = trimCommand.sourceIn;
   clip.sourceOut = trimCommand.sourceOut;
+  if (moveCommand !== undefined) clip.timelineStart = moveCommand.timelineStart;
   const validatedCandidateState = videoProjectStateV2Schema.parse(candidateState);
   const timeline = projectTranscriptToCandidateTimeline(
     {
@@ -233,6 +266,7 @@ export function prepareTrimClipCaptionLifecycleV1(
     baseRevision: projection.revision.number,
     commands: [
       trimCommand,
+      ...(moveCommand === undefined ? [] : [moveCommand]),
       {
         type: "ApplyCaptionArtifact",
         commandId: input.applyCaptionArtifactCommandId,

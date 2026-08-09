@@ -1,8 +1,8 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1–3 are complete, and Phase 4 viewport, multitrack projection/editing, track-state, command-registry, and transform/opacity inspector foundations are verified for private-use development
+- **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 9 August 2026 (transform/opacity inspector vertical slice verified; broader P4-S05 and Phase 4 remain open)
+- **Implementation audit:** 9 August 2026 (Phase 5 trim-caption lifecycle verified and closed; broader Phase 4 and Phase 5 scope remains open)
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -623,7 +623,28 @@ menu, shortcut, accessibility action, and agent all resolve the same command
 
 # Phase 5 — Transcript editing, captions, and production audio
 
-**Depends on:** Phases 3 and 4
+**Dependency status:** Implemented transcript/caption foundations depend on Phase 3 durable media and the verified Phase 4 V2 project, command, and projection primitives; remaining production-audio work retains its dependency on unfinished Phase 4 audio-envelope and fade primitives.
+
+## Audited implementation checkpoint — 9 August 2026
+
+Completed foundation slices:
+
+- Versioned transcript artifacts, deterministic lineage, and native managed-cache storage
+- Transcript-to-timeline mapping with reversible transcript edit proposals and desktop controller application
+- Versioned caption contracts, deterministic caption generation, and candidate-state remapping
+- Persistent `ApplyCaptionArtifact` command handling with grouped-command undo, redo, journal replay, and stale-lineage rejection
+- Trim-caption lifecycle preparation and desktop integration: complete trim geometry includes optional `MoveClip`; caption-aware groups are ordered `TrimClip` → optional `MoveClip` → `ApplyCaptionArtifact`; missing, ambiguous, or stale transcript lineage fails closed; caption-free timelines retain the bare-trim fallback
+
+Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
+
+### Verification actually run for the closed trim-caption slice
+
+- `pnpm --filter @supa-video/project exec vitest run src/transcript-caption.test.ts src/transcript-caption-remap.test.ts src/trim-clip-caption-lifecycle.test.ts` — 70 passed
+- `pnpm --filter @supa-video/desktop exec vitest run src/use-video-project.test.tsx` — 33 passed
+- `pnpm --filter @supa-video/contracts exec vitest run src/project-caption-application.test.ts` — 17 passed
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml trim_clip_caption_lifecycle_is_atomic_across_history_and_recovery --lib` — 1 passed
+- `pnpm --filter @supa-video/desktop exec tsc -b --pretty false` — passed
+- `pnpm exec prettier --check apps/desktop/src/use-video-project.ts apps/desktop/src/use-video-project.test.tsx packages/video-project/src/trim-clip-caption-lifecycle.ts packages/video-project/src/trim-clip-caption-lifecycle.test.ts` and `git diff --check` — passed
 
 ## Scope
 
@@ -643,10 +664,12 @@ menu, shortcut, accessibility action, and agent all resolve the same command
 
 ## Affected modules
 
-- `packages/media-tools/` reusable transcription/audio/caption primitives
-- `packages/video-media/`
-- `packages/video-project/`
-- `apps/desktop/src/` Text Edit, Captions, and Audio workspaces
+- `packages/video-contracts/` versioned transcript/caption application contracts
+- `packages/video-media/` transcript and caption artifacts
+- `packages/video-project/` mapping, proposal, generation, remapping, and lifecycle preparation
+- `apps/desktop/src/` controller integration and planned Text Edit, Captions, and Audio workspaces
+- `apps/desktop/src-tauri/` managed transcript storage and canonical caption command persistence
+- `packages/media-tools/` planned reusable transcription/audio primitives; not yet present
 
 ## Deliverables
 

@@ -33,6 +33,7 @@ const ids = {
   applyCommand: id(8),
   group: id(9),
   unknown: id(10),
+  moveCommand: id(11),
 } as const;
 const sourceIdentity: MediaContentIdentityV1 = {
   schemaVersion: 1,
@@ -346,6 +347,36 @@ describe("prepareTrimClipCaptionLifecycleV1", () => {
     expect(JSON.stringify(input)).toBe(before);
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first.commandGroup.commands)).toBe(true);
+  });
+
+  it("models trim-plus-move geometry before applying the corrected caption artifact", () => {
+    const input = {
+      ...fixture(),
+      moveCommand: {
+        type: "MoveClip" as const,
+        commandId: ids.moveCommand,
+        sequenceId: ids.sequence,
+        trackId: ids.sourceTrack,
+        clipId: ids.clip,
+        timelineStart: createRationalTime(20, rate),
+      },
+    };
+
+    const prepared = prepareTrimClipCaptionLifecycleV1(input);
+
+    expect(prepared.commandGroup.commands.map(({ type }) => type)).toEqual([
+      "TrimClip",
+      "MoveClip",
+      "ApplyCaptionArtifact",
+    ]);
+    expect(prepared.commandGroup.commands[1]).toEqual(input.moveCommand);
+    const applyCommand = prepared.commandGroup.commands[2];
+    expect(applyCommand?.type).toBe("ApplyCaptionArtifact");
+    if (applyCommand?.type !== "ApplyCaptionArtifact") throw new Error("Missing apply command");
+    expect(applyCommand.artifact.cues[0]).toMatchObject({
+      start: createRationalTime(20, rate),
+      end: createRationalTime(24, rate),
+    });
   });
 
   it.each([

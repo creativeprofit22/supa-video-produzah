@@ -27,6 +27,7 @@ import {
   assertTranscriptEditProposalCurrent,
   buildCommandGroup,
   buildProjectCommand,
+  prepareTrimClipCaptionLifecycleV1,
   type TranscriptEditProposal,
 } from "@supa-video/project";
 import {
@@ -70,11 +71,16 @@ export interface MoveTimelineClipInput {
   readonly clipId: string;
   readonly timelineStartFrame: number;
 }
+export interface TrimCaptionContext {
+  readonly captionTrackId: string;
+  readonly transcript: TranscriptArtifactV1;
+}
 export interface TrimTimelineClipInput {
   readonly clipId: string;
   readonly sourceInFrame: number;
   readonly sourceOutFrame: number;
   readonly timelineStartFrame: number;
+  readonly captionContext?: TrimCaptionContext;
 }
 export interface RippleDeleteTimelineClipInput {
   readonly clipId: string;
@@ -1074,12 +1080,13 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       base: ProjectProjection,
       operationKind: TimelineEditOperation,
       commands: readonly ProjectCommandV2[],
+      groupId = newId(),
     ) => {
       const operation = ++editOperationRef.current;
       editOperationPendingRef.current = true;
       setEditOperation({ phase: "saving", operation: operationKind });
       const request = buildCommandGroup({
-        groupId: newId(),
+        groupId,
         projectId: base.projectId,
         baseRevision: base.revision.number,
         commands: commands.map((command) => buildProjectCommand(command)),
@@ -1196,6 +1203,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       sourceInFrame,
       sourceOutFrame,
       timelineStartFrame,
+      captionContext,
     }: TrimTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
@@ -1212,37 +1220,88 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
           sourceOutFrame === selection.clip.sourceOut.value &&
           timelineStartFrame === selection.clip.timelineStart.value)
       )
-        return;
+        return false;
+      const trimCommand: Extract<ProjectCommandV2, { readonly type: "TrimClip" }> = {
+        type: "TrimClip",
+        commandId: newId(),
+        sequenceId: selection.sequence.id,
+        trackId: selection.track.id,
+        clipId: selection.clip.id,
+        sourceIn: createRationalTime(sourceInFrame, {
+          numerator: selection.clip.sourceIn.rateNumerator,
+          denominator: selection.clip.sourceIn.rateDenominator,
+        }),
+        sourceOut: createRationalTime(sourceOutFrame, {
+          numerator: selection.clip.sourceOut.rateNumerator,
+          denominator: selection.clip.sourceOut.rateDenominator,
+        }),
+      };
+      const moveCommand: Extract<ProjectCommandV2, { readonly type: "MoveClip" }> | undefined =
+        timelineStartFrame === selection.clip.timelineStart.value
+          ? undefined
+          : {
+              type: "MoveClip",
+              commandId: newId(),
+              sequenceId: selection.sequence.id,
+              trackId: selection.track.id,
+              clipId: selection.clip.id,
+              timelineStart: createRationalTime(timelineStartFrame, {
+                numerator: selection.clip.timelineStart.rateNumerator,
+                denominator: selection.clip.timelineStart.rateDenominator,
+              }),
+            };
       const commands: ProjectCommandV2[] = [
-        {
-          type: "TrimClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-          sourceIn: createRationalTime(sourceInFrame, {
-            numerator: selection.clip.sourceIn.rateNumerator,
-            denominator: selection.clip.sourceIn.rateDenominator,
-          }),
-          sourceOut: createRationalTime(sourceOutFrame, {
-            numerator: selection.clip.sourceOut.rateNumerator,
-            denominator: selection.clip.sourceOut.rateDenominator,
-          }),
-        },
+        trimCommand,
+        ...(moveCommand === undefined ? [] : [moveCommand]),
       ];
-      if (timelineStartFrame !== selection.clip.timelineStart.value)
-        commands.push({
-          type: "MoveClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-          timelineStart: createRationalTime(timelineStartFrame, {
-            numerator: selection.clip.timelineStart.rateNumerator,
-            denominator: selection.clip.timelineStart.rateDenominator,
-          }),
+      const activeCaptionTracks = selection.sequence.tracks.filter(
+        (track) => track.kind === "caption" && track.activeCaptionArtifact !== undefined,
+      );
+      if (activeCaptionTracks.length === 0)
+        return executeTimelineCommandGroup(base, "trim", commands);
+
+      try {
+        if (activeCaptionTracks.length !== 1)
+          throw new VideoDomainError(
+            "invalid_project",
+            "Trim cannot update multiple active caption artifacts from one transcript context",
+            {
+              reason: "trim_caption_context_ambiguous",
+              captionTrackCount: activeCaptionTracks.length,
+            },
+          );
+        const activeCaptionTrack = activeCaptionTracks[0]!;
+        if (captionContext === undefined)
+          throw new VideoDomainError(
+            "invalid_project",
+            "Trim requires transcript context while captions are active",
+            { reason: "trim_caption_context_missing", captionTrackId: activeCaptionTrack.id },
+          );
+        if (captionContext.captionTrackId !== activeCaptionTrack.id)
+          throw new VideoDomainError(
+            "invalid_project",
+            "Trim transcript context does not identify the active caption track",
+            {
+              reason: "trim_caption_context_mismatch",
+              activeCaptionTrackId: activeCaptionTrack.id,
+              contextCaptionTrackId: captionContext.captionTrackId,
+            },
+          );
+        const groupId = newId();
+        const prepared = prepareTrimClipCaptionLifecycleV1({
+          projection: base,
+          transcript: captionContext.transcript,
+          trimCommand,
+          ...(moveCommand === undefined ? {} : { moveCommand }),
+          captionTrackId: activeCaptionTrack.id,
+          groupId,
+          applyCaptionArtifactCommandId: newId(),
         });
-      await executeTimelineCommandGroup(base, "trim", commands);
+        return executeTimelineCommandGroup(base, "trim", prepared.commandGroup.commands, groupId);
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "trim", error: asError(error) });
+        return false;
+      }
     },
     [executeTimelineCommandGroup],
   );

@@ -7,7 +7,7 @@ import type {
   ProjectProjection,
   RenderPlan,
 } from "@supa-video/contracts";
-import { transcriptArtifactV1Schema } from "@supa-video/media";
+import { captionArtifactV1Schema, transcriptArtifactV1Schema } from "@supa-video/media";
 import { createTranscriptEditProposal, projectTranscriptToTimeline } from "@supa-video/project";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -221,6 +221,76 @@ const transcriptArtifact = transcriptArtifactV1Schema.parse({
     removedExactDuplicateWordCount: 0,
   },
 });
+
+function captionedProjection(revision = 1): ProjectProjection {
+  const projection = clipProjection(revision);
+  const sequence = projection.state.sequences[0]!;
+  sequence.tracks.push({
+    id: id(6),
+    name: "Captions",
+    kind: "caption",
+    captions: [],
+    activeCaptionArtifact: captionArtifactV1Schema.parse({
+      schemaVersion: 1,
+      trackLink: {
+        schemaVersion: 1,
+        projectId: projection.projectId,
+        projectRevision: emptyProjection(revision - 1).revision,
+        sequenceId: sequence.id,
+        captionTrackId: id(6),
+      },
+      sourceIdentity,
+      transcriptArtifactIdentityKey: transcriptArtifact.identity.key,
+      language: "en-US",
+      timelineRate: probe.averageFrameRate,
+      style: {
+        schemaVersion: 1,
+        typography: {
+          fontFamily: "Inter",
+          fontSizePx: 48,
+          fontWeight: 600,
+          fontStyle: "normal",
+          lineHeightPermille: 1_200,
+          foregroundColorRgba: "#ffffffff",
+        },
+        alignment: { horizontal: "center", vertical: "bottom" },
+      },
+      validationProfile: {
+        schemaVersion: 1,
+        maxLinesPerCue: 2,
+        maxCharactersPerLine: 80,
+        maxCharactersPerSecond: 100,
+        minimumCueDuration: { value: 1, rateNumerator: 30, rateDenominator: 1 },
+        maximumCueDuration: { value: 120, rateNumerator: 30, rateDenominator: 1 },
+        safeArea: {
+          topPermille: 50,
+          rightPermille: 50,
+          bottomPermille: 50,
+          leftPermille: 50,
+        },
+      },
+      cues: [
+        {
+          schemaVersion: 1,
+          cueId: "cue-1",
+          start: { value: 0, rateNumerator: 30, rateDenominator: 1 },
+          end: { value: 60, rateNumerator: 30, rateDenominator: 1 },
+          lines: ["remove"],
+          anchor: { xPermille: 500, yPermille: 900 },
+          sourceLinks: [
+            {
+              transcriptArtifactIdentityKey: transcriptArtifact.identity.key,
+              sourceStartUs: 0,
+              sourceEndUs: probe.durationMicroseconds,
+              transcriptWordIds: [transcriptWord.wordId],
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  return projection;
+}
 
 async function transcriptEditProposal(projection: ProjectProjection) {
   const timeline = projectTranscriptToTimeline({
@@ -600,7 +670,7 @@ describe("canonical project controller", () => {
     expect(result.current.projection?.state.sequences[0]?.rate).toEqual(canonicalRate);
   });
 
-  it("emits validated split, move, and grouped trim commands at the active revision", async () => {
+  it("uses bare trim and trim-plus-move fallback groups when no captions are active", async () => {
     let active = clipProjection(1);
     const execute = vi.fn(async (request: CommandGroupRequest) => {
       commandGroupRequestSchema.parse(request);
@@ -679,6 +749,153 @@ describe("canonical project controller", () => {
     );
     expect(result.current.projection?.revision.number).toBe(5);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("submits trim, move, and caption correction atomically and undoes them together", async () => {
+    const opened = captionedProjection(1);
+    const originalCaption = structuredClone(
+      opened.state.sequences[0]!.tracks.find((track) => track.kind === "caption")!
+        .activeCaptionArtifact,
+    );
+    let applied: ProjectProjection | null = null;
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const next = structuredClone(opened);
+      const sequence = next.state.sequences[0]!;
+      const sourceTrack = sequence.tracks.find((track) => track.id === id(4));
+      const captionTrack = sequence.tracks.find((track) => track.id === id(6));
+      if (sourceTrack?.kind !== "video" || captionTrack?.kind !== "caption")
+        throw new Error("Expected caption lifecycle fixture tracks");
+      sourceTrack.clips[0]!.sourceIn.value = 10;
+      sourceTrack.clips[0]!.sourceOut.value = 50;
+      sourceTrack.clips[0]!.timelineStart.value = 5;
+      const applyCommand = request.commands[2];
+      if (applyCommand?.type !== "ApplyCaptionArtifact")
+        throw new Error("Expected caption application command");
+      captionTrack.activeCaptionArtifact = applyCommand.artifact;
+      next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+      next.canUndo = true;
+      applied = next;
+      return commandResult(opened, next, request.groupId);
+    });
+    const undo = vi.fn(async (_projectId: string, _base: number, operationId: string) => {
+      if (applied === null) throw new Error("Trim was not applied");
+      const undone = structuredClone(opened);
+      undone.revision = { ...emptyProjection(3).revision, parentId: applied.revision.id };
+      undone.canUndo = false;
+      undone.canRedo = true;
+      return commandResult(applied, undone, operationId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+      undoVideoProject: undo,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 10,
+        sourceOutFrame: 50,
+        timelineStartFrame: 5,
+        captionContext: { captionTrackId: id(6), transcript: transcriptArtifact },
+      }),
+    );
+
+    expect(execute).toHaveBeenCalledOnce();
+    const request = execute.mock.calls[0]![0];
+    expect(request.commands.map(({ type }) => type)).toEqual([
+      "TrimClip",
+      "MoveClip",
+      "ApplyCaptionArtifact",
+    ]);
+    expect(new Set(request.commands.map(({ commandId }) => commandId))).toHaveLength(3);
+    expect(request.commands[2]).toMatchObject({
+      type: "ApplyCaptionArtifact",
+      trackId: id(6),
+      artifact: { trackLink: { projectRevision: opened.revision } },
+    });
+    expect(result.current.projection?.revision.number).toBe(2);
+
+    await act(() => result.current.undoEdit());
+
+    expect(undo).toHaveBeenCalledOnce();
+    expect(result.current.projection?.revision.number).toBe(3);
+    const undoneSequence = result.current.projection?.state.sequences[0];
+    const undoneSource = undoneSequence?.tracks.find((track) => track.id === id(4));
+    const undoneCaption = undoneSequence?.tracks.find((track) => track.id === id(6));
+    expect(undoneSource?.kind === "video" ? undoneSource.clips[0] : null).toMatchObject({
+      sourceIn: { value: 0 },
+      sourceOut: { value: 60 },
+      timelineStart: { value: 0 },
+    });
+    expect(undoneCaption?.kind === "caption" ? undoneCaption.activeCaptionArtifact : null).toEqual(
+      originalCaption,
+    );
+  });
+
+  it("rejects stale transcript lineage without submitting a trim", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    const staleTranscript = structuredClone(transcriptArtifact);
+    staleTranscript.identity.key = "ff".repeat(32);
+
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 10,
+        sourceOutFrame: 50,
+        timelineStartFrame: 0,
+        captionContext: { captionTrackId: id(6), transcript: staleTranscript },
+      }),
+    );
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "trim",
+      error: {
+        name: "VideoDomainError",
+        details: { reason: "caption_transcript_lineage_mismatch" },
+      },
+    });
+    expect(result.current.projection).toEqual(opened);
+  });
+
+  it("fails closed when active captions have no transcript context", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 10,
+        sourceOutFrame: 50,
+        timelineStartFrame: 0,
+      }),
+    );
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "trim",
+      error: { details: { reason: "trim_caption_context_missing" } },
+    });
+    expect(result.current.projection).toEqual(opened);
   });
 
   it("sets clip opacity against each latest canonical revision and keeps transformed render readiness", async () => {
