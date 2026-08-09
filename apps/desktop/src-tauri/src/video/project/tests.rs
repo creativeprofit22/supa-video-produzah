@@ -4696,6 +4696,194 @@ fn caption_artifact_checkpoint_and_journal_recovery_preserve_provenance_and_hist
 }
 
 #[test]
+fn move_clip_caption_lifecycle_is_atomic_across_history_recovery_and_checkpoint() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("move-caption-lifecycle.svpvideo");
+    let initial = trim_caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let owner = "move-caption-owner";
+    let journal = journal_path(&project_path).unwrap();
+
+    let (artifact_a, artifact_b, forward_commands, moved_state, moved_hash) = {
+        let service = VideoProjectService::default();
+        service.open(owner, &project_path, &grants).unwrap();
+
+        let artifact_a = caption_artifact_for(&initial, "A");
+        let installed = service
+            .execute(
+                owner,
+                caption_request(
+                    &initial,
+                    "89200000-0000-4000-8000-000000000001",
+                    artifact_a.clone(),
+                ),
+                &grants,
+            )
+            .unwrap();
+        let state_after_install = installed.projection.state.clone();
+        let hash_after_install = installed.state_hash.clone();
+        let mut after_install = initial.clone();
+        after_install.revision = installed.new_revision.clone();
+        after_install.state = state_after_install.clone();
+        let mut artifact_b = caption_artifact_for(&after_install, "B");
+        for cue in &mut artifact_b.cues {
+            cue.start.value += 12;
+            cue.end.value += 12;
+        }
+        let forward_commands = vec![
+            ProjectCommand::MoveClip {
+                command_id: "89200000-0000-4000-8000-000000000002".to_owned(),
+                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                track_id: TRIM_CAPTION_SOURCE_TRACK_ID.to_owned(),
+                clip_id: TRIM_CAPTION_CLIP_ID.to_owned(),
+                timeline_start: RationalTime {
+                    value: 12,
+                    rate_numerator: 24,
+                    rate_denominator: 1,
+                },
+            },
+            ProjectCommand::ApplyCaptionArtifact {
+                command_id: "89200000-0000-4000-8000-000000000003".to_owned(),
+                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                track_id: CAPTION_TRACK_ID.to_owned(),
+                artifact: artifact_b.clone(),
+            },
+        ];
+        let moved = service
+            .execute(
+                owner,
+                CommandGroupRequest {
+                    group_id: "89200000-0000-4000-8000-000000000004".to_owned(),
+                    project_id: initial.id.clone(),
+                    base_revision: 1,
+                    commands: forward_commands.clone(),
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(
+            (moved.prior_revision.number, moved.new_revision.number),
+            (1, 2)
+        );
+        assert_eq!(
+            trim_caption_clip(&moved.projection.state)
+                .timeline_start
+                .value,
+            12
+        );
+        assert_eq!(
+            active_caption_artifact(&moved.projection.state),
+            Some(&artifact_b)
+        );
+
+        let records = scan(&journal).unwrap().records;
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].kind, JournalRecordKind::Commit);
+        assert_eq!(records[1].history_group.forward_commands, forward_commands);
+        assert_eq!(records[1].history_group.inverse_commands.len(), 2);
+        assert!(matches!(
+            records[1].history_group.inverse_commands[0],
+            ProjectCommand::RestoreActiveCaptionArtifact { .. }
+        ));
+        assert!(matches!(
+            records[1].history_group.inverse_commands[1],
+            ProjectCommand::MoveClip { .. }
+        ));
+
+        let moved_state = moved.projection.state.clone();
+        let moved_hash = moved.state_hash.clone();
+        let undone = service
+            .undo(
+                owner,
+                &initial.id,
+                2,
+                "89200000-0000-4000-8000-000000000005",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(undone.new_revision.number, 3);
+        assert_eq!(undone.projection.state, state_after_install);
+        assert_eq!(undone.state_hash, hash_after_install);
+        assert_eq!(
+            trim_caption_clip(&undone.projection.state)
+                .timeline_start
+                .value,
+            0
+        );
+        assert_eq!(
+            active_caption_artifact(&undone.projection.state),
+            Some(&artifact_a)
+        );
+
+        let redone = service
+            .redo(
+                owner,
+                &initial.id,
+                3,
+                "89200000-0000-4000-8000-000000000006",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(redone.new_revision.number, 4);
+        assert_eq!(redone.projection.state, moved_state);
+        assert_eq!(redone.state_hash, moved_hash);
+        assert_eq!(
+            active_caption_artifact(&redone.projection.state),
+            Some(&artifact_b)
+        );
+        assert_eq!(scan(&journal).unwrap().records.len(), 4);
+
+        (
+            artifact_a,
+            artifact_b,
+            forward_commands,
+            moved_state,
+            moved_hash,
+        )
+    };
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("move-caption-reopen", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 4);
+    assert_eq!(reopened.projection.revision.number, 4);
+    assert_eq!(reopened.projection.revision.state_hash, moved_hash);
+    assert_eq!(reopened.projection.state, moved_state);
+    assert_eq!(
+        trim_caption_clip(&reopened.projection.state)
+            .timeline_start
+            .value,
+        12
+    );
+    assert_eq!(
+        active_caption_artifact(&reopened.projection.state),
+        Some(&artifact_b)
+    );
+    assert_ne!(
+        active_caption_artifact(&reopened.projection.state),
+        Some(&artifact_a)
+    );
+    assert!(reopened.projection.can_undo);
+    assert!(!reopened.projection.can_redo);
+    reopened_service
+        .close("move-caption-reopen", &initial.id)
+        .unwrap();
+
+    let checkpointed = read_snapshot(&project_path).unwrap();
+    assert_eq!(checkpointed.state, moved_state);
+    assert_eq!(checkpointed.revision.state_hash, moved_hash);
+    assert_eq!(checkpointed.history.undo_stack.len(), 2);
+    assert!(checkpointed.history.redo_stack.is_empty());
+    assert_eq!(
+        checkpointed.history.undo_stack[1].forward_commands,
+        forward_commands
+    );
+}
+
+#[test]
 fn trim_clip_caption_lifecycle_is_atomic_across_history_and_recovery() {
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("trim-caption-lifecycle.svpvideo");

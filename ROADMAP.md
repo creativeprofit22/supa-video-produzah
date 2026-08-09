@@ -2,7 +2,7 @@
 
 - **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 9 August 2026 (Phase 5 trim- and split-caption lifecycle slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
+- **Implementation audit:** 9 August 2026 (Phase 5 trim-, split-, and standalone MoveClip-caption lifecycle slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
@@ -635,6 +635,7 @@ Completed foundation slices:
 - Persistent `ApplyCaptionArtifact` command handling with grouped-command undo, redo, journal replay, and stale-lineage rejection
 - Trim-caption lifecycle preparation and desktop integration: complete trim geometry includes optional `MoveClip`; caption-aware groups are ordered `TrimClip` → optional `MoveClip` → `ApplyCaptionArtifact`; missing, ambiguous, or stale transcript lineage fails closed; caption-free timelines retain the bare-trim fallback
 - Split-caption lifecycle preparation and desktop integration: a standalone contiguous `SplitClip` replays and validates the candidate state, requires retained and artifact-invariant captions, and persists no replacement artifact; transcript-generated edits preserve right-to-left `SplitClip` → optional `SplitClip` → `RippleDeleteClip` geometry, remap once against the complete candidate state, then append deterministic `ApplyCaptionArtifact` commands in caption-track order. Missing, stale, ambiguous, inexact, unsupported, unsafe, or over-100-command groups fail closed before backend submission; caption-free splits and proposals retain bare geometry. Native commit, undo, redo, rejection, journal replay, and checkpoint tests verify atomic ordering and caption provenance.
+- Standalone MoveClip-caption lifecycle preparation and desktop integration: the candidate `MoveClip` is contract-validated, replayed, and geometry-checked before submission; every active caption artifact is remapped against that candidate state and one deterministic atomic group is ordered `MoveClip` → `ApplyCaptionArtifact[]` in caption-track order. Missing, stale, mismatched, or ambiguous lineage; locked source or caption targets; invalid or inexact geometry; unsafe integer bounds; and groups over 100 commands fail closed before backend submission. Caption-free moves retain one validated bare `MoveClip`. Native proof covers one-revision atomic commit, exact inverse ordering, undo, redo, journal recovery, and close-time checkpoint persistence.
 
 Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
 
@@ -655,6 +656,19 @@ Open Phase 5 scope remains planned; this checkpoint does not claim completion of
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml transcript_edit_caption_lifecycle --lib` — 1 passed
 - `pnpm --filter @supa-video/project check && pnpm --filter @supa-video/desktop check` — passed
 - `pnpm exec prettier --check` on the changed TypeScript files, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, and `git diff --check` — passed
+
+### Verification actually run for the closed standalone MoveClip-caption slice
+
+- `pnpm --filter @supa-video/project test` — 9 files and 116 tests passed
+- `pnpm --dir apps/desktop exec vitest run src/use-video-project.test.tsx` — 1 file and 38 tests passed
+- `pnpm --filter @supa-video/project build` — passed
+- `pnpm --filter @supa-video/project check` — passed
+- `pnpm --filter @supa-video/desktop check` — passed
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml move_clip_caption_lifecycle_is_atomic_across_history_recovery_and_checkpoint -- --nocapture` — 1 passed, 246 filtered out in the native library target; the other targets ran zero matching tests
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml caption_lifecycle_ -- --nocapture` — 4 passed, 243 filtered out in the native library target; the other targets ran zero matching tests
+- `pnpm exec prettier --check packages/video-project/src/move-clip-caption-lifecycle.ts packages/video-project/src/move-clip-caption-lifecycle.test.ts packages/video-project/src/index.ts apps/desktop/src/use-video-project.ts apps/desktop/src/use-video-project.test.tsx` — passed
+- `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` — passed
+- `git diff --check` — passed
 
 ## Scope
 

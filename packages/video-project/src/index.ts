@@ -1,6 +1,12 @@
 export * from "./command-group.js";
 export * from "./projection.js";
 export * from "./timeline-view.js";
+export { prepareMoveClipCaptionLifecycleV1 } from "./move-clip-caption-lifecycle.js";
+export type {
+  MoveClipCommandV2,
+  PrepareMoveClipCaptionLifecycleV1Input,
+  PrepareMoveClipCaptionLifecycleV1Result,
+} from "./move-clip-caption-lifecycle.js";
 export {
   prepareSplitClipCaptionLifecycleV1,
   prepareTranscriptEditCaptionLifecycleV1,

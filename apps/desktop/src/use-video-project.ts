@@ -27,6 +27,7 @@ import {
   assertTranscriptEditProposalCurrent,
   buildCommandGroup,
   buildProjectCommand,
+  prepareMoveClipCaptionLifecycleV1,
   prepareSplitClipCaptionLifecycleV1,
   prepareTrimClipCaptionLifecycleV1,
   type TranscriptEditProposal,
@@ -72,6 +73,7 @@ export interface SplitTimelineClipInput {
 export interface MoveTimelineClipInput {
   readonly clipId: string;
   readonly timelineStartFrame: number;
+  readonly transcriptArtifact?: TranscriptArtifactV1;
 }
 export interface TrimCaptionContext {
   readonly captionTrackId: string;
@@ -1181,7 +1183,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [executeTimelineCommandGroup],
   );
   const moveTimelineClip = useCallback(
-    async ({ clipId, timelineStartFrame }: MoveTimelineClipInput) => {
+    async ({ clipId, timelineStartFrame, transcriptArtifact }: MoveTimelineClipInput) => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
       if (
@@ -1191,20 +1193,30 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         timelineStartFrame < 0 ||
         timelineStartFrame === selection.clip.timelineStart.value
       )
-        return;
-      await executeTimelineCommandGroup(base, "move", [
-        {
-          type: "MoveClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-          timelineStart: createRationalTime(timelineStartFrame, {
-            numerator: selection.clip.timelineStart.rateNumerator,
-            denominator: selection.clip.timelineStart.rateDenominator,
-          }),
-        },
-      ]);
+        return false;
+      const command: Extract<ProjectCommandV2, { readonly type: "MoveClip" }> = {
+        type: "MoveClip",
+        commandId: newId(),
+        sequenceId: selection.sequence.id,
+        trackId: selection.track.id,
+        clipId: selection.clip.id,
+        timelineStart: createRationalTime(timelineStartFrame, {
+          numerator: selection.clip.timelineStart.rateNumerator,
+          denominator: selection.clip.timelineStart.rateDenominator,
+        }),
+      };
+      try {
+        const commands = await prepareMoveClipCaptionLifecycleV1({
+          projection: base,
+          ...(transcriptArtifact === undefined ? {} : { transcriptArtifact }),
+          command,
+          createCommandId: () => newId(),
+        });
+        return executeTimelineCommandGroup(base, "move", commands);
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "move", error: asError(error) });
+        return false;
+      }
     },
     [executeTimelineCommandGroup],
   );

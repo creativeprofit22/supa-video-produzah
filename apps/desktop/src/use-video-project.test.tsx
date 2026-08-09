@@ -815,6 +815,84 @@ describe("canonical project controller", () => {
     });
   });
 
+  it("submits a standalone move before its caption correction in one atomic group", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      const next = structuredClone(opened);
+      next.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+      return commandResult(opened, next, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() =>
+      result.current.moveTimelineClip({
+        clipId: id(5),
+        timelineStartFrame: 5,
+        transcriptArtifact,
+      }),
+    );
+
+    expect(execute).toHaveBeenCalledOnce();
+    const request = execute.mock.calls[0]![0];
+    expect(request.commands.map(({ type }) => type)).toEqual(["MoveClip", "ApplyCaptionArtifact"]);
+    expect(new Set(request.commands.map(({ commandId }) => commandId))).toHaveLength(2);
+    expect(request.commands[0]).toMatchObject({
+      type: "MoveClip",
+      timelineStart: { value: 5, rateNumerator: 30, rateDenominator: 1 },
+    });
+    expect(request.commands[1]).toMatchObject({
+      type: "ApplyCaptionArtifact",
+      trackId: id(6),
+      artifact: {
+        trackLink: { projectRevision: opened.revision },
+        cues: [{ start: { value: 5 }, end: { value: 65 } }],
+      },
+    });
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("rejects captioned standalone moves before submission when lineage is missing or stale", async () => {
+    const opened = captionedProjection(1);
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    await act(() => result.current.moveTimelineClip({ clipId: id(5), timelineStartFrame: 5 }));
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "move",
+      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+    });
+
+    const staleTranscript = structuredClone(transcriptArtifact);
+    staleTranscript.identity.key = "cd".repeat(32);
+    await act(() =>
+      result.current.moveTimelineClip({
+        clipId: id(5),
+        timelineStartFrame: 5,
+        transcriptArtifact: staleTranscript,
+      }),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "move",
+      error: { details: { reason: "caption_lifecycle_transcript_lineage_mismatch" } },
+    });
+    expect(result.current.projection).toEqual(opened);
+  });
+
   it("submits trim, move, and caption correction atomically and undoes them together", async () => {
     const opened = captionedProjection(1);
     const originalCaption = structuredClone(
