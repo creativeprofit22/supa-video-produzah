@@ -28,6 +28,7 @@ import {
   buildCommandGroup,
   buildProjectCommand,
   prepareMoveClipCaptionLifecycleV1,
+  prepareRippleDeleteClipCaptionLifecycleV1,
   prepareSplitClipCaptionLifecycleV1,
   prepareTrimClipCaptionLifecycleV1,
   type TranscriptEditProposal,
@@ -88,6 +89,7 @@ export interface TrimTimelineClipInput {
 }
 export interface RippleDeleteTimelineClipInput {
   readonly clipId: string;
+  readonly transcriptArtifacts?: readonly TranscriptArtifactV1[];
 }
 export interface SetTimelineClipOpacityInput {
   readonly sequenceId: string;
@@ -1329,19 +1331,29 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [executeTimelineCommandGroup],
   );
   const rippleDeleteTimelineClip = useCallback(
-    async ({ clipId }: RippleDeleteTimelineClipInput) => {
+    async ({ clipId, transcriptArtifacts }: RippleDeleteTimelineClipInput): Promise<boolean> => {
       const base = stateRef.current.projection;
       const selection = timelineClip(base, clipId);
-      if (base === null || selection === null) return;
-      await executeTimelineCommandGroup(base, "ripple-delete", [
-        {
-          type: "RippleDeleteClip",
-          commandId: newId(),
-          sequenceId: selection.sequence.id,
-          trackId: selection.track.id,
-          clipId: selection.clip.id,
-        },
-      ]);
+      if (base === null || selection === null) return false;
+      const command: Extract<ProjectCommandV2, { readonly type: "RippleDeleteClip" }> = {
+        type: "RippleDeleteClip",
+        commandId: newId(),
+        sequenceId: selection.sequence.id,
+        trackId: selection.track.id,
+        clipId: selection.clip.id,
+      };
+      try {
+        const commands = await prepareRippleDeleteClipCaptionLifecycleV1({
+          projection: base,
+          ...(transcriptArtifacts === undefined ? {} : { transcriptArtifacts }),
+          command,
+          createCommandId: () => newId(),
+        });
+        return executeTimelineCommandGroup(base, "ripple-delete", commands);
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "ripple-delete", error: asError(error) });
+        return false;
+      }
     },
     [executeTimelineCommandGroup],
   );

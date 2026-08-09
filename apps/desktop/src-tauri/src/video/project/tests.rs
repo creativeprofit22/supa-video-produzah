@@ -4884,6 +4884,322 @@ fn move_clip_caption_lifecycle_is_atomic_across_history_recovery_and_checkpoint(
 }
 
 #[test]
+fn ripple_delete_caption_lifecycle_is_atomic_across_history_recovery_and_checkpoint() {
+    const SECOND_CAPTION_TRACK_ID: &str = "89300000-0000-4000-8000-000000000001";
+    const TARGET_CLIP_ID: &str = "89300000-0000-4000-8000-000000000002";
+    const SAME_SOURCE_SUFFIX_ID: &str = "89300000-0000-4000-8000-000000000003";
+    const OTHER_SOURCE_SUFFIX_ID: &str = "89300000-0000-4000-8000-000000000004";
+    const OTHER_ASSET_ID: &str = "89300000-0000-4000-8000-000000000005";
+
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("ripple-caption-lifecycle.svpvideo");
+    let mut initial = trim_caption_project_fixture();
+    let mut other_asset = initial.state.assets[0].clone();
+    other_asset.id = serde_json::from_value(Value::String(OTHER_ASSET_ID.to_owned())).unwrap();
+    initial.state.assets.push(other_asset);
+
+    let template = trim_caption_clip(&initial.state).clone();
+    let clip = |id: &str, asset_id: &str, timeline_start: u64, source_in: u64| {
+        let mut clip = template.clone();
+        clip.id = id.to_owned();
+        clip.source = ClipSource::Asset {
+            asset_id: asset_id.to_owned(),
+        };
+        clip.timeline_start.value = timeline_start;
+        clip.source_in.value = source_in;
+        clip.source_out.value = source_in + 5;
+        clip
+    };
+    let original_asset_id = match &template.source {
+        ClipSource::Asset { asset_id } => asset_id.clone(),
+        ClipSource::Sequence { .. } => panic!("caption fixture asset clip"),
+    };
+    let ProjectTrack::Video { clips, .. } = &mut initial.state.sequences[0].tracks[1] else {
+        panic!("caption fixture video track")
+    };
+    *clips = vec![
+        clip(TRIM_CAPTION_CLIP_ID, &original_asset_id, 0, 0),
+        clip(TARGET_CLIP_ID, &original_asset_id, 10, 5),
+        clip(SAME_SOURCE_SUFFIX_ID, &original_asset_id, 20, 10),
+        clip(OTHER_SOURCE_SUFFIX_ID, OTHER_ASSET_ID, 30, 0),
+    ];
+
+    let mut artifact_a_before = caption_artifact_for(&initial, "A");
+    artifact_a_before.track_link.caption_track_id = CAPTION_TRACK_ID.to_owned();
+    let mut artifact_b_before = caption_artifact_for(&initial, "B");
+    artifact_b_before.track_link.caption_track_id = SECOND_CAPTION_TRACK_ID.to_owned();
+    let ProjectTrack::Caption {
+        active_caption_artifact: primary_active,
+        ..
+    } = &mut initial.state.sequences[0].tracks[0]
+    else {
+        panic!("primary caption track")
+    };
+    *primary_active = Some(artifact_a_before.clone());
+    let mut second_caption_track = initial.state.sequences[0].tracks[0].clone();
+    let ProjectTrack::Caption {
+        id,
+        name,
+        captions,
+        active_caption_artifact: secondary_active,
+        ..
+    } = &mut second_caption_track
+    else {
+        unreachable!()
+    };
+    *id = SECOND_CAPTION_TRACK_ID.to_owned();
+    *name = "Secondary captions".to_owned();
+    for caption in captions {
+        caption.id = "89300000-0000-4000-8000-000000000006".to_owned();
+    }
+    *secondary_active = Some(artifact_b_before.clone());
+    initial.state.sequences[0].tracks.push(second_caption_track);
+    initial.revision.state_hash = state_hash(&initial.state).unwrap();
+    artifact_a_before.track_link.project_revision = initial.revision.clone();
+    artifact_b_before.track_link.project_revision = initial.revision.clone();
+    if let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = &mut initial.state.sequences[0].tracks[0]
+    {
+        *active_caption_artifact = Some(artifact_a_before.clone());
+    }
+    if let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = &mut initial.state.sequences[0].tracks[2]
+    {
+        *active_caption_artifact = Some(artifact_b_before.clone());
+    }
+    initial.revision.state_hash = state_hash(&initial.state).unwrap();
+    validate_snapshot(&initial).unwrap();
+    let pre_group_state = initial.state.clone();
+    let pre_group_hash = initial.revision.state_hash.clone();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+
+    let mut artifact_a_after = artifact_a_before.clone();
+    let mut artifact_b_after = artifact_b_before.clone();
+    for artifact in [&mut artifact_a_after, &mut artifact_b_after] {
+        artifact.track_link.project_revision = initial.revision.clone();
+        artifact.cues[0].end.value -= 4;
+        artifact.cues[1].start.value -= 4;
+        artifact.cues[1].end.value -= 4;
+    }
+    artifact_a_after.language = "en-GB".to_owned();
+    artifact_b_after.language = "fr-FR".to_owned();
+    let forward_commands = vec![
+        ProjectCommand::RippleDeleteClip {
+            command_id: "89300000-0000-4000-8000-000000000010".to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: TRIM_CAPTION_SOURCE_TRACK_ID.to_owned(),
+            clip_id: TARGET_CLIP_ID.to_owned(),
+        },
+        ProjectCommand::ApplyCaptionArtifact {
+            command_id: "89300000-0000-4000-8000-000000000011".to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: CAPTION_TRACK_ID.to_owned(),
+            artifact: artifact_a_after.clone(),
+        },
+        ProjectCommand::ApplyCaptionArtifact {
+            command_id: "89300000-0000-4000-8000-000000000012".to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: SECOND_CAPTION_TRACK_ID.to_owned(),
+            artifact: artifact_b_after.clone(),
+        },
+    ];
+    let grants = crate::video::VideoPathGrants::default();
+    let owner = "ripple-caption-owner";
+    let journal = journal_path(&project_path).unwrap();
+
+    let (post_group_state, post_group_hash, project_id) = {
+        let service = VideoProjectService::default();
+        let opened = service.open(owner, &project_path, &grants).unwrap();
+        let project_id = opened.projection.project_id;
+        let committed = service
+            .execute(
+                owner,
+                CommandGroupRequest {
+                    group_id: "89300000-0000-4000-8000-000000000013".to_owned(),
+                    project_id: project_id.clone(),
+                    base_revision: 0,
+                    commands: forward_commands.clone(),
+                },
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                committed.prior_revision.number,
+                committed.new_revision.number
+            ),
+            (0, 1),
+            "the ordered group advances exactly one revision"
+        );
+        let records = scan(&journal).unwrap().records;
+        assert_eq!(records.len(), 1, "the ordered group writes one commit");
+        assert_eq!(records[0].kind, JournalRecordKind::Commit);
+        assert_eq!(records[0].history_group.forward_commands, forward_commands);
+        assert!(matches!(
+            records[0].history_group.inverse_commands.as_slice(),
+            [
+                ProjectCommand::RestoreActiveCaptionArtifact { track_id: second, .. },
+                ProjectCommand::RestoreActiveCaptionArtifact { track_id: first, .. },
+                ProjectCommand::RestoreRippleDeletedClip { clip, .. }
+            ] if second == SECOND_CAPTION_TRACK_ID
+                && first == CAPTION_TRACK_ID
+                && clip.id == TARGET_CLIP_ID
+        ));
+
+        let clips = committed.projection.state.sequences[0].tracks[1]
+            .clips()
+            .unwrap();
+        assert_eq!(
+            clips
+                .iter()
+                .map(|clip| (clip.id.as_str(), clip.timeline_start.value))
+                .collect::<Vec<_>>(),
+            vec![
+                (TRIM_CAPTION_CLIP_ID, 0),
+                (SAME_SOURCE_SUFFIX_ID, 16),
+                (OTHER_SOURCE_SUFFIX_ID, 26),
+            ]
+        );
+        assert!(clips.iter().all(|clip| clip.id != TARGET_CLIP_ID));
+        assert!(matches!(
+            &clips[2].source,
+            ClipSource::Asset { asset_id } if asset_id == OTHER_ASSET_ID
+        ));
+        let active_artifact = |track_id: &str| {
+            committed.projection.state.sequences[0]
+                .tracks
+                .iter()
+                .find(|track| track.id() == track_id)
+                .and_then(|track| match track {
+                    ProjectTrack::Caption {
+                        active_caption_artifact,
+                        ..
+                    } => active_caption_artifact.as_ref(),
+                    _ => None,
+                })
+        };
+        assert_eq!(active_artifact(CAPTION_TRACK_ID), Some(&artifact_a_after));
+        assert_eq!(
+            active_artifact(SECOND_CAPTION_TRACK_ID),
+            Some(&artifact_b_after)
+        );
+
+        let post_group_state = committed.projection.state.clone();
+        let post_group_hash = committed.state_hash.clone();
+        let undone = service
+            .undo(
+                owner,
+                &project_id,
+                1,
+                "89300000-0000-4000-8000-000000000014",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(undone.projection.state, pre_group_state);
+        assert_eq!(undone.state_hash, pre_group_hash);
+        assert_eq!(
+            active_caption_artifact(&undone.projection.state),
+            Some(&artifact_a_before)
+        );
+        let ProjectTrack::Caption {
+            active_caption_artifact,
+            ..
+        } = &undone.projection.state.sequences[0].tracks[2]
+        else {
+            panic!("secondary caption track")
+        };
+        assert_eq!(active_caption_artifact.as_ref(), Some(&artifact_b_before));
+
+        let redone = service
+            .redo(
+                owner,
+                &project_id,
+                2,
+                "89300000-0000-4000-8000-000000000015",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(redone.projection.state, post_group_state);
+        assert_eq!(redone.state_hash, post_group_hash);
+
+        let inspector_before = service.inspector(owner, &project_id).unwrap();
+        let journal_before = fs::read(&journal).unwrap();
+        let mut invalid_artifact = artifact_b_after.clone();
+        invalid_artifact.track_link.project_revision = redone.new_revision.clone();
+        invalid_artifact.track_link.caption_track_id = CAPTION_TRACK_ID.to_owned();
+        invalid_artifact.cues[0].lines.clear();
+        let rejected = service
+            .execute(
+                owner,
+                CommandGroupRequest {
+                    group_id: "89300000-0000-4000-8000-000000000016".to_owned(),
+                    project_id: project_id.clone(),
+                    base_revision: 3,
+                    commands: vec![
+                        ProjectCommand::MoveClip {
+                            command_id: "89300000-0000-4000-8000-000000000017".to_owned(),
+                            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                            track_id: TRIM_CAPTION_SOURCE_TRACK_ID.to_owned(),
+                            clip_id: SAME_SOURCE_SUFFIX_ID.to_owned(),
+                            timeline_start: RationalTime {
+                                value: 17,
+                                rate_numerator: 24,
+                                rate_denominator: 1,
+                            },
+                        },
+                        ProjectCommand::ApplyCaptionArtifact {
+                            command_id: "89300000-0000-4000-8000-000000000018".to_owned(),
+                            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                            track_id: CAPTION_TRACK_ID.to_owned(),
+                            artifact: invalid_artifact,
+                        },
+                    ],
+                },
+                &grants,
+            )
+            .unwrap_err();
+        assert_eq!(
+            rejected.code,
+            crate::video::error::VideoErrorCode::InvalidCommand
+        );
+        assert_eq!(
+            service.inspector(owner, &project_id).unwrap(),
+            inspector_before
+        );
+        assert_eq!(fs::read(&journal).unwrap(), journal_before);
+
+        (post_group_state, post_group_hash, project_id)
+    };
+
+    let reopened_service = VideoProjectService::default();
+    let reopened = reopened_service
+        .open("ripple-caption-reopen", &project_path, &grants)
+        .unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 3);
+    assert_eq!(reopened.projection.revision.number, 3);
+    assert_eq!(reopened.projection.state, post_group_state);
+    assert_eq!(reopened.projection.revision.state_hash, post_group_hash);
+    reopened_service
+        .close("ripple-caption-reopen", &project_id)
+        .unwrap();
+
+    let checkpointed = read_snapshot(&project_path).unwrap();
+    assert_eq!(checkpointed.state, post_group_state);
+    assert_eq!(checkpointed.revision.state_hash, post_group_hash);
+    assert_eq!(checkpointed.history.undo_stack.len(), 1);
+    assert!(checkpointed.history.redo_stack.is_empty());
+    assert_eq!(
+        checkpointed.history.undo_stack[0].forward_commands,
+        forward_commands
+    );
+}
+
+#[test]
 fn trim_clip_caption_lifecycle_is_atomic_across_history_and_recovery() {
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("trim-caption-lifecycle.svpvideo");

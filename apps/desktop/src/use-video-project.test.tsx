@@ -377,6 +377,40 @@ function rippleProjection(revision = 1): ProjectProjection {
   return projection;
 }
 
+function addRippleCaptionTrack(
+  projection: ProjectProjection,
+  trackId: string,
+  artifactSourceIdentity = sourceIdentity,
+  transcriptIdentityKey = transcriptArtifact.identity.key,
+): void {
+  const template = captionedProjection(projection.revision.number).state.sequences[0]!.tracks[1]!;
+  if (template.kind !== "caption" || template.activeCaptionArtifact === undefined)
+    throw new Error("Expected active caption fixture");
+  const track = structuredClone(template);
+  const artifact = track.activeCaptionArtifact;
+  if (artifact === undefined) throw new Error("Expected cloned active caption fixture");
+  track.id = trackId;
+  artifact.trackLink.captionTrackId = trackId;
+  artifact.sourceIdentity = artifactSourceIdentity;
+  artifact.transcriptArtifactIdentityKey = transcriptIdentityKey;
+  for (const cue of artifact.cues) {
+    for (const link of cue.sourceLinks) link.transcriptArtifactIdentityKey = transcriptIdentityKey;
+  }
+  projection.state.sequences[0]!.tracks.push(track);
+}
+
+function rippleCaptionedProjection(revision = 1): ProjectProjection {
+  const projection = rippleProjection(revision);
+  addRippleCaptionTrack(projection, id(10));
+  return projection;
+}
+
+const secondarySourceIdentity = {
+  ...sourceIdentity,
+  digest: "13".repeat(32),
+} as const;
+const secondaryTranscriptKey = "b".repeat(64);
+
 function commandResult(
   prior: ProjectProjection,
   next: ProjectProjection,
@@ -2196,7 +2230,7 @@ describe("canonical project controller", () => {
     });
   });
 
-  it("ripple deletes through one command and one revision with exact undo and redo", async () => {
+  it("ripple deletes without captions through exactly one command and activates undo/redo projections", async () => {
     const opened = rippleProjection(1);
     const deleted = structuredClone(opened);
     const deletedTrack = deleted.state.sequences[0]!.tracks[0]!;
@@ -2228,17 +2262,7 @@ describe("canonical project controller", () => {
       commandResult(undone, redone, operationId),
     );
     const backend = createBackend({
-      openVideoProject: vi.fn(async () => ({
-        projection: opened,
-        recovery: {
-          status: "clean" as const,
-          recoveredRevision: 1,
-          replayedRecordCount: 0,
-          discardedTailBytes: 0,
-          message: "Clean",
-          legacyHistoryReset: false,
-        },
-      })),
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
       executeVideoProjectGroup: execute,
       undoVideoProject: undo,
       redoVideoProject: redo,
@@ -2246,8 +2270,13 @@ describe("canonical project controller", () => {
     const { result } = renderHook(() => useVideoProject(backend));
     await act(() => result.current.openProject());
 
-    await act(() => result.current.rippleDeleteTimelineClip({ clipId: id(5) }));
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.rippleDeleteTimelineClip({ clipId: id(5) });
+    });
 
+    expect(outcome).toBe(true);
+    expect(execute).toHaveBeenCalledOnce();
     const request = execute.mock.calls[0]![0];
     expect(request.baseRevision).toBe(1);
     expect(request.commands).toEqual([
@@ -2258,18 +2287,10 @@ describe("canonical project controller", () => {
         clipId: id(5),
       }),
     ]);
-    expect(result.current.projection?.revision.number).toBe(2);
-    expect(
-      result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
-        ? result.current.projection.state.sequences[0].tracks[0].clips.map((clip) => [
-            clip.id,
-            clip.timelineStart.value,
-          ])
-        : null,
-    ).toEqual([[id(6), 10]]);
+    expect(result.current.projection).toBe(deleted);
 
     await act(() => result.current.undoEdit());
-    expect(result.current.projection?.revision.number).toBe(3);
+    expect(result.current.projection).toBe(undone);
     expect(
       result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
         ? result.current.projection.state.sequences[0].tracks[0].clips.map(
@@ -2279,7 +2300,7 @@ describe("canonical project controller", () => {
     ).toEqual([0, 30]);
 
     await act(() => result.current.redoEdit());
-    expect(result.current.projection?.revision.number).toBe(4);
+    expect(result.current.projection).toBe(redone);
     expect(
       result.current.projection?.state.sequences[0]?.tracks[0]?.kind === "video"
         ? result.current.projection.state.sequences[0].tracks[0].clips.map((clip) => [
@@ -2291,6 +2312,164 @@ describe("canonical project controller", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(undo).toHaveBeenCalledOnce();
     expect(redo).toHaveBeenCalledOnce();
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("atomically submits ripple delete before affected active-caption artifacts", async () => {
+    const opened = rippleCaptionedProjection(1);
+    const committed = structuredClone(opened);
+    committed.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      return commandResult(opened, committed, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.rippleDeleteTimelineClip({
+        clipId: id(5),
+        transcriptArtifacts: [transcriptArtifact],
+      });
+    });
+
+    expect(outcome).toBe(true);
+    expect(execute).toHaveBeenCalledOnce();
+    const request = execute.mock.calls[0]![0];
+    expect(request.commands.map(({ type }) => type)).toEqual([
+      "RippleDeleteClip",
+      "ApplyCaptionArtifact",
+    ]);
+    expect(request.commands[0]).toMatchObject({ clipId: id(5), trackId: id(4) });
+    expect(request.commands[1]).toMatchObject({
+      type: "ApplyCaptionArtifact",
+      trackId: id(10),
+      artifact: {
+        transcriptArtifactIdentityKey: transcriptArtifact.identity.key,
+        trackLink: { captionTrackId: id(10), projectRevision: opened.revision },
+      },
+    });
+    expect(new Set(request.commands.map(({ commandId }) => commandId))).toHaveLength(2);
+    expect(result.current.projection).toBe(committed);
+  });
+
+  it("reuses one transcript for matching caption tracks in sequence order", async () => {
+    const opened = rippleProjection(1);
+    addRippleCaptionTrack(opened, id(11));
+    addRippleCaptionTrack(opened, id(10));
+    const committed = structuredClone(opened);
+    committed.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
+    const execute = vi.fn(async (request: CommandGroupRequest) =>
+      commandResult(opened, committed, request.groupId),
+    );
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.rippleDeleteTimelineClip({
+        clipId: id(5),
+        transcriptArtifacts: [transcriptArtifact],
+      });
+    });
+
+    expect(outcome).toBe(true);
+    expect(execute).toHaveBeenCalledOnce();
+    const commands = execute.mock.calls[0]![0].commands;
+    expect(commands.map(({ type }) => type)).toEqual([
+      "RippleDeleteClip",
+      "ApplyCaptionArtifact",
+      "ApplyCaptionArtifact",
+    ]);
+    expect(
+      commands
+        .slice(1)
+        .map((command) =>
+          command.type === "ApplyCaptionArtifact"
+            ? [command.trackId, command.artifact.transcriptArtifactIdentityKey]
+            : null,
+        ),
+    ).toEqual([
+      [id(11), transcriptArtifact.identity.key],
+      [id(10), transcriptArtifact.identity.key],
+    ]);
+  });
+
+  it("fails closed when one mixed-source caption transcript is missing", async () => {
+    const opened = rippleCaptionedProjection(1);
+    const sequence = opened.state.sequences[0]!;
+    const sourceTrack = sequence.tracks[0]!;
+    if (sourceTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    const secondaryAssetId = id(20);
+    opened.state.assets.push({
+      ...structuredClone(opened.state.assets[0]!),
+      id: secondaryAssetId,
+      displayName: "secondary.mp4",
+      contentIdentity: secondarySourceIdentity,
+    });
+    opened.sources.push({
+      assetId: secondaryAssetId,
+      status: "resolved",
+      resolvedPath: "C:\\Media\\secondary.mp4",
+    });
+    sourceTrack.clips[1]!.source = { kind: "asset", assetId: secondaryAssetId };
+    addRippleCaptionTrack(opened, id(12), secondarySourceIdentity, secondaryTranscriptKey);
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.rippleDeleteTimelineClip({
+        clipId: id(5),
+        transcriptArtifacts: [transcriptArtifact],
+      });
+    });
+
+    expect(outcome).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "ripple-delete",
+      error: { details: { reason: "caption_lifecycle_transcript_missing" } },
+    });
+    expect(result.current.projection).toBe(opened);
+  });
+
+  it("rejects an invalid ripple-delete target without calling the backend", async () => {
+    const opened = rippleCaptionedProjection(1);
+    const execute = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.rippleDeleteTimelineClip({
+        clipId: id(999),
+        transcriptArtifacts: [transcriptArtifact],
+      });
+    });
+
+    expect(outcome).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection).toBe(opened);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
   });
 
