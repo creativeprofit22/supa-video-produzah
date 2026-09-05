@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     ffi::OsString,
     io,
+    path::PathBuf,
     process::{ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -30,6 +31,7 @@ pub(crate) type StdoutRecordObserver = Arc<dyn Fn(&[u8]) + Send + Sync + 'static
 pub(crate) struct ProcessSpec {
     pub(crate) program: OsString,
     pub(crate) args: Vec<OsString>,
+    pub(crate) current_dir: Option<PathBuf>,
     pub(crate) operation: &'static str,
     pub(crate) timeout: Duration,
     pub(crate) stdout_limit: usize,
@@ -248,8 +250,11 @@ async fn run_supervised_with_test_environment_and_observer(
 
 fn child_command(spec: &ProcessSpec) -> Command {
     let mut command = Command::new(&spec.program);
+    command.args(&spec.args);
+    if let Some(current_dir) = &spec.current_dir {
+        command.current_dir(current_dir);
+    }
     command
-        .args(&spec.args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

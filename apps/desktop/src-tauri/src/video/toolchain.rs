@@ -1179,6 +1179,7 @@ async fn run_inspection(
         ProcessSpec {
             program: program.as_os_str().to_owned(),
             args: arguments.iter().map(OsString::from).collect(),
+            current_dir: None,
             operation,
             timeout: INSPECTION_TIMEOUT,
             stdout_limit: INSPECTION_STDOUT_LIMIT,

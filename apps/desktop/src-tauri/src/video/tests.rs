@@ -13,6 +13,7 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tempfile::{tempdir, NamedTempFile};
 
 use super::{
@@ -51,6 +52,9 @@ use super::{
         source_fingerprint_for_test, ArtifactStoreKind, IngestFailpoint, PublicationFailpoint,
         MEDIA_STORE_NAMESPACE,
     },
+    nemo_transcription::{
+        transcribe_nemo_cuda, NemoTranscriptionInput, VerifiedNemoFile, VerifiedNemoRuntime,
+    },
     probe::{
         parse_ffprobe_json, parse_ffprobe_json_inspected, parse_thumbnail_artifact_json,
         parse_tool_banner, probe_media_with_program, probe_trusted_media_with_program,
@@ -77,6 +81,10 @@ use super::{
     },
     toolchain::{
         MediaToolchain, MediaToolchainError, MediaToolchainInspection, MediaToolchainProblem,
+    },
+    transcript::{
+        load_managed_transcript_artifact, AsrConfigurationV1, AsrProviderSettingV1,
+        AsrProviderSettingValueV1, AsrTaskV1, SpeakerDiarizationModeV1,
     },
     types::{
         is_recognizable_absolute_path, parse_project_json, parse_project_value, MediaAudioShape,
@@ -4917,6 +4925,7 @@ fn helper_process_spec(
             .expect("current test executable must be available")
             .into_os_string(),
         args: helper_process_args(),
+        current_dir: None,
         operation,
         timeout,
         stdout_limit,
@@ -5017,6 +5026,109 @@ fn process_tree_grandchild() {
     fs::write(survivor_marker, b"survived").expect("process-tree survivor marker must be writable");
 }
 
+fn nemo_runner_arguments() -> Vec<String> {
+    serde_json::from_str(
+        &env::var("SUPA_VIDEO_NEMO_HELPER_ARGUMENTS")
+            .expect("NeMo helper arguments must be configured"),
+    )
+    .expect("NeMo helper arguments must be JSON")
+}
+
+fn bump_helper_counter(path: &Path) {
+    let count = fs::read_to_string(path)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    fs::write(path, (count + 1).to_string()).expect("helper launch counter must update");
+}
+
+fn write_minimal_pcm_wav(path: &Path) {
+    let samples = [0_i16; 160];
+    let data_length = (samples.len() * 2) as u32;
+    let mut wav = Vec::with_capacity(44 + data_length as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_length).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&16_000_u32.to_le_bytes());
+    wav.extend_from_slice(&32_000_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_length.to_le_bytes());
+    for sample in samples {
+        wav.extend_from_slice(&sample.to_le_bytes());
+    }
+    fs::write(path, wav).expect("helper WAV must be writable");
+}
+
+fn nemo_runner_ffmpeg_helper() {
+    let arguments = nemo_runner_arguments();
+    assert_eq!(
+        &arguments[..5],
+        ["-nostdin", "-hide_banner", "-loglevel", "error", "-i"]
+    );
+    assert!(Path::new(&arguments[5]).is_file());
+    assert_eq!(
+        &arguments[6..15],
+        [
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le"
+        ]
+    );
+    assert_eq!(&arguments[15..18], ["-f", "wav", "-y"]);
+    assert_eq!(arguments.len(), 19);
+    let output = Path::new(arguments.last().expect("FFmpeg output argument must exist"));
+    let counter = output
+        .parent()
+        .and_then(Path::parent)
+        .expect("request temporary directory must have cache parent")
+        .join("ffmpeg-count");
+    bump_helper_counter(&counter);
+    write_minimal_pcm_wav(output);
+}
+
+fn nemo_runner_nemo_helper() {
+    let arguments = nemo_runner_arguments();
+    assert_eq!(arguments.len(), 10);
+    assert_eq!(arguments[0], "--json");
+    assert_eq!(arguments[1], "--verbose");
+    assert_eq!(arguments[2], "transcribe");
+    assert_eq!(arguments[4], "--model");
+    assert_eq!(arguments[6..], ["--device", "cuda:0", "--format", "json"]);
+    assert!(Path::new(&arguments[3]).is_file());
+    assert!(Path::new(&arguments[5]).is_file());
+    let cache = Path::new(&arguments[3])
+        .parent()
+        .and_then(Path::parent)
+        .expect("request temporary directory must have cache parent");
+    bump_helper_counter(&cache.join("nemo-count"));
+    eprintln!("CUDA backend initialized; transcribe device=0 cuda:0");
+    print!(
+        "{}",
+        serde_json::json!({
+            "file": arguments[3],
+            "text": "Hello world",
+            "confidence": 0.95,
+            "duration": 2.0,
+            "languages": ["en"],
+            "words": [
+                {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9},
+                {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
+            ]
+        })
+    );
+}
+
 #[test]
 fn supervised_process_helper() {
     let Ok(mode) = env::var(PROCESS_HELPER_MODE_ENV) else {
@@ -5062,8 +5174,226 @@ fn supervised_process_helper() {
         }
         "process_tree_parent" => process_tree_parent(),
         "process_tree_grandchild" => process_tree_grandchild(),
+        "nemo_runner_ffmpeg" => nemo_runner_ffmpeg_helper(),
+        "nemo_runner_nemo" => nemo_runner_nemo_helper(),
         other => panic!("unknown process helper mode: {other}"),
     }
+}
+
+fn sha256_file_fixture(path: &Path) -> VerifiedNemoFile {
+    let bytes = fs::read(path).expect("verified runtime fixture must be readable");
+    VerifiedNemoFile {
+        path: path.to_path_buf(),
+        byte_length: bytes.len() as u64,
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+    }
+}
+
+fn nemo_runner_configuration(executable_hash: &str, model_hash: &str) -> AsrConfigurationV1 {
+    AsrConfigurationV1 {
+        schema_version: 1,
+        engine_id: "nemo-speech.cpp".to_owned(),
+        engine_version: "runtime-commit-0123456789abcdef".to_owned(),
+        model_id: "nvidia/nemotron-speech-streaming-en-0.6b".to_owned(),
+        model_revision: "model-revision-0123456789abcdef".to_owned(),
+        requested_language: Some("en".to_owned()),
+        task: AsrTaskV1::Transcribe,
+        word_timing_required: true,
+        speaker_diarization_mode: SpeakerDiarizationModeV1::Off,
+        chunk_duration_us: 2_000_000,
+        chunk_overlap_us: 0,
+        provider_settings: vec![
+            AsrProviderSettingV1 {
+                key: "device".to_owned(),
+                value: AsrProviderSettingValueV1::String("cuda:0".to_owned()),
+            },
+            AsrProviderSettingV1 {
+                key: "gguf_sha256".to_owned(),
+                value: AsrProviderSettingValueV1::String(model_hash.to_owned()),
+            },
+            AsrProviderSettingV1 {
+                key: "quantization".to_owned(),
+                value: AsrProviderSettingValueV1::String("q8_0".to_owned()),
+            },
+            AsrProviderSettingV1 {
+                key: "runtime_sha256".to_owned(),
+                value: AsrProviderSettingValueV1::String(executable_hash.to_owned()),
+            },
+        ],
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_audio() {
+    let workspace = tempdir().expect("NeMo runner workspace must exist");
+    let cache_root = workspace.path().join("cache");
+    fs::create_dir_all(&cache_root).expect("cache root must exist");
+    let source_path = workspace.path().join("source.media");
+    fs::write(&source_path, b"authorized source audio").expect("source fixture must write");
+    let source = ingest_blocking_for_test(
+        source_path
+            .canonicalize()
+            .expect("source must canonicalize"),
+        cache_root.clone(),
+    )
+    .expect("source fixture must ingest");
+
+    let runtime_directory = workspace.path().join("runtime");
+    fs::create_dir_all(&runtime_directory).expect("runtime directory must exist");
+    let executable_path = runtime_directory.join("nemo-speech.exe");
+    let dll_path = runtime_directory.join("nemo-runtime.dll");
+    let model_path = workspace.path().join("model.gguf");
+    fs::write(&executable_path, b"nemo executable fixture").expect("executable fixture must write");
+    fs::write(&dll_path, b"nemo dll fixture").expect("DLL fixture must write");
+    fs::write(&model_path, b"nemo gguf fixture").expect("model fixture must write");
+    let executable = sha256_file_fixture(&executable_path);
+    let model = sha256_file_fixture(&model_path);
+    let runtime = VerifiedNemoRuntime::new(
+        executable.clone(),
+        runtime_directory,
+        vec![sha256_file_fixture(&dll_path)],
+        model.clone(),
+    )
+    .expect("runtime fixture must verify");
+    let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
+    let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+        .await
+        .expect("NeMo runner jobs must initialize");
+    let input = NemoTranscriptionInput {
+        source_path: &source.object_path,
+        source_identity: &source.identity,
+        source_fingerprint: &source.fingerprint,
+        source_duration_us: 2_000_000,
+        configuration: &configuration,
+        app_cache_root: &cache_root,
+    };
+
+    let published = transcribe_nemo_cuda(
+        input.clone(),
+        env::current_exe().expect("test executable must exist"),
+        runtime.clone(),
+        ProcessCancellation::new(),
+        jobs.cache(),
+    )
+    .await
+    .expect("NeMo runner must publish");
+    assert!(!published.reused);
+    assert_eq!(published.artifact.configuration, configuration);
+    assert_eq!(published.artifact.words.len(), 2);
+    assert_eq!(published.artifact.words[0].text, "Hello");
+    assert_eq!(published.artifact.words[0].source_start_us, 250_000);
+    assert_eq!(published.artifact.words[0].source_end_us, 750_000);
+    assert_eq!(published.artifact.words[1].text, "world");
+    assert_eq!(published.artifact.words[1].source_start_us, 1_000_000);
+    assert_eq!(published.artifact.words[1].source_end_us, 1_500_000);
+    assert_eq!(published.content_digest.len(), 64);
+    assert!(!published.lease_id.is_empty());
+    assert!(published.path.is_file());
+    assert_eq!(
+        load_managed_transcript_artifact(&cache_root, &published.artifact.identity)
+            .await
+            .expect("managed transcript must load"),
+        published.artifact
+    );
+    assert_eq!(
+        fs::read_to_string(cache_root.join("ffmpeg-count")).unwrap(),
+        "1"
+    );
+    assert_eq!(
+        fs::read_to_string(cache_root.join("nemo-count")).unwrap(),
+        "1"
+    );
+
+    let reused = transcribe_nemo_cuda(
+        input,
+        env::current_exe().expect("test executable must exist"),
+        runtime,
+        ProcessCancellation::new(),
+        jobs.cache(),
+    )
+    .await
+    .expect("identical NeMo runner request must reuse");
+    assert!(reused.reused);
+    assert_eq!(reused.artifact, published.artifact);
+    assert_eq!(
+        fs::read_to_string(cache_root.join("ffmpeg-count")).unwrap(),
+        "1"
+    );
+    assert_eq!(
+        fs::read_to_string(cache_root.join("nemo-count")).unwrap(),
+        "1"
+    );
+    let remaining_names: Vec<_> = fs::read_dir(&cache_root)
+        .expect("cache root must list")
+        .map(|entry| entry.expect("cache entry must read").file_name())
+        .collect();
+    assert!(remaining_names
+        .iter()
+        .all(|name| !name.to_string_lossy().starts_with(".nemo-transcribe-")));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_cuda_transcription_runner_cancelled_request_launches_nothing_and_leaves_no_partial() {
+    let workspace = tempdir().expect("cancelled NeMo runner workspace must exist");
+    let cache_root = workspace.path().join("cache");
+    fs::create_dir_all(&cache_root).expect("cache root must exist");
+    let source_path = workspace.path().join("source.media");
+    fs::write(&source_path, b"authorized source audio").expect("source fixture must write");
+    let source = ingest_blocking_for_test(
+        source_path
+            .canonicalize()
+            .expect("source must canonicalize"),
+        cache_root.clone(),
+    )
+    .expect("source fixture must ingest");
+    let runtime_directory = workspace.path().join("runtime");
+    fs::create_dir_all(&runtime_directory).expect("runtime directory must exist");
+    let executable_path = runtime_directory.join("nemo-speech.exe");
+    let model_path = workspace.path().join("model.gguf");
+    fs::write(&executable_path, b"nemo executable fixture").unwrap();
+    fs::write(&model_path, b"nemo gguf fixture").unwrap();
+    let executable = sha256_file_fixture(&executable_path);
+    let model = sha256_file_fixture(&model_path);
+    let runtime =
+        VerifiedNemoRuntime::new(executable.clone(), runtime_directory, vec![], model.clone())
+            .expect("runtime fixture must verify");
+    let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
+    let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+        .await
+        .expect("NeMo runner jobs must initialize");
+    let cancellation = ProcessCancellation::new();
+    cancellation.cancel();
+    let error = transcribe_nemo_cuda(
+        NemoTranscriptionInput {
+            source_path: &source.object_path,
+            source_identity: &source.identity,
+            source_fingerprint: &source.fingerprint,
+            source_duration_us: 2_000_000,
+            configuration: &configuration,
+            app_cache_root: &cache_root,
+        },
+        env::current_exe().expect("test executable must exist"),
+        runtime,
+        cancellation,
+        jobs.cache(),
+    )
+    .await
+    .expect_err("pre-cancelled NeMo runner must fail");
+    assert_eq!(error.code, VideoErrorCode::ProcessCancelled);
+    assert!(!cache_root.join("ffmpeg-count").exists());
+    assert!(!cache_root.join("nemo-count").exists());
+    let transcript_root = cache_root
+        .join(MEDIA_STORE_NAMESPACE)
+        .join("derived")
+        .join("transcript");
+    assert!(!transcript_root.exists() || walk_regular_files(&transcript_root).is_empty());
+    assert!(fs::read_dir(&cache_root).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".nemo-transcribe-")
+    }));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -5570,6 +5900,7 @@ async fn derived_probe_thumbnail_shape_with_programs(
             OsString::from("-i"),
             path.as_os_str().to_owned(),
         ],
+        current_dir: None,
         operation: "probe_thumbnail_integration",
         timeout: Duration::from_secs(30),
         stdout_limit: 64 * 1024,

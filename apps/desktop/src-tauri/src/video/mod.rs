@@ -7,6 +7,7 @@ mod error;
 mod grants;
 pub(crate) mod jobs;
 pub(crate) mod media_store;
+mod nemo_transcription;
 pub(crate) mod probe;
 mod process;
 pub mod project;

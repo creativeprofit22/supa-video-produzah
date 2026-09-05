@@ -2164,6 +2164,7 @@ pub(crate) async fn run_derived_ffmpeg(
     let spec = ProcessSpec {
         program,
         args,
+        current_dir: None,
         operation,
         timeout,
         stdout_limit: FFMPEG_STDOUT_LIMIT,

@@ -1354,6 +1354,7 @@ async fn execute_render_worker(
     let process = ProcessSpec {
         program: request.programs.verified_ffmpeg("render_video").await?,
         args: arguments.into_iter().map(OsString::from).collect(),
+        current_dir: None,
         operation: "render_video",
         timeout: RENDER_TIMEOUT,
         stdout_limit: RENDER_PROGRESS_RECORD_LIMIT,

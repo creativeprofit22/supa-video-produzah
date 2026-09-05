@@ -153,6 +153,7 @@ async fn check_tool(tool: VideoTool, program: OsString) -> VideoToolInfo {
     let spec = ProcessSpec {
         program,
         args: vec![OsString::from("-version")],
+        current_dir: None,
         operation: tool.operation(),
         timeout: TOOL_CHECK_TIMEOUT,
         stdout_limit: TOOL_STDOUT_LIMIT,
@@ -274,6 +275,7 @@ pub(crate) async fn probe_trusted_media_with_program(
             OsString::from("-i"),
             trusted_path.as_os_str().to_owned(),
         ],
+        current_dir: None,
         operation,
         timeout: MEDIA_PROBE_TIMEOUT,
         stdout_limit: MEDIA_PROBE_STDOUT_LIMIT,
@@ -315,6 +317,7 @@ pub(crate) async fn probe_thumbnail_artifact_with_program(
             OsString::from("-i"),
             trusted_path.as_os_str().to_owned(),
         ],
+        current_dir: None,
         operation,
         timeout: MEDIA_PROBE_TIMEOUT,
         stdout_limit: MEDIA_PROBE_STDOUT_LIMIT,
