@@ -1,0 +1,98 @@
+{
+  "metadataCases": {
+    "matching": {
+      "id": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "modelId": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "sha": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "cardData": {
+        "license": "other",
+        "license_name": "openmdw-1.1",
+        "license_link": "https://developer.nvidia.com/open-model-license"
+      },
+      "siblings": [
+        {
+          "rfilename": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+          "blobId": "bad5b6d6102ccfdbb71797e721f2039f808cbc75",
+          "size": 741548352,
+          "lfs": {
+            "sha256": "a5c44d1dc9864b03935e21e0a3b0fcc8e77651e4f5273a1938cb42c01664e6cd",
+            "size": 741548352,
+            "pointerSize": 134
+          }
+        }
+      ]
+    },
+    "wrongRevision": {
+      "id": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "sha": "0000000000000000000000000000000000000000",
+      "cardData": { "license": "other", "license_name": "openmdw-1.1", "license_link": "https://developer.nvidia.com/open-model-license" },
+      "siblings": [
+        { "rfilename": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf", "blobId": "bad5b6d6102ccfdbb71797e721f2039f808cbc75", "size": 741548352, "lfs": { "sha256": "a5c44d1dc9864b03935e21e0a3b0fcc8e77651e4f5273a1938cb42c01664e6cd", "size": 741548352 } }
+      ]
+    },
+    "wrongLicense": {
+      "id": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "sha": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "cardData": { "license": "apache-2.0", "license_name": "Apache-2.0", "license_link": "https://www.apache.org/licenses/LICENSE-2.0" },
+      "siblings": [
+        { "rfilename": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf", "blobId": "bad5b6d6102ccfdbb71797e721f2039f808cbc75", "size": 741548352, "lfs": { "sha256": "a5c44d1dc9864b03935e21e0a3b0fcc8e77651e4f5273a1938cb42c01664e6cd", "size": 741548352 } }
+      ]
+    },
+    "wrongSiblingIdentity": {
+      "id": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "sha": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "cardData": { "license": "other", "license_name": "openmdw-1.1", "license_link": "https://developer.nvidia.com/open-model-license" },
+      "siblings": [
+        { "rfilename": "model.safetensors", "blobId": "bad5b6d6102ccfdbb71797e721f2039f808cbc75", "size": 741548352, "lfs": { "sha256": "a5c44d1dc9864b03935e21e0a3b0fcc8e77651e4f5273a1938cb42c01664e6cd", "size": 741548352 } }
+      ]
+    }
+  },
+  "redirectCases": {
+    "successWithSecrets": [
+      {
+        "requestUrl": "https://huggingface.co/nvidia/model/resolve/revision/file.gguf?download=true&token=[REDACTED]",
+        "statusCode": 302,
+        "location": "https://cdn-lfs.huggingface.co/blob?X-Amz-Credential=[REDACTED]"
+      },
+      {
+        "requestUrl": "https://cdn-lfs.huggingface.co/blob?X-Amz-Credential=[REDACTED]",
+        "statusCode": 200,
+        "body": "verified-body"
+      }
+    ],
+    "loop": [
+      { "requestUrl": "https://huggingface.co/a?token=[REDACTED]", "statusCode": 302, "location": "https://cdn-lfs.huggingface.co/b?credential=[REDACTED]" },
+      { "requestUrl": "https://cdn-lfs.huggingface.co/b?credential=[REDACTED]", "statusCode": 302, "location": "https://huggingface.co/a?token=[REDACTED]" }
+    ],
+    "disallowedPrivateRedirect": [
+      { "requestUrl": "https://huggingface.co/private-probe", "statusCode": 302, "location": "https://127.0.0.1:8443/admin/action?token=[REDACTED]" }
+    ],
+    "retryThenSuccess": [
+      { "requestUrl": "https://huggingface.co/retry", "transportError": true },
+      { "requestUrl": "https://huggingface.co/retry", "statusCode": 200, "body": "retry-ok" }
+    ],
+    "oversized": [
+      { "requestUrl": "https://huggingface.co/bounded", "statusCode": 200, "body": "elevenbytes" }
+    ],
+    "slowBody": [
+      { "requestUrl": "https://huggingface.co/slow", "statusCode": 200, "delayMilliseconds": 1100, "body": "too-late" }
+    ]
+  },
+  "gitStatusPaths": {
+    "untracked": [
+      "space name.txt",
+      "tab\tname.txt",
+      "quote\"name.txt",
+      "naïve-音声.txt",
+      "line\nbreak.txt"
+    ],
+    "rename": {
+      "original": "rename source\tname.txt",
+      "destination": "renamed\ntarget.txt"
+    },
+    "copy": {
+      "original": "copy source.txt",
+      "destination": "copied \"target\".txt"
+    }
+  }
+}
