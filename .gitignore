@@ -29,6 +29,8 @@ target/
 .cache/
 coverage/
 test-results/
+playwright-report/
+blob-report/
 
 # Product-owned runtime artifacts
 video-phase1/
