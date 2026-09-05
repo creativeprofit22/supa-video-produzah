@@ -205,6 +205,18 @@ describe("caption artifact v1", () => {
     });
   });
 
+  it("bounds deterministic diagnostics for large malformed inputs to the result contract", () => {
+    const input = { cues: Array.from({ length: 15_000 }, () => ({})) };
+    const result = validateCaptionArtifactV1(input);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues.length).toBeLessThanOrEqual(100_000);
+    expect(result.issues).toHaveLength(100_000);
+    expect(validateCaptionArtifactV1(structuredClone(input))).toEqual(result);
+    expect(captionValidationResultV1Schema.safeParse(result).success).toBe(true);
+  });
+
   it("rejects unreduced, mixed, and non-positive rational cue timing", () => {
     const unreduced = oneCue();
     unreduced.timelineRate = { numerator: 48, denominator: 2 };

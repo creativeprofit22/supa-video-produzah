@@ -61,11 +61,13 @@ export const captionValidationIssueV1Schema = z
   .strict();
 export type CaptionValidationIssueV1 = z.infer<typeof captionValidationIssueV1Schema>;
 
+const MAX_CAPTION_VALIDATION_ISSUES = 100_000;
+
 export const captionValidationResultV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     valid: z.boolean(),
-    issues: z.array(captionValidationIssueV1Schema).max(100_000),
+    issues: z.array(captionValidationIssueV1Schema).max(MAX_CAPTION_VALIDATION_ISSUES),
   })
   .strict()
   .superRefine((result, context) => {
@@ -259,7 +261,8 @@ export function validateCaptionArtifactV1(input: unknown): CaptionValidationResu
         issue.path !== all[index - 1]!.path ||
         issue.code !== all[index - 1]!.code ||
         issue.cueId !== all[index - 1]!.cueId,
-    );
+    )
+    .slice(0, MAX_CAPTION_VALIDATION_ISSUES);
 
   return { schemaVersion: 1, valid: false, issues };
 }
