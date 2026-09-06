@@ -748,13 +748,15 @@ impl MediaCacheService {
             }
             transaction.commit()?;
         }
-        let leased_artifact_count = u64::try_from(leased_lengths.len())
-            .map_err(|_| MediaStateStoreError::CorruptRecord)?;
-        let leased_bytes = leased_lengths.into_iter().try_fold(0_u64, |total, length| {
-            total
-                .checked_add(length)
-                .ok_or(MediaStateStoreError::CorruptRecord)
-        })?;
+        let leased_artifact_count =
+            u64::try_from(leased_lengths.len()).map_err(|_| MediaStateStoreError::CorruptRecord)?;
+        let leased_bytes = leased_lengths
+            .into_iter()
+            .try_fold(0_u64, |total, length| {
+                total
+                    .checked_add(length)
+                    .ok_or(MediaStateStoreError::CorruptRecord)
+            })?;
         let reclaimable_bytes = managed_bytes
             .checked_sub(leased_bytes)
             .ok_or(MediaStateStoreError::CorruptRecord)?;
@@ -1662,7 +1664,10 @@ pub(crate) mod tests {
             status.leased_bytes,
             status.leased_artifact_count,
         );
-        assert!(counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1), "{counts:?}");
+        assert!(
+            counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1),
+            "{counts:?}"
+        );
         let after = publisher.status_sync().unwrap();
         after.validate().unwrap();
         assert_eq!((after.managed_bytes, after.leased_bytes), (17, 17));
@@ -1711,7 +1716,10 @@ pub(crate) mod tests {
                 status.leased_artifact_count,
             );
             let after_counts = if evict { (0, 0, 0, 0) } else { (17, 1, 0, 0) };
-            assert!(counts == (17, 1, 17, 1) || counts == after_counts, "{counts:?}");
+            assert!(
+                counts == (17, 1, 17, 1) || counts == after_counts,
+                "{counts:?}"
+            );
             let after = writer.status_sync().unwrap();
             after.validate().unwrap();
             assert_eq!(
@@ -1769,7 +1777,10 @@ pub(crate) mod tests {
             status.leased_bytes,
             status.leased_artifact_count,
         );
-        assert!(counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1), "{counts:?}");
+        assert!(
+            counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1),
+            "{counts:?}"
+        );
         let connection = publisher.state.open_connection().unwrap();
         let (_, availability) = MediaCacheService::catalog_candidate(&connection, &key)
             .unwrap()
