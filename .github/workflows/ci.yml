@@ -14,6 +14,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  security:
+    name: Dependency policy and full-history secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out all available branch and tag history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm 10.34.5
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.34.5
+          run_install: false
+
+      - name: Install Node.js 22.12.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.12.0
+
+      - name: Install Rust for pinned cargo-audit
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - name: Install cargo-audit 0.22.2 and verified Gitleaks 8.30.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/p1-security/bin
+          cargo install cargo-audit --version 0.22.2 --locked --root "$PWD/.cache/p1-security"
+          curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output .cache/p1-security/gitleaks.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  .cache/p1-security/gitleaks.tar.gz' | sha256sum --check --strict
+          tar -xzf .cache/p1-security/gitleaks.tar.gz -C .cache/p1-security/bin gitleaks
+          echo "$PWD/.cache/p1-security/bin" >> "$GITHUB_PATH"
+          .cache/p1-security/bin/cargo-audit --version
+          .cache/p1-security/bin/gitleaks version
+
+      - name: Test fail-closed dependency policy
+        run: node --test scripts/tests/check-dependency-policy.test.mjs
+
+      - name: Smoke-test secret detections, exact exceptions and scanner errors
+        run: node scripts/tests/gitleaks-smoke.mjs .cache/p1-security/bin/gitleaks
+
+      - name: Collect unfiltered JavaScript audit including development dependencies
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          mkdir -p .cache/p1-security
+          set +e
+          pnpm audit --json > .cache/p1-security/javascript.json 2> .cache/p1-security/javascript.stderr
+          printf '%s\n' "$?" > .cache/p1-security/javascript.exit
+
+      - name: Enforce JavaScript high and critical gate
+        if: ${{ !cancelled() }}
+        run: node scripts/check-dependency-policy.mjs javascript .cache/p1-security/javascript.json .cache/p1-security/javascript.exit .cache/p1-security/javascript.stderr
+
+      - name: Collect unfiltered Rust audit including every warning category and yanked crates
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          mkdir -p .cache/p1-security
+          set +e
+          cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings > .cache/p1-security/rust.json 2> .cache/p1-security/rust.stderr
+          printf '%s\n' "$?" > .cache/p1-security/rust.exit
+
+      - name: Enforce exact reviewed Rust warning policy
+        if: ${{ !cancelled() }}
+        run: node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json
+
+      - name: Scan complete available history without inline suppressions or baselines
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/p1-security
+          test "$(git rev-parse --is-shallow-repository)" = false
+          git for-each-ref --format='%(refname) %(objectname)'
+          git rev-list --all --count
+          node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks
+
   typescript:
     name: TypeScript canonical contracts and desktop bundle
     runs-on: ubuntu-24.04
@@ -344,7 +431,7 @@ jobs:
   windows-release:
     name: Signed Windows installers and clean-runner smoke
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [typescript, rust, windows]
+    needs: [typescript, rust, windows, security]
     runs-on: windows-2025
     timeout-minutes: 75
     environment: release

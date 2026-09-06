@@ -1,0 +1,31 @@
+title = "Full history with reviewed deterministic fixture identities"
+
+[extend]
+useDefault = true
+
+# Reviewed 2026-09-06. Nonsecret artifact test vectors, not credentials.
+# Evidence: evidence/2026-09-06-p1-dependency-triage/README.md (step 2).
+# AND is essential: no entire fixture path, rule, commit or baseline is excluded.
+[[allowlists]]
+description = "Exact synthetic transcript reference in caption fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/video-media/fixtures/caption-artifact-v1\.json$''']
+regexes = ['''^\n?[ \t]*"transcriptArtifactIdentityKey": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",?[ \t\r]*$''']
+
+[[allowlists]]
+description = "Exact computed transcript identity in transcript fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/video-media/fixtures/transcript-artifact-v1\.json$''']
+regexes = ['''^\n?[ \t]*"key": "76d3c7fd9700e9403b009a8f1a30ad7cdf73fac9c853a5ffe8623b8d1359eb28",?[ \t\r]*$''']
+
+[[allowlists]]
+description = "Exact computed media identity in canonical identity fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/video-media/fixtures/identity-v1\.json$''']
+regexes = ['''^\n?[ \t]*"key": "e27c60d494f85cb45da098ea8c803f3cf24b2dc9fdd56ad7569e4c02033c1cc5",?[ \t\r]*$''']
