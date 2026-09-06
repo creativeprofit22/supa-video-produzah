@@ -165,7 +165,9 @@ test("public validator rejects yanked exceptions; advisory-less findings remain 
     assert.deepEqual(
       result.errors,
       exceptions.exceptions.length
-        ? ["yanked exceptions are unsupported; remove the exception and replace the yanked dependency"]
+        ? [
+            "yanked exceptions are unsupported; remove the exception and replace the yanked dependency",
+          ]
         : [],
     );
   }
