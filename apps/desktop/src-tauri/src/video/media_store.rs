@@ -41,6 +41,21 @@ pub(crate) struct IngestedSource {
     pub(crate) fingerprint: SourceFingerprintV1,
 }
 
+/// Internal publication handoff; retain this value until registration and leasing commit.
+/// The source uses the existing object StoreLock, not a derived ArtifactBuildGuard.
+#[derive(Debug)]
+pub(crate) struct GuardedIngestedSource {
+    pub(crate) source: IngestedSource,
+    _lock: StoreLock,
+}
+
+impl GuardedIngestedSource {
+    /// Release publication protection only after a committed lease, or for unleased callers.
+    pub(crate) fn into_source(self) -> IngestedSource {
+        self.source
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SourceFacts {
     byte_length: u64,
@@ -533,11 +548,11 @@ fn artifact_publication_error(
     )
 }
 
-fn ingest_blocking_with_failpoint(
+fn ingest_guarded_blocking_with_failpoint(
     canonical_source: PathBuf,
     app_cache_root: PathBuf,
     failpoint: IngestFailpoint,
-) -> Result<IngestedSource, VideoCommandError> {
+) -> Result<GuardedIngestedSource, VideoCommandError> {
     let pre_read = capture_source_facts(&canonical_source)?;
     let fingerprint = source_fingerprint(&canonical_source, pre_read)?;
     if failpoint == IngestFailpoint::Read {
@@ -564,14 +579,10 @@ fn ingest_blocking_with_failpoint(
     let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, "ingest_source")?;
     let objects = ensure_direct_directory(&store_root, "objects", "ingest_source")?;
     let sha256 = ensure_direct_directory(&objects, "sha256", "ingest_source")?;
-    let locks = ensure_direct_directory(&store_root, "locks", "ingest_source")?;
-    let object_locks = ensure_direct_directory(&locks, "object", "ingest_source")?;
     let prefix = digest.get(..2).ok_or_else(|| invalid("digest"))?;
     let object_directory = ensure_direct_directory(&sha256, prefix, "ingest_source")?;
-    let lock_directory = ensure_direct_directory(&object_locks, prefix, "ingest_source")?;
     let object_path = object_directory.join(format!("{digest}.blob"));
-    let lock_path = lock_directory.join(format!("{digest}.lock"));
-    let _lock = lock_file(&lock_path, OBJECT_LOCK_TIMEOUT, "ingest_source")?;
+    let lock = acquire_source_lock_blocking(&cache_root, &digest)?;
 
     if !validate_object(&object_path, &digest, pre_read.byte_length) {
         let temporary = copy_source_to_temporary(
@@ -604,23 +615,29 @@ fn ingest_blocking_with_failpoint(
     // This also gates reuse of a valid orphan left by an interrupted pre-gate publisher.
     sync_publication_directory(&object_directory).map_err(ingest_publication_error)?;
 
-    Ok(IngestedSource {
-        object_path,
-        identity: MediaContentIdentityV1 {
-            schema_version: 1,
-            algorithm: MediaContentAlgorithm::Sha256,
-            digest,
-            byte_length: pre_read.byte_length,
+    // Keep byte visibility and lifetime protection together through the caller's lease commit.
+    Ok(GuardedIngestedSource {
+        source: IngestedSource {
+            object_path,
+            identity: MediaContentIdentityV1 {
+                schema_version: 1,
+                algorithm: MediaContentAlgorithm::Sha256,
+                digest,
+                byte_length: pre_read.byte_length,
+            },
+            fingerprint,
         },
-        fingerprint,
+        _lock: lock,
     })
 }
 
+#[cfg(test)]
 fn ingest_blocking(
     canonical_source: PathBuf,
     app_cache_root: PathBuf,
 ) -> Result<IngestedSource, VideoCommandError> {
-    ingest_blocking_with_failpoint(canonical_source, app_cache_root, IngestFailpoint::None)
+    ingest_guarded_blocking_with_failpoint(canonical_source, app_cache_root, IngestFailpoint::None)
+        .map(GuardedIngestedSource::into_source)
 }
 
 pub(crate) async fn ingest_source(
@@ -629,13 +646,65 @@ pub(crate) async fn ingest_source(
     requested_source: &Path,
     app_cache_root: &Path,
 ) -> Result<IngestedSource, VideoCommandError> {
+    ingest_source_guarded(owner_label, grants, requested_source, app_cache_root)
+        .await
+        .map(GuardedIngestedSource::into_source)
+}
+
+fn acquire_source_lock_blocking(
+    cache_root: &Path,
+    digest: &str,
+) -> Result<StoreLock, VideoCommandError> {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(invalid("digest"));
+    }
+    let cache_root = canonical_owned_root(cache_root, "ingest_source")?;
+    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, "ingest_source")?;
+    let locks = ensure_direct_directory(&store_root, "locks", "ingest_source")?;
+    let object_locks = ensure_direct_directory(&locks, "object", "ingest_source")?;
+    let directory = ensure_direct_directory(&object_locks, &digest[..2], "ingest_source")?;
+    lock_file(
+        &directory.join(format!("{digest}.lock")),
+        OBJECT_LOCK_TIMEOUT,
+        "ingest_source",
+    )
+}
+
+/// Retains the same object lock used by ingestion, without opening the source bytes.
+pub(crate) async fn acquire_source_lock(
+    cache_root: &Path,
+    digest: &str,
+) -> Result<StoreLock, VideoCommandError> {
+    let cache_root = cache_root.to_owned();
+    let digest = digest.to_owned();
+    tauri::async_runtime::spawn_blocking(move || acquire_source_lock_blocking(&cache_root, &digest))
+        .await
+        .map_err(|_| invalid("worker"))?
+}
+
+pub(crate) async fn ingest_source_guarded(
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    requested_source: &Path,
+    app_cache_root: &Path,
+) -> Result<GuardedIngestedSource, VideoCommandError> {
     // Authorization deliberately precedes metadata, store creation, hashing, or process work.
     let canonical_source =
         grants.authorize(owner_label, GrantCategory::Source, requested_source)?;
     let app_cache_root = app_cache_root.to_owned();
-    tauri::async_runtime::spawn_blocking(move || ingest_blocking(canonical_source, app_cache_root))
-        .await
-        .map_err(|_| invalid("worker"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        ingest_guarded_blocking_with_failpoint(
+            canonical_source,
+            app_cache_root,
+            IngestFailpoint::None,
+        )
+    })
+    .await
+    .map_err(|_| invalid("worker"))?
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -860,7 +929,8 @@ pub(crate) fn ingest_with_failpoint_for_test(
     app_cache_root: PathBuf,
     failpoint: IngestFailpoint,
 ) -> Result<IngestedSource, VideoCommandError> {
-    ingest_blocking_with_failpoint(canonical_source, app_cache_root, failpoint)
+    ingest_guarded_blocking_with_failpoint(canonical_source, app_cache_root, failpoint)
+        .map(GuardedIngestedSource::into_source)
 }
 
 #[cfg(test)]
@@ -916,6 +986,40 @@ pub(crate) fn ensure_direct_directory_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guarded_ingest_retains_object_lock_for_fresh_and_reused_content() {
+        let root = tempfile::tempdir().unwrap();
+        let source_path = root.path().join("source.bin");
+        let cache_root = root.path().join("cache");
+        fs::write(&source_path, b"guarded source").unwrap();
+        for _ in 0..2 {
+            let guarded = ingest_guarded_blocking_with_failpoint(
+                source_path.clone(),
+                cache_root.clone(),
+                IngestFailpoint::None,
+            )
+            .unwrap();
+            let digest = &guarded.source.identity.digest;
+            let lock_path = cache_root
+                .join(MEDIA_STORE_NAMESPACE)
+                .join("locks/object")
+                .join(&digest[..2])
+                .join(format!("{digest}.lock"));
+            assert!(try_lock_file_nonblocking(&lock_path, "ingest_source")
+                .unwrap()
+                .is_none());
+            assert_eq!(
+                fs::read(&guarded.source.object_path).unwrap(),
+                b"guarded source"
+            );
+            let source = guarded.into_source();
+            assert!(try_lock_file_nonblocking(&lock_path, "ingest_source")
+                .unwrap()
+                .is_some());
+            assert_eq!(fs::read(source.object_path).unwrap(), b"guarded source");
+        }
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn artifact_guard_removes_only_same_key_crash_partials_before_rebuild() {

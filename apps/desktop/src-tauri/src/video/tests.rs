@@ -6542,6 +6542,7 @@ pub(crate) async fn assert_durable_preparation_restart_boundaries(programs: Medi
             &grants,
             &cache_root,
             &programs,
+            None,
         )
         .await
         .expect("system restart plan must prepare");
@@ -6695,6 +6696,296 @@ pub(crate) async fn assert_durable_preparation_records(programs: MediaPrograms) 
     jobs.shutdown()
         .await
         .expect("durable scheduler must stop cleanly");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completed_reuse_failed_probe_does_not_pin() {
+    let workspace = tempdir().unwrap();
+    let cache_root = workspace.path().join("app-cache");
+    let source = workspace.path().join("source.mp4");
+    fs::write(&source, b"fake-media").unwrap();
+    let directory = workspace.path().join("programs");
+    let programs = cache_race_programs(&directory);
+    let grants = VideoPathGrants::default();
+    grants
+        .grant_existing_file("reader", GrantCategory::Source, &source)
+        .unwrap();
+    let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+        .await
+        .unwrap();
+    prepare_asset_durable(
+        PrepareAssetCoreRequest {
+            owner_label: "reader",
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: Some(RationalRate {
+                numerator: 10,
+                denominator: 1,
+            }),
+            expected_content_identity: None,
+        },
+        &grants,
+        &cache_root,
+        programs.clone(),
+        &jobs,
+    )
+    .await
+    .unwrap();
+    let parent = jobs
+        .store()
+        .list(100, true, Some(DERIVED_PROJECT_ID.into()), None)
+        .await
+        .unwrap()
+        .jobs
+        .into_iter()
+        .find(|job| job.parent_id.is_none())
+        .unwrap();
+    use super::cache::tests::lease_snapshot;
+    let original = lease_snapshot(jobs.cache());
+    for _ in 0..2 {
+        assert!(matches!(
+            super::derived::completed_prepared_asset_result(&jobs, &parent.id, &programs)
+                .await
+                .unwrap(),
+            super::derived::CompletedPreparationReuse::Ready(_)
+        ));
+        assert_eq!(
+            lease_snapshot(jobs.cache()),
+            original,
+            "successful reuse preserves actual-owner IDs"
+        );
+    }
+    jobs.cache().release_owner("reader".into()).await.unwrap();
+    let video = fs::read(directory.join("video.json")).unwrap();
+    let thumbnail = fs::read(directory.join("thumbnail.json")).unwrap();
+    for existing in [false, true] {
+        if existing {
+            jobs.cache()
+                .lease(
+                    "reader".into(),
+                    Some(DERIVED_PROJECT_ID.into()),
+                    original[0].2.clone(),
+                )
+                .await
+                .unwrap();
+            jobs.cache()
+                .lease("other".into(), None, original[1].2.clone())
+                .await
+                .unwrap();
+        }
+        let before = lease_snapshot(jobs.cache());
+        for fixture in ["video.json", "thumbnail.json"] {
+            fs::write(directory.join(fixture), b"{}").unwrap();
+            let result =
+                super::derived::completed_prepared_asset_result(&jobs, &parent.id, &programs).await;
+            assert!(!matches!(
+                result,
+                Ok(super::derived::CompletedPreparationReuse::Ready(_))
+            ));
+            assert_eq!(
+                lease_snapshot(jobs.cache()),
+                before,
+                "failed reuse must not leave attempt pins or change existing IDs"
+            );
+            fs::write(directory.join("video.json"), &video).unwrap();
+            fs::write(directory.join("thumbnail.json"), &thumbnail).unwrap();
+        }
+        let missing_programs = MediaPrograms::explicit(
+            directory.join("missing-ffmpeg").into_os_string(),
+            directory.join("missing-ffprobe").into_os_string(),
+        );
+        let result =
+            super::derived::completed_prepared_asset_result(&jobs, &parent.id, &missing_programs)
+                .await;
+        assert!(!matches!(
+            result,
+            Ok(super::derived::CompletedPreparationReuse::Ready(_))
+        ));
+        assert_eq!(lease_snapshot(jobs.cache()), before);
+        let stored = jobs.store().get_private(parent.id.clone()).await.unwrap();
+        let prepared: super::PreparedVideoAsset =
+            serde_json::from_value(stored.result.unwrap()).unwrap();
+        for path in [&prepared.proxy_path, &prepared.thumbnail_path] {
+            let bytes = fs::read(path).unwrap();
+            fs::remove_file(path).unwrap();
+            assert!(matches!(
+                super::derived::completed_prepared_asset_result(&jobs, &parent.id, &programs)
+                    .await
+                    .unwrap(),
+                super::derived::CompletedPreparationReuse::Rebuild
+            ));
+            assert_eq!(
+                lease_snapshot(jobs.cache()),
+                before,
+                "registration failures clean only attempt pins"
+            );
+            fs::write(path, bytes).unwrap();
+        }
+    }
+    jobs.shutdown().await.unwrap();
+}
+
+// Explicit fake executables exercise the real supervisor, probes and guarded child handoffs.
+fn cache_race_programs(directory: &Path) -> MediaPrograms {
+    fs::create_dir_all(directory).unwrap();
+    fs::write(directory.join("bytes"), b"fake-media").unwrap();
+    let video = serde_json::json!({
+        "streams": [{"index":0,"codec_type":"video","codec_name":"h264","width":320,"height":180,
+            "disposition":{"attached_pic":0},
+            "pix_fmt":"yuv420p","avg_frame_rate":"10/1","r_frame_rate":"10/1",
+            "sample_aspect_ratio":"1:1","display_aspect_ratio":"16:9",
+            "color_range":"tv","color_space":"bt709","color_primaries":"bt709","color_transfer":"bt709"}],
+        "format":{"duration":"1.000000","size":"10"}
+    });
+    let thumbnail = serde_json::json!({
+        "streams":[{"index":0,"codec_type":"video","codec_name":"mjpeg","width":1600,"height":90,"nb_read_frames":"1"}],
+        "format":{"size":"10"}
+    });
+    fs::write(directory.join("video.json"), video.to_string()).unwrap();
+    fs::write(directory.join("thumbnail.json"), thumbnail.to_string()).unwrap();
+    #[cfg(windows)]
+    let (ffmpeg, ffprobe) = {
+        let ffmpeg = directory.join("ffmpeg.cmd");
+        let ffprobe = directory.join("ffprobe.cmd");
+        fs::write(&ffmpeg, "@echo off\r\necho run>>\"%~dp0encode.log\"\r\nfor %%a in (%*) do set \"last=%%~a\"\r\ncopy /b /y \"%~dp0bytes\" \"%last%\" >nul\r\n").unwrap();
+        fs::write(&ffprobe, "@echo off\r\necho run>>\"%~dp0probe.log\"\r\necho %* | findstr /c:\"thumbnail\" >nul\r\nif errorlevel 1 (type \"%~dp0video.json\") else (type \"%~dp0thumbnail.json\")\r\n").unwrap();
+        (ffmpeg, ffprobe)
+    };
+    #[cfg(not(windows))]
+    let (ffmpeg, ffprobe) = {
+        use std::os::unix::fs::PermissionsExt;
+        let ffmpeg = directory.join("ffmpeg");
+        let ffprobe = directory.join("ffprobe");
+        fs::write(&ffmpeg, "#!/bin/sh\necho run >> \"$(dirname \"$0\")/encode.log\"\nfor last do :; done\ncp \"$(dirname \"$0\")/bytes\" \"$last\"\n").unwrap();
+        fs::write(&ffprobe, "#!/bin/sh\necho run >> \"$(dirname \"$0\")/probe.log\"\ncase \"$*\" in *thumbnail*) cat \"$(dirname \"$0\")/thumbnail.json\";; *) cat \"$(dirname \"$0\")/video.json\";; esac\n").unwrap();
+        for path in [&ffmpeg, &ffprobe] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        (ffmpeg, ffprobe)
+    };
+    MediaPrograms::explicit(ffmpeg.into_os_string(), ffprobe.into_os_string())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn race_actual_prepared_publication_and_completed_reuse() {
+    use super::cache::tests::{publication_race_for_kind, unpin_kind_for_reuse};
+    for kind in [
+        CacheArtifactKind::SourceObject,
+        CacheArtifactKind::Proxy,
+        CacheArtifactKind::ThumbnailTile,
+    ] {
+        for reused in [false, true] {
+            let workspace = tempdir().unwrap();
+            let cache_root = workspace.path().join("app-cache");
+            let source = workspace.path().join("source.mp4");
+            fs::write(&source, b"fake-media").unwrap();
+            let programs = cache_race_programs(&workspace.path().join("programs"));
+            let grants = Arc::new(VideoPathGrants::default());
+            grants
+                .grant_existing_file("reader", GrantCategory::Source, &source)
+                .unwrap();
+            let jobs = Arc::new(
+                MediaJobService::initialize(
+                    workspace.path().join("local-data"),
+                    cache_root.clone(),
+                )
+                .await
+                .unwrap(),
+            );
+            let prepare = {
+                let jobs = jobs.clone();
+                move || {
+                    let jobs = jobs.clone();
+                    let grants = grants.clone();
+                    let source = source.clone();
+                    let cache_root = cache_root.clone();
+                    let programs = programs.clone();
+                    async move {
+                        prepare_asset_durable(
+                            PrepareAssetCoreRequest {
+                                owner_label: "reader",
+                                project_id: DERIVED_PROJECT_ID,
+                                asset_id: DERIVED_ASSET_ID,
+                                source_path: &source,
+                                sequence_rate: Some(RationalRate {
+                                    numerator: 10,
+                                    denominator: 1,
+                                }),
+                                expected_content_identity: None,
+                            },
+                            &grants,
+                            &cache_root,
+                            programs,
+                            &jobs,
+                        )
+                        .await
+                        .unwrap()
+                    }
+                }
+            };
+            if reused {
+                prepare().await;
+                unpin_kind_for_reuse(jobs.cache(), kind);
+            }
+            let probe_log = workspace.path().join("programs/probe.log");
+            let encode_log = workspace.path().join("programs/encode.log");
+            let probes_before = fs::read(&probe_log).unwrap_or_default();
+            let encodes_before = fs::read(&encode_log).unwrap_or_default();
+            let prepared = publication_race_for_kind(
+                jobs.cache(),
+                reused,
+                Some(kind),
+                move |_| prepare(),
+                || {
+                    if reused || kind == CacheArtifactKind::SourceObject {
+                        assert_eq!(fs::read(&probe_log).unwrap_or_default(), probes_before,
+                        "completed reuse must protect all artifacts before probing; fresh source must lease before its probe");
+                    }
+                },
+            );
+            if reused {
+                assert_eq!(
+                    fs::read(&encode_log).unwrap(),
+                    encodes_before,
+                    "completed reuse must not rebuild"
+                );
+                let probes_after = fs::read_to_string(&probe_log).unwrap();
+                assert_eq!(
+                    probes_after.lines().count(),
+                    String::from_utf8(probes_before).unwrap().lines().count() + 2,
+                    "completed reuse probes only the protected proxy and thumbnail"
+                );
+            }
+            assert_eq!(fs::read(&prepared.proxy_path).unwrap(), b"fake-media");
+            assert_eq!(fs::read(&prepared.thumbnail_path).unwrap(), b"fake-media");
+            let status = jobs.cache().status().await.unwrap();
+            assert_eq!(status.artifact_count, 3);
+            assert_eq!(status.leased_artifact_count, 3);
+            let records = jobs
+                .store()
+                .list(100, true, Some(DERIVED_PROJECT_ID.into()), None)
+                .await
+                .unwrap()
+                .jobs;
+            assert_eq!(records.len(), 3);
+            assert!(records
+                .iter()
+                .all(|record| record.state == MediaJobState::Complete));
+            jobs.cache().release_owner("reader".into()).await.unwrap();
+            assert_eq!(
+                jobs.cache()
+                    .enforce_test_budget(0)
+                    .await
+                    .unwrap()
+                    .evicted_artifacts,
+                3
+            );
+            assert!(!Path::new(&prepared.proxy_path).exists());
+            assert!(!Path::new(&prepared.thumbnail_path).exists());
+            jobs.shutdown().await.unwrap();
+        }
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

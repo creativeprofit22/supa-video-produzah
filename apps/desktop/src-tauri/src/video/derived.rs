@@ -28,7 +28,9 @@ use super::{
         store::{MediaJobTransition, MediaStateStoreError, NewMediaJob, StoredPrivateJob},
         MediaJobService,
     },
-    media_store::{acquire_artifact, ingest_source, ArtifactStoreKind},
+    media_store::{
+        acquire_artifact, acquire_source_lock, ingest_source_guarded, ArtifactStoreKind,
+    },
     probe::{
         probe_thumbnail_artifact_with_program, probe_trusted_media_with_program, InspectedMedia,
         ThumbnailArtifactProbe,
@@ -353,36 +355,26 @@ impl MediaJobWorker for ProxyPreparationWorker {
         let owner_label = self.owner_label.clone();
         let project_id = self.project_id.clone();
         Box::pin(async move {
-            match execute_proxy_child(&plan, &programs, cancellation).await {
-                Ok(result) => {
-                    if let Err(error) = register_derived_artifact(
-                        &cache,
-                        &owner_label,
-                        &project_id,
-                        CacheArtifactKind::Proxy,
-                        &plan.proxy_identity,
-                        Path::new(&result.path),
-                    )
-                    .await
-                    {
-                        return MediaWorkerOutcome::Failed {
-                            error: media_job_error_from_cache(error),
-                            progress: MediaJobProgress {
-                                completed: 0,
-                                total: 1,
-                                unit: MediaJobProgressUnit::Items,
-                            },
-                        };
-                    }
-                    MediaWorkerOutcome::Complete {
-                        result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
-                        progress: MediaJobProgress {
-                            completed: 1,
-                            total: 1,
-                            unit: MediaJobProgressUnit::Items,
-                        },
-                    }
-                }
+            match execute_proxy_child(
+                &plan,
+                &programs,
+                cancellation,
+                Some(PublicationContext {
+                    cache: &cache,
+                    owner_label: &owner_label,
+                    project_id: &project_id,
+                }),
+            )
+            .await
+            {
+                Ok(result) => MediaWorkerOutcome::Complete {
+                    result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+                    progress: MediaJobProgress {
+                        completed: 1,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                },
                 Err(error) if error.code == VideoErrorCode::ProcessCancelled => {
                     MediaWorkerOutcome::Cancelled {
                         progress: MediaJobProgress {
@@ -421,36 +413,26 @@ impl MediaJobWorker for ThumbnailPreparationWorker {
         let owner_label = self.owner_label.clone();
         let project_id = self.project_id.clone();
         Box::pin(async move {
-            match execute_thumbnail_child(&plan, &programs, cancellation).await {
-                Ok(result) => {
-                    if let Err(error) = register_derived_artifact(
-                        &cache,
-                        &owner_label,
-                        &project_id,
-                        CacheArtifactKind::ThumbnailTile,
-                        &plan.thumbnail_identity,
-                        Path::new(&result.path),
-                    )
-                    .await
-                    {
-                        return MediaWorkerOutcome::Failed {
-                            error: media_job_error_from_cache(error),
-                            progress: MediaJobProgress {
-                                completed: 0,
-                                total: 1,
-                                unit: MediaJobProgressUnit::Items,
-                            },
-                        };
-                    }
-                    MediaWorkerOutcome::Complete {
-                        result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
-                        progress: MediaJobProgress {
-                            completed: 1,
-                            total: 1,
-                            unit: MediaJobProgressUnit::Items,
-                        },
-                    }
-                }
+            match execute_thumbnail_child(
+                &plan,
+                &programs,
+                cancellation,
+                Some(PublicationContext {
+                    cache: &cache,
+                    owner_label: &owner_label,
+                    project_id: &project_id,
+                }),
+            )
+            .await
+            {
+                Ok(result) => MediaWorkerOutcome::Complete {
+                    result: serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+                    progress: MediaJobProgress {
+                        completed: 1,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                },
                 Err(error) if error.code == VideoErrorCode::ProcessCancelled => {
                     MediaWorkerOutcome::Cancelled {
                         progress: MediaJobProgress {
@@ -928,18 +910,17 @@ async fn validate_recovered_proxy_artifact(
     owner_label: &str,
     project_id: &str,
 ) -> Result<ProxyChildResult, VideoCommandError> {
-    let result = execute_proxy_child(plan, programs, ProcessCancellation::new()).await?;
-    register_derived_artifact(
-        jobs.cache(),
-        owner_label,
-        project_id,
-        CacheArtifactKind::Proxy,
-        &plan.proxy_identity,
-        Path::new(&result.path),
+    execute_proxy_child(
+        plan,
+        programs,
+        ProcessCancellation::new(),
+        Some(PublicationContext {
+            cache: jobs.cache(),
+            owner_label,
+            project_id,
+        }),
     )
     .await
-    .map_err(map_job_store_error)?;
-    Ok(result)
 }
 
 async fn validate_recovered_thumbnail_artifact(
@@ -949,18 +930,17 @@ async fn validate_recovered_thumbnail_artifact(
     owner_label: &str,
     project_id: &str,
 ) -> Result<ThumbnailChildResult, VideoCommandError> {
-    let result = execute_thumbnail_child(plan, programs, ProcessCancellation::new()).await?;
-    register_derived_artifact(
-        jobs.cache(),
-        owner_label,
-        project_id,
-        CacheArtifactKind::ThumbnailTile,
-        &plan.thumbnail_identity,
-        Path::new(&result.path),
+    execute_thumbnail_child(
+        plan,
+        programs,
+        ProcessCancellation::new(),
+        Some(PublicationContext {
+            cache: jobs.cache(),
+            owner_label,
+            project_id,
+        }),
     )
     .await
-    .map_err(map_job_store_error)?;
-    Ok(result)
 }
 
 async fn complete_recovered_preparation(
@@ -1287,33 +1267,25 @@ pub(crate) async fn prepare_asset_durable(
         .await
         .map_err(map_job_store_error)?;
 
-    let plan = match plan_asset_core(request, grants, cache_root, &programs).await {
+    let plan = match plan_asset_core(
+        request,
+        grants,
+        cache_root,
+        &programs,
+        Some(PublicationContext {
+            cache: jobs.cache(),
+            owner_label: &owner_label,
+            project_id: &association_project_id,
+        }),
+    )
+    .await
+    {
         Ok(plan) => plan,
         Err(error) => {
             settle_preparation_error(jobs, &parent.job.id, &error).await;
             return Err(error);
         }
     };
-    jobs.cache()
-        .register(CacheArtifactRegistration {
-            key: plan.source_identity.digest.clone(),
-            content_digest: plan.source_identity.digest.clone(),
-            kind: CacheArtifactKind::SourceObject,
-            path: plan.object_path.clone(),
-            profile_id: None,
-            toolchain_id: None,
-            recipe_id: None,
-        })
-        .await
-        .map_err(map_job_store_error)?;
-    jobs.cache()
-        .lease(
-            owner_label.clone(),
-            Some(association_project_id.clone()),
-            plan.source_identity.digest.clone(),
-        )
-        .await
-        .map_err(map_job_store_error)?;
     jobs.store()
         .replace_private_payload(
             parent.job.id.clone(),
@@ -1558,12 +1530,12 @@ async fn enqueue_preparation_child(
         .map_err(map_job_store_error)
 }
 
-enum CompletedPreparationReuse {
+pub(super) enum CompletedPreparationReuse {
     Ready(Box<PreparedVideoAsset>),
     Rebuild,
 }
 
-async fn completed_prepared_asset_result(
+pub(super) async fn completed_prepared_asset_result(
     jobs: &MediaJobService,
     job_id: &str,
     programs: &MediaPrograms,
@@ -1607,27 +1579,6 @@ async fn completed_prepared_asset_result(
                 .map(ToOwned::to_owned)
         })
         .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "job_project"))?;
-    let cancellation = ProcessCancellation::new();
-    let proxy_expectation = ProxyValidationExpectation {
-        dimensions: plan.dimensions,
-        sequence_rate: &plan.sequence_rate,
-        source_duration_microseconds: plan.source_probe.duration_microseconds,
-        source_has_audio: plan.source_has_audio,
-    };
-    let proxy_is_valid = cached_proxy_probe(
-        Path::new(&prepared.proxy_path),
-        proxy_expectation,
-        programs,
-        cancellation.clone(),
-    )
-    .await?
-    .is_some();
-    let thumbnail_is_valid =
-        cached_thumbnail_is_valid(Path::new(&prepared.thumbnail_path), programs, cancellation)
-            .await?;
-    if !proxy_is_valid || !thumbnail_is_valid {
-        return Ok(CompletedPreparationReuse::Rebuild);
-    }
     let registrations = [
         CacheArtifactRegistration {
             key: plan.source_identity.digest.clone(),
@@ -1663,21 +1614,80 @@ async fn completed_prepared_asset_result(
             recipe_id: Some(prepared.thumbnail_identity.recipe_digest.clone()),
         },
     ];
-    for registration in registrations {
-        let artifact_key = registration.key.clone();
-        match jobs.cache().register(registration).await {
-            Ok(()) => {}
-            Err(MediaStateStoreError::Io(_) | MediaStateStoreError::CorruptRecord) => {
-                return Ok(CompletedPreparationReuse::Rebuild);
+    // Validation pins belong only to this attempt, never to a concurrent caller.
+    let attempt_owner = format!("completed-reuse:{}", uuid::Uuid::new_v4());
+    let result = async {
+        for registration in registrations {
+            // One existing artifact lock at a time; never wait for a lock inside a DB transaction.
+            let source_lock;
+            let artifact_guard;
+            if registration.kind == CacheArtifactKind::SourceObject {
+                source_lock = Some(acquire_source_lock(&plan.cache_root, &registration.key).await?);
+                artifact_guard = None;
+            } else {
+                source_lock = None;
+                let kind = if registration.kind == CacheArtifactKind::Proxy {
+                    ArtifactStoreKind::Proxy
+                } else {
+                    ArtifactStoreKind::ThumbnailTile
+                };
+                artifact_guard =
+                    Some(acquire_artifact(&plan.cache_root, kind, &registration.key).await?);
             }
-            Err(error) => return Err(map_job_store_error(error)),
+            match jobs
+                .cache()
+                .register_and_lease(
+                    registration,
+                    attempt_owner.clone(),
+                    Some(project_id.clone()),
+                )
+                .await
+            {
+                Ok(_) => {}
+                Err(MediaStateStoreError::Io(_) | MediaStateStoreError::CorruptRecord) => {
+                    return Ok(CompletedPreparationReuse::Rebuild)
+                }
+                Err(error) => return Err(map_job_store_error(error)),
+            }
+            drop(artifact_guard);
+            drop(source_lock);
+        }
+        let cancellation = ProcessCancellation::new();
+        let proxy_expectation = ProxyValidationExpectation {
+            dimensions: plan.dimensions,
+            sequence_rate: &plan.sequence_rate,
+            source_duration_microseconds: plan.source_probe.duration_microseconds,
+            source_has_audio: plan.source_has_audio,
+        };
+        let proxy_is_valid = cached_proxy_probe(
+            Path::new(&prepared.proxy_path),
+            proxy_expectation,
+            programs,
+            cancellation.clone(),
+        )
+        .await?
+        .is_some();
+        let thumbnail_is_valid =
+            cached_thumbnail_is_valid(Path::new(&prepared.thumbnail_path), programs, cancellation)
+                .await?;
+        if !proxy_is_valid || !thumbnail_is_valid {
+            return Ok(CompletedPreparationReuse::Rebuild);
         }
         jobs.cache()
-            .lease(owner_label.clone(), Some(project_id.clone()), artifact_key)
+            .transfer_attempt_leases(attempt_owner.clone(), owner_label, project_id)
+            .await
+            .map_err(map_job_store_error)?;
+        Ok(CompletedPreparationReuse::Ready(Box::new(prepared)))
+    }
+    .await;
+    // Covers lock, registration, probe and transfer failures as well as Rebuild.
+    if !matches!(&result, Ok(CompletedPreparationReuse::Ready(_))) {
+        jobs.cache()
+            .release_owner(attempt_owner)
             .await
             .map_err(map_job_store_error)?;
     }
-    Ok(CompletedPreparationReuse::Ready(Box::new(prepared)))
+    result
 }
 
 async fn wait_for_job_result<T: serde::de::DeserializeOwned>(
@@ -1784,6 +1794,13 @@ fn preparation_dedupe_key(request: &PrepareAssetCoreRequest<'_>) -> String {
     format!("asset_preparation:{}", hex_sha256(&hasher.finalize()))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PublicationContext<'a> {
+    cache: &'a MediaCacheService,
+    owner_label: &'a str,
+    project_id: &'a str,
+}
+
 async fn register_derived_artifact(
     cache: &MediaCacheService,
     owner_label: &str,
@@ -1793,34 +1810,21 @@ async fn register_derived_artifact(
     path: &Path,
 ) -> Result<(), MediaStateStoreError> {
     cache
-        .register(CacheArtifactRegistration {
-            key: identity.key.clone(),
-            content_digest: identity.source_identity.digest.clone(),
-            kind,
-            path: path.to_path_buf(),
-            profile_id: Some(identity.profile_identity.profile_id.clone()),
-            toolchain_id: Some(identity.toolchain_id.clone()),
-            recipe_id: Some(identity.recipe_digest.clone()),
-        })
-        .await?;
-    cache
-        .lease(
+        .register_and_lease(
+            CacheArtifactRegistration {
+                key: identity.key.clone(),
+                content_digest: identity.source_identity.digest.clone(),
+                kind,
+                path: path.to_path_buf(),
+                profile_id: Some(identity.profile_identity.profile_id.clone()),
+                toolchain_id: Some(identity.toolchain_id.clone()),
+                recipe_id: Some(identity.recipe_digest.clone()),
+            },
             owner_label.to_owned(),
             Some(project_id.to_owned()),
-            identity.key.clone(),
         )
         .await?;
     Ok(())
-}
-
-fn media_job_error_from_cache(_error: MediaStateStoreError) -> MediaJobError {
-    MediaJobError {
-        code: "cache_catalog_failure".to_owned(),
-        category: MediaJobErrorCategory::TransientIo,
-        message: "The prepared media cache could not be updated.".to_owned(),
-        retryable: true,
-        action: Some(MediaJobRecoveryAction::Retry),
-    }
 }
 
 fn media_job_error_from_video(error: &VideoCommandError) -> MediaJobError {
@@ -1887,10 +1891,10 @@ pub(crate) async fn prepare_asset_core(
     cache_root: &Path,
     programs: MediaPrograms,
 ) -> Result<PreparedVideoAsset, VideoCommandError> {
-    let plan = plan_asset_core(request, grants, cache_root, &programs).await?;
+    let plan = plan_asset_core(request, grants, cache_root, &programs, None).await?;
     let cancellation = ProcessCancellation::new();
-    let proxy = execute_proxy_child(&plan, &programs, cancellation.clone()).await?;
-    let thumbnail = execute_thumbnail_child(&plan, &programs, cancellation).await?;
+    let proxy = execute_proxy_child(&plan, &programs, cancellation.clone(), None).await?;
+    let thumbnail = execute_thumbnail_child(&plan, &programs, cancellation, None).await?;
     Ok(plan.finish(proxy, thumbnail))
 }
 
@@ -1899,6 +1903,7 @@ pub(crate) async fn plan_asset_core(
     grants: &VideoPathGrants,
     cache_root: &Path,
     programs: &MediaPrograms,
+    publication: Option<PublicationContext<'_>>,
 ) -> Result<PreparedAssetPlan, VideoCommandError> {
     validated_uuid_segment(request.project_id)
         .ok_or_else(|| VideoCommandError::invalid_path("prepare_asset", "project_id"))?;
@@ -1910,10 +1915,34 @@ pub(crate) async fn plan_asset_core(
         .transpose()
         .map_err(map_model_error)?;
 
-    let ingested =
-        ingest_source(request.owner_label, grants, request.source_path, cache_root).await?;
-    let cancellation = ProcessCancellation::new();
+    let guarded =
+        ingest_source_guarded(request.owner_label, grants, request.source_path, cache_root).await?;
     let source_probe_operation = "prepare_source_probe";
+    // Preserve tool-integrity error priority after authorized ingest, before catalog work.
+    // Keep the pre-spawn verification below: registration can await while tools change.
+    programs.verified_ffprobe(source_probe_operation).await?;
+    if let Some(context) = publication {
+        let source = &guarded.source;
+        context
+            .cache
+            .register_and_lease(
+                CacheArtifactRegistration {
+                    key: source.identity.digest.clone(),
+                    content_digest: source.identity.digest.clone(),
+                    kind: CacheArtifactKind::SourceObject,
+                    path: source.object_path.clone(),
+                    profile_id: None,
+                    toolchain_id: None,
+                    recipe_id: None,
+                },
+                context.owner_label.to_owned(),
+                Some(context.project_id.to_owned()),
+            )
+            .await
+            .map_err(map_job_store_error)?;
+    }
+    let ingested = guarded.into_source();
+    let cancellation = ProcessCancellation::new();
     let source_inspected = probe_trusted_media_with_program(
         &ingested.object_path,
         programs.verified_ffprobe(source_probe_operation).await?,
@@ -2013,6 +2042,7 @@ async fn execute_proxy_child(
     plan: &PreparedAssetPlan,
     programs: &MediaPrograms,
     cancellation: ProcessCancellation,
+    publication: Option<PublicationContext<'_>>,
 ) -> Result<ProxyChildResult, VideoCommandError> {
     let proxy_expectation = ProxyValidationExpectation {
         dimensions: plan.dimensions,
@@ -2081,6 +2111,18 @@ async fn execute_proxy_child(
         }
     };
     proxy_guard.confirm_durable()?;
+    if let Some(context) = publication {
+        register_derived_artifact(
+            context.cache,
+            context.owner_label,
+            context.project_id,
+            CacheArtifactKind::Proxy,
+            &plan.proxy_identity,
+            proxy_guard.path(),
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    }
     Ok(ProxyChildResult {
         path: response_path(proxy_guard.path())?,
         probe: proxy_probe,
@@ -2091,6 +2133,7 @@ async fn execute_thumbnail_child(
     plan: &PreparedAssetPlan,
     programs: &MediaPrograms,
     cancellation: ProcessCancellation,
+    publication: Option<PublicationContext<'_>>,
 ) -> Result<ThumbnailChildResult, VideoCommandError> {
     let thumbnail_guard = acquire_artifact(
         &plan.cache_root,
@@ -2138,6 +2181,18 @@ async fn execute_thumbnail_child(
         }
     }
     thumbnail_guard.confirm_durable()?;
+    if let Some(context) = publication {
+        register_derived_artifact(
+            context.cache,
+            context.owner_label,
+            context.project_id,
+            CacheArtifactKind::ThumbnailTile,
+            &plan.thumbnail_identity,
+            thumbnail_guard.path(),
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    }
     Ok(ThumbnailChildResult {
         path: response_path(thumbnail_guard.path())?,
     })

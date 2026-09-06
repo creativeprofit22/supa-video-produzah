@@ -715,24 +715,23 @@ async fn publish_validated_bytes(
     guard.confirm_durable()?;
     let path = guard.path().to_path_buf();
     let content_digest = sha256_hex(bytes);
-    drop(guard);
-
-    cache
-        .register(CacheArtifactRegistration {
-            key: key.clone(),
-            content_digest: content_digest.clone(),
-            kind: CacheArtifactKind::Transcript,
-            path: path.clone(),
-            profile_id: None,
-            toolchain_id: Some(artifact.configuration.engine_id.clone()),
-            recipe_id: Some(artifact.identity.configuration_identity.digest.clone()),
-        })
+    let lease_id = cache
+        .register_and_lease(
+            CacheArtifactRegistration {
+                key: key.clone(),
+                content_digest: content_digest.clone(),
+                kind: CacheArtifactKind::Transcript,
+                path: path.clone(),
+                profile_id: None,
+                toolchain_id: Some(artifact.configuration.engine_id.clone()),
+                recipe_id: Some(artifact.identity.configuration_identity.digest.clone()),
+            },
+            owner_label.to_owned(),
+            project_id.map(str::to_owned),
+        )
         .await
         .map_err(|_| transcript_error("cache_register"))?;
-    let lease_id = cache
-        .lease(owner_label.to_owned(), project_id.map(str::to_owned), key)
-        .await
-        .map_err(|_| transcript_error("cache_lease"))?;
+    drop(guard);
 
     Ok(PublishedTranscriptArtifact {
         artifact,
@@ -1370,6 +1369,32 @@ mod tests {
         assert!(!String::from_utf8(serialized)
             .unwrap()
             .contains("artifactPath"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_actual_transcript_publication_fresh_and_reserved_reuse() {
+        use crate::video::cache::tests::{assert_published_lease, publication_race};
+        for reused in [false, true] {
+            let artifact = fixture().artifact;
+            let bytes = serde_json::to_vec(&artifact).unwrap();
+            let root = tempfile::tempdir().unwrap();
+            let (_store, cache, cache_root) = cache_service(root.path()).await;
+            if reused {
+                publish_transcript_artifact(&cache_root, &cache, "reader", None, &artifact)
+                    .await
+                    .unwrap();
+                cache.release_owner("reader".into()).await.unwrap();
+            }
+            let published = publication_race(&cache, reused, move |publisher| async move {
+                publish_transcript_artifact(&cache_root, &publisher, "reader", None, &artifact)
+                    .await
+                    .unwrap()
+            });
+            assert_eq!(published.reused, reused);
+            assert!(!published.lease_id.is_empty());
+            let key = published.path.file_stem().unwrap().to_str().unwrap();
+            assert_published_lease(&cache, key, &published.path, &bytes, "reader").await;
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

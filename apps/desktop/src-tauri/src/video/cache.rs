@@ -6,7 +6,7 @@ use std::{
 };
 
 use fs4::{FileExt, TryLockError};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use uuid::Uuid;
 
 use super::{
@@ -133,6 +133,45 @@ pub(crate) struct MediaCacheService {
     state: MediaStateStore,
     app_cache_root: PathBuf,
     session_id: String,
+    #[cfg(test)]
+    race_hooks: CacheRaceHooks,
+}
+
+// Instance-local scheduling around the shared visibility/lifetime gate.
+#[cfg(test)]
+#[derive(Clone, Default)]
+struct CacheRaceHooks {
+    write_attempt: Option<std::sync::mpsc::SyncSender<()>>,
+    after_register: Option<std::sync::Arc<CacheRaceGate>>,
+    before_unlink: Option<std::sync::Arc<CacheRaceGate>>,
+    lock_attempt: Option<std::sync::mpsc::SyncSender<()>>,
+    publication: std::sync::Arc<std::sync::Mutex<Option<PublicationRace>>>,
+}
+
+#[cfg(test)]
+struct PublicationRace {
+    kind: CacheArtifactKind,
+    gate: std::sync::Arc<CacheRaceGate>,
+}
+
+#[cfg(test)]
+struct CacheRaceGate {
+    reached: std::sync::mpsc::SyncSender<()>,
+    resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+#[cfg(test)]
+impl CacheRaceGate {
+    fn pause(&self) -> Result<(), MediaStateStoreError> {
+        self.reached
+            .try_send(())
+            .map_err(|_| MediaStateStoreError::WorkerStopped)?;
+        self.resume
+            .lock()
+            .map_err(|_| MediaStateStoreError::WorkerStopped)?
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| MediaStateStoreError::WorkerStopped)
+    }
 }
 
 impl MediaCacheService {
@@ -141,6 +180,8 @@ impl MediaCacheService {
             state: store.state().clone(),
             app_cache_root,
             session_id,
+            #[cfg(test)]
+            race_hooks: CacheRaceHooks::default(),
         }
     }
 
@@ -148,6 +189,7 @@ impl MediaCacheService {
         &self.app_cache_root
     }
 
+    #[cfg(test)]
     pub(crate) async fn register(
         &self,
         registration: CacheArtifactRegistration,
@@ -158,21 +200,141 @@ impl MediaCacheService {
             .map_err(|_| MediaStateStoreError::WorkerStopped)?
     }
 
+    #[cfg(test)]
     pub(crate) async fn lease(
         &self,
         owner_label: String,
         project_id: Option<String>,
         artifact_key: String,
     ) -> Result<String, MediaStateStoreError> {
-        let state = self.state.clone();
-        let session_id = self.session_id.clone();
+        let service = self.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            validate_owner_label(&owner_label)?;
-            validate_cache_key(&artifact_key)?;
-            let lease_id = Uuid::new_v4().to_string();
-            let connection = state.open_connection()?;
-            let inserted = connection.execute(
-                "INSERT INTO cache_leases (
+            service.lease_sync(&owner_label, project_id.as_deref(), &artifact_key)
+        })
+        .await
+        .map_err(|_| MediaStateStoreError::WorkerStopped)?
+    }
+
+    /// Retain the caller's artifact guard until commit; never acquires another file lock.
+    pub(crate) async fn register_and_lease(
+        &self,
+        registration: CacheArtifactRegistration,
+        owner_label: String,
+        project_id: Option<String>,
+    ) -> Result<String, MediaStateStoreError> {
+        let service = self.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            service.register_and_lease_sync(&registration, &owner_label, project_id.as_deref())
+        })
+        .await
+        .map_err(|_| MediaStateStoreError::WorkerStopped)?
+    }
+
+    fn register_and_lease_sync(
+        &self,
+        registration: &CacheArtifactRegistration,
+        owner_label: &str,
+        project_id: Option<&str>,
+    ) -> Result<String, MediaStateStoreError> {
+        let mut connection = self.state.open_connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.register_on(&transaction, registration)?;
+        let lease =
+            self.insert_lease_on(&transaction, owner_label, project_id, &registration.key)?;
+        transaction.commit()?;
+        Ok(lease)
+    }
+
+    /// Transfer protected attempt pins without an eviction gap or changing existing owner IDs.
+    pub(crate) async fn transfer_attempt_leases(
+        &self,
+        attempt: String,
+        owner: String,
+        project_id: String,
+    ) -> Result<(), MediaStateStoreError> {
+        let service = self.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut connection = service.state.open_connection()?;
+            let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let keys = {
+                let mut statement = transaction.prepare(
+                    "SELECT artifact_key FROM cache_leases WHERE session_id = ?1 AND owner_label = ?2",
+                )?;
+                let rows = statement.query_map(params![service.session_id, attempt], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            for key in keys {
+                service.lease_on(&transaction, &owner, Some(&project_id), &key)?;
+            }
+            transaction.execute(
+                "DELETE FROM cache_leases WHERE session_id = ?1 AND owner_label = ?2",
+                params![service.session_id, attempt],
+            )?;
+            transaction.commit()?;
+            Ok(())
+        }).await.map_err(|_| MediaStateStoreError::WorkerStopped)?
+    }
+
+    fn lease_on(
+        &self,
+        connection: &Connection,
+        owner_label: &str,
+        project_id: Option<&str>,
+        artifact_key: &str,
+    ) -> Result<String, MediaStateStoreError> {
+        let (candidate, availability) = Self::catalog_candidate(connection, artifact_key)?
+            .ok_or(MediaStateStoreError::CorruptRecord)?;
+        if availability != "available" && availability != "reserved" {
+            return Err(MediaStateStoreError::CorruptRecord);
+        }
+        self.validate_candidate(&candidate)?;
+        Self::mark_candidate_on(connection, artifact_key, "available")?;
+        self.insert_lease_on(connection, owner_label, project_id, artifact_key)
+    }
+
+    #[cfg(test)]
+    fn lease_sync(
+        &self,
+        owner_label: &str,
+        project_id: Option<&str>,
+        artifact_key: &str,
+    ) -> Result<String, MediaStateStoreError> {
+        validate_owner_label(owner_label)?;
+        validate_cache_key(artifact_key)?;
+        let mut connection = self.state.open_connection()?;
+        #[cfg(test)]
+        if let Some(attempt) = &self.race_hooks.write_attempt {
+            let _ = attempt.try_send(());
+        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (candidate, availability) = Self::catalog_candidate(&transaction, artifact_key)?
+            .ok_or(MediaStateStoreError::CorruptRecord)?;
+        if availability != "available" && availability != "reserved" {
+            return Err(MediaStateStoreError::CorruptRecord);
+        }
+        if let Err(error) = self.validate_candidate(&candidate) {
+            Self::mark_candidate_on(&transaction, artifact_key, "missing")?;
+            transaction.commit()?;
+            return Err(error);
+        }
+        Self::mark_candidate_on(&transaction, artifact_key, "available")?;
+        let lease = self.insert_lease_on(&transaction, owner_label, project_id, artifact_key)?;
+        transaction.commit()?;
+        Ok(lease)
+    }
+
+    fn insert_lease_on(
+        &self,
+        connection: &Connection,
+        owner_label: &str,
+        project_id: Option<&str>,
+        artifact_key: &str,
+    ) -> Result<String, MediaStateStoreError> {
+        validate_owner_label(owner_label)?;
+        validate_cache_key(artifact_key)?;
+        let lease_id = Uuid::new_v4().to_string();
+        let inserted = connection.execute(
+            "INSERT INTO cache_leases (
                     lease_id, session_id, owner_label, project_id, artifact_key, acquired_at_ms
                  ) SELECT ?1, ?2, ?3, ?4, ?5, ?6
                    WHERE NOT EXISTS (
@@ -180,31 +342,28 @@ impl MediaCacheService {
                        WHERE session_id = ?2 AND owner_label = ?3
                          AND project_id IS ?4 AND artifact_key = ?5
                    )",
-                params![
-                    &lease_id,
-                    &session_id,
-                    &owner_label,
-                    project_id.as_deref(),
-                    &artifact_key,
-                    now_millis(),
-                ],
-            )?;
-            if inserted == 1 {
-                return Ok(lease_id);
-            }
-            connection
-                .query_row(
-                    "SELECT lease_id FROM cache_leases
+            params![
+                &lease_id,
+                &self.session_id,
+                &owner_label,
+                project_id,
+                &artifact_key,
+                now_millis(),
+            ],
+        )?;
+        if inserted == 1 {
+            return Ok(lease_id);
+        }
+        connection
+            .query_row(
+                "SELECT lease_id FROM cache_leases
                      WHERE session_id = ?1 AND owner_label = ?2
                        AND project_id IS ?3 AND artifact_key = ?4
                      ORDER BY acquired_at_ms, lease_id LIMIT 1",
-                    params![session_id, owner_label, project_id, artifact_key],
-                    |row| row.get(0),
-                )
-                .map_err(MediaStateStoreError::from)
-        })
-        .await
-        .map_err(|_| MediaStateStoreError::WorkerStopped)?
+                params![self.session_id, owner_label, project_id, artifact_key],
+                |row| row.get(0),
+            )
+            .map_err(MediaStateStoreError::from)
     }
 
     pub(crate) async fn release_owner(
@@ -287,7 +446,7 @@ impl MediaCacheService {
     }
 
     #[cfg(test)]
-    async fn enforce_test_budget(
+    pub(crate) async fn enforce_test_budget(
         &self,
         budget: u64,
     ) -> Result<CacheEvictionReport, MediaStateStoreError> {
@@ -424,6 +583,18 @@ impl MediaCacheService {
         &self,
         registration: &CacheArtifactRegistration,
     ) -> Result<(), MediaStateStoreError> {
+        let mut connection = self.state.open_connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.register_on(&transaction, registration)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn register_on(
+        &self,
+        connection: &Connection,
+        registration: &CacheArtifactRegistration,
+    ) -> Result<(), MediaStateStoreError> {
         validate_cache_key(&registration.key)?;
         validate_cache_key(&registration.content_digest)?;
         let relative = registration.kind.relative_path(&registration.key)?;
@@ -435,7 +606,6 @@ impl MediaCacheService {
         }
         let relative_path = relative_path_string(&relative)?;
         let now = now_millis();
-        let connection = self.state.open_connection()?;
         connection.execute(
             "INSERT INTO cache_artifacts (
                 artifact_key, content_digest, kind, relative_path, byte_length,
@@ -466,6 +636,27 @@ impl MediaCacheService {
                 now,
             ],
         )?;
+        #[cfg(test)]
+        if let Some(gate) = &self.race_hooks.after_register {
+            gate.pause()?;
+        }
+        #[cfg(test)]
+        {
+            let gate = {
+                let mut publication = self.race_hooks.publication.lock().unwrap();
+                if publication
+                    .as_ref()
+                    .is_some_and(|hook| hook.kind == registration.kind)
+                {
+                    publication.take().map(|hook| hook.gate)
+                } else {
+                    None
+                }
+            };
+            if let Some(gate) = gate {
+                gate.pause()?;
+            }
+        }
         Ok(())
     }
 
@@ -482,8 +673,8 @@ impl MediaCacheService {
     }
 
     fn status_sync(&self) -> Result<MediaCacheStatus, MediaStateStoreError> {
+        let mut connection = self.state.open_connection()?;
         let managed_root = self.managed_root().ok();
-        let connection = self.state.open_connection()?;
         let budget: i64 = connection.query_row(
             "SELECT integer_value FROM media_settings WHERE key = 'managed_cache_budget_bytes_v1'",
             [],
@@ -528,10 +719,23 @@ impl MediaCacheService {
         }
         drop(statement);
         for key in missing {
-            connection.execute(
-                "UPDATE cache_artifacts SET availability = 'missing', updated_at_ms = ?2 WHERE artifact_key = ?1",
-                params![key, now_millis()],
-            )?;
+            // Re-read under the writer gate: an earlier missing observation must
+            // never overwrite a publisher's newly committed availability.
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            if let Some((candidate, availability)) = Self::catalog_candidate(&transaction, &key)? {
+                if availability == "available" {
+                    if self.validate_candidate(&candidate).is_err() {
+                        Self::mark_candidate_on(&transaction, &key, "missing")?;
+                    } else {
+                        managed_bytes = managed_bytes
+                            .checked_add(candidate.byte_length)
+                            .ok_or(MediaStateStoreError::CorruptRecord)?;
+                        artifact_count += 1;
+                    }
+                }
+            }
+            transaction.commit()?;
         }
         let (leased_bytes, leased_artifact_count): (i64, i64) = connection.query_row(
             "SELECT COALESCE(SUM(byte_length), 0), COUNT(*) FROM cache_artifacts
@@ -621,7 +825,11 @@ impl MediaCacheService {
 
     fn reserve_lru_candidate(&self) -> Result<Option<EvictionCandidate>, MediaStateStoreError> {
         let mut connection = self.state.open_connection()?;
-        let transaction = connection.transaction()?;
+        #[cfg(test)]
+        if let Some(attempt) = &self.race_hooks.write_attempt {
+            let _ = attempt.try_send(());
+        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let candidate = transaction
             .query_row(
                 "SELECT artifact_key, kind, relative_path, byte_length FROM cache_artifacts
@@ -656,53 +864,126 @@ impl MediaCacheService {
         &self,
         candidate: &EvictionCandidate,
     ) -> Result<bool, MediaStateStoreError> {
-        let root = self.managed_root()?;
-        let path = safe_catalog_path(&root, &candidate.relative_path)?;
-        let expected_relative = candidate.kind.relative_path(&candidate.key)?;
-        if relative_path_string(&expected_relative)? != candidate.relative_path {
-            self.mark_candidate(&candidate.key, "invalid")?;
-            return Ok(false);
+        let result = self.evict_reserved_candidate_inner(candidate);
+        if result.is_err() {
+            let mut connection = self.state.open_connection()?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            if let Some((current, availability)) =
+                Self::catalog_candidate(&transaction, &candidate.key)?
+            {
+                if availability == "reserved" {
+                    let status = if self.validate_candidate(&current).is_ok() {
+                        "available"
+                    } else {
+                        "missing"
+                    };
+                    Self::mark_candidate_on(&transaction, &candidate.key, status)?;
+                }
+            }
+            transaction.commit()?;
         }
+        result
+    }
+
+    fn evict_reserved_candidate_inner(
+        &self,
+        candidate: &EvictionCandidate,
+    ) -> Result<bool, MediaStateStoreError> {
+        let root = self.managed_root()?;
+        // Preserve fail-closed catalog containment errors before touching the lock path.
+        safe_catalog_path(&root, &candidate.relative_path)?;
         let lock_path = root.join(candidate.kind.lock_relative_path(&candidate.key)?);
+        #[cfg(test)]
+        if let Some(attempt) = &self.race_hooks.lock_attempt {
+            let _ = attempt.try_send(());
+        }
         let _lock = CacheFileLock::acquire(&lock_path)?;
-        let connection = self.state.open_connection()?;
-        let leases: i64 = connection.query_row(
+        let mut connection = self.state.open_connection()?;
+        // simplification: SQLite serializes short unlink sections across keys.
+        // Upgrade to a per-key deletion-state protocol only if measured contention warrants it.
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let Some((current, availability)) = Self::catalog_candidate(&transaction, &candidate.key)?
+        else {
+            return Ok(false);
+        };
+        let leases: i64 = transaction.query_row(
             "SELECT COUNT(*) FROM cache_leases WHERE artifact_key = ?1",
             [&candidate.key],
             |row| row.get(0),
         )?;
-        let availability: Option<String> = connection
-            .query_row(
-                "SELECT availability FROM cache_artifacts WHERE artifact_key = ?1",
-                [&candidate.key],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if leases != 0 || availability.as_deref() != Some("reserved") {
-            self.mark_candidate(&candidate.key, "available")?;
+        if availability != "reserved" {
             return Ok(false);
         }
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.is_file() && !is_reparse_or_symlink(&metadata) => {
-                fs::remove_file(&path)?;
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            _ => {
-                self.mark_candidate(&candidate.key, "invalid")?;
+        if current.kind != candidate.kind
+            || current.relative_path != candidate.relative_path
+            || current.byte_length != candidate.byte_length
+            || leases != 0
+        {
+            Self::mark_candidate_on(&transaction, &candidate.key, "available")?;
+            transaction.commit()?;
+            return Ok(false);
+        }
+        let path = match self.validate_candidate(&current) {
+            Ok(path) => path,
+            Err(_) => {
+                Self::mark_candidate_on(&transaction, &candidate.key, "invalid")?;
+                transaction.commit()?;
                 return Ok(false);
             }
+        };
+        #[cfg(test)]
+        if let Some(gate) = &self.race_hooks.before_unlink {
+            gate.pause()?;
         }
-        connection.execute(
+        fs::remove_file(path)?;
+        transaction.execute(
             "DELETE FROM cache_artifacts WHERE artifact_key = ?1 AND availability = 'reserved'",
             [&candidate.key],
         )?;
+        transaction.commit()?;
         Ok(true)
     }
 
-    fn mark_candidate(&self, key: &str, availability: &str) -> Result<(), MediaStateStoreError> {
-        let connection = self.state.open_connection()?;
+    fn validate_candidate(
+        &self,
+        candidate: &EvictionCandidate,
+    ) -> Result<PathBuf, MediaStateStoreError> {
+        let root = self.managed_root()?;
+        let expected = candidate.kind.relative_path(&candidate.key)?;
+        if relative_path_string(&expected)? != candidate.relative_path {
+            return Err(MediaStateStoreError::UnsafeDirectory);
+        }
+        let path = safe_catalog_path(&root, &candidate.relative_path)?;
+        validate_exact_regular_file(&root.join(expected), &path)?;
+        if candidate.byte_length == 0 || fs::symlink_metadata(&path)?.len() != candidate.byte_length
+        {
+            return Err(MediaStateStoreError::CorruptRecord);
+        }
+        Ok(path)
+    }
+
+    fn catalog_candidate(
+        connection: &Connection,
+        key: &str,
+    ) -> Result<Option<(EvictionCandidate, String)>, MediaStateStoreError> {
+        Ok(connection.query_row(
+            "SELECT kind, relative_path, byte_length, availability FROM cache_artifacts WHERE artifact_key = ?1",
+            [key], |row| Ok((EvictionCandidate {
+                key: key.to_owned(), kind: parse_kind(&row.get::<_, String>(0)?)?,
+                relative_path: row.get(1)?, byte_length: u64::try_from(row.get::<_, i64>(2)?).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, -1))?,
+            }, row.get(3)?))).optional()?)
+    }
+
+    fn mark_candidate_on(
+        connection: &Connection,
+        key: &str,
+        availability: &str,
+    ) -> Result<(), MediaStateStoreError> {
         connection.execute(
-            "UPDATE cache_artifacts SET availability = ?2, updated_at_ms = ?3 WHERE artifact_key = ?1",
+            "UPDATE cache_artifacts SET availability = ?2, updated_at_ms = ?3
+             WHERE artifact_key = ?1 AND availability IN ('available', 'reserved')
+               AND (?2 != 'available' OR availability = 'reserved')",
             params![key, availability, now_millis()],
         )?;
         Ok(())
@@ -1109,6 +1390,583 @@ pub(crate) mod tests {
             toolchain_id: None,
             recipe_id: None,
         }
+    }
+
+    // Release-before-join is also used on unwinding. The hook has its own bounded
+    // watchdog, so a missing controller acknowledgement cannot strand a worker.
+    struct RaceWorker<T> {
+        resume: std::sync::mpsc::SyncSender<()>,
+        worker: Option<std::thread::JoinHandle<T>>,
+    }
+
+    impl<T> RaceWorker<T> {
+        fn finish(mut self) -> std::thread::Result<T> {
+            let _ = self.resume.try_send(());
+            self.worker.take().unwrap().join()
+        }
+    }
+
+    impl<T> Drop for RaceWorker<T> {
+        fn drop(&mut self) {
+            let _ = self.resume.try_send(());
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    fn race_gate() -> (
+        std::sync::Arc<CacheRaceGate>,
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::SyncSender<()>,
+    ) {
+        let (reached, acknowledgement) = std::sync::mpsc::sync_channel(1);
+        let (resume, receiver) = std::sync::mpsc::sync_channel(1);
+        (
+            std::sync::Arc::new(CacheRaceGate {
+                reached,
+                resume: std::sync::Mutex::new(receiver),
+            }),
+            acknowledgement,
+            resume,
+        )
+    }
+
+    fn catalog_and_lease_counts(cache: &MediaCacheService, key: &str) -> (i64, i64) {
+        let connection = cache.state.open_connection().unwrap();
+        connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM cache_artifacts WHERE artifact_key = ?1),
+                        (SELECT COUNT(*) FROM cache_leases WHERE artifact_key = ?1)",
+                [key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    /// Runs an actual publisher on its own runtime, retaining failure-safe worker cleanup.
+    pub(crate) fn publication_race<T, F, Fut>(
+        cache: &MediaCacheService,
+        reserved: bool,
+        publish: F,
+    ) -> T
+    where
+        T: Send + 'static,
+        F: FnOnce(MediaCacheService) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = T>,
+    {
+        publication_race_for_kind(cache, reserved, None, publish, || {})
+    }
+
+    pub(crate) fn lease_snapshot(cache: &MediaCacheService) -> Vec<(String, String, String)> {
+        let connection = cache.state.open_connection().unwrap();
+        let mut statement = connection
+            .prepare(
+                "SELECT lease_id, owner_label, artifact_key FROM cache_leases ORDER BY lease_id",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    pub(crate) fn publication_race_for_kind<T, F, Fut>(
+        cache: &MediaCacheService,
+        reserved: bool,
+        kind: Option<CacheArtifactKind>,
+        publish: F,
+        at_gate: impl FnOnce(),
+    ) -> T
+    where
+        T: Send + 'static,
+        F: FnOnce(MediaCacheService) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = T>,
+    {
+        let candidate = if reserved {
+            Some(cache.reserve_lru_candidate().unwrap().unwrap())
+        } else {
+            None
+        };
+        let (gate, reached, resume) = race_gate();
+        let mut publisher = cache.clone();
+        if let Some(kind) = kind {
+            *cache.race_hooks.publication.lock().unwrap() = Some(PublicationRace { kind, gate });
+        } else {
+            publisher.race_hooks.after_register = Some(gate);
+        }
+        let worker = RaceWorker {
+            resume,
+            worker: Some(std::thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(publish(publisher))
+            })),
+        };
+        let acknowledged = reached.recv_timeout(Duration::from_secs(10));
+        let (attempt, attempted) = std::sync::mpsc::sync_channel(1);
+        let mut evictor = cache.clone();
+        if reserved {
+            evictor.race_hooks.lock_attempt = Some(attempt);
+        } else {
+            evictor.race_hooks.write_attempt = Some(attempt);
+        }
+        let eviction = RaceWorker {
+            resume: worker.resume.clone(),
+            worker: Some(std::thread::spawn(move || {
+                if let Some(candidate) = candidate {
+                    assert!(!evictor.evict_reserved_candidate(&candidate).unwrap());
+                } else {
+                    assert!(evictor.reserve_lru_candidate().unwrap().is_none());
+                }
+                assert_eq!(
+                    evictor
+                        .enforce_budget_sync(Some(0))
+                        .unwrap()
+                        .evicted_artifacts,
+                    0
+                );
+            })),
+        };
+        let attempted = attempted.recv_timeout(Duration::from_secs(10));
+        if acknowledged.is_ok() && attempted.is_ok() {
+            at_gate();
+        }
+        let result = worker.finish();
+        let eviction = eviction.finish();
+        *cache.race_hooks.publication.lock().unwrap() = None;
+        assert!(acknowledged.is_ok(), "publisher did not acknowledge upsert");
+        assert!(
+            attempted.is_ok(),
+            "evictor did not acknowledge coordination attempt"
+        );
+        eviction.unwrap();
+        result.unwrap()
+    }
+
+    pub(crate) fn unpin_kind_for_reuse(cache: &MediaCacheService, kind: CacheArtifactKind) {
+        let changed = cache.state.open_connection().unwrap().execute(
+            "DELETE FROM cache_leases WHERE artifact_key IN (SELECT artifact_key FROM cache_artifacts WHERE kind = ?1)",
+            [kind.database_value()],
+        ).unwrap();
+        assert_eq!(changed, 1);
+    }
+
+    pub(crate) async fn assert_published_lease(
+        cache: &MediaCacheService,
+        key: &str,
+        path: &Path,
+        bytes: &[u8],
+        owner: &str,
+    ) {
+        assert_eq!(catalog_and_lease_counts(cache, key), (1, 1));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        cache.release_owner(owner.into()).await.unwrap();
+        assert_eq!(
+            cache
+                .enforce_budget_sync(Some(0))
+                .unwrap()
+                .evicted_artifacts,
+            1
+        );
+        assert!(!path.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_publication_handoff_preserves_returned_lease_and_bytes() {
+        let mut failures = Vec::new();
+        for kind in [
+            CacheArtifactKind::Transcript,
+            CacheArtifactKind::SourceObject,
+            CacheArtifactKind::Proxy,
+            CacheArtifactKind::ThumbnailTile,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (_store, cache) = service(root.path()).await;
+            let key = "1".repeat(64);
+            let path = create_artifact(root.path(), kind, &key, 8);
+            let (gate, reached, resume) = race_gate();
+            let mut publisher = cache.clone();
+            publisher.race_hooks.after_register = Some(gate);
+            let registration = registration(path.clone(), kind, &key);
+            let worker = RaceWorker {
+                resume,
+                worker: Some(std::thread::spawn(move || {
+                    let root = publisher.managed_root()?;
+                    let _guard = CacheFileLock::acquire(
+                        &root.join(registration.kind.lock_relative_path(&registration.key)?),
+                    )?;
+                    publisher.register_and_lease_sync(&registration, "race-reader", None)
+                })),
+            };
+            let acknowledged = reached.recv_timeout(Duration::from_secs(10));
+            let (attempt, attempted) = std::sync::mpsc::sync_channel(1);
+            let mut evictor = cache.clone();
+            evictor.race_hooks.write_attempt = Some(attempt);
+            let eviction_worker = RaceWorker {
+                resume: worker.resume.clone(),
+                worker: Some(std::thread::spawn(move || {
+                    assert!(evictor.reserve_lru_candidate()?.is_none());
+                    evictor.enforce_budget_sync(Some(0))
+                })),
+            };
+            let attempted = attempted.recv_timeout(Duration::from_secs(10));
+            let published = worker.finish();
+            let eviction = eviction_worker.finish().unwrap().unwrap();
+            assert!(acknowledged.is_ok(), "publisher did not reach upsert gate");
+            assert!(attempted.is_ok(), "eviction did not attempt coordination");
+            let lease = published.unwrap();
+            let counts = catalog_and_lease_counts(&cache, &key);
+            let bytes = fs::read(&path).ok();
+            if lease.is_err() || counts != (1, 1) || bytes.as_deref() != Some(&b"xxxxxxxx"[..]) {
+                failures.push(format!(
+                    "{kind:?}: desired successful handoff with catalog/lease (1, 1) and exact bytes; lease={lease:?}, counts={counts:?}, bytes={bytes:?}, evicted={}",
+                    eviction.evicted_artifacts
+                ));
+            } else {
+                cache.release_owner("race-reader".into()).await.unwrap();
+                assert_eq!(
+                    cache
+                        .enforce_budget_sync(Some(0))
+                        .unwrap()
+                        .evicted_artifacts,
+                    1
+                );
+                assert!(!path.exists());
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_final_eligibility_check_must_not_return_a_dangling_lease() {
+        let mut failures = Vec::new();
+        for kind in [
+            CacheArtifactKind::Transcript,
+            CacheArtifactKind::SourceObject,
+            CacheArtifactKind::Proxy,
+            CacheArtifactKind::ThumbnailTile,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (_store, cache) = service(root.path()).await;
+            let key = "2".repeat(64);
+            let path = create_artifact(root.path(), kind, &key, 8);
+            cache
+                .register(registration(path.clone(), kind, &key))
+                .await
+                .unwrap();
+            let (gate, reached, resume) = race_gate();
+            let mut evictor = cache.clone();
+            evictor.race_hooks.before_unlink = Some(gate);
+            let worker = RaceWorker {
+                resume,
+                worker: Some(std::thread::spawn(move || {
+                    evictor.enforce_budget_sync(Some(0))
+                })),
+            };
+            let acknowledged = reached.recv_timeout(Duration::from_secs(10));
+            let (attempt, attempted) = std::sync::mpsc::sync_channel(1);
+            let mut reader = cache.clone();
+            reader.race_hooks.write_attempt = Some(attempt);
+            let reader_key = key.clone();
+            let reader_worker = RaceWorker {
+                resume: worker.resume.clone(),
+                worker: Some(std::thread::spawn(move || {
+                    reader.lease_sync("race-reader", None, &reader_key)
+                })),
+            };
+            let attempted = attempted.recv_timeout(Duration::from_secs(10));
+            let before = catalog_and_lease_counts(&cache, &key);
+            let eviction = worker.finish();
+            let lease = reader_worker.finish().unwrap();
+            assert!(attempted.is_ok(), "lease did not attempt writer gate");
+            assert!(
+                acknowledged.is_ok(),
+                "eviction did not reach final-check gate"
+            );
+            assert_eq!(eviction.unwrap().unwrap().evicted_artifacts, 1);
+            let counts = catalog_and_lease_counts(&cache, &key);
+            assert_eq!(counts, (0, 0));
+            assert!(!path.exists());
+            if lease.is_ok() {
+                failures.push(format!(
+                    "{kind:?}: lease must not succeed for deleted bytes; lease={lease:?}, before unlink={before:?}, after unlink={counts:?}, file_exists={}",
+                    path.exists()
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn reserved_lease_wins_and_invalid_content_never_leases() {
+        for kind in [
+            CacheArtifactKind::Transcript,
+            CacheArtifactKind::SourceObject,
+            CacheArtifactKind::Proxy,
+            CacheArtifactKind::ThumbnailTile,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (_store, cache) = service(root.path()).await;
+            let key = "a".repeat(64);
+            let path = create_artifact(root.path(), kind, &key, 8);
+            cache
+                .register(registration(path.clone(), kind, &key))
+                .await
+                .unwrap();
+            let (gate, reached, resume) = race_gate();
+            let evictor = cache.clone();
+            let worker = RaceWorker {
+                resume,
+                worker: Some(std::thread::spawn(move || {
+                    let candidate = evictor.reserve_lru_candidate()?.unwrap();
+                    gate.pause()?;
+                    evictor.evict_reserved_candidate(&candidate)
+                })),
+            };
+            let acknowledged = reached.recv_timeout(Duration::from_secs(10));
+            let (attempt, attempted) = std::sync::mpsc::sync_channel(1);
+            let mut reader = cache.clone();
+            reader.race_hooks.write_attempt = Some(attempt);
+            let reader_key = key.clone();
+            let reader_worker = RaceWorker {
+                resume: worker.resume.clone(),
+                worker: Some(std::thread::spawn(move || {
+                    reader.lease_sync("reader", None, &reader_key)
+                })),
+            };
+            let attempted = attempted.recv_timeout(Duration::from_secs(10));
+            // Join the reader without releasing eviction: its commit wins this schedule.
+            let mut reader_worker = reader_worker;
+            let lease = reader_worker.worker.take().unwrap().join();
+            let evicted = worker.finish();
+            assert!(acknowledged.is_ok());
+            assert!(attempted.is_ok());
+            assert!(!evicted.unwrap().unwrap());
+            let lease = lease.unwrap().unwrap();
+            assert_eq!(
+                cache
+                    .lease("reader".into(), None, key.clone())
+                    .await
+                    .unwrap(),
+                lease
+            );
+            assert_eq!(fs::read(&path).unwrap(), b"xxxxxxxx");
+            assert_eq!(catalog_and_lease_counts(&cache, &key), (1, 1));
+            cache.release_owner("reader".into()).await.unwrap();
+            fs::write(&path, b"bad length").unwrap();
+            assert!(cache
+                .lease("reader".into(), None, key.clone())
+                .await
+                .is_err());
+            assert_eq!(catalog_and_lease_counts(&cache, &key), (1, 0));
+            fs::remove_file(path).unwrap();
+            assert!(cache.lease("reader".into(), None, key).await.is_err());
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn registration_and_lease_failure_roll_back_together() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "b".repeat(64);
+        let kind = CacheArtifactKind::Proxy;
+        let path = create_artifact(root.path(), kind, &key, 8);
+        cache.state.open_connection().unwrap().execute_batch(
+            "CREATE TRIGGER fail_lease BEFORE INSERT ON cache_leases BEGIN SELECT RAISE(ABORT, 'injected lease failure'); END;"
+        ).unwrap();
+        assert!(cache
+            .register_and_lease(
+                registration(path.clone(), kind, &key),
+                "reader".into(),
+                None
+            )
+            .await
+            .is_err());
+        assert_eq!(catalog_and_lease_counts(&cache, &key), (0, 0));
+        assert_eq!(fs::read(&path).unwrap(), b"xxxxxxxx");
+        cache
+            .state
+            .open_connection()
+            .unwrap()
+            .execute_batch("DROP TRIGGER fail_lease")
+            .unwrap();
+        let existing_lease = cache
+            .register_and_lease(
+                registration(path.clone(), kind, &key),
+                "existing".into(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(cache
+            .register_and_lease(registration(path.clone(), kind, &key), "".into(), None)
+            .await
+            .is_err());
+        let connection = cache.state.open_connection().unwrap();
+        connection.execute_batch(
+            "CREATE TRIGGER fail_lease BEFORE INSERT ON cache_leases BEGIN SELECT RAISE(ABORT, 'injected lease failure'); END;"
+        ).unwrap();
+        let mut changed_registration = registration(path.clone(), kind, &key);
+        changed_registration.recipe_id = Some("must-roll-back".into());
+        assert!(cache
+            .register_and_lease(changed_registration, "new-owner".into(), None)
+            .await
+            .is_err());
+        let recipe: Option<String> = connection
+            .query_row(
+                "SELECT recipe_id FROM cache_artifacts WHERE artifact_key = ?1",
+                [&key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(recipe.is_none());
+        connection.execute_batch("DROP TRIGGER fail_lease").unwrap();
+        assert_eq!(
+            cache
+                .lease("existing".into(), None, key.clone())
+                .await
+                .unwrap(),
+            existing_lease
+        );
+        assert_eq!(catalog_and_lease_counts(&cache, &key), (1, 1));
+        assert_eq!(fs::read(path).unwrap(), b"xxxxxxxx");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn database_contention_is_bounded_and_does_not_reserve_a_candidate() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "c".repeat(64);
+        let path = create_artifact(root.path(), CacheArtifactKind::Proxy, &key, 8);
+        cache
+            .register(registration(path.clone(), CacheArtifactKind::Proxy, &key))
+            .await
+            .unwrap();
+        let mut connection = cache.state.open_connection().unwrap();
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let (attempt, attempted) = std::sync::mpsc::sync_channel(1);
+        let (done, completed) = std::sync::mpsc::sync_channel(1);
+        let mut contender = cache.clone();
+        contender.race_hooks.write_attempt = Some(attempt);
+        let worker = std::thread::spawn(move || {
+            let result = contender.reserve_lru_candidate();
+            let _ = done.send(result.is_err());
+        });
+        let acknowledged = attempted.recv_timeout(Duration::from_secs(10));
+        let bounded_error = completed.recv_timeout(Duration::from_secs(10));
+        // Release the writer even on timeout before joining the blocked connection.
+        drop(transaction);
+        worker.join().unwrap();
+        assert!(acknowledged.is_ok());
+        assert!(bounded_error.unwrap());
+        let (_, availability) = MediaCacheService::catalog_candidate(&connection, &key)
+            .unwrap()
+            .unwrap();
+        assert_eq!(availability, "available");
+        assert_eq!(catalog_and_lease_counts(&cache, &key), (1, 0));
+        assert_eq!(fs::read(&path).unwrap(), b"xxxxxxxx");
+        assert_eq!(
+            cache
+                .enforce_budget_sync(Some(0))
+                .unwrap()
+                .evicted_artifacts,
+            1
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lease_idempotence_preserves_lru_timestamp_and_key_tie_order() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let keys = ["1".repeat(64), "2".repeat(64)];
+        for key in keys.iter().rev() {
+            let path = create_artifact(root.path(), CacheArtifactKind::Proxy, key, 8);
+            cache
+                .register(registration(path, CacheArtifactKind::Proxy, key))
+                .await
+                .unwrap();
+        }
+        let connection = cache.state.open_connection().unwrap();
+        connection
+            .execute("UPDATE cache_artifacts SET last_accessed_at_ms = 123", [])
+            .unwrap();
+        let first = cache
+            .lease("owner".into(), Some("project".into()), keys[0].clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            cache
+                .lease("owner".into(), Some("project".into()), keys[0].clone())
+                .await
+                .unwrap(),
+            first
+        );
+        let other = cache
+            .lease(
+                "owner".into(),
+                Some("other-project".into()),
+                keys[0].clone(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(first, other);
+        assert_eq!(catalog_and_lease_counts(&cache, &keys[0]), (1, 2));
+        let timestamp: i64 = connection
+            .query_row(
+                "SELECT last_accessed_at_ms FROM cache_artifacts WHERE artifact_key = ?1",
+                [&keys[0]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(timestamp, 123);
+        cache.release_owner("owner".into()).await.unwrap();
+        let candidate = cache.reserve_lru_candidate().unwrap().unwrap();
+        assert_eq!(candidate.key, keys[0]);
+        assert!(cache.evict_reserved_candidate(&candidate).unwrap());
+        assert_eq!(cache.reserve_lru_candidate().unwrap().unwrap().key, keys[1]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn eviction_lock_timeout_restores_only_valid_reservation() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let key = "c".repeat(64);
+        let kind = CacheArtifactKind::Proxy;
+        let path = create_artifact(root.path(), kind, &key, 8);
+        cache
+            .register(registration(path.clone(), kind, &key))
+            .await
+            .unwrap();
+        let candidate = cache.reserve_lru_candidate().unwrap().unwrap();
+        let guard = CacheFileLock::acquire(
+            &cache
+                .managed_root()
+                .unwrap()
+                .join(kind.lock_relative_path(&key).unwrap()),
+        )
+        .unwrap();
+        let evictor = cache.clone();
+        assert!(
+            std::thread::spawn(move || evictor.evict_reserved_candidate(&candidate))
+                .join()
+                .unwrap()
+                .is_err()
+        );
+        drop(guard);
+        assert_eq!(fs::read(path).unwrap(), b"xxxxxxxx");
+        assert_eq!(
+            cache
+                .enforce_budget_sync(Some(0))
+                .unwrap()
+                .evicted_artifacts,
+            1
+        );
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]
