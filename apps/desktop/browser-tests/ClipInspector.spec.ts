@@ -110,7 +110,9 @@ for (const viewport of viewports) {
 
   test(`applies and resets transform geometry at ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.clock.install({ time: new Date("2026-09-05T00:00:00Z") });
     await openFixture(page);
+    await page.clock.pauseAt(new Date("2026-09-05T01:00:00Z"));
 
     const positionX = page.getByRole("spinbutton", { name: "X position" });
     const scaleY = page.getByRole("spinbutton", { name: "Y scale" });
@@ -122,12 +124,21 @@ for (const viewport of viewports) {
     await expect(apply).toBeEnabled();
     await apply.click();
     await expect(page.getByText("Saving clip appearance")).toBeVisible();
+    await expect(page.locator(".clip-inspector-panel")).toHaveAttribute("aria-busy", "true");
+    await expect(positionX).toBeDisabled();
+    await expect(apply).toBeDisabled();
+    await page.clock.runFor(250);
     await expect(page.getByText("Saving clip appearance")).toBeHidden({ timeout: 2_000 });
+    await expect(page.locator(".clip-inspector-panel")).toHaveAttribute("aria-busy", "false");
+    await expect(positionX).toBeEnabled();
+    await expect(positionX).toHaveValue("12.5");
+    await expect(scaleY).toHaveValue("75");
 
     await page.getByRole("button", { name: "Reset transform" }).click();
     await expect(positionX).toHaveValue("0");
     await expect(scaleY).toHaveValue("100");
     await expect(apply).toBeEnabled();
+    await page.clock.resume();
     await expectNoAxeViolations(page);
   });
 
@@ -135,7 +146,9 @@ for (const viewport of viewports) {
     page,
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.clock.install({ time: new Date("2026-09-05T00:00:00Z") });
     await openFixture(page);
+    await page.clock.pauseAt(new Date("2026-09-05T01:00:00Z"));
 
     const panel = page.locator(".clip-inspector-panel");
     const slider = page.getByRole("slider", { name: "Opacity" });
@@ -160,10 +173,13 @@ for (const viewport of viewports) {
 
     await page.keyboard.press("Enter");
     await expect(panel).toHaveAttribute("aria-busy", "true");
+    // Regression: a slow test observer must not consume the fixture's 250ms saving window.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await expect(
       page.getByRole("status").filter({ hasText: "Saving clip appearance" }),
     ).toBeVisible();
     await expect(slider).toBeDisabled();
+    await page.clock.runFor(250);
     await expect(panel).toHaveAttribute("aria-busy", "false");
     await expect(slider).toBeEnabled();
     await expect(slider).toHaveAttribute("aria-valuetext", "0.1%");

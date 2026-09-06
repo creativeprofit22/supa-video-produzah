@@ -95,17 +95,22 @@ test("older-page loading preserves focus, merges equal timestamps once, and anno
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.clock.install({ time: new Date("2026-09-05T00:00:00Z") });
   await page.goto(`${fixturePath}?pagination=pending`);
   const loadOlder = page.getByRole("button", { name: "Load older jobs" });
   await loadOlder.focus();
   await expect(loadOlder).toBeFocused();
+  await page.clock.pauseAt(new Date("2026-09-05T01:00:00Z"));
   await page.keyboard.press("Enter");
   const pending = page.getByRole("button", { name: "Loading older jobs" });
+  // Regression: observer latency must not consume the fixture's 300ms loading window.
+  await new Promise((resolve) => setTimeout(resolve, 350));
   await expect(pending).toBeDisabled();
   await page.screenshot({
     path: "evidence/phase-3/job-center-pagination-pending-1280x800.png",
     animations: "disabled",
   });
+  await page.clock.runFor(300);
   const complete = page.getByRole("button", { name: "All jobs loaded" });
   await expect(complete).toBeVisible();
   await expect(complete).toBeDisabled();
@@ -121,6 +126,7 @@ test("older-page loading preserves focus, merges equal timestamps once, and anno
     "job-70000000-0000-4000-8000-000000000079-title",
   ]);
   expect(new Set(parentTitleIds).size).toBe(parentTitleIds.length);
+  await page.clock.resume();
   await expectNoHorizontalOverflow(page);
   await expectNoAxeViolations(page);
 });

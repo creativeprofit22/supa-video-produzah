@@ -33,6 +33,8 @@ afterEach(cleanup);
 
 describe("Phase 2 accessibility defect scanning", () => {
   beforeEach(() => {
+    expect(document.body.childElementCount).toBe(0);
+    expect(vi.isFakeTimers()).toBe(false);
     invokeMock.mockReset();
     listenMock.mockReset().mockResolvedValue(vi.fn());
   });
