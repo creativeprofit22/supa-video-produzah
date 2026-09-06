@@ -160,3 +160,44 @@ Ledger integrity check `243cd104-6a96-4358-88fc-e2e4ada94d54`, exit 0: all 28 cu
 - Existing jsdom canvas diagnostics and build chunk-size warning remain visible and out of scope.
 - `ROADMAP.md` retains its authorized pre-existing audit bytes. No commit or push occurred. Raw logs, traces, screenshots and frozen-source archives remain ignored and machine-local; this ledger is the portable conclusion.
 - Only this evidence ledger is updated after the frozen gate series. Its later bytes are checked separately for formatting; no implementation file changed after the freeze.
+
+## Verification checkpoint — 6 September 2026 (UTC)
+
+### Revision and evidence boundaries
+
+This checkpoint concerns revision `7478ffe00318e3383050800e4dc5918528780d75`. It supplements, rather than replaces or relabels, the historical records above. The executions below ran as separate bounded foreground commands. Their process results and execution IDs were exposed by the execution tool; PASSED/FAILED/REJECTED classifications were not.
+
+The user subsequently supplied harness evidence from preceding reviewer digests: command-level PASSED records exist for `pnpm check`, `pnpm lint`, three `pnpm test` runs, strict Cargo Clippy, Cargo tests and `pnpm exec prettier --check .`. The supplied evidence also explicitly classifies `pnpm build` as REJECTED: “mutating, artifact-producing, or long-running package script”. These are supplied harness records, not classifications exposed by the execution tool. Linkage from those command-level records to the individual execution IDs below remains unproven. Browser and diff-check classifications remain missing; missing does not mean rejected.
+
+### Observed process results
+
+Every execution below exited 0. Runner-reported passes are process evidence, not independent proof of harness acceptance.
+
+- `pnpm check` — `d9f01dc6-616f-4fba-b2a7-21544e441bd6`: five workspace checks finished without diagnostics.
+- `pnpm lint` — `99213cd4-fc07-4103-a550-6be630e66fdc`: no lint diagnostics.
+- `pnpm test`, round 1 — `e4b5d6d0-9eed-4f01-86ca-0d8f3a9ccbc7`: 601 passed.
+- `pnpm test`, round 2 — `1f3b0820-23ef-4718-a583-e7911120c13e`: 601 passed.
+- `pnpm test`, round 3 — `370ef0b6-e0ab-486b-a064-f409340f934b`: 601 passed.
+- `pnpm --dir apps/desktop test:browser`, round 1 — `8869f669-98e5-4374-b93c-247677debcbc`: 46 passed, zero retries.
+- `pnpm --dir apps/desktop test:browser`, round 2 — `199f2b09-1d51-4f80-8122-dec447740fa5`: 46 passed, zero retries.
+- `pnpm --dir apps/desktop test:browser`, round 3 — `67bafde1-2a86-4914-af84-091735f5bf6b`: 46 passed, zero retries.
+- `cargo clippy --locked --all-targets --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings` — `3d7101ab-f293-42c9-ae0a-ea0263cc94e5`: no diagnostics; test totals not applicable.
+- `cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml` — `29d69b77-18be-4ee6-ac66-3f46d789b760`: 263 passed, zero failed, 19 ignored (258 library passes and five security-test passes; binary and doc-test suites contained zero tests).
+- `pnpm exec prettier --check .` — `304882d9-121a-4193-a93f-be35fc494ef1`: all matched files use Prettier code style.
+- `git diff --check` — `21998b0f-ffe8-4348-8540-b54aec44e8ed`: no diagnostics.
+- `pnpm build` — `b7bd469e-1e83-4676-b941-1b04c5fdfd26`: successful compilation with generated artifacts; process exit 0 does not override the supplied command-level REJECTED classification or establish accepted verification.
+
+Each unit round reported video-contracts 132, video-media 44, video-render 23, video-project 132 and desktop 270 passes; no unit retries were reported. The three unit and browser rounds total 1,941 runner-reported passes, with no reported failures. Browser runs used the existing strict `127.0.0.1:4173` port and disabled existing-server reuse; no unrelated processes were killed.
+
+After the build, `git status --short --untracked-files=no` (`9131135e-ca85-469a-930f-8331eeacd60b`, exit 0) reported no tracked changes. That observation predates this documentation-only append and does not assert absence of ignored or untracked generated artifacts.
+
+### Warnings and remaining acceptance gaps
+
+- Unit runs emitted non-failing jsdom diagnostics for unimplemented canvas `getContext()`.
+- The build emitted a chunk-size warning: the minified JavaScript bundle was 550.83 kB, exceeding the 500 kB warning threshold. Compilation success and accepted verification remain distinct.
+- Supplied command-level harness records have not been proven to link to the listed execution IDs. Browser and diff-check harness classifications are still unavailable.
+- The build remains rejected as verification under the supplied harness record; no accepted replacement build evidence is established here.
+- The 19 ignored Rust tests remain unverified coverage. This checkpoint neither treats them as passes nor invents an exemption requirement.
+- These evidence gaps have not been mapped to the existing P0 acceptance criteria in this checkpoint. No new requirements, broader acceptance verdict, phase closure or P0 completion are asserted.
+
+Only this Markdown checkpoint is being appended; `ROADMAP.md` and application code are unchanged. Targeted formatting and diff checks for this append are separate from the revision's historical execution series. No commit is authorized by this checkpoint; P0 remains open.
