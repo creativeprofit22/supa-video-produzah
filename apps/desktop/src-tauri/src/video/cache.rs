@@ -146,6 +146,7 @@ struct CacheRaceHooks {
     write_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     after_register: Option<std::sync::Arc<CacheRaceGate>>,
     before_unlink: Option<std::sync::Arc<CacheRaceGate>>,
+    after_status_inventory: Option<std::sync::Arc<CacheRaceGate>>,
     before_eviction_lock: Option<std::sync::Arc<CacheRaceGate>>,
     lock_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     publication: std::sync::Arc<std::sync::Mutex<Option<PublicationRace>>>,
@@ -687,8 +688,12 @@ impl MediaCacheService {
         )?;
         let mut managed_bytes = 0_u64;
         let mut artifact_count = 0_u64;
+        let mut leased_lengths = Vec::new();
+        // Capture lease membership with the inventory, not from a later catalogue view.
         let mut statement = connection.prepare(
-            "SELECT artifact_key, relative_path, byte_length FROM cache_artifacts
+            "SELECT artifact_key, relative_path, byte_length,
+                    EXISTS(SELECT 1 FROM cache_leases l WHERE l.artifact_key = a.artifact_key)
+             FROM cache_artifacts a
              WHERE availability = 'available' ORDER BY artifact_key",
         )?;
         let rows = statement.query_map([], |row| {
@@ -696,11 +701,12 @@ impl MediaCacheService {
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
+                row.get::<_, bool>(3)?,
             ))
         })?;
         let mut missing = Vec::new();
         for row in rows {
-            let (key, relative, expected_length) = row?;
+            let (key, relative, expected_length, leased) = row?;
             let valid = managed_root
                 .as_ref()
                 .and_then(|root| safe_catalog_path(root, &relative).ok())
@@ -711,49 +717,47 @@ impl MediaCacheService {
                         && i64::try_from(metadata.len()).ok() == Some(expected_length)
                 });
             if valid {
+                let byte_length = u64::try_from(expected_length)
+                    .map_err(|_| MediaStateStoreError::CorruptRecord)?;
                 managed_bytes = managed_bytes
-                    .checked_add(
-                        u64::try_from(expected_length)
-                            .map_err(|_| MediaStateStoreError::CorruptRecord)?,
-                    )
+                    .checked_add(byte_length)
                     .ok_or(MediaStateStoreError::CorruptRecord)?;
                 artifact_count += 1;
+                if leased {
+                    leased_lengths.push(byte_length);
+                }
             } else {
                 missing.push(key);
             }
         }
         drop(statement);
+        #[cfg(test)]
+        if let Some(gate) = &self.race_hooks.after_status_inventory {
+            gate.pause()?;
+        }
         for key in missing {
             // Re-read under the writer gate: an earlier missing observation must
             // never overwrite a publisher's newly committed availability.
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             if let Some((candidate, availability)) = Self::catalog_candidate(&transaction, &key)? {
-                if availability == "available" {
-                    if self.validate_candidate(&candidate).is_err() {
-                        Self::mark_candidate_on(&transaction, &key, "missing")?;
-                    } else {
-                        managed_bytes = managed_bytes
-                            .checked_add(candidate.byte_length)
-                            .ok_or(MediaStateStoreError::CorruptRecord)?;
-                        artifact_count += 1;
-                    }
+                if availability == "available" && self.validate_candidate(&candidate).is_err() {
+                    Self::mark_candidate_on(&transaction, &key, "missing")?;
                 }
+                // Repairs affect the next status; do not mix them into this inventory.
             }
             transaction.commit()?;
         }
-        let (leased_bytes, leased_artifact_count): (i64, i64) = connection.query_row(
-            "SELECT COALESCE(SUM(byte_length), 0), COUNT(*) FROM cache_artifacts
-             WHERE artifact_key IN (SELECT DISTINCT artifact_key FROM cache_leases)
-               AND availability = 'available'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
-        let leased_bytes =
-            u64::try_from(leased_bytes).map_err(|_| MediaStateStoreError::CorruptRecord)?;
-        let leased_artifact_count = u64::try_from(leased_artifact_count)
+        let leased_artifact_count = u64::try_from(leased_lengths.len())
             .map_err(|_| MediaStateStoreError::CorruptRecord)?;
-        let reclaimable_bytes = managed_bytes.saturating_sub(leased_bytes);
+        let leased_bytes = leased_lengths.into_iter().try_fold(0_u64, |total, length| {
+            total
+                .checked_add(length)
+                .ok_or(MediaStateStoreError::CorruptRecord)
+        })?;
+        let reclaimable_bytes = managed_bytes
+            .checked_sub(leased_bytes)
+            .ok_or(MediaStateStoreError::CorruptRecord)?;
         let budget_bytes =
             u64::try_from(budget).map_err(|_| MediaStateStoreError::CorruptRecord)?;
         let pressure = if managed_bytes <= budget_bytes {
@@ -1618,6 +1622,163 @@ pub(crate) mod tests {
             1
         );
         assert!(!path.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn status_race_publication_returns_coherent_public_dto() {
+        let root = tempfile::tempdir().unwrap();
+        let (store, mut reader) = service(root.path()).await;
+        let publisher = MediaCacheService::new(
+            &store,
+            reader.app_cache_root.clone(),
+            "status-publisher".to_owned(),
+        );
+        let (gate, reached, resume) = race_gate();
+        reader.race_hooks.after_status_inventory = Some(gate);
+        let worker = RaceWorker {
+            resume,
+            worker: Some(std::thread::spawn(move || reader.status_sync())),
+        };
+        reached.recv_timeout(Duration::from_secs(5)).unwrap();
+        let key = "a".repeat(64);
+        let kind = CacheArtifactKind::SourceObject;
+        let path = create_artifact(root.path(), kind, &key, 17);
+        let guard = CacheFileLock::acquire(
+            &publisher
+                .managed_root()
+                .unwrap()
+                .join(kind.lock_relative_path(&key).unwrap()),
+        )
+        .unwrap();
+        publisher
+            .register_and_lease_sync(&registration(path, kind, &key), "owner", None)
+            .unwrap();
+        drop(guard);
+        let status = worker.finish().unwrap().unwrap();
+        status.validate().unwrap();
+        let counts = (
+            status.managed_bytes,
+            status.artifact_count,
+            status.leased_bytes,
+            status.leased_artifact_count,
+        );
+        assert!(counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1), "{counts:?}");
+        let after = publisher.status_sync().unwrap();
+        after.validate().unwrap();
+        assert_eq!((after.managed_bytes, after.leased_bytes), (17, 17));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn status_race_release_and_eviction_return_coherent_public_dto() {
+        for evict in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let (store, mut reader) = service(root.path()).await;
+            let writer = MediaCacheService::new(
+                &store,
+                reader.app_cache_root.clone(),
+                "status-writer".to_owned(),
+            );
+            let key = "a".repeat(64);
+            let kind = CacheArtifactKind::SourceObject;
+            let path = create_artifact(root.path(), kind, &key, 17);
+            writer
+                .register_and_lease_sync(
+                    &registration(path.clone(), kind, &key),
+                    "first-owner",
+                    None,
+                )
+                .unwrap();
+            writer.lease_sync("second-owner", None, &key).unwrap();
+            let (gate, reached, resume) = race_gate();
+            reader.race_hooks.after_status_inventory = Some(gate);
+            let worker = RaceWorker {
+                resume,
+                worker: Some(std::thread::spawn(move || reader.status_sync())),
+            };
+            reached.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(writer.release_all_session().await.unwrap(), 2);
+            if evict {
+                let report = writer.enforce_budget_sync(Some(0)).unwrap();
+                assert_eq!((report.evicted_bytes, report.evicted_artifacts), (17, 1));
+                assert!(!path.exists());
+            }
+            let status = worker.finish().unwrap().unwrap();
+            status.validate().unwrap();
+            let counts = (
+                status.managed_bytes,
+                status.artifact_count,
+                status.leased_bytes,
+                status.leased_artifact_count,
+            );
+            let after_counts = if evict { (0, 0, 0, 0) } else { (17, 1, 0, 0) };
+            assert!(counts == (17, 1, 17, 1) || counts == after_counts, "{counts:?}");
+            let after = writer.status_sync().unwrap();
+            after.validate().unwrap();
+            assert_eq!(
+                (
+                    after.managed_bytes,
+                    after.artifact_count,
+                    after.leased_bytes,
+                    after.leased_artifact_count,
+                ),
+                after_counts
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn status_race_missing_recheck_preserves_republished_availability() {
+        let root = tempfile::tempdir().unwrap();
+        let (store, mut reader) = service(root.path()).await;
+        let publisher = MediaCacheService::new(
+            &store,
+            reader.app_cache_root.clone(),
+            "status-publisher".to_owned(),
+        );
+        let key = "a".repeat(64);
+        let kind = CacheArtifactKind::SourceObject;
+        let path = create_artifact(root.path(), kind, &key, 17);
+        publisher
+            .register_and_lease_sync(&registration(path.clone(), kind, &key), "owner", None)
+            .unwrap();
+        fs::remove_file(&path).unwrap();
+        let (gate, reached, resume) = race_gate();
+        reader.race_hooks.after_status_inventory = Some(gate);
+        let worker = RaceWorker {
+            resume,
+            worker: Some(std::thread::spawn(move || reader.status_sync())),
+        };
+        reached.recv_timeout(Duration::from_secs(5)).unwrap();
+        let guard = CacheFileLock::acquire(
+            &publisher
+                .managed_root()
+                .unwrap()
+                .join(kind.lock_relative_path(&key).unwrap()),
+        )
+        .unwrap();
+        fs::write(&path, [b'x'; 17]).unwrap();
+        publisher
+            .register_and_lease_sync(&registration(path.clone(), kind, &key), "owner", None)
+            .unwrap();
+        drop(guard);
+        let status = worker.finish().unwrap().unwrap();
+        status.validate().unwrap();
+        let counts = (
+            status.managed_bytes,
+            status.artifact_count,
+            status.leased_bytes,
+            status.leased_artifact_count,
+        );
+        assert!(counts == (0, 0, 0, 0) || counts == (17, 1, 17, 1), "{counts:?}");
+        let connection = publisher.state.open_connection().unwrap();
+        let (_, availability) = MediaCacheService::catalog_candidate(&connection, &key)
+            .unwrap()
+            .unwrap();
+        assert_eq!(availability, "available");
+        assert_eq!(fs::read(&path).unwrap(), [b'x'; 17]);
+        let after = publisher.status_sync().unwrap();
+        after.validate().unwrap();
+        assert_eq!((after.managed_bytes, after.leased_bytes), (17, 17));
     }
 
     #[tokio::test(flavor = "current_thread")]
