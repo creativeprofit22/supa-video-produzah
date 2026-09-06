@@ -568,6 +568,7 @@ pub(crate) async fn resume_durable_preparations(
     resume_durable_preparations_with_factory(
         jobs,
         programs,
+        true,
         |kind, plan, programs, cache, owner_label, project_id| {
             preparation_worker(kind, plan, programs, cache, owner_label, project_id)
         },
@@ -588,6 +589,7 @@ pub(crate) async fn resume_durable_preparations_with_test_workers(
     resume_durable_preparations_with_factory(
         jobs,
         programs,
+        false,
         move |kind, _plan, _programs, _cache, _owner_label, _project_id| Ok(worker_factory(kind)),
     )
     .await
@@ -672,6 +674,7 @@ pub(crate) fn prepared_asset_plan_fixture(cache_root: &Path) -> serde_json::Valu
 async fn resume_durable_preparations_with_factory<WorkerFactory>(
     jobs: &MediaJobService,
     programs: MediaPrograms,
+    pin_source: bool,
     worker_factory: WorkerFactory,
 ) -> Result<(), VideoCommandError>
 where
@@ -693,7 +696,8 @@ where
         record.kind == MediaJobKind::AssetPreparation && record.state == MediaJobState::Queued
     }) {
         if let Err(_error) =
-            recover_durable_preparation_parent(jobs, &programs, parent, &worker_factory).await
+            recover_durable_preparation_parent(jobs, &programs, parent, pin_source, &worker_factory)
+                .await
         {
             persist_preparation_recovery_failure(jobs, &parent.id)
                 .await
@@ -712,6 +716,7 @@ async fn recover_durable_preparation_parent<WorkerFactory>(
     jobs: &MediaJobService,
     programs: &MediaPrograms,
     parent: &super::jobs::model::MediaJobRecord,
+    pin_source: bool,
     worker_factory: &WorkerFactory,
 ) -> Result<(), VideoCommandError>
 where
@@ -766,6 +771,19 @@ where
         })
         .ok_or_else(|| VideoCommandError::project_io("prepare_asset", "recovery_association"))?;
     let shared_plan = Arc::new(plan);
+    if pin_source {
+        lease_preparation_source(
+            &shared_plan,
+            PublicationContext {
+                cache: jobs.cache(),
+                owner_label: &owner_label,
+                project_id: &project_id,
+            },
+        )
+        .await?;
+    }
+    #[cfg(test)]
+    programs.before_source_use().await;
 
     // Materialize both children before either is scheduled. Enqueue dedupe makes this
     // restart-safe at every crash boundary between parent persistence and dispatch.
@@ -1024,9 +1042,17 @@ async fn persist_preparation_recovery_failure(
         .map(|_| ())
 }
 
+#[cfg(test)]
+type SourceUseGate = (
+    tokio::sync::oneshot::Sender<()>,
+    tokio::sync::oneshot::Receiver<()>,
+);
+
 #[derive(Debug, Clone)]
 pub(crate) struct MediaPrograms {
     source: MediaProgramSource,
+    #[cfg(test)]
+    pub(crate) source_use_gate: Arc<tokio::sync::Mutex<Option<SourceUseGate>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1041,9 +1067,20 @@ enum MediaProgramSource {
 }
 
 impl MediaPrograms {
+    #[cfg(test)]
+    async fn before_source_use(&self) {
+        let gate = self.source_use_gate.lock().await.take();
+        if let Some((entered, resume)) = gate {
+            let _ = entered.send(());
+            let _ = tokio::time::timeout(Duration::from_secs(30), resume).await;
+        }
+    }
+
     pub(crate) fn bundled(toolchain: MediaToolchainState) -> Self {
         Self {
             source: MediaProgramSource::Bundled(Arc::new(toolchain)),
+            #[cfg(test)]
+            source_use_gate: Default::default(),
         }
     }
 
@@ -1059,6 +1096,7 @@ impl MediaPrograms {
         toolchain_id: impl Into<String>,
     ) -> Self {
         Self {
+            source_use_gate: Default::default(),
             source: MediaProgramSource::Explicit {
                 ffmpeg,
                 ffprobe,
@@ -1801,6 +1839,38 @@ pub(crate) struct PublicationContext<'a> {
     project_id: &'a str,
 }
 
+async fn lease_preparation_source(
+    plan: &PreparedAssetPlan,
+    publication: PublicationContext<'_>,
+) -> Result<(), VideoCommandError> {
+    let guard = super::media_store::acquire_source_object(
+        &plan.cache_root,
+        &plan.object_path,
+        &plan.source_identity,
+    )
+    .await?;
+    publication
+        .cache
+        .register_and_lease(
+            CacheArtifactRegistration {
+                key: plan.source_identity.digest.clone(),
+                content_digest: plan.source_identity.digest.clone(),
+                kind: CacheArtifactKind::SourceObject,
+                path: plan.object_path.clone(),
+                profile_id: None,
+                toolchain_id: None,
+                recipe_id: None,
+            },
+            publication.owner_label.to_owned(),
+            Some(publication.project_id.to_owned()),
+        )
+        .await
+        .map_err(map_job_store_error)?;
+    // Commit lifetime protection before releasing the source lock; never nest artifact locks.
+    drop(guard);
+    Ok(())
+}
+
 async fn register_derived_artifact(
     cache: &MediaCacheService,
     owner_label: &str,
@@ -2050,6 +2120,11 @@ async fn execute_proxy_child(
         source_duration_microseconds: plan.source_probe.duration_microseconds,
         source_has_audio: plan.source_has_audio,
     };
+    if let Some(publication) = publication {
+        lease_preparation_source(plan, publication).await?;
+    }
+    #[cfg(test)]
+    programs.before_source_use().await;
     let proxy_guard = acquire_artifact(
         &plan.cache_root,
         ArtifactStoreKind::Proxy,
@@ -2135,6 +2210,11 @@ async fn execute_thumbnail_child(
     cancellation: ProcessCancellation,
     publication: Option<PublicationContext<'_>>,
 ) -> Result<ThumbnailChildResult, VideoCommandError> {
+    if let Some(publication) = publication {
+        lease_preparation_source(plan, publication).await?;
+    }
+    #[cfg(test)]
+    programs.before_source_use().await;
     let thumbnail_guard = acquire_artifact(
         &plan.cache_root,
         ArtifactStoreKind::ThumbnailTile,

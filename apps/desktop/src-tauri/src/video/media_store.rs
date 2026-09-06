@@ -686,6 +686,33 @@ pub(crate) async fn acquire_source_lock(
         .map_err(|_| invalid("worker"))?
 }
 
+/// Validate durable source bytes while retaining ingestion/eviction's object lock.
+pub(crate) async fn acquire_source_object(
+    cache_root: &Path,
+    object_path: &Path,
+    identity: &MediaContentIdentityV1,
+) -> Result<StoreLock, VideoCommandError> {
+    let cache_root = cache_root.to_owned();
+    let object_path = object_path.to_owned();
+    let identity = identity.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lock = acquire_source_lock_blocking(&cache_root, &identity.digest)?;
+        let root = canonical_owned_root(&cache_root, "ingest_source")?;
+        let store = ensure_direct_directory(&root, MEDIA_STORE_NAMESPACE, "ingest_source")?;
+        let objects = ensure_direct_directory(&store, "objects", "ingest_source")?;
+        let sha256 = ensure_direct_directory(&objects, "sha256", "ingest_source")?;
+        let directory = ensure_direct_directory(&sha256, &identity.digest[..2], "ingest_source")?;
+        if object_path != directory.join(format!("{}.blob", identity.digest))
+            || !validate_object(&object_path, &identity.digest, identity.byte_length)
+        {
+            return Err(invalid("source_object"));
+        }
+        Ok(lock)
+    })
+    .await
+    .map_err(|_| invalid("worker"))?
+}
+
 pub(crate) async fn ingest_source_guarded(
     owner_label: &str,
     grants: &VideoPathGrants,

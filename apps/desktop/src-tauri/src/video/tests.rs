@@ -6829,7 +6829,6 @@ async fn completed_reuse_failed_probe_does_not_pin() {
 // Explicit fake executables exercise the real supervisor, probes and guarded child handoffs.
 fn cache_race_programs(directory: &Path) -> MediaPrograms {
     fs::create_dir_all(directory).unwrap();
-    fs::write(directory.join("bytes"), b"fake-media").unwrap();
     let video = serde_json::json!({
         "streams": [{"index":0,"codec_type":"video","codec_name":"h264","width":320,"height":180,
             "disposition":{"attached_pic":0},
@@ -6848,7 +6847,7 @@ fn cache_race_programs(directory: &Path) -> MediaPrograms {
     let (ffmpeg, ffprobe) = {
         let ffmpeg = directory.join("ffmpeg.cmd");
         let ffprobe = directory.join("ffprobe.cmd");
-        fs::write(&ffmpeg, "@echo off\r\necho run>>\"%~dp0encode.log\"\r\nfor %%a in (%*) do set \"last=%%~a\"\r\ncopy /b /y \"%~dp0bytes\" \"%last%\" >nul\r\n").unwrap();
+        fs::write(&ffmpeg, "@echo off\r\necho run>>\"%~dp0encode.log\"\r\n:args\r\nif \"%~1\"==\"\" goto copy\r\nif defined take_input set \"input=%~1\"\r\nset \"take_input=\"\r\nif \"%~1\"==\"-i\" set take_input=1\r\nset \"last=%~1\"\r\nshift\r\ngoto args\r\n:copy\r\ncopy /b /y \"%input%\" \"%last%\" >nul\r\n").unwrap();
         fs::write(&ffprobe, "@echo off\r\necho run>>\"%~dp0probe.log\"\r\necho %* | findstr /c:\"thumbnail\" >nul\r\nif errorlevel 1 (type \"%~dp0video.json\") else (type \"%~dp0thumbnail.json\")\r\n").unwrap();
         (ffmpeg, ffprobe)
     };
@@ -6857,7 +6856,7 @@ fn cache_race_programs(directory: &Path) -> MediaPrograms {
         use std::os::unix::fs::PermissionsExt;
         let ffmpeg = directory.join("ffmpeg");
         let ffprobe = directory.join("ffprobe");
-        fs::write(&ffmpeg, "#!/bin/sh\necho run >> \"$(dirname \"$0\")/encode.log\"\nfor last do :; done\ncp \"$(dirname \"$0\")/bytes\" \"$last\"\n").unwrap();
+        fs::write(&ffmpeg, "#!/bin/sh\necho run >> \"$(dirname \"$0\")/encode.log\"\nprevious=\ninput=\nfor last do\n  if [ \"$previous\" = -i ]; then input=$last; fi\n  previous=$last\ndone\ncp \"$input\" \"$last\"\n").unwrap();
         fs::write(&ffprobe, "#!/bin/sh\necho run >> \"$(dirname \"$0\")/probe.log\"\ncase \"$*\" in *thumbnail*) cat \"$(dirname \"$0\")/thumbnail.json\";; *) cat \"$(dirname \"$0\")/video.json\";; esac\n").unwrap();
         for path in [&ffmpeg, &ffprobe] {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -6865,6 +6864,292 @@ fn cache_race_programs(directory: &Path) -> MediaPrograms {
         (ffmpeg, ffprobe)
     };
     MediaPrograms::explicit(ffmpeg.into_os_string(), ffprobe.into_os_string())
+}
+
+async fn durable_source_race(retry: bool, completed: bool, missing: bool) {
+    use super::cache::tests::lease_snapshot;
+    let workspace = tempdir().unwrap();
+    let cache_root = workspace.path().join("app-cache");
+    let local_data = workspace.path().join("local-data");
+    let source = workspace.path().join("source.mp4");
+    fs::write(&source, b"fake-media").unwrap();
+    let programs = cache_race_programs(&workspace.path().join("programs"));
+    let grants = VideoPathGrants::default();
+    let owner = "restart-safe-preparation";
+    grants
+        .grant_existing_file(owner, GrantCategory::Source, &source)
+        .unwrap();
+    let previous = MediaJobService::initialize(local_data.clone(), cache_root.clone())
+        .await
+        .unwrap();
+    let plan = plan_asset_core(
+        PrepareAssetCoreRequest {
+            owner_label: owner,
+            project_id: DERIVED_PROJECT_ID,
+            asset_id: DERIVED_ASSET_ID,
+            source_path: &source,
+            sequence_rate: Some(RationalRate {
+                numerator: 10,
+                denominator: 1,
+            }),
+            expected_content_identity: None,
+        },
+        &grants,
+        &cache_root,
+        &programs,
+        None,
+    )
+    .await
+    .unwrap();
+    let plan = serde_json::to_value(plan).unwrap();
+    let object = PathBuf::from(plan["objectPath"].as_str().unwrap());
+    let key = plan["sourceIdentity"]["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    previous
+        .cache()
+        .register_and_lease(
+            CacheArtifactRegistration {
+                key: key.clone(),
+                content_digest: key.clone(),
+                kind: CacheArtifactKind::SourceObject,
+                path: object.clone(),
+                profile_id: None,
+                toolchain_id: None,
+                recipe_id: None,
+            },
+            owner.into(),
+            Some(DERIVED_PROJECT_ID.into()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(lease_snapshot(previous.cache()).len(), 1);
+    let parent = enqueue_interrupted_preparation(
+        previous.store(),
+        plan.clone(),
+        PreparationCrashBoundary::DuringProxyExecution,
+    )
+    .await;
+    let proxy = previous
+        .store()
+        .list(100, true, None, None)
+        .await
+        .unwrap()
+        .jobs
+        .into_iter()
+        .find(|job| job.kind == MediaJobKind::Proxy)
+        .unwrap();
+    let prepared = if completed {
+        Some(
+            prepare_asset_core(
+                PrepareAssetCoreRequest {
+                    owner_label: owner,
+                    project_id: DERIVED_PROJECT_ID,
+                    asset_id: DERIVED_ASSET_ID,
+                    source_path: &source,
+                    sequence_rate: Some(RationalRate {
+                        numerator: 10,
+                        denominator: 1,
+                    }),
+                    expected_content_identity: None,
+                },
+                &grants,
+                &cache_root,
+                programs.clone(),
+            )
+            .await
+            .unwrap(),
+        )
+    } else {
+        None
+    };
+    if retry || completed {
+        previous
+            .store()
+            .transition(
+                proxy.id.clone(),
+                MediaJobTransition {
+                    state: if retry {
+                        MediaJobState::Failed
+                    } else {
+                        MediaJobState::Complete
+                    },
+                    stage: "interrupted".into(),
+                    progress: MediaJobProgress {
+                        completed: 0,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                    attempt: None,
+                    error: retry.then(|| MediaJobError {
+                        code: "process_failed".into(),
+                        category: MediaJobErrorCategory::ProcessFailed,
+                        message: "The media process failed.".into(),
+                        retryable: true,
+                        action: Some(MediaJobRecoveryAction::Retry),
+                    }),
+                    retry_at_ms: None,
+                    result: prepared
+                        .as_ref()
+                        .map(|p| serde_json::json!({"path": p.proxy_path, "probe": p.proxy_probe})),
+                    cancellation_requested: false,
+                    event_type: MediaJobEventType::StateChanged,
+                    message: None,
+                    occurred_at_ms: current_timestamp_millis(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    if let Some(prepared) = prepared {
+        let thumbnail = previous.store().enqueue(NewMediaJob {
+            kind: MediaJobKind::ThumbnailTile, parent_id: Some(parent.clone()),
+            dedupe_key: format!("thumbnail:{}:{}", plan["thumbnailIdentity"]["key"].as_str().unwrap(), parent),
+            project_id: Some(DERIVED_PROJECT_ID.into()), asset_id: Some(DERIVED_ASSET_ID.into()), revision_id: None,
+            priority: MediaJobPriority::Interactive, priority_value: 0, stage: "queued".into(),
+            progress: MediaJobProgress { completed: 0, total: 1, unit: MediaJobProgressUnit::Items },
+            max_attempts: 3, summary: "Build preview thumbnails".into(),
+            private_payload: serde_json::json!({"canonicalObjectAvailable": true, "ownerLabel": owner, "projectId": DERIVED_PROJECT_ID, "plan": plan}),
+            created_at_ms: current_timestamp_millis(),
+        }).await.unwrap().job;
+        for state in [MediaJobState::Running, MediaJobState::Complete] {
+            previous
+                .store()
+                .transition(
+                    thumbnail.id.clone(),
+                    MediaJobTransition {
+                        state,
+                        stage: "complete".into(),
+                        progress: MediaJobProgress {
+                            completed: 1,
+                            total: 1,
+                            unit: MediaJobProgressUnit::Items,
+                        },
+                        attempt: Some(1),
+                        error: None,
+                        retry_at_ms: None,
+                        result: (state == MediaJobState::Complete)
+                            .then(|| serde_json::json!({"path": prepared.thumbnail_path})),
+                        cancellation_requested: false,
+                        event_type: MediaJobEventType::StateChanged,
+                        message: None,
+                        occurred_at_ms: current_timestamp_millis(),
+                    },
+                )
+                .await
+                .unwrap();
+        }
+    }
+    // Simulate process loss, not a graceful shutdown that releases the old owner.
+    drop(previous);
+    let jobs = Arc::new(
+        MediaJobService::initialize(local_data, cache_root)
+            .await
+            .unwrap(),
+    );
+    assert!(
+        lease_snapshot(jobs.cache()).is_empty(),
+        "initialize must clear previous-session leases"
+    );
+    if missing {
+        fs::remove_file(&object).unwrap();
+    }
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+    if !missing {
+        *programs.source_use_gate.lock().await = Some((entered_tx, resume_rx));
+    }
+    let worker_jobs = jobs.clone();
+    let mut worker = tokio::spawn(async move {
+        if retry {
+            worker_jobs
+                .retry_job(&proxy.id, owner, programs)
+                .await
+                .unwrap();
+            worker_jobs.scheduler().wait_idle().await;
+        } else {
+            resume_durable_preparations(&worker_jobs, programs)
+                .await
+                .unwrap();
+        }
+    });
+    let mut reached = true;
+    let mut pinned = true;
+    let mut survived = true;
+    if !missing {
+        reached = tokio::time::timeout(Duration::from_secs(30), entered_rx)
+            .await
+            .is_ok_and(|r| r.is_ok());
+        pinned = lease_snapshot(jobs.cache())
+            .iter()
+            .any(|(_, o, k)| o == owner && k == &key);
+        let eviction =
+            tokio::time::timeout(Duration::from_secs(30), jobs.cache().enforce_test_budget(0))
+                .await;
+        survived = eviction.is_ok_and(|r| r.is_ok())
+            && fs::read(&object).is_ok_and(|bytes| bytes == b"fake-media");
+    }
+    let _ = resume_tx.send(());
+    let joined = tokio::time::timeout(Duration::from_secs(30), &mut worker).await;
+    if joined.is_err() {
+        worker.abort();
+        let _ = worker.await;
+    }
+    let records = jobs.store().list(100, true, None, None).await.unwrap().jobs;
+    jobs.cache().release_owner(owner.into()).await.unwrap();
+    let reclaimed = jobs.cache().enforce_test_budget(0).await.unwrap();
+    jobs.shutdown().await.unwrap();
+    assert!(joined.is_ok_and(|r| r.is_ok()), "worker must finish");
+    assert!(reached, "worker must reach source consumption gate");
+    assert!(
+        pinned,
+        "durable worker must restore current-session source lease"
+    );
+    assert!(
+        survived,
+        "zero-budget eviction must preserve exact source bytes"
+    );
+    if missing {
+        assert!(records.iter().any(|job| job.state == MediaJobState::Failed));
+        assert!(!object.exists());
+    } else {
+        assert!(records
+            .iter()
+            .filter(|job| if retry {
+                job.kind == MediaJobKind::Proxy
+            } else {
+                job.id == parent
+            })
+            .all(|job| job.state == MediaJobState::Complete));
+        assert!(reclaimed.evicted_artifacts > 0);
+        assert!(!object.exists(), "explicit release permits later eviction");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn race_durable_source_recovery() {
+    durable_source_race(false, false, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn race_durable_source_retry() {
+    durable_source_race(true, false, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn race_durable_source_completed_child_recovery() {
+    durable_source_race(false, true, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn durable_source_missing_recovery() {
+    durable_source_race(false, false, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn durable_source_missing_retry() {
+    durable_source_race(true, false, true).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
