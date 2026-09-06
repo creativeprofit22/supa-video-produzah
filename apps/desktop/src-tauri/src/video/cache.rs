@@ -2,6 +2,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -133,6 +134,7 @@ pub(crate) struct MediaCacheService {
     state: MediaStateStore,
     app_cache_root: PathBuf,
     session_id: String,
+    failed_evictions: Arc<Mutex<Vec<EvictionCandidate>>>,
     #[cfg(test)]
     race_hooks: CacheRaceHooks,
 }
@@ -144,6 +146,7 @@ struct CacheRaceHooks {
     write_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     after_register: Option<std::sync::Arc<CacheRaceGate>>,
     before_unlink: Option<std::sync::Arc<CacheRaceGate>>,
+    before_eviction_lock: Option<std::sync::Arc<CacheRaceGate>>,
     lock_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     publication: std::sync::Arc<std::sync::Mutex<Option<PublicationRace>>>,
 }
@@ -180,6 +183,7 @@ impl MediaCacheService {
             state: store.state().clone(),
             app_cache_root,
             session_id,
+            failed_evictions: Arc::default(),
             #[cfg(test)]
             race_hooks: CacheRaceHooks::default(),
         }
@@ -673,6 +677,7 @@ impl MediaCacheService {
     }
 
     fn status_sync(&self) -> Result<MediaCacheStatus, MediaStateStoreError> {
+        self.reconcile_failed_evictions()?;
         let mut connection = self.state.open_connection()?;
         let managed_root = self.managed_root().ok();
         let budget: i64 = connection.query_row(
@@ -866,24 +871,60 @@ impl MediaCacheService {
     ) -> Result<bool, MediaStateStoreError> {
         let result = self.evict_reserved_candidate_inner(candidate);
         if result.is_err() {
-            let mut connection = self.state.open_connection()?;
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            if let Some((current, availability)) =
-                Self::catalog_candidate(&transaction, &candidate.key)?
-            {
-                if availability == "reserved" {
-                    let status = if self.validate_candidate(&current).is_ok() {
-                        "available"
-                    } else {
-                        "missing"
-                    };
-                    Self::mark_candidate_on(&transaction, &candidate.key, status)?;
-                }
-            }
-            transaction.commit()?;
+            // The inner call has released all file/database guards before taking this mutex.
+            self.failed_evictions
+                .lock()
+                .map_err(|_| MediaStateStoreError::WorkerStopped)?
+                .push(candidate.clone());
+            self.reconcile_failed_evictions()?;
         }
         result
+    }
+
+    fn reconcile_failed_evictions(&self) -> Result<(), MediaStateStoreError> {
+        // Serialize repair through commit/removal so a stale repair cannot rescue a later
+        // reservation. Never acquire this mutex while holding a file or database guard.
+        let mut pending = self
+            .failed_evictions
+            .lock()
+            .map_err(|_| MediaStateStoreError::WorkerStopped)?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let mut connection = self.state.open_connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for candidate in pending.iter() {
+            let Some((current, availability)) =
+                Self::catalog_candidate(&transaction, &candidate.key)?
+            else {
+                continue;
+            };
+            if availability != "reserved"
+                || current.kind != candidate.kind
+                || current.relative_path != candidate.relative_path
+                || current.byte_length != candidate.byte_length
+            {
+                continue;
+            }
+            // Recheck leases under the writer gate; repair never deletes bytes or leases.
+            let leased: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM cache_leases WHERE artifact_key = ?1)",
+                [&candidate.key],
+                |row| row.get(0),
+            )?;
+            let valid = self.validate_candidate(&current).is_ok();
+            let availability = if valid { "available" } else { "missing" };
+            transaction.execute(
+                "UPDATE cache_artifacts SET availability = ?2, updated_at_ms = ?3
+                 WHERE artifact_key = ?1 AND availability = 'reserved'
+                   AND EXISTS(SELECT 1 FROM cache_leases WHERE artifact_key = ?1) = ?4",
+                params![candidate.key, availability, now_millis(), leased],
+            )?;
+        }
+        transaction.commit()?;
+        // Any error above retains every obligation for the next status/enforcement call.
+        pending.clear();
+        Ok(())
     }
 
     fn evict_reserved_candidate_inner(
@@ -897,6 +938,10 @@ impl MediaCacheService {
         #[cfg(test)]
         if let Some(attempt) = &self.race_hooks.lock_attempt {
             let _ = attempt.try_send(());
+        }
+        #[cfg(test)]
+        if let Some(gate) = &self.race_hooks.before_eviction_lock {
+            gate.pause()?;
         }
         let _lock = CacheFileLock::acquire(&lock_path)?;
         let mut connection = self.state.open_connection()?;
@@ -990,7 +1035,7 @@ impl MediaCacheService {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct EvictionCandidate {
     key: String,
     kind: CacheArtifactKind,
@@ -1878,6 +1923,153 @@ pub(crate) mod tests {
                 .evicted_artifacts,
             1
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_eviction_reconciles_after_both_database_waits() {
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let kind = CacheArtifactKind::Proxy;
+        let key = "3".repeat(64);
+        let path = create_artifact(root.path(), kind, &key, 8);
+        cache
+            .register(registration(path.clone(), kind, &key))
+            .await
+            .unwrap();
+        let candidate = cache.reserve_lru_candidate().unwrap().unwrap();
+        let active_key = "4".repeat(64);
+        let active_path = create_artifact(root.path(), kind, &active_key, 8);
+        cache
+            .register(registration(active_path.clone(), kind, &active_key))
+            .await
+            .unwrap();
+        let active = cache.reserve_lru_candidate().unwrap().unwrap();
+        let mut connection = cache.state.open_connection().unwrap();
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let (done, completed) = std::sync::mpsc::sync_channel(1);
+        let evictor = cache.clone();
+        let worker = std::thread::spawn(move || {
+            let _ = done.send(evictor.evict_reserved_candidate(&candidate));
+        });
+        let result = completed.recv_timeout(Duration::from_secs(10));
+        // Keep the writer across BOTH waits; always release it and join before asserting.
+        drop(transaction);
+        let joined = worker.join();
+        joined.unwrap();
+        assert!(result.unwrap().is_err());
+        assert_eq!(
+            MediaCacheService::catalog_candidate(&connection, &key)
+                .unwrap()
+                .unwrap()
+                .1,
+            "reserved"
+        );
+        let (gate, reached, resume) = race_gate();
+        let mut active_evictor = cache.clone();
+        active_evictor.race_hooks.before_eviction_lock = Some(gate);
+        let active_worker =
+            std::thread::spawn(move || active_evictor.evict_reserved_candidate(&active));
+        let checks = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            reached.recv_timeout(Duration::from_secs(10)).unwrap();
+            // A second failed repair must retain the obligation, not drain it on error.
+            let mut writer = cache.state.open_connection().unwrap();
+            let held = writer
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .unwrap();
+            let repair_error = cache.status_sync();
+            drop(held);
+            assert!(repair_error.is_err());
+            assert_eq!(cache.status_sync().unwrap().managed_bytes, 8);
+            assert_eq!(
+                MediaCacheService::catalog_candidate(&connection, &active_key)
+                    .unwrap()
+                    .unwrap()
+                    .1,
+                "reserved"
+            );
+            assert_eq!(
+                cache
+                    .enforce_budget_sync(Some(0))
+                    .unwrap()
+                    .evicted_artifacts,
+                1
+            );
+            assert!(!path.exists());
+            assert_eq!(fs::read(&active_path).unwrap(), b"xxxxxxxx");
+        }));
+        let _ = resume.send(());
+        let active_result = active_worker.join();
+        checks.unwrap();
+        assert!(active_result.unwrap().unwrap());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_eviction_repair_revalidates_files_identity_and_leases() {
+        for mutation in ["missing", "invalid", "replaced", "leased"] {
+            let root = tempfile::tempdir().unwrap();
+            let (_store, cache) = service(root.path()).await;
+            let kind = CacheArtifactKind::Proxy;
+            let key = "5".repeat(64);
+            let path = create_artifact(root.path(), kind, &key, 8);
+            cache
+                .register(registration(path.clone(), kind, &key))
+                .await
+                .unwrap();
+            let candidate = cache.reserve_lru_candidate().unwrap().unwrap();
+            cache.failed_evictions.lock().unwrap().push(candidate);
+            let connection = cache.state.open_connection().unwrap();
+            match mutation {
+                "missing" => fs::remove_file(&path).unwrap(),
+                "invalid" => fs::write(&path, b"short").unwrap(),
+                "replaced" => {
+                    fs::write(&path, b"replacement").unwrap();
+                    connection
+                        .execute(
+                            "UPDATE cache_artifacts SET byte_length = 11 WHERE artifact_key = ?1",
+                            [&key],
+                        )
+                        .unwrap();
+                }
+                "leased" => {
+                    cache
+                        .lease("owner".into(), None, key.clone())
+                        .await
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let status = cache.status_sync().unwrap();
+            let availability = MediaCacheService::catalog_candidate(&connection, &key)
+                .unwrap()
+                .unwrap()
+                .1;
+            match mutation {
+                "missing" | "invalid" => {
+                    assert_eq!(availability, "missing");
+                    assert_eq!(status.managed_bytes, 0);
+                }
+                "replaced" => {
+                    assert_eq!(availability, "reserved");
+                    assert_eq!(fs::read(&path).unwrap(), b"replacement");
+                }
+                "leased" => {
+                    assert_eq!(availability, "available");
+                    assert_eq!(status.leased_bytes, 8);
+                    assert_eq!(
+                        cache
+                            .enforce_budget_sync(Some(0))
+                            .unwrap()
+                            .evicted_artifacts,
+                        0
+                    );
+                    assert_eq!(fs::read(&path).unwrap(), b"xxxxxxxx");
+                }
+                _ => unreachable!(),
+            }
+            assert!(cache.failed_evictions.lock().unwrap().is_empty());
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
