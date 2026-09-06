@@ -1,4 +1,6 @@
+import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
+import console from "node:console";
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -17,6 +19,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 export const MANIFEST = "apps/desktop/src-tauri/Cargo.toml";

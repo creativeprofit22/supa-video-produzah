@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import process from "node:process";
+import { URL } from "node:url";
 import {
   contained,
   command,
@@ -308,7 +310,7 @@ test("actual workflow pipeline preserves Cargo failure before tee failure", (t) 
     .split("        id: all_feature_tests\n")[1]
     .split("        run: |\n")[1]
     .split("\n\n")[0]
-    .replace(/^          /gm, "");
+    .replace(/^ {10}/gm, "");
   mkdirSync(join(root, ".cache/p1-security/hosted-glib"), { recursive: true });
   for (const [cargoExit, teeExit] of [
     [0, 0],
