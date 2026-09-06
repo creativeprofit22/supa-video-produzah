@@ -166,7 +166,48 @@ pub(crate) enum CacheLifecycleError {
 
 #[derive(Debug)]
 pub(crate) struct ProfileCacheLock {
-    _file: fs::File,
+    file: fs::File,
+}
+
+impl Drop for ProfileCacheLock {
+    fn drop(&mut self) {
+        // Closing alone retains the lock while a duplicated/inherited handle is open.
+        let _ = fs4::FileExt::unlock(&self.file);
+    }
+}
+
+#[cfg(test)]
+mod profile_lock_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn dropped_profile_lock_releases_with_duplicate_handle() {
+        let workspace = tempfile::tempdir().unwrap();
+        let directory = ValidatedCacheDirectory {
+            profile_directory: fs::canonicalize(workspace.path()).unwrap(),
+        };
+        let first_lock = acquire_profile_cache_lock_with(
+            &directory,
+            Duration::ZERO,
+            Duration::from_millis(1),
+            || {},
+        )
+        .await
+        .unwrap();
+        let duplicate = first_lock.file.try_clone().unwrap();
+        drop(first_lock);
+
+        let reacquired = acquire_profile_cache_lock_with(
+            &directory,
+            Duration::ZERO,
+            Duration::from_millis(1),
+            || {},
+        )
+        .await
+        .expect("guard drop must unlock even while a duplicate handle remains open");
+        drop(reacquired);
+        drop(duplicate);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2648,7 +2689,7 @@ where
 
     loop {
         match fs4::FileExt::try_lock(&file) {
-            Ok(()) => return Ok(ProfileCacheLock { _file: file }),
+            Ok(()) => return Ok(ProfileCacheLock { file }),
             Err(TryLockError::WouldBlock) => {
                 on_contention();
                 let now = Instant::now();
