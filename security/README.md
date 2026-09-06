@@ -15,9 +15,11 @@ Audit jobs need network access to registries, the advisory database and scanner 
 
 ## Exact local commands
 
-Use pnpm 10.34.5 and Node >=22.12. From repository root, Bash:
+Use pnpm 10.34.5 and Node >=22.12. From repository root, Bash. Paste each complete block as a standalone command (not inside `if`, `&&` or `||`, which disable Bash errexit). Subshells keep shell modes and PATH changes local:
 
 ```bash
+(
+set -euo pipefail
 mkdir -p .cache/p1-security/bin
 cargo install cargo-audit --version 0.22.2 --locked --root "$PWD/.cache/p1-security"
 curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
@@ -28,7 +30,8 @@ tar -xzf .cache/p1-security/gitleaks.tar.gz -C .cache/p1-security/bin gitleaks
 export PATH="$PWD/.cache/p1-security/bin:$PATH"
 cargo audit --version
 gitleaks version
-node --test scripts/tests/check-dependency-policy.test.mjs
+node --test scripts/tests/check-dependency-policy.test.mjs scripts/tests/local-security-recipes.test.mjs
+)
 ```
 
 On Windows use the same release's `gitleaks_8.30.1_windows_x64.zip`, verify SHA-256 `d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e` before extraction, and run its `gitleaks.exe`. Never download `latest`, pipe downloads into a shell or execute unverified archives.
@@ -36,22 +39,34 @@ On Windows use the same release's `gitleaks_8.30.1_windows_x64.zip`, verify SHA-
 Capture direct audits without losing their statuses (run each gate even if the other fails):
 
 ```bash
-set +e
-pnpm audit --json > .cache/p1-security/javascript.json 2> .cache/p1-security/javascript.stderr
-printf '%s\n' "$?" > .cache/p1-security/javascript.exit
-cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings > .cache/p1-security/rust.json 2> .cache/p1-security/rust.stderr
-printf '%s\n' "$?" > .cache/p1-security/rust.exit
-node scripts/check-dependency-policy.mjs javascript .cache/p1-security/javascript.json .cache/p1-security/javascript.exit .cache/p1-security/javascript.stderr
-node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu
+(
+set -euo pipefail
+export PATH="$PWD/.cache/p1-security/bin:$PATH"
+mkdir -p .cache/p1-security
+javascript_status=0
+pnpm audit --json > .cache/p1-security/javascript.json 2> .cache/p1-security/javascript.stderr || javascript_status=$?
+printf '%s\n' "$javascript_status" > .cache/p1-security/javascript.exit
+rust_status=0
+cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings > .cache/p1-security/rust.json 2> .cache/p1-security/rust.stderr || rust_status=$?
+printf '%s\n' "$rust_status" > .cache/p1-security/rust.exit
+failed=0
+node scripts/check-dependency-policy.mjs javascript .cache/p1-security/javascript.json .cache/p1-security/javascript.exit .cache/p1-security/javascript.stderr || failed=1
+node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu || failed=1
+exit "$failed"
+)
 ```
 
 Run the CI-equivalent secret gate after establishing coverage. It rejects missing/shallow/empty Git history before scanning, then checks exit status, report shape/count and error-only logs. Gitleaks 8.30.1 can return zero for missing Git history; its raw exit alone is insufficient. Reports and logs are preserved in a unique private scratch directory, never echoed.
 
 ```bash
-node scripts/tests/gitleaks-smoke.mjs .cache/p1-security/bin/gitleaks
-node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks
-# Isolated scan mirror instead of working repository:
-node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks .cache/p1-security/history.git
+(
+set -euo pipefail
+failed=0
+node scripts/tests/gitleaks-smoke.mjs .cache/p1-security/bin/gitleaks || failed=1
+# For an isolated scan mirror, append .cache/p1-security/history.git to this command before ||:
+node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks || failed=1
+exit "$failed"
+)
 ```
 
 Merge resolutions are scanned as separate ordinary patches against each parent (`--all --full-history --diff-merges=separate`). Git otherwise omits merge patches. The smoke test exercises the production CLI with isolated clean merge history and a synthetic value present only in a merge result, then deleted; detection must fail the gate with a redacted merge finding. This format is verified against Gitleaks 8.30.1's patch parser.
@@ -63,7 +78,7 @@ git rev-parse --is-shallow-repository  # must be false
 git for-each-ref --format='%(refname) %(objectname)'
 git rev-list --all --count
 : > .cache/p1-security/empty.gitleaksignore
-gitleaks git . --log-opts="--all --full-history --diff-merges=separate" --redact=100 --ignore-gitleaks-allow \
+.cache/p1-security/bin/gitleaks git . --log-opts="--all --full-history --diff-merges=separate" --redact=100 --ignore-gitleaks-allow \
   --config security/gitleaks.toml --gitleaks-ignore-path .cache/p1-security/empty.gitleaksignore \
   --report-format=json --report-path .cache/p1-security/secrets.json
 ```
