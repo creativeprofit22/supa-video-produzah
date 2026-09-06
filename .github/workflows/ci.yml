@@ -170,16 +170,20 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Install stable Rust with rustfmt and Clippy
+      - name: Install Rust 1.98.1 with rustfmt and Clippy
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: stable
+          toolchain: 1.98.1
           components: rustfmt, clippy
 
-      - name: Cache Cargo dependencies and build artifacts
+      - name: Cache Cargo registry without target build outputs
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: apps/desktop/src-tauri -> target
+          cache-targets: false
+
+      - name: Preflight hosted GLib evidence capture
+        run: node scripts/collect-glib-evidence.mjs prepare
 
       - name: Check Rust formatting
         run: cargo fmt --all --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
@@ -188,7 +192,17 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
       - name: Test Rust canonical engine and recovery
-        run: cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml
+        id: all_feature_tests
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml --message-format=json-render-diagnostics | tee .cache/p1-security/hosted-glib/cargo-test.stdout.log
+          pipeline_status=("${PIPESTATUS[@]}")
+          printf '%s %s\n' "${pipeline_status[0]}" "${pipeline_status[1]}" > .cache/p1-security/hosted-glib/test-exits.txt
+          receipt_status=$?
+          if (( pipeline_status[0] != 0 )); then exit "${pipeline_status[0]}"; fi
+          if (( receipt_status != 0 )); then exit "$receipt_status"; fi
+          exit "${pipeline_status[1]}"
 
       - name: Verify release-mode storage performance budgets
         run: |
@@ -202,6 +216,24 @@ jobs:
             video::jobs::store::tests::list_100_recent_jobs_meets_release_budget -- --exact --nocapture
           cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml \
             video::jobs::store::tests::restart_recovery_selection_across_10k_jobs_meets_release_budget -- --exact --nocapture
+
+      - name: Collect hosted GLib generated sources and test ELF
+        id: glib_capture
+        if: ${{ !cancelled() && steps.all_feature_tests.outcome == 'success' }}
+        run: node scripts/collect-glib-evidence.mjs collect
+
+      - name: Upload hosted GLib evidence
+        id: glib_upload
+        if: ${{ !cancelled() && steps.glib_capture.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosted-glib-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cache/p1-security/hosted-glib/hosted-glib.tar
+            .cache/p1-security/hosted-glib/hosted-glib.tar.sha256
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: false
 
   windows:
     name: Windows canonical recovery and Tauri build
