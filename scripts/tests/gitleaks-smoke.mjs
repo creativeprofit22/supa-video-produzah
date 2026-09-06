@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
@@ -10,6 +10,10 @@ import { spawnSync } from "node:child_process";
 // Explicit binary path: use only the checksum-verified pinned scanner.
 assert.equal(process.argv.length, 3, "Supply the verified Gitleaks binary path");
 const binary = resolve(process.argv[2]);
+// Inherited Git overrides must never redirect fixture operations into the user's repository.
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")),
+);
 const config = resolve("security/gitleaks.toml");
 const root = mkdtempSync(join(tmpdir(), "supa-gitleaks-smoke-"));
 const fixtures = ["caption-artifact-v1.json", "transcript-artifact-v1.json", "identity-v1.json"];
@@ -76,8 +80,91 @@ try {
     1,
     "Gate must reject missing history even when Gitleaks itself exits zero",
   );
+  // Plumbing builds isolated merge-resolution history without checkout, hooks or user config edits.
+  for (const detect of [false, true]) {
+    const history = join(root, detect ? "merge-detection" : "merge-clean");
+    mkdirSync(history);
+    function git(args, stdin = "") {
+      const result = spawnSync("git", ["-C", history, ...args], {
+        input: stdin,
+        encoding: "utf8",
+        env: {
+          ...env,
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: ignore,
+          GIT_AUTHOR_NAME: "Synthetic fixture",
+          GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+          GIT_COMMITTER_NAME: "Synthetic fixture",
+          GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+        },
+      });
+      assert.equal(result.error, undefined, "Fixture Git must execute");
+      assert.equal(result.status, 0, "Fixture Git operation must succeed");
+      return result.stdout.trim();
+    }
+    git(["init", "--bare"]);
+    function commit(content, parents = []) {
+      const blob = git(["hash-object", "-w", "--stdin"], content);
+      const tree = git(["mktree"], `100644 blob ${blob}\tresolution.txt\n`);
+      return git(
+        ["commit-tree", tree, ...parents.flatMap((parent) => ["-p", parent])],
+        "Fixture\n",
+      );
+    }
+    const base = commit("base\n");
+    const left = commit("left\n", [base]);
+    const right = commit("right\n", [base]);
+    const synthetic = randomBytes(32).toString("hex");
+    const merge = commit(detect ? `api_key = "${synthetic}"\n` : "resolved\n", [left, right]);
+    const tip = commit("removed\n", [merge]);
+    git(["update-ref", "refs/heads/main", tip]);
+    assert.equal(git(["rev-list", "--all", "--count"]), "5");
+    assert.equal(git(["rev-list", "--all", "--merges"]), merge);
+    for (const revision of [base, left, right, tip]) {
+      assert.ok(!git(["show", `${revision}:resolution.txt`]).includes(synthetic));
+    }
+    const scratch = join(root, detect ? "detection-scratch" : "clean-scratch");
+    const gate = spawnSync(
+      process.execPath,
+      [resolve("scripts/check-secrets.mjs"), binary, history, scratch],
+      { encoding: "utf8", env },
+    );
+    assert.equal(gate.error, undefined, "Production gate must execute");
+    assert.equal(
+      gate.status,
+      detect ? 1 : 0,
+      "Gate must detect merge-only history and accept clean merges",
+    );
+    const runs = readdirSync(scratch);
+    assert.equal(runs.length, 1);
+    const run = join(scratch, runs[0]);
+    const raw = readFileSync(join(run, "report.json"), "utf8");
+    const mergeFindings = JSON.parse(raw);
+    assert.ok(!raw.includes(synthetic), "Merge report must redact the synthetic value");
+    for (const output of [
+      gate.stdout,
+      gate.stderr,
+      ...["scanner.stdout", "scanner.stderr"].map((file) => readFileSync(join(run, file), "utf8")),
+    ]) {
+      assert.ok(!output.includes(synthetic), "Gate output must not expose the synthetic value");
+    }
+    if (detect) {
+      assert.ok(mergeFindings.length > 0, "Merge detection must produce findings");
+      assert.ok(
+        mergeFindings.every(
+          (finding) =>
+            finding.Commit === merge &&
+            finding.File === "resolution.txt" &&
+            finding.Secret === "REDACTED",
+        ),
+        "Findings must identify only the merge resolution and be redacted",
+      );
+    } else {
+      assert.deepEqual(mergeFindings, [], "Clean merge history must have no findings");
+    }
+  }
   console.log(
-    "Gitleaks smoke: exact exceptions, detections, inline suppression, redaction and errors verified",
+    "Gitleaks smoke: exact exceptions, detections, inline suppression, redaction, errors and merge history verified",
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

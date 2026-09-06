@@ -40,7 +40,8 @@ try {
     [
       "git",
       source,
-      "--log-opts=--all",
+      // Separate-parent patches expose merge resolutions to Gitleaks' ordinary diff parser.
+      "--log-opts=--all --full-history --diff-merges=separate",
       "--redact=100",
       "--ignore-gitleaks-allow",
       "--config",

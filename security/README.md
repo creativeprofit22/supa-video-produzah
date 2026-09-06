@@ -54,6 +54,8 @@ node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks
 node scripts/check-secrets.mjs .cache/p1-security/bin/gitleaks .cache/p1-security/history.git
 ```
 
+Merge resolutions are scanned as separate ordinary patches against each parent (`--all --full-history --diff-merges=separate`). Git otherwise omits merge patches. The smoke test exercises the production CLI with isolated clean merge history and a synthetic value present only in a merge result, then deleted; detection must fail the gate with a redacted merge finding. This format is verified against Gitleaks 8.30.1's patch parser.
+
 For a direct investigative scan (not a substitute for the error-checking gate):
 
 ```bash
@@ -61,7 +63,7 @@ git rev-parse --is-shallow-repository  # must be false
 git for-each-ref --format='%(refname) %(objectname)'
 git rev-list --all --count
 : > .cache/p1-security/empty.gitleaksignore
-gitleaks git . --log-opts="--all" --redact=100 --ignore-gitleaks-allow \
+gitleaks git . --log-opts="--all --full-history --diff-merges=separate" --redact=100 --ignore-gitleaks-allow \
   --config security/gitleaks.toml --gitleaks-ignore-path .cache/p1-security/empty.gitleaksignore \
   --report-format=json --report-path .cache/p1-security/secrets.json
 ```
