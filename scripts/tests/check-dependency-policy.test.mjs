@@ -1,12 +1,17 @@
 import process from "node:process";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { evaluate, parseStrictJson, TARGETS } from "../check-dependency-policy.mjs";
+import {
+  evaluate,
+  parseStrictJson,
+  reviewFingerprint,
+  TARGETS,
+} from "../check-dependency-policy.mjs";
 
 const now = new Date("2026-09-06T12:00:00Z");
 const rust = () => ({
@@ -136,7 +141,9 @@ test("unsound cannot be maintenance-only; evidenced dispositions are scoped", ()
   const e = { ...exception(), kind: "unsound" };
   assert.equal(run("rust", r, "1", policy([e])).ok, false);
   e.disposition = "evidenced-unreachable";
-  assert.equal(run("rust", r, "1", policy([e])).ok, true);
+  const result = run("rust", r, "1", policy([e]));
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(), /review-required/);
 });
 test("notice and yanked are visible and fail without review; unknown warnings fail", () => {
   for (const kind of ["notice", "yanked", "new-category"]) {
@@ -236,6 +243,106 @@ test("JavaScript counts, ratings, missing findings and suppressions fail", () =>
     assert.equal(run("javascript", r, "1").ok, false);
   }
 });
+for (const disposition of ["target-inapplicable", "evidenced-unreachable"]) {
+  test(`${disposition}: reviewed files, evidence and actual targets bind approval`, () => {
+    const root = mkdtempSync(join(tmpdir(), "review-context-"));
+    const put = (path, content) => {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), content);
+    };
+    const lock = "apps/desktop/src-tauri/Cargo.lock";
+    const manifest = "apps/desktop/src-tauri/Cargo.toml";
+    const source = "apps/desktop/src-tauri/src/lib.rs";
+    const workflow = ".github/workflows/ci.yml";
+    const generator = "apps/desktop/src-tauri/build.rs";
+    const generated = "apps/desktop/src-tauri/src/generated.rs";
+    const e = { ...exception(), kind: "unsound", disposition };
+    const entries = [e];
+    const report = rust();
+    report.warnings.unsound = [warning("unsound")];
+    const check = (targets = TARGETS) =>
+      evaluate({
+        mode: "rust",
+        raw: JSON.stringify(report),
+        status: "1",
+        stderr: "",
+        exceptions: JSON.stringify(policy(entries)),
+        now,
+        root,
+        targets,
+      });
+    const refresh = () => {
+      e.reviewContext = {
+        version: 1,
+        targets: [...TARGETS],
+        sha256: reviewFingerprint(root, TARGETS, e.evidence),
+      };
+    };
+    try {
+      assert.equal(spawnSync("git", ["init", "--quiet", root]).status, 0);
+      for (const path of [lock, manifest, source, workflow, generator, generated, e.evidence])
+        put(path, "benign reviewed input\n");
+      assert.match(check().errors.join(), /review-required/);
+      refresh();
+      assert.equal(check().ok, true);
+      assert.equal(check().findings[0].approved, true);
+      put(source, "benign reviewed input\r\n");
+      assert.equal(check().ok, true, "Windows line endings are portable");
+      for (const path of [lock, manifest, source, workflow, generator, generated, e.evidence]) {
+        put(path, "benign changed input\n");
+        const result = check();
+        assert.equal(result.ok, false, path);
+        assert.equal(result.findings.length, 1);
+        assert.equal(result.findings[0].approved, false);
+        assert.match(result.errors.join(), /review-required/);
+        // Only an explicit new review restores approval, never a scan.
+        assert.equal(check().ok, false);
+        refresh();
+        assert.equal(check().ok, true);
+      }
+      put("apps/desktop/src-tauri/src/new-consumer.rs", "// new benign consumer\n");
+      assert.equal(check().ok, false);
+      refresh();
+      assert.equal(check().ok, true);
+      for (const targets of [undefined, [TARGETS[0]], [...TARGETS, "aarch64-pc-windows-msvc"]]) {
+        const result =
+          targets === undefined
+            ? evaluate({
+                mode: "rust",
+                raw: JSON.stringify(report),
+                status: "1",
+                stderr: "",
+                exceptions: JSON.stringify(policy([e])),
+                now,
+                root,
+              })
+            : check(targets);
+        assert.equal(result.ok, false);
+        assert.match(result.errors.join(), /review-required/);
+      }
+      e.reviewContext.targets = [TARGETS[0]];
+      assert.equal(check().ok, false);
+      refresh();
+      rmSync(join(root, e.evidence));
+      assert.equal(check().ok, false);
+      assert.throws(refresh, /review-required/);
+      put(e.evidence, "review renewed\n");
+      refresh();
+      assert.equal(check().ok, true);
+      rmSync(join(root, source));
+      assert.equal(check().ok, false);
+      entries.push(exception());
+      report.warnings.unmaintained = [warning()];
+      const result = check();
+      assert.equal(result.ok, false);
+      assert.equal(result.findings.find((f) => f.kind === "unmaintained").approved, true);
+      assert.equal(result.findings.find((f) => f.kind === "unsound").approved, false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
 test("recorded cargo-audit format retains all 17 findings", () => {
   const load = (p) => JSON.parse(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
   const r = load("evidence/2026-09-06-p1-dependency-triage/rust-audit.json");
@@ -246,7 +353,12 @@ test("recorded cargo-audit format retains all 17 findings", () => {
 test("CLI exits and machine-readable reports; missing inputs and usage fail", () => {
   const dir = mkdtempSync(join(tmpdir(), "dependency-policy-"));
   const cli = fileURLToPath(new URL("../check-dependency-policy.mjs", import.meta.url));
-  const invoke = (...args) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+  const invoke = (...args) =>
+    spawnSync(
+      process.execPath,
+      [cli, ...args, ...(args[0] === "rust" && args.length === 5 ? [TARGETS.join(",")] : [])],
+      { encoding: "utf8" },
+    );
   try {
     const raw = join(dir, "raw.json"),
       status = join(dir, "status"),

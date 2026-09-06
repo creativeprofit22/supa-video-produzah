@@ -1,7 +1,9 @@
 import process from "node:process";
 import console from "node:console";
 import { Buffer } from "node:buffer";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync, lstatSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL, fileURLToPath, URL } from "node:url";
 
@@ -72,6 +74,62 @@ export function parseStrictJson(raw) {
 }
 
 const identity = (v) => JSON.stringify([v.advisory, v.crate, v.version, v.kind]);
+const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+// Read-only: a reviewer must deliberately record this value after renewing evidence.
+// simplification: hash the entire repository inventory, not a dependency-aware slice;
+// unrelated edits also reopen review. Narrow only with proven input coverage.
+export function reviewFingerprint(root, targets, evidence) {
+  requireThat(scope(targets), "review-required: missing or changed actual target scope");
+  const base = realpathSync(root);
+  const inventory = spawnSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    {
+      cwd: base,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+  requireThat(
+    inventory.status === 0 && inventory.stderr === "",
+    "review-required: input inventory unavailable",
+  );
+  const paths = [...new Set(inventory.stdout.split("\0").filter(Boolean))]
+    .filter((p) => p !== "security/dependency-exceptions.json")
+    .sort();
+  requireThat(
+    paths.includes("apps/desktop/src-tauri/Cargo.lock") &&
+      paths.includes("apps/desktop/src-tauri/Cargo.toml") &&
+      paths.includes(".github/workflows/ci.yml") &&
+      paths.includes(evidence),
+    "review-required: required reviewed inputs missing",
+  );
+  const files = paths.map((p) => {
+    const path = resolve(base, p);
+    const local = relative(base, realpathSync(path));
+    requireThat(
+      local !== ".." &&
+        !local.startsWith("../") &&
+        !local.startsWith("..\\") &&
+        !isAbsolute(local) &&
+        lstatSync(path).isFile(),
+      "review-required: invalid reviewed input",
+    );
+    const bytes = readFileSync(path);
+    const decoded = bytes.toString("utf8");
+    // Existing Windows checkouts can predate the repository's LF attributes.
+    const content =
+      !bytes.includes(0) && Buffer.from(decoded, "utf8").equals(bytes)
+        ? decoded.replace(/\r\n/g, "\n")
+        : bytes;
+    return [p, sha256(content)];
+  });
+  return sha256(JSON.stringify({ version: 1, targets: [...targets].sort(), evidence, files }));
+}
+
 export function validateExceptions(value, now = new Date()) {
   keys(value, ["version", "targets", "exceptions"], "exceptions document");
   requireThat(
@@ -96,6 +154,7 @@ export function validateExceptions(value, now = new Date()) {
         "disposition",
       ],
       "exception",
+      ["reviewContext"],
     );
     requireThat(
       /^RUSTSEC-\d{4}-\d{4}$/.test(e.advisory) &&
@@ -121,6 +180,20 @@ export function validateExceptions(value, now = new Date()) {
         (e.disposition !== "maintenance-only" || e.kind === "unmaintained"),
       "invalid exception disposition (maintenance-only requires unmaintained)",
     );
+    if (e.disposition !== "maintenance-only") {
+      keys(e.reviewContext, ["version", "targets", "sha256"], "review-required: review context");
+      requireThat(
+        e.reviewContext.version === 1 &&
+          scope(e.reviewContext.targets) &&
+          typeof e.reviewContext.sha256 === "string" &&
+          /^[a-f0-9]{64}$/.test(e.reviewContext.sha256),
+        "review-required: invalid reviewed fingerprint or targets",
+      );
+    } else
+      requireThat(
+        !Object.hasOwn(e, "reviewContext"),
+        "maintenance-only must not use reachability context",
+      );
     const expiry = new Date(`${e.expires}T00:00:00.000Z`);
     requireThat(
       typeof e.expires === "string" &&
@@ -162,7 +235,7 @@ function rustFinding(v, kind) {
   };
 }
 
-function checkRust(raw, exceptionsRaw, result, guard, now) {
+function checkRust(raw, exceptionsRaw, result, guard, now, root, targets) {
   let report;
   guard(() => {
     report = parseStrictJson(raw);
@@ -231,7 +304,21 @@ function checkRust(raw, exceptionsRaw, result, guard, now) {
         (f) => f.kind !== "vulnerability" && identity(f) === identity(e),
       );
       if (!matches.length) result.errors.push(`stale exception: ${identity(e)}`);
-      for (const f of matches) f.approved = true;
+      guard(() => {
+        if (e.disposition !== "maintenance-only") {
+          let fingerprint;
+          try {
+            fingerprint = reviewFingerprint(root, targets, e.evidence);
+          } catch {
+            throw new Error(`review-required: context missing or invalid for ${identity(e)}`);
+          }
+          requireThat(
+            fingerprint === e.reviewContext.sha256,
+            `review-required: reviewed inputs changed for ${identity(e)}`,
+          );
+        }
+        for (const f of matches) f.approved = true;
+      });
     }
   });
 }
@@ -322,7 +409,16 @@ function checkJavascript(raw, result, guard) {
 
 // Status is the scanner status, never the status of a pipe/tee. Findings remain in
 // the report even when stderr, metadata, exceptions or scanner execution fail.
-export function evaluate({ mode, raw, status, stderr, exceptions, now = new Date() }) {
+export function evaluate({
+  mode,
+  raw,
+  status,
+  stderr,
+  exceptions,
+  now = new Date(),
+  root = repositoryRoot,
+  targets,
+}) {
   const result = { mode, scannerExitStatus: null, findings: [], errors: [], ok: false };
   const guard = (fn) => {
     try {
@@ -345,7 +441,7 @@ export function evaluate({ mode, raw, status, stderr, exceptions, now = new Date
   if (typeof stderr !== "string") result.errors.push("scanner stderr unavailable");
   else if (stderr.length !== 0)
     result.errors.push(`scanner stderr is nonempty (${Buffer.byteLength(stderr, "utf8")} bytes)`);
-  if (mode === "rust") checkRust(raw, exceptions, result, guard, now);
+  if (mode === "rust") checkRust(raw, exceptions, result, guard, now, root, targets);
   else if (mode === "javascript") checkJavascript(raw, result, guard);
   else result.errors.push("unknown mode");
   const expectedStatus = result.findings.length > 0 ? 1 : 0;
@@ -358,10 +454,10 @@ export function evaluate({ mode, raw, status, stderr, exceptions, now = new Date
 }
 
 export function main(args) {
-  const [mode, rawPath, statusPath, stderrPath, exceptionsPath] = args;
-  if (!((mode === "rust" && args.length === 5) || (mode === "javascript" && args.length === 4))) {
+  const [mode, rawPath, statusPath, stderrPath, exceptionsPath, targetScope] = args;
+  if (!((mode === "rust" && args.length === 6) || (mode === "javascript" && args.length === 4))) {
     console.error(
-      "Usage: node scripts/check-dependency-policy.mjs rust <raw-json> <exit-status-file> <stderr-file> <exceptions-json>\n       node scripts/check-dependency-policy.mjs javascript <raw-json> <exit-status-file> <stderr-file>",
+      "Usage: node scripts/check-dependency-policy.mjs rust <raw-json> <exit-status-file> <stderr-file> <exceptions-json> <comma-separated-targets>\n       node scripts/check-dependency-policy.mjs javascript <raw-json> <exit-status-file> <stderr-file>",
     );
     return 1;
   }
@@ -380,8 +476,11 @@ export function main(args) {
     status: read(statusPath),
     stderr: read(stderrPath),
     exceptions: mode === "rust" ? read(exceptionsPath) : undefined,
+    targets: targetScope?.split(","),
   });
   if (mode === "rust") {
+    if (!scope(targetScope?.split(",")))
+      errors.push("review-required: invalid actual target scope");
     try {
       const root = realpathSync(fileURLToPath(new URL("../", import.meta.url)));
       for (const e of validateExceptions(parseStrictJson(readFileSync(exceptionsPath, "utf8")))) {

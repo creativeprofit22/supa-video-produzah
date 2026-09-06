@@ -86,9 +86,9 @@ jobs:
           cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings > .cache/p1-security/rust.json 2> .cache/p1-security/rust.stderr
           printf '%s\n' "$?" > .cache/p1-security/rust.exit
 
-      - name: Enforce exact reviewed Rust warning policy
+      - name: Enforce exact Rust identities and reviewed source/evidence context
         if: ${{ !cancelled() }}
-        run: node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json
+        run: node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu
 
       - name: Scan complete available history without inline suppressions or baselines
         if: ${{ !cancelled() }}

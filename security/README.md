@@ -42,7 +42,7 @@ printf '%s\n' "$?" > .cache/p1-security/javascript.exit
 cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings > .cache/p1-security/rust.json 2> .cache/p1-security/rust.stderr
 printf '%s\n' "$?" > .cache/p1-security/rust.exit
 node scripts/check-dependency-policy.mjs javascript .cache/p1-security/javascript.json .cache/p1-security/javascript.exit .cache/p1-security/javascript.stderr
-node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json
+node scripts/check-dependency-policy.mjs rust .cache/p1-security/rust.json .cache/p1-security/rust.exit .cache/p1-security/rust.stderr security/dependency-exceptions.json x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu
 ```
 
 Run the CI-equivalent secret gate after establishing coverage. It rejects missing/shallow/empty Git history before scanning, then checks exit status, report shape/count and error-only logs. Gitleaks 8.30.1 can return zero for missing Git history; its raw exit alone is insufficient. Reports and logs are preserved in a unique private scratch directory, never echoed.
@@ -71,6 +71,22 @@ gitleaks git . --log-opts="--all --full-history --diff-merges=separate" --redact
 Full history means all available fetched branches/tags plus local refs and detached-worktree tips, not merely `--is-shallow=false`. CI checkout fetches full available branch/tag history at the event. Locally prefer an isolated `git clone --mirror --no-hardlinks . <ignored-directory>` and fetch origin heads/tags into isolated namespaces; import detached-worktree tips if the mirror's reachable commit set differs. Record exact refs, counts, scanner version, exclusions and scan status. Never rewrite the user's refs/worktree or Git history. Deleted/unreachable remote objects, uncommitted files, other repositories and binary/archive content excluded by scanner defaults are not established coverage. Check CLI help on version changes; this release's observed decode depth is 5 and archive depth 0.
 
 For an initial investigative scan, use an explicit config containing only `[extend]` / `useDefault = true` with the empty ignore file. This bypasses project exceptions as well as inline suppressions; triage candidates before adding any exception. Missing scanner binaries are an installation task, not proof of absent secrets or an external blocker.
+
+## Reachability review boundary
+
+`target-inapplicable` and `evidenced-unreachable` entries require a version-1 `reviewContext` with both actual Windows/Linux target triples and a SHA-256 fingerprint. The gate independently computes it before approving any matching warning; missing context, changed inputs or mismatched invocation targets fail with `review-required`. Maintenance-only deferrals remain separate, with the same identities, ownership and deadlines. Scanning never writes or renews an approval.
+
+The conservative boundary hashes sorted paths and file contents for **all tracked and nonignored untracked repository files**, except `security/dependency-exceptions.json` (to avoid a self-referential hash). It includes Cargo.lock, all manifests/features, application consumers, build scripts, checked-in generated code, generator inputs, target/build definitions in CI and referenced evidence contents. Additions, removals and renames invalidate too. The evidence path and explicit target scope are included in the digest. Required lockfile, manifest, CI and evidence paths must exist; symlinks, submodules and unreadable inputs fail closed. Git is required. UTF-8 text without NUL bytes normalizes CRLF to LF (including older Windows checkouts); binary bytes remain exact.
+
+This intentionally reopens review even for unrelated repository edits. Ignored build outputs, local Cargo registry caches and machine-specific environment are not fingerprinted: regenerate/review generated-code and linked-binary evidence when those change; do not treat this source-context check as a reproducible-build attestation. Build inputs must be repository-contained and tracked, not hidden in ignored files or external path dependencies. Changing toolchains or external generation must renew the evidence, which invalidates the same fingerprint boundary.
+
+Deliberate renewal: review the changed graph, consumers, generators and both target scopes; update the referenced disposition evidence and retain its limits/deadline. Finish all input edits, then print a candidate digest (read-only):
+
+```bash
+node --input-type=module -e 'import {reviewFingerprint,TARGETS} from "./scripts/check-dependency-policy.mjs"; console.log(reviewFingerprint(process.cwd(), TARGETS, "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md"));'
+```
+
+Only after review, copy that digest into the affected entry's `reviewContext.sha256`, retaining `version: 1` and the reviewed `targets`. Review evidence and fingerprint together in the same change; never add automatic refresh to CI or scanner collection. Re-run the Node tests and freshly collected Rust gate above. No fingerprint makes a reachable function safe or extends expiry.
 
 ## A discovered secret
 
