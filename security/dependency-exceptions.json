@@ -204,7 +204,7 @@
       "reviewContext": {
         "version": 1,
         "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-        "sha256": "ae5f8da5428bfe45226e878bfd01db0f9edbf2757f1d40276f0d95b803261477"
+        "sha256": "28be3407c3cd531181a36a50b6cb79e0db1cde3d69813caecedf8992550564d3"
       },
       "rationale": "Absent from Windows graph. Reviewed locked all-feature Linux graph has no consumer of the sole public VariantStrIter producer across 323 packages/8902 Rust source files; 14 generated Rust files and the linked unstripped test ELF corroborate absence. Narrow function deferral, not library safety; reopen on lock/feature/target/consumer changes. Linux regression failures are separate, not evidence of safety.",
       "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
