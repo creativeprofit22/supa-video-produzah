@@ -8,36 +8,120 @@
     "commitApi": "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/commits/5be7bfb104802131e61fe679b3f1401b27270216",
     "licenseSpdx": "Apache-2.0",
     "submodules": [
-      { "path": "ggml", "sha": "c03b4e2bcece5134827881af90242086daf75be5", "origin": "https://github.com/ggml-org/ggml.git" },
-      { "path": "llama.cpp", "sha": "560445bf34c87356ad0f8d80fb03ec5488850b65", "origin": "https://github.com/ggml-org/llama.cpp.git" },
-      { "path": "proto/riva-common", "sha": "71df98266725320a6b6b3a9f32a6da832dc93691", "origin": "https://github.com/nvidia-riva/common.git" },
-      { "path": "third_party/cpp-httplib", "sha": "62d899feac3cf9215a55f2b43da250fdd98d2156", "origin": "https://github.com/yhirose/cpp-httplib.git" },
-      { "path": "third_party/cppjieba", "sha": "b3602bef7d1f67521a61788a74fb5801a0e62cd3", "origin": "https://github.com/yanyiwu/cppjieba.git" },
-      { "path": "third_party/cppjieba/deps/limonp", "sha": "9d74077dfcdf8073536c97a00bb79d7a3c3fdaba", "origin": "https://github.com/yanyiwu/limonp.git" },
-      { "path": "third_party/flashlight-text", "sha": "49e163ab1e7b8108922512c294ab8513b89f404c", "origin": "https://github.com/flashlight/text.git" },
-      { "path": "third_party/kenlm", "sha": "4cb443e60b7bf2c0ddf3c745378f76cb59e254e5", "origin": "https://github.com/kpu/kenlm.git" },
-      { "path": "third_party/open_jtalk", "sha": "1e52154e6677d02dcb4b7f15453e65b5ca1cb6aa", "origin": "https://github.com/r9y9/open_jtalk.git" }
+      {
+        "path": "ggml",
+        "sha": "c03b4e2bcece5134827881af90242086daf75be5",
+        "origin": "https://github.com/ggml-org/ggml.git"
+      },
+      {
+        "path": "llama.cpp",
+        "sha": "560445bf34c87356ad0f8d80fb03ec5488850b65",
+        "origin": "https://github.com/ggml-org/llama.cpp.git"
+      },
+      {
+        "path": "proto/riva-common",
+        "sha": "71df98266725320a6b6b3a9f32a6da832dc93691",
+        "origin": "https://github.com/nvidia-riva/common.git"
+      },
+      {
+        "path": "third_party/cpp-httplib",
+        "sha": "62d899feac3cf9215a55f2b43da250fdd98d2156",
+        "origin": "https://github.com/yhirose/cpp-httplib.git"
+      },
+      {
+        "path": "third_party/cppjieba",
+        "sha": "b3602bef7d1f67521a61788a74fb5801a0e62cd3",
+        "origin": "https://github.com/yanyiwu/cppjieba.git"
+      },
+      {
+        "path": "third_party/cppjieba/deps/limonp",
+        "sha": "9d74077dfcdf8073536c97a00bb79d7a3c3fdaba",
+        "origin": "https://github.com/yanyiwu/limonp.git"
+      },
+      {
+        "path": "third_party/flashlight-text",
+        "sha": "49e163ab1e7b8108922512c294ab8513b89f404c",
+        "origin": "https://github.com/flashlight/text.git"
+      },
+      {
+        "path": "third_party/kenlm",
+        "sha": "4cb443e60b7bf2c0ddf3c745378f76cb59e254e5",
+        "origin": "https://github.com/kpu/kenlm.git"
+      },
+      {
+        "path": "third_party/open_jtalk",
+        "sha": "1e52154e6677d02dcb4b7f15453e65b5ca1cb6aa",
+        "origin": "https://github.com/r9y9/open_jtalk.git"
+      }
     ],
     "patches": {
       "cleanGgmlTree": "e8f3672955d53c99d9f8415ea602b855d1957939",
       "postPatchGgmlTree": "94de7a48a4e73d70c2a34f7f14b7ce0835f6f29d",
       "files": [
-        { "path": "ggml-patches/0001-fused-relpos-attn.patch", "sha256": "9b7d0d85531a4da957b8e9aa901ea7d3b119be9bd789c15dfc3495ec66a77c66" },
-        { "path": "ggml-patches/0002-nvfp4-warp-quantizer.patch", "sha256": "c2971e1a49443c56a61cc9b7be0c0e44d04d61f99ff6fd4c24f75867226c301a" },
-        { "path": "ggml-patches/0003-norm-mul-add-fusion.patch", "sha256": "aee72c731bab7163d895442b9508c55fbcbf589a06d1939dd06e77ecf9c725bf" },
-        { "path": "ggml-patches/0004-conv2d-dw-f16-kernel.patch", "sha256": "acafc6cdaa3b11f441076346190418cc6f092399cbcd821907516721a9cf6081" },
-        { "path": "ggml-patches/0005-skinny-q8-gemm.patch", "sha256": "a7e2ddd8939992f228530586745aad55fc50a5c63326cdaba0a08023118ad3c0" },
-        { "path": "ggml-patches/0006-cuda-dispatch-wiring.patch", "sha256": "0a70fc345b7a5acb28aa2ed877a6ca4608fa0a7a5f3767d3e8c9357c18b25e94" },
-        { "path": "ggml-patches/0007-magpietts-nanocodec.patch", "sha256": "019894937b26c8ec61368f3a9745eac0b335bb0e9becc358f23c67fccc224e41" },
-        { "path": "ggml-patches/0008-cublas-bf16-projections.patch", "sha256": "5e4a1acc3b3f809ba60951b973f54d72274ee1968fc484d0716a1511aa4eb086" },
-        { "path": "ggml-patches/0009-fastconformer-cuda-fusions.patch", "sha256": "014481ebeb604d88578bbf836cdb6ca62c4da61c223d1274f63a17e2e3c5ae00" },
-        { "path": "ggml-patches/0010-cuda-pad-large-batch-grid.patch", "sha256": "f1a260e82e4ea4eee0e3a861c3edd4ab98fa34340f390231241019459108911d" },
-        { "path": "ggml-patches/0011-cuda-graph-shape-key.patch", "sha256": "84561ff84e640e63841eaeb5ff3783a801ee928306e23313451c8513649ade94" },
-        { "path": "ggml-patches/0012-cuda-streaming-cache-copies.patch", "sha256": "e5ef7ce6b121890b258fd7bbc85d3f5e1b3461793340981b4d8287c6c3852df0" },
-        { "path": "ggml-patches/0013-cuda-cached-f16-cublas.patch", "sha256": "92081e772fe936ee6c145bfbb1215ee006d760918ef4d14119b65ea60085b5e2" },
-        { "path": "ggml-patches/0014-cuda-relpos-extensions.patch", "sha256": "3044b41ffce6e5d4ca84a232bbd8769c9e47944a8f91f9bae0a5384a13137b5e" },
-        { "path": "ggml-patches/0015-cuda-ctc-batch-fusions.patch", "sha256": "299bd3de9c5869a4bb38ea459ecdb944970a1a537556a29b5c82be6d206824ac" },
-        { "path": "ggml-patches/0016-fix-batched-conv1d-layout.patch", "sha256": "c9d34271f3310096cc146d79c4bafc9c63306256a6a345892eb52158128848fe" }
+        {
+          "path": "ggml-patches/0001-fused-relpos-attn.patch",
+          "sha256": "9b7d0d85531a4da957b8e9aa901ea7d3b119be9bd789c15dfc3495ec66a77c66"
+        },
+        {
+          "path": "ggml-patches/0002-nvfp4-warp-quantizer.patch",
+          "sha256": "c2971e1a49443c56a61cc9b7be0c0e44d04d61f99ff6fd4c24f75867226c301a"
+        },
+        {
+          "path": "ggml-patches/0003-norm-mul-add-fusion.patch",
+          "sha256": "aee72c731bab7163d895442b9508c55fbcbf589a06d1939dd06e77ecf9c725bf"
+        },
+        {
+          "path": "ggml-patches/0004-conv2d-dw-f16-kernel.patch",
+          "sha256": "acafc6cdaa3b11f441076346190418cc6f092399cbcd821907516721a9cf6081"
+        },
+        {
+          "path": "ggml-patches/0005-skinny-q8-gemm.patch",
+          "sha256": "a7e2ddd8939992f228530586745aad55fc50a5c63326cdaba0a08023118ad3c0"
+        },
+        {
+          "path": "ggml-patches/0006-cuda-dispatch-wiring.patch",
+          "sha256": "0a70fc345b7a5acb28aa2ed877a6ca4608fa0a7a5f3767d3e8c9357c18b25e94"
+        },
+        {
+          "path": "ggml-patches/0007-magpietts-nanocodec.patch",
+          "sha256": "019894937b26c8ec61368f3a9745eac0b335bb0e9becc358f23c67fccc224e41"
+        },
+        {
+          "path": "ggml-patches/0008-cublas-bf16-projections.patch",
+          "sha256": "5e4a1acc3b3f809ba60951b973f54d72274ee1968fc484d0716a1511aa4eb086"
+        },
+        {
+          "path": "ggml-patches/0009-fastconformer-cuda-fusions.patch",
+          "sha256": "014481ebeb604d88578bbf836cdb6ca62c4da61c223d1274f63a17e2e3c5ae00"
+        },
+        {
+          "path": "ggml-patches/0010-cuda-pad-large-batch-grid.patch",
+          "sha256": "f1a260e82e4ea4eee0e3a861c3edd4ab98fa34340f390231241019459108911d"
+        },
+        {
+          "path": "ggml-patches/0011-cuda-graph-shape-key.patch",
+          "sha256": "84561ff84e640e63841eaeb5ff3783a801ee928306e23313451c8513649ade94"
+        },
+        {
+          "path": "ggml-patches/0012-cuda-streaming-cache-copies.patch",
+          "sha256": "e5ef7ce6b121890b258fd7bbc85d3f5e1b3461793340981b4d8287c6c3852df0"
+        },
+        {
+          "path": "ggml-patches/0013-cuda-cached-f16-cublas.patch",
+          "sha256": "92081e772fe936ee6c145bfbb1215ee006d760918ef4d14119b65ea60085b5e2"
+        },
+        {
+          "path": "ggml-patches/0014-cuda-relpos-extensions.patch",
+          "sha256": "3044b41ffce6e5d4ca84a232bbd8769c9e47944a8f91f9bae0a5384a13137b5e"
+        },
+        {
+          "path": "ggml-patches/0015-cuda-ctc-batch-fusions.patch",
+          "sha256": "299bd3de9c5869a4bb38ea459ecdb944970a1a537556a29b5c82be6d206824ac"
+        },
+        {
+          "path": "ggml-patches/0016-fix-batched-conv1d-layout.patch",
+          "sha256": "c9d34271f3310096cc146d79c4bafc9c63306256a6a345892eb52158128848fe"
+        }
       ]
     }
   },

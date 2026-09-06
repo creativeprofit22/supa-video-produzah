@@ -13,7 +13,20 @@
       "source": "System.Speech deterministic SSML with a bookmark immediately before every token",
       "targetDurationSeconds": [60, 90],
       "voiceCount": 1,
-      "keyterms": ["Nemotron", "NVIDIA", "AssemblyAI", "FFmpeg", "CUDA", "Vulkan", "GTX 1080", "TranscriptArtifactV1", "August 9 2026", "$1,234.56", "3.14159", "415 555 0137"]
+      "keyterms": [
+        "Nemotron",
+        "NVIDIA",
+        "AssemblyAI",
+        "FFmpeg",
+        "CUDA",
+        "Vulkan",
+        "GTX 1080",
+        "TranscriptArtifactV1",
+        "August 9 2026",
+        "$1,234.56",
+        "3.14159",
+        "415 555 0137"
+      ]
     },
     {
       "id": "ugly-dialogue",
@@ -24,29 +37,166 @@
       "maxOverlapSeconds": 0.8,
       "maxPhoneSectionSeconds": 18,
       "turnSchedule": [
-        { "id": "turn-01", "speaker": "A", "gapAfterPreviousMs": 0, "overlapPreviousMs": 0, "effects": [], "text": "We need the production transcript before noon, with every product name, number, and timestamp checked against the original recording before anyone exports the final cut." },
-        { "id": "turn-02", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "Understood. I will compare the word boundaries and speaker turns, then verify that Nemotron, NVIDIA, and the callback number survive the noisy sections unchanged." },
-        { "id": "turn-03", "speaker": "A", "gapAfterPreviousMs": 0, "overlapPreviousMs": 550, "effects": ["backchannel", "interruption"], "text": "Yes, check that." },
-        { "id": "turn-04", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "The air conditioner is loud near the doorway, and a jacket brushes the microphone twice, but those disturbances must not erase the sentence around them." },
-        { "id": "turn-05", "speaker": "A", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "Keep the reference ordered by the audio clock, not grouped by speaker, because the interruption changes which words are actually heard first in the combined track." },
-        { "id": "turn-06", "speaker": "B", "gapAfterPreviousMs": 0, "overlapPreviousMs": 600, "effects": ["backchannel", "interruption"], "text": "Right, by audio time." },
-        { "id": "turn-07", "speaker": "A", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "A second production transcript sentinel appears here so a long run can reveal duplicated joins, dropped phrases, or timing drift after many minutes." },
-        { "id": "turn-08", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "I will retain the variant identity at every join and calculate each sentinel position from its source bookmark plus the exact destination offset in the concatenation." },
-        { "id": "turn-09", "speaker": "A", "gapAfterPreviousMs": 0, "overlapPreviousMs": 500, "effects": ["backchannel", "interruption"], "text": "Good, persist both." },
-        { "id": "turn-10", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": ["phone-band"], "text": "This bounded phone section narrows the frequency range for one turn only, while the words August ninth twenty twenty six remain part of the timed reference." },
-        { "id": "turn-11", "speaker": "A", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "After the phone section, restore the full band signal and continue with ordinary dialogue so the measurement can distinguish local damage from global filtering." },
-        { "id": "turn-12", "speaker": "B", "gapAfterPreviousMs": 0, "overlapPreviousMs": 650, "effects": ["backchannel", "interruption"], "text": "Full band restored." },
-        { "id": "turn-13", "speaker": "A", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": ["clipped-peaks"], "text": "This sentence deliberately drives several peaks into hard clipping, yet its bookmark words still describe the clean pre-mix timing shifted into the final schedule." },
-        { "id": "turn-14", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "The low tonal hum, brown ventilation noise, short clothing impulses, and mild room echo are separate deterministic components with fixed levels, seeds, and timing." },
-        { "id": "turn-15", "speaker": "A", "gapAfterPreviousMs": 0, "overlapPreviousMs": 575, "effects": ["backchannel", "interruption"], "text": "No silent fallback." },
-        { "id": "turn-16", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "If any required voice, bookmark, filter, source fixture, duration probe, or generated component is unavailable, fixture creation must stop instead of producing weaker evidence." },
-        { "id": "turn-17", "speaker": "A", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "The final production transcript sentinel is intentionally separated from the earlier copies, giving every long-form quartile repeated anchors for duplicate, drop, and drift checks." },
-        { "id": "turn-18", "speaker": "B", "gapAfterPreviousMs": 180, "overlapPreviousMs": 0, "effects": [], "text": "When generation finishes, validate sorted word times, alternating speakers, bounded overlap and phone intervals, exact join and sentinel counts, audio durations, and SHA two fifty six hashes." }
+        {
+          "id": "turn-01",
+          "speaker": "A",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "We need the production transcript before noon, with every product name, number, and timestamp checked against the original recording before anyone exports the final cut."
+        },
+        {
+          "id": "turn-02",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "Understood. I will compare the word boundaries and speaker turns, then verify that Nemotron, NVIDIA, and the callback number survive the noisy sections unchanged."
+        },
+        {
+          "id": "turn-03",
+          "speaker": "A",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 550,
+          "effects": ["backchannel", "interruption"],
+          "text": "Yes, check that."
+        },
+        {
+          "id": "turn-04",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "The air conditioner is loud near the doorway, and a jacket brushes the microphone twice, but those disturbances must not erase the sentence around them."
+        },
+        {
+          "id": "turn-05",
+          "speaker": "A",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "Keep the reference ordered by the audio clock, not grouped by speaker, because the interruption changes which words are actually heard first in the combined track."
+        },
+        {
+          "id": "turn-06",
+          "speaker": "B",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 600,
+          "effects": ["backchannel", "interruption"],
+          "text": "Right, by audio time."
+        },
+        {
+          "id": "turn-07",
+          "speaker": "A",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "A second production transcript sentinel appears here so a long run can reveal duplicated joins, dropped phrases, or timing drift after many minutes."
+        },
+        {
+          "id": "turn-08",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "I will retain the variant identity at every join and calculate each sentinel position from its source bookmark plus the exact destination offset in the concatenation."
+        },
+        {
+          "id": "turn-09",
+          "speaker": "A",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 500,
+          "effects": ["backchannel", "interruption"],
+          "text": "Good, persist both."
+        },
+        {
+          "id": "turn-10",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": ["phone-band"],
+          "text": "This bounded phone section narrows the frequency range for one turn only, while the words August ninth twenty twenty six remain part of the timed reference."
+        },
+        {
+          "id": "turn-11",
+          "speaker": "A",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "After the phone section, restore the full band signal and continue with ordinary dialogue so the measurement can distinguish local damage from global filtering."
+        },
+        {
+          "id": "turn-12",
+          "speaker": "B",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 650,
+          "effects": ["backchannel", "interruption"],
+          "text": "Full band restored."
+        },
+        {
+          "id": "turn-13",
+          "speaker": "A",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": ["clipped-peaks"],
+          "text": "This sentence deliberately drives several peaks into hard clipping, yet its bookmark words still describe the clean pre-mix timing shifted into the final schedule."
+        },
+        {
+          "id": "turn-14",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "The low tonal hum, brown ventilation noise, short clothing impulses, and mild room echo are separate deterministic components with fixed levels, seeds, and timing."
+        },
+        {
+          "id": "turn-15",
+          "speaker": "A",
+          "gapAfterPreviousMs": 0,
+          "overlapPreviousMs": 575,
+          "effects": ["backchannel", "interruption"],
+          "text": "No silent fallback."
+        },
+        {
+          "id": "turn-16",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "If any required voice, bookmark, filter, source fixture, duration probe, or generated component is unavailable, fixture creation must stop instead of producing weaker evidence."
+        },
+        {
+          "id": "turn-17",
+          "speaker": "A",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "The final production transcript sentinel is intentionally separated from the earlier copies, giving every long-form quartile repeated anchors for duplicate, drop, and drift checks."
+        },
+        {
+          "id": "turn-18",
+          "speaker": "B",
+          "gapAfterPreviousMs": 180,
+          "overlapPreviousMs": 0,
+          "effects": [],
+          "text": "When generation finishes, validate sorted word times, alternating speakers, bounded overlap and phone intervals, exact join and sentinel counts, audio durations, and SHA two fifty six hashes."
+        }
       ],
       "disturbances": {
         "hvac": { "filter": "anoisesrc", "color": "brown", "seed": 1080, "volume": 0.025 },
-        "reverb": { "filter": "aecho", "inGain": 0.8, "outGain": 0.6, "delayMs": 35, "decay": 0.12 },
-        "clothingImpulses": { "filter": "aevalsrc", "periodSeconds": 13, "widthSeconds": 0.012, "volume": 0.6 },
+        "reverb": {
+          "filter": "aecho",
+          "inGain": 0.8,
+          "outGain": 0.6,
+          "delayMs": 35,
+          "decay": 0.12
+        },
+        "clothingImpulses": {
+          "filter": "aevalsrc",
+          "periodSeconds": 13,
+          "widthSeconds": 0.012,
+          "volume": 0.6
+        },
         "tonalAmbience": { "filter": "sine", "frequencyHz": 118, "volume": 0.012 },
         "phoneBand": { "highpassHz": 300, "lowpassHz": 3400 },
         "clippedPeaks": { "pregain": 6, "postgain": 0.65, "filter": "asoftclip", "type": "hard" }
@@ -58,10 +208,26 @@
       "targetDurationSeconds": 1800,
       "sentinel": "production transcript",
       "variantCycle": [
-        { "id": "ugly-neutral", "sourceFixture": "ugly-dialogue", "filters": "loudnorm=I=-20:TP=-2:LRA=11" },
-        { "id": "clean-neutral", "sourceFixture": "clean-keyterms", "filters": "loudnorm=I=-20:TP=-2:LRA=11" },
-        { "id": "ugly-radio", "sourceFixture": "ugly-dialogue", "filters": "highpass=f=180,lowpass=f=5000,loudnorm=I=-20:TP=-2:LRA=11" },
-        { "id": "clean-radio", "sourceFixture": "clean-keyterms", "filters": "highpass=f=180,lowpass=f=5000,loudnorm=I=-20:TP=-2:LRA=11" }
+        {
+          "id": "ugly-neutral",
+          "sourceFixture": "ugly-dialogue",
+          "filters": "loudnorm=I=-20:TP=-2:LRA=11"
+        },
+        {
+          "id": "clean-neutral",
+          "sourceFixture": "clean-keyterms",
+          "filters": "loudnorm=I=-20:TP=-2:LRA=11"
+        },
+        {
+          "id": "ugly-radio",
+          "sourceFixture": "ugly-dialogue",
+          "filters": "highpass=f=180,lowpass=f=5000,loudnorm=I=-20:TP=-2:LRA=11"
+        },
+        {
+          "id": "clean-radio",
+          "sourceFixture": "clean-keyterms",
+          "filters": "highpass=f=180,lowpass=f=5000,loudnorm=I=-20:TP=-2:LRA=11"
+        }
       ]
     },
     {
