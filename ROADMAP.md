@@ -2,12 +2,69 @@
 
 - **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
 - **Research baseline:** 24 July 2026
-- **Implementation audit:** 9 August 2026 (Phase 5 trim-, split-, standalone MoveClip-, standalone RippleDeleteClip-caption lifecycle, exact-key managed transcript read-boundary, and automatic managed-transcript resolution slices verified and closed; broader Phase 4 and Phase 5 scope remains open)
+- **Implementation audit:** 5 September 2026 at `7771df653acecbb60d605e9ee74cb9479c3b6136`; current findings and ordered next work are below. Earlier dated checkpoints remain historical evidence, not verification of this revision.
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
 - **Product:** A standalone, agent-native video producer with its own desktop shell, UI, timeline, project model, preview, asset library, render pipeline, quality control, and export system
 - **Explicit exclusions:** No dependency on another application repository, Resolve, Premiere, CapCut, or generated-video services such as Veo, Kling, or Runway
 
 ---
+
+## Current audit and execution priorities — 5 September 2026
+
+**Later commit-scoping note:** The audit below describes the historical `7771df6` baseline. Caption diagnostic bounds subsequently landed in `5b0c381`, and browser/accessibility test stabilization in `7019e0e`. The remaining Rust cleanup and evidence formatting are being committed separately. See [the P0 verification record](evidence/2026-09-05-p0-repeatable-checks/verification.md) for the historical passing dirty-snapshot series; those results are not fresh verification of later commits. This note does not close any phase or audit priority.
+
+**Verdict: working foundations with gaps; not ready to close Phase 4 or claim a production release.** This audit updates planning only; none of the remediation items below is implemented by this documentation change. Phases 1–3 retain their historical completion records, but regressions in those foundations take priority over adding controls. This section supersedes older “next item” instructions; dated implementation/test records below remain intact.
+
+### Coverage and current verification
+
+Reviewed the workspace contracts, rational-time/project/render packages, desktop editing and job flows, Rust project persistence/cache/jobs/transcript/render boundaries, Tauri policy, dependency manifests/lockfiles, CI, and roadmap completion evidence. Independent read-only passes covered standards and roadmap conformance; findings below were checked against their source paths. `RUNTIME` means a command was executed; `CODE` means source inspection; `DEDUCED` means an outcome still needing a dedicated reproduction.
+
+The table below was reverified on 5 September 2026 using **separate direct foreground commands**, without shell chaining, redirection or log-processing wrappers. Execution IDs identify the tool's independently recorded command, exit status and log. These results supersede the earlier aggregate pass claims; historical phase-specific commands not repeated here remain **unverified at this revision**.
+
+| Check at the audited revision | Observed result |
+|---|---|
+| `pnpm build` | **Passed, exit 0**, execution `fa4f40a2-b694-4921-ac78-873681a90ba5`. Vite warned about a 550.81 kB minified JavaScript chunk; no bundle-size fix was made. |
+| `pnpm check` | **Passed, exit 0**, execution `88afd0d4-f5a2-4301-94c4-601374e29334`, after the separate build command generated workspace declarations. |
+| `pnpm test` | **Failed, exit 1**, execution `13f8a9be-b1c2-4ff7-a83c-35f7bb09cd8b`. Contracts 132, media 43, render 23 and project 132 tests passed; desktop had **268 passed / 1 failed**. `apps/desktop/src/video/accessibility.test.tsx:47` timed out after 5000 ms in “reports zero violations in the ready editor and inspector.” The earlier visibility test passed this time. The previous 599/599 run is historical only; a repeatable full-suite pass is not established. |
+| `pnpm --dir apps/desktop test:browser` | **Failed, exit 1**, execution `6d48d791-f60f-47fc-98d6-2cb876570aa9`: **45 passed / 1 failed**. The desktop keyboard-percentage test in `apps/desktop/browser-tests/ClipInspector.spec.ts:165` did not observe the “Saving clip appearance” status within 5000 ms. The prior 46/46 run is historical only. A trace was generated under ignored `test-results/desktop-browser/`; root cause remains unverified. These are browser fixtures, not native packaged-app proof. |
+| `pnpm lint` | **Passed, exit 0**, execution `cff6c66b-599d-4d5d-b1ca-c0598b2ddec3`. |
+| `pnpm format:check` | **Failed, exit 1**, execution `86c92e4c-44f5-4bcd-9521-e822317c958c`. Three existing NeMo evidence JSON files remain unformatted: `fixture-recipe.json`, `provenance-lock.json`, and `provenance-validation-fixtures.json` under `evidence/2026-08-09-nemo-asr-machine-validation/`. This audit did not alter those files. |
+| `cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml` | **Passed, exit 0**, execution `b76b4be0-26bb-4920-af2a-479fe6877f12`: **262 passed** (257 library + 5 integration), **19 ignored**. Ignored FFmpeg/GPU/environment-dependent paths remain **unverified**. |
+| `cargo clippy --locked --all-targets --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings` | **Failed, exit 101**, execution `c0ede4f2-ca7f-477b-93cf-4f3afa3b90f8`: 52 library errors and 3 test-target errors, including unused/dead NeMo/transcript code and caption lint findings. Passing Cargo tests does not satisfy this gate. |
+| `pnpm audit --json` | **Findings, exit 1**, execution `70dff36c-69d9-44d1-8810-a29bff532250`: two high-rated upstream advisories, `brace-expansion` 5.0.8 through ESLint/minimatch and `nanoid` 3.3.16 through Vite/PostCSS. These are dependency findings, not demonstrated attacks against the shipped desktop app. |
+| `cargo audit --file apps/desktop/src-tauri/Cargo.lock` | **Completed, exit 0**, execution `c95d9f22-d750-47f7-902a-6e2add9da6aa`, with **17 allowed warnings**, including unmaintained transitive crates and the `glib` VariantStrIter unsoundness warning. A zero exit does not mean a warning-free dependency tree. |
+
+Not reverified: packaged Windows runtime/signing, installed FFmpeg output parity, real NeMo/CUDA inference, macOS/Linux behavior, full Git-history secret scanning, and long-session/stress performance. A dedicated secret scan was not run (`gitleaks` was not on PATH); tracked-file inventory is not a substitute. Historical screenshots and native recordings are not fresh evidence for this revision.
+
+### Standards findings — correctness and lifecycle
+
+| ID / priority | Evidence and consequence | Required fix and acceptance proof |
+|---|---|---|
+| A1 / P1 — Cache publication and leases are not atomic | **CODE / DEDUCED:** `apps/desktop/src-tauri/src/video/transcript.rs:689–705` drops the artifact guard, registers, then leases. Similar ordering exists in `derived.rs:1297–1316`. `cache.rs:576–699` selects unleased entries and deletes them; `cache.rs:160–207` acquires leases without the eviction lock. Concurrent budget enforcement can remove a published artifact before its consumer obtains protection, or after the eviction query selected it. No deterministic race reproduction was run. | Coordinate publication, lease acquisition and eviction through one shared protocol; recheck eligibility under that protection. Add barrier-controlled tests for both race windows, covering transcript and prepared-media callers; an active lease must never refer to an evicted artifact. Preserve containment and existing LRU behavior. |
+| A2 / P1 — Caption end frames disagree with the time contract | **CODE / DEDUCED:** `packages/video-render/src/compile-render-plan.ts:99–100` and `apps/desktop/src-tauri/src/video/render.rs:1027–1034` use `between(t,start,end)`. Canonical ranges are half-open, but FFmpeg documents inclusive endpoints. Adjacent cues can both render on their shared boundary frame; real output was not inspected in this audit. | Change both independent compilers/validators to the same exclusive-end rule. Add exact argv tests and real-FFmpeg frame-boundary proof for adjacent cues in V1/V2; include fractional frame rates. See [FFmpeg expression semantics](https://ffmpeg.org/ffmpeg-utils.html#Expression-Evaluation). |
+| A3 / P1 — Affected ranges accept mixed rates | **RUNTIME:** `packages/video-contracts/src/project-v2.ts:17–24` compares raw values only. A direct import of the built schema accepted start `30@30fps` and end `31@60fps`, although the latter is earlier in real time. | Require a common rational rate or explicitly normalize before ordering. Test reversed mixed-rate, equal-time and valid same-rate ranges; check native history/event mirrors and every consumer. |
+| A4 / P2 — Close discards checkpoint errors or retryable sessions | **CODE:** `apps/desktop/src-tauri/src/video/project/service.rs:847–858` removes the session before checkpointing; `881–895` drains all sessions and ignores checkpoint errors. `apps/desktop/src-tauri/src/lib.rs:134` also discards the close result. The fsynced journal remains a recovery source: this is not evidence of lost committed edits. | Preserve retryable sessions on explicit-close failure and surface shutdown checkpoint failures without misreporting success. Fault-inject failed writes and prove journal replay, retry and close behavior. |
+| A5 / P2 — Cancellation settlement has no deadline | **CODE / DEDUCED:** `apps/desktop/src-tauri/src/video/jobs/mod.rs:288–301` polls indefinitely after signalling a running worker. Existing supervised-process cancellation is a compensating control; a normal cancellation hang was not reproduced. | Add a bounded acknowledgement/escalation path with a truthful nonterminal failure state. Test a worker that never settles; never report cancellation complete before process/partial cleanup. |
+| A6 / P2 — Playback invalidates the timeline subtree | **CODE / DEDUCED:** `apps/desktop/src/video/VideoWorkspace.tsx:641–648,678–685` sends each playback frame into `MultitrackTimeline.tsx:175–235`. Projection caching and viewport virtualization already limit work, but visible lanes/clips still participate in React rerenders. No measured frame-budget regression is claimed. | Profile the existing Phase 4 stress fixture first; isolate playhead updates from stable visible rows if commits exceed the budget. Record React commit counts, seek latency and dropped frames before/after; retain viewport virtualization rather than replacing the timeline. |
+
+### Spec conformance and security/dependency disposition
+
+- **[spec] NeMo is an incomplete implementation spike, not a delivered transcription feature.** `apps/desktop/src-tauri/src/video/nemo_transcription.rs:107–180` contains a runner, but the production command exports in `video/mod.rs` do not expose it. Existing provider-neutral transcript persistence and caption lifecycle remain delivered. Production job wiring, model provisioning, cancellation/retry, error handling and real GPU/runtime proof remain Phase 5 work.
+- **[spec] Phase 4 remains open.** Speed, volume/fades, source-range controls, multiselect, layout completion and stress/native proof are still required. Milestones below are target exit conditions, not additional completion claims. Earlier “current HEAD” and “latest verification” text applies only to its dated checkpoint.
+- **Dependency maintenance, not a confirmed application exploit:** refresh the two affected JavaScript transitive dependencies and re-run the audit, build and tests. Current scanner references are [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895) and [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8). Triage the 17 Rust warnings by target/reachability and add explicit, reviewed dependency/secret-scan CI policy; `.github/workflows/ci.yml` currently has no audit/secret-scan step. Do not equate advisory severity with proven product exposure or suppress warnings wholesale.
+- **Checked controls:** local-only `main` capability, restrictive production CSP, cache-only asset protocol, owner-bound job cancellation, parameterized cache SQL, contained artifact paths and existing process supervision. Primary exposure is user-selected project/media files, transcript/provider output, native IPC and dependency/build inputs; assets are local projects, media and signing material. There is no shipped multi-tenant service or autonomous agent tool loop to audit as one.
+- **False-positive disposition:** neither JavaScript advisory was promoted to a shipped-app exploit because no untrusted app-input path to those tooling functions was established (two candidates downgraded to maintenance). Timeline slowness and worker hangs remain hypotheses, not reproduced failures. This review makes no security certification.
+
+### Ordered next work — all open
+
+1. [ ] **P0 — Restore a reproducible verification baseline.** Fix Clippy failures without disabling warnings, format the three flagged NeMo evidence JSON files, and keep the NeMo spike from leaving dead production code. Diagnose the direct-run accessibility timeout and missing browser saving announcement, alongside the earlier visibility timeout; preserve test assertions and retain clean-port browser isolation. Require repeatable full-suite and browser passes, not selective passing reruns. Record build → check → test, lint, formatting, Rust/Clippy and browser results at one revision.
+2. [ ] **P1 — Repair shared cache lifetime guarantees (A1).** Complete the coordinated publish/lease/evict protocol and deterministic interleaving tests before increasing transcript or media-job concurrency.
+3. [ ] **P1 — Repair time-boundary correctness (A2, A3).** Land exclusive-end caption parity and mixed-rate range validation with shared TS/Rust contract tests and real rendered-frame proof.
+4. [ ] **P1 — Clear dependency maintenance findings.** Update affected locked transitive dependencies through compatible upstream packages, triage Rust warnings by supported platform, and add dependency/secret-scan checks. Do not change signing trust or introduce blanket advisory ignores.
+5. [ ] **P2 — Close lifecycle/repeatability gaps (A4, A5).** Prove checkpoint failure recovery and bounded cancellation settlement before claiming broader reliability completion.
+6. [ ] **P2 — Resume P4-S05, one bounded control at a time.** Default next feature: speed; then volume/fades, source-range controls, multiselect and layout completion. Each control needs canonical revisions, undo/redo/recovery, lock handling, keyboard/ARIA, 320px/200% text, and real preview/export parity where applicable. Completed transform/opacity work remains closed except for regressions.
+7. [ ] **P2 — Close the Phase 4 hard gate (including A6).** Measure stress playback/seek and long-session resource behavior; collect current native runtime, browser/accessibility and render evidence. Only then mark Milestone A achieved.
+8. [ ] **P3 — Finish Phase 5 on those foundations.** Integrate local transcription through the existing durable job/provider boundary with consent and model/runtime provenance; verify actual NeMo/CUDA execution or a supported alternative. Then complete caption styling/retiming and production audio. Phase 6 agents, Phase 7 acquisition, Phase 8 assembly and Phase 9 native preview remain deferred to their existing dependency and measurement gates.
 
 ## Architecture decision
 
@@ -522,7 +579,7 @@ The remaining Phase 4 scope—including speed, volume, fades, source-range and m
 
 ### Next planning item
 
-Continue **P4-S05 — Commands, accessibility, monitors, and inspector** with the next bounded inspector control; do not reopen the completed transform/opacity slice unless a regression is found.
+First complete the reliability and verification prerequisites in **Current audit and execution priorities — 5 September 2026**. Then resume **P4-S05 — Commands, accessibility, monitors, and inspector**, starting with speed as the next bounded control. Do not reopen the completed transform/opacity slice unless a regression is found.
 
 ## Scope
 
@@ -1367,19 +1424,23 @@ Phase 10 QC, repair, delivery, provenance, release hardening
 
 ### Milestone A — Self-contained editor proof
 
-Phases 1–4 complete: local media can be edited and exported entirely in our application.
+**Target, not yet achieved:** Phases 1–4 complete; local media can be edited and exported entirely in our application. Phase 4 remains open; the current audit prerequisites and its hard completion gate must pass first.
 
 ### Milestone B — Agentic production proof
 
-Phases 5–8 complete: a brief can become a rights-cleared, inspectable, reviewable first cut with minimal manual editing.
+**Future target:** Phases 5–8 complete; a brief can become a rights-cleared, inspectable, reviewable first cut with minimal manual editing.
 
 ### Milestone C — Production-grade release
 
-Phases 9–10 complete where profiling requires Phase 9: preview, QC, delivery, security, provenance, and packaging meet release gates.
+**Future target:** Phases 9–10 complete where profiling requires Phase 9; preview, QC, delivery, security, provenance, and packaging meet release gates.
 
 ---
 
-# Unresolved decisions
+# Decision register
+
+Items 3–6 below now have implemented baselines: Windows-first evidence, a directory `.svpvideo` project with snapshots/journal, an in-process Rust/Tauri project service, and SQLite for derived/cache/job state rather than canonical project truth. Treat these as decisions to revisit only with new requirements, not blockers that need deciding again. Items 7 and 9 have implementation choices but still need broader codec/platform and provider-policy proof; local NeMo code alone does not settle the model policy.
+
+## Original decisions and remaining review questions
 
 1. **Product license:** proprietary, source-available, permissive open source, or copyleft; this determines whether GPL/AGPL implementation code may ever be reused
 2. **FFmpeg public-distribution profile:** LGPL-focused build versus the current GPL-enabled build; GPL/source-offer, codec-patent, and platform review is deferred until public distribution and does not block private-use implementation phases
@@ -1399,7 +1460,9 @@ Phases 9–10 complete where profiling requires Phase 9: preview, QC, delivery, 
 
 ---
 
-# Exact Plan Mode prompt for Phase 1 only
+# Historical Plan Mode prompt for Phase 1 only
+
+Retained as bootstrap history, not the next execution instruction. Use the current audit priority queue for new work.
 
 ```text
 Enter Plan Mode and produce an implementation plan for Phase 1 of ROADMAP.md only. Use E:\Projects\supa-video-produzah as the sole product root, implementation root, workspace root, and write target.
