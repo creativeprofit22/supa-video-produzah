@@ -14,7 +14,7 @@ use super::{
     cache::MediaCacheService,
     error::VideoCommandError,
     media_store::{acquire_artifact, ArtifactStoreKind, SourceFingerprintV1},
-    process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
+    process::{ProcessCancellation, ProcessFailure, ProcessSpec},
     transcript::{
         create_transcript_artifact_v1, derive_asr_configuration_identity,
         derive_transcript_artifact_identity, load_transcript_artifact_for_identity,
@@ -265,7 +265,7 @@ async fn run_transcription_process(
     cancellation: ProcessCancellation,
     _helper_kind: &'static str,
 ) -> Result<super::process::SupervisedOutput, ProcessFailure> {
-    run_supervised(spec, cancellation).await
+    super::process::run_supervised(spec, cancellation).await
 }
 
 #[cfg(test)]

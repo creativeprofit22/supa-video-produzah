@@ -7,6 +7,8 @@ mod error;
 mod grants;
 pub(crate) mod jobs;
 pub(crate) mod media_store;
+// The runner is not integrated into production jobs yet; retain its regression coverage.
+#[cfg(test)]
 mod nemo_transcription;
 pub(crate) mod probe;
 mod process;

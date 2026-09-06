@@ -76,29 +76,49 @@ pub struct CaptionStyleV1 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CaptionValidationIssueCode {
-    CaptionSchemaInvalid,
-    CaptionVersionUnsupported,
-    CaptionTrackLinkInvalid,
-    CaptionStyleInvalid,
-    CaptionSafeAreaInvalid,
-    CaptionDurationProfileInvalid,
-    CaptionSourceSpanInvalid,
-    CaptionSourceWordDuplicate,
-    CaptionCueIdDuplicate,
-    CaptionCueRateMismatch,
-    CaptionCueDurationNonPositive,
-    CaptionCueOverlap,
-    CaptionLineCountExceeded,
-    CaptionLineLengthExceeded,
-    CaptionCueTooShort,
-    CaptionCueTooLong,
-    CaptionCpsExceeded,
-    CaptionSafeAreaExceeded,
-    CaptionTranscriptLinkMismatch,
-    CaptionSourceLinkOverlap,
-    CaptionTranscriptWordReused,
+    #[serde(rename = "CAPTION_SCHEMA_INVALID")]
+    SchemaInvalid,
+    #[serde(rename = "CAPTION_VERSION_UNSUPPORTED")]
+    VersionUnsupported,
+    #[serde(rename = "CAPTION_TRACK_LINK_INVALID")]
+    TrackLinkInvalid,
+    #[serde(rename = "CAPTION_STYLE_INVALID")]
+    StyleInvalid,
+    #[serde(rename = "CAPTION_SAFE_AREA_INVALID")]
+    SafeAreaInvalid,
+    #[serde(rename = "CAPTION_DURATION_PROFILE_INVALID")]
+    DurationProfileInvalid,
+    #[serde(rename = "CAPTION_SOURCE_SPAN_INVALID")]
+    SourceSpanInvalid,
+    #[serde(rename = "CAPTION_SOURCE_WORD_DUPLICATE")]
+    SourceWordDuplicate,
+    #[serde(rename = "CAPTION_CUE_ID_DUPLICATE")]
+    CueIdDuplicate,
+    #[serde(rename = "CAPTION_CUE_RATE_MISMATCH")]
+    CueRateMismatch,
+    #[serde(rename = "CAPTION_CUE_DURATION_NON_POSITIVE")]
+    CueDurationNonPositive,
+    #[serde(rename = "CAPTION_CUE_OVERLAP")]
+    CueOverlap,
+    #[serde(rename = "CAPTION_LINE_COUNT_EXCEEDED")]
+    LineCountExceeded,
+    #[serde(rename = "CAPTION_LINE_LENGTH_EXCEEDED")]
+    LineLengthExceeded,
+    #[serde(rename = "CAPTION_CUE_TOO_SHORT")]
+    CueTooShort,
+    #[serde(rename = "CAPTION_CUE_TOO_LONG")]
+    CueTooLong,
+    #[serde(rename = "CAPTION_CPS_EXCEEDED")]
+    CpsExceeded,
+    #[serde(rename = "CAPTION_SAFE_AREA_EXCEEDED")]
+    SafeAreaExceeded,
+    #[serde(rename = "CAPTION_TRANSCRIPT_LINK_MISMATCH")]
+    TranscriptLinkMismatch,
+    #[serde(rename = "CAPTION_SOURCE_LINK_OVERLAP")]
+    SourceLinkOverlap,
+    #[serde(rename = "CAPTION_TRANSCRIPT_WORD_REUSED")]
+    TranscriptWordReused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,7 +205,7 @@ pub fn parse_caption_artifact(
 ) -> Result<CaptionArtifactV1, CaptionValidationResultV1> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
         validation_result(validation_issue(
-            CaptionValidationIssueCode::CaptionSchemaInvalid,
+            CaptionValidationIssueCode::SchemaInvalid,
             "$",
         ))
     })?;
@@ -194,7 +214,7 @@ pub fn parse_caption_artifact(
     }
     let artifact: CaptionArtifactV1 = serde_json::from_value(value).map_err(|_| {
         validation_result(validation_issue(
-            CaptionValidationIssueCode::CaptionSchemaInvalid,
+            CaptionValidationIssueCode::SchemaInvalid,
             "$",
         ))
     })?;
@@ -278,7 +298,7 @@ fn validate_caption_artifact_inner(artifact: &CaptionArtifactV1) -> Result<(), S
 fn validate_track_link(link: &CaptionTrackLinkV1) -> Option<CaptionValidationIssueV1> {
     if link.schema_version != 1 {
         return Some(validation_issue(
-            CaptionValidationIssueCode::CaptionVersionUnsupported,
+            CaptionValidationIssueCode::VersionUnsupported,
             "$.trackLink.schemaVersion",
         ));
     }
@@ -297,7 +317,7 @@ fn validate_track_link(link: &CaptionTrackLinkV1) -> Option<CaptionValidationIss
         || !is_sha256(&revision.state_hash)
     {
         return Some(validation_issue(
-            CaptionValidationIssueCode::CaptionTrackLinkInvalid,
+            CaptionValidationIssueCode::TrackLinkInvalid,
             "$.trackLink",
         ));
     }
@@ -307,7 +327,7 @@ fn validate_track_link(link: &CaptionTrackLinkV1) -> Option<CaptionValidationIss
 fn validate_style(style: &CaptionStyleV1) -> Option<CaptionValidationIssueV1> {
     if style.schema_version != 1 {
         return Some(validation_issue(
-            CaptionValidationIssueCode::CaptionVersionUnsupported,
+            CaptionValidationIssueCode::VersionUnsupported,
             "$.style.schemaVersion",
         ));
     }
@@ -317,12 +337,12 @@ fn validate_style(style: &CaptionStyleV1) -> Option<CaptionValidationIssueV1> {
         || typography.font_family.encode_utf16().count() > 128
         || !(8..=256).contains(&typography.font_size_px)
         || !(100..=900).contains(&typography.font_weight)
-        || typography.font_weight % 100 != 0
+        || !typography.font_weight.is_multiple_of(100)
         || !(500..=3_000).contains(&typography.line_height_permille)
         || !is_rgba_color(&typography.foreground_color_rgba)
     {
         return Some(validation_issue(
-            CaptionValidationIssueCode::CaptionStyleInvalid,
+            CaptionValidationIssueCode::StyleInvalid,
             "$.style",
         ));
     }
@@ -334,40 +354,32 @@ fn legacy_validation_issue(message: &str) -> CaptionValidationIssueV1 {
     let (code, path) = match message {
         "caption artifact schema version must be 1"
         | "caption validation profile schema version must be 1"
-        | "caption cue schema version must be 1" => (Code::CaptionVersionUnsupported, "$"),
+        | "caption cue schema version must be 1" => (Code::VersionUnsupported, "$"),
         "caption safe area must leave positive width and height" => {
-            (Code::CaptionSafeAreaInvalid, "$.validationProfile.safeArea")
+            (Code::SafeAreaInvalid, "$.validationProfile.safeArea")
         }
         "caption maximum duration is shorter than its minimum" => (
-            Code::CaptionDurationProfileInvalid,
+            Code::DurationProfileInvalid,
             "$.validationProfile.maximumCueDuration",
         ),
-        "caption cue id must be valid and unique" => (Code::CaptionCueIdDuplicate, "$.cues"),
-        "caption cue timing must use the artifact rate" => (Code::CaptionCueRateMismatch, "$.cues"),
-        "caption cue duration must be positive" => (Code::CaptionCueDurationNonPositive, "$.cues"),
-        "caption cues cannot overlap" => (Code::CaptionCueOverlap, "$.cues"),
-        "caption cue line count is out of range" => (Code::CaptionLineCountExceeded, "$.cues"),
-        "caption line exceeds the Unicode-scalar limit" => {
-            (Code::CaptionLineLengthExceeded, "$.cues")
-        }
-        "caption cue is shorter than the minimum duration" => (Code::CaptionCueTooShort, "$.cues"),
-        "caption cue is longer than the maximum duration" => (Code::CaptionCueTooLong, "$.cues"),
-        "caption cue exceeds the Unicode-scalar CPS limit" => (Code::CaptionCpsExceeded, "$.cues"),
-        "caption anchor must remain inside the safe area" => {
-            (Code::CaptionSafeAreaExceeded, "$.cues")
-        }
-        "caption source span must be positive and safe" => {
-            (Code::CaptionSourceSpanInvalid, "$.cues")
-        }
+        "caption cue id must be valid and unique" => (Code::CueIdDuplicate, "$.cues"),
+        "caption cue timing must use the artifact rate" => (Code::CueRateMismatch, "$.cues"),
+        "caption cue duration must be positive" => (Code::CueDurationNonPositive, "$.cues"),
+        "caption cues cannot overlap" => (Code::CueOverlap, "$.cues"),
+        "caption cue line count is out of range" => (Code::LineCountExceeded, "$.cues"),
+        "caption line exceeds the Unicode-scalar limit" => (Code::LineLengthExceeded, "$.cues"),
+        "caption cue is shorter than the minimum duration" => (Code::CueTooShort, "$.cues"),
+        "caption cue is longer than the maximum duration" => (Code::CueTooLong, "$.cues"),
+        "caption cue exceeds the Unicode-scalar CPS limit" => (Code::CpsExceeded, "$.cues"),
+        "caption anchor must remain inside the safe area" => (Code::SafeAreaExceeded, "$.cues"),
+        "caption source span must be positive and safe" => (Code::SourceSpanInvalid, "$.cues"),
         "caption source link references another transcript" => {
-            (Code::CaptionTranscriptLinkMismatch, "$.cues")
+            (Code::TranscriptLinkMismatch, "$.cues")
         }
-        "caption source links overlap" => (Code::CaptionSourceLinkOverlap, "$.cues"),
-        "caption transcript word is reused" => (Code::CaptionTranscriptWordReused, "$.cues"),
-        "caption source link repeats a transcript word" => {
-            (Code::CaptionSourceWordDuplicate, "$.cues")
-        }
-        _ => (Code::CaptionSchemaInvalid, "$"),
+        "caption source links overlap" => (Code::SourceLinkOverlap, "$.cues"),
+        "caption transcript word is reused" => (Code::TranscriptWordReused, "$.cues"),
+        "caption source link repeats a transcript word" => (Code::SourceWordDuplicate, "$.cues"),
+        _ => (Code::SchemaInvalid, "$"),
     };
     validation_issue(code, path)
 }
@@ -421,7 +433,7 @@ fn unsupported_version_issue(value: &serde_json::Value) -> Option<CaptionValidat
             .is_some_and(|version| version != 1)
         {
             return Some(validation_issue(
-                CaptionValidationIssueCode::CaptionVersionUnsupported,
+                CaptionValidationIssueCode::VersionUnsupported,
                 path,
             ));
         }
@@ -436,7 +448,7 @@ fn unsupported_version_issue(value: &serde_json::Value) -> Option<CaptionValidat
                     .filter(|version| *version != 1)
                     .map(|_| {
                         let mut issue = validation_issue(
-                            CaptionValidationIssueCode::CaptionVersionUnsupported,
+                            CaptionValidationIssueCode::VersionUnsupported,
                             &format!("$.cues[{index}].schemaVersion"),
                         );
                         issue.cue_id = cue
@@ -759,6 +771,47 @@ mod tests {
     }
 
     #[test]
+    fn validation_issue_codes_preserve_the_wire_contract() {
+        use CaptionValidationIssueCode as Code;
+        let cases = [
+            (Code::SchemaInvalid, "CAPTION_SCHEMA_INVALID"),
+            (Code::VersionUnsupported, "CAPTION_VERSION_UNSUPPORTED"),
+            (Code::TrackLinkInvalid, "CAPTION_TRACK_LINK_INVALID"),
+            (Code::StyleInvalid, "CAPTION_STYLE_INVALID"),
+            (Code::SafeAreaInvalid, "CAPTION_SAFE_AREA_INVALID"),
+            (
+                Code::DurationProfileInvalid,
+                "CAPTION_DURATION_PROFILE_INVALID",
+            ),
+            (Code::SourceSpanInvalid, "CAPTION_SOURCE_SPAN_INVALID"),
+            (Code::SourceWordDuplicate, "CAPTION_SOURCE_WORD_DUPLICATE"),
+            (Code::CueIdDuplicate, "CAPTION_CUE_ID_DUPLICATE"),
+            (Code::CueRateMismatch, "CAPTION_CUE_RATE_MISMATCH"),
+            (
+                Code::CueDurationNonPositive,
+                "CAPTION_CUE_DURATION_NON_POSITIVE",
+            ),
+            (Code::CueOverlap, "CAPTION_CUE_OVERLAP"),
+            (Code::LineCountExceeded, "CAPTION_LINE_COUNT_EXCEEDED"),
+            (Code::LineLengthExceeded, "CAPTION_LINE_LENGTH_EXCEEDED"),
+            (Code::CueTooShort, "CAPTION_CUE_TOO_SHORT"),
+            (Code::CueTooLong, "CAPTION_CUE_TOO_LONG"),
+            (Code::CpsExceeded, "CAPTION_CPS_EXCEEDED"),
+            (Code::SafeAreaExceeded, "CAPTION_SAFE_AREA_EXCEEDED"),
+            (
+                Code::TranscriptLinkMismatch,
+                "CAPTION_TRANSCRIPT_LINK_MISMATCH",
+            ),
+            (Code::SourceLinkOverlap, "CAPTION_SOURCE_LINK_OVERLAP"),
+            (Code::TranscriptWordReused, "CAPTION_TRANSCRIPT_WORD_REUSED"),
+        ];
+        for (code, wire) in cases {
+            assert_eq!(serde_json::to_value(code).unwrap(), json!(wire));
+            assert_eq!(serde_json::from_value::<Code>(json!(wire)).unwrap(), code);
+        }
+    }
+
+    #[test]
     fn shared_fixture_round_trips_through_the_strict_mirror() {
         let artifact = fixture();
         validate_caption_artifact(&artifact).unwrap();
@@ -800,7 +853,7 @@ mod tests {
             let error = parse_value(value).expect_err("invalid version was accepted");
             assert_eq!(
                 error.issues[0].code,
-                CaptionValidationIssueCode::CaptionVersionUnsupported,
+                CaptionValidationIssueCode::VersionUnsupported,
                 "missing stable version code for {path}"
             );
         }
@@ -816,7 +869,7 @@ mod tests {
         unsafe_revision["trackLink"]["projectRevision"]["number"] = json!(MAX_SAFE_INTEGER + 1);
         assert_eq!(
             validation_codes(unsafe_revision),
-            vec![CaptionValidationIssueCode::CaptionTrackLinkInvalid]
+            vec![CaptionValidationIssueCode::TrackLinkInvalid]
         );
 
         for field in ["projectId", "sequenceId", "captionTrackId"] {
@@ -824,7 +877,7 @@ mod tests {
             invalid_id["trackLink"][field] = json!("not-a-uuid");
             assert_eq!(
                 validation_codes(invalid_id),
-                vec![CaptionValidationIssueCode::CaptionTrackLinkInvalid]
+                vec![CaptionValidationIssueCode::TrackLinkInvalid]
             );
         }
     }
@@ -855,7 +908,7 @@ mod tests {
             invalid["style"]["typography"][field] = value;
             assert_eq!(
                 validation_codes(invalid),
-                vec![CaptionValidationIssueCode::CaptionStyleInvalid]
+                vec![CaptionValidationIssueCode::StyleInvalid]
             );
         }
     }
@@ -869,10 +922,7 @@ mod tests {
         let second = caption_validation_result(&artifact);
         assert_eq!(first, second);
         assert!(!first.valid);
-        assert_eq!(
-            first.issues[0].code,
-            CaptionValidationIssueCode::CaptionCueOverlap
-        );
+        assert_eq!(first.issues[0].code, CaptionValidationIssueCode::CueOverlap);
         assert_eq!(
             serde_json::to_value(&first).unwrap()["issues"][0]["code"],
             json!("CAPTION_CUE_OVERLAP")
