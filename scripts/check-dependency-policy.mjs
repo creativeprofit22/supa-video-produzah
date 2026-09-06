@@ -163,6 +163,10 @@ export function validateExceptions(value, now = new Date()) {
       "invalid exception identity",
     );
     requireThat(
+      e.kind !== "yanked",
+      "yanked exceptions are unsupported; remove the exception and replace the yanked dependency",
+    );
+    requireThat(
       KINDS.includes(e.kind) && scope(e.targets),
       "invalid exception kind or target scope",
     );

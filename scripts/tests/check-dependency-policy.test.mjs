@@ -11,6 +11,7 @@ import {
   parseStrictJson,
   reviewFingerprint,
   TARGETS,
+  validateExceptions,
 } from "../check-dependency-policy.mjs";
 
 const now = new Date("2026-09-06T12:00:00Z");
@@ -144,6 +145,30 @@ test("unsound cannot be maintenance-only; evidenced dispositions are scoped", ()
   const result = run("rust", r, "1", policy([e]));
   assert.equal(result.ok, false);
   assert.match(result.errors.join(), /review-required/);
+});
+test("public validator rejects yanked exceptions; advisory-less findings remain visible", () => {
+  const e = {
+    ...exception(),
+    kind: "yanked",
+    disposition: "target-inapplicable",
+    reviewContext: { version: 1, targets: [...TARGETS], sha256: "a".repeat(64) },
+  };
+  assert.throws(() => validateExceptions(policy([e]), now), /yanked exceptions are unsupported/);
+  const r = rust();
+  r.warnings.yanked = [{ ...warning("yanked"), advisory: null }];
+  for (const exceptions of [policy(), policy([e])]) {
+    const result = run("rust", r, "1", exceptions);
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.findings, [
+      { advisory: "yanked", crate: "example", version: "1.2.3", kind: "yanked", approved: false },
+    ]);
+    assert.deepEqual(
+      result.errors,
+      exceptions.exceptions.length
+        ? ["yanked exceptions are unsupported; remove the exception and replace the yanked dependency"]
+        : [],
+    );
+  }
 });
 test("notice and yanked are visible and fail without review; unknown warnings fail", () => {
   for (const kind of ["notice", "yanked", "new-category"]) {
@@ -286,6 +311,13 @@ for (const disposition of ["target-inapplicable", "evidenced-unreachable"]) {
       refresh();
       assert.equal(check().ok, true);
       assert.equal(check().findings[0].approved, true);
+      e.kind = "notice";
+      report.warnings = { notice: [warning("notice")] };
+      assert.deepEqual(validateExceptions(policy(entries), now), entries);
+      assert.equal(check().ok, true);
+      assert.equal(check().findings[0].approved, true);
+      e.kind = "unsound";
+      report.warnings = { unsound: [warning("unsound")] };
       put(source, "benign reviewed input\r\n");
       assert.equal(check().ok, true, "Windows line endings are portable");
       for (const path of [lock, manifest, source, workflow, generator, generated, e.evidence]) {
