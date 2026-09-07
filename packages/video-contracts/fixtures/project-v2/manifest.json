@@ -216,6 +216,114 @@
         }
       ]
     },
+    {
+      "name": "affected-range-empty-undo",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack/-",
+          "value": {
+            "groupId": "20000000-0000-4000-8000-000000000020",
+            "summary": "range",
+            "forwardCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000021",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "inverseCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000023",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "affectedRanges": [
+              {
+                "sequenceId": "20000000-0000-4000-8000-000000000024",
+                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 }
+              }
+            ],
+            "cacheInvalidations": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "affected-range-reversed-redo",
+      "path": "valid-minimal.svpvideo",
+      "expected": "invalid_project",
+      "mutations": [
+        {
+          "pointer": "/history/redoStack/-",
+          "value": {
+            "groupId": "20000000-0000-4000-8000-000000000020",
+            "summary": "range",
+            "forwardCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000021",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "inverseCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000023",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "affectedRanges": [
+              {
+                "sequenceId": "20000000-0000-4000-8000-000000000024",
+                "start": { "value": 31, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 }
+              }
+            ],
+            "cacheInvalidations": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "affected-range-safe-integer-boundary-undo-control",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid",
+      "mutations": [
+        {
+          "pointer": "/history/undoStack/-",
+          "value": {
+            "groupId": "20000000-0000-4000-8000-000000000020",
+            "summary": "range",
+            "forwardCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000021",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "inverseCommands": [
+              {
+                "type": "RemoveAsset",
+                "commandId": "20000000-0000-4000-8000-000000000023",
+                "assetId": "20000000-0000-4000-8000-000000000022"
+              }
+            ],
+            "affectedRanges": [
+              {
+                "sequenceId": "20000000-0000-4000-8000-000000000024",
+                "start": { "value": 9007199254740990, "rateNumerator": 30, "rateDenominator": 1 },
+                "end": { "value": 9007199254740991, "rateNumerator": 30, "rateDenominator": 1 }
+              }
+            ],
+            "cacheInvalidations": []
+          }
+        }
+      ]
+    },
     { "name": "minimal-v2", "path": "valid-minimal.svpvideo", "expected": "valid" },
     { "name": "relative-source", "path": "valid-relative-source.svpvideo", "expected": "valid" },
     { "name": "mixed-rate-source", "path": "valid-mixed-rate.svpvideo", "expected": "valid" },
