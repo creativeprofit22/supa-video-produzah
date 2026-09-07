@@ -12,6 +12,7 @@ import {
   setTrackMutedCommandSchemaV2,
 } from "./project-commands-v2.js";
 import {
+  affectedRangeSchema,
   canToggleTrackVisibility,
   clipTransformSchema,
   isTrackHidden,
@@ -115,7 +116,62 @@ function applyManifestMutation(input: unknown, mutation: ManifestMutation): void
   }
 }
 
+const affectedRangeCases = [
+  { name: "reversed mixed rate", start: 30, end: 31, numerator: 60, denominator: 1, valid: false },
+  {
+    name: "equal-time mixed rate",
+    start: 30,
+    end: 60,
+    numerator: 60,
+    denominator: 1,
+    valid: false,
+  },
+  { name: "forward mixed rate", start: 30, end: 90, numerator: 60, denominator: 1, valid: false },
+  { name: "denominator mismatch", start: 1, end: 2, numerator: 30, denominator: 7, valid: false },
+  { name: "same rate", start: 30, end: 31, valid: true },
+  { name: "empty", start: 30, end: 30, valid: false },
+  { name: "reversed", start: 31, end: 30, valid: false },
+  {
+    name: "fractional rate",
+    start: 30,
+    end: 31,
+    rate: { numerator: 30000, denominator: 1001 },
+    valid: true,
+  },
+  {
+    name: "safe integer boundary",
+    start: Number.MAX_SAFE_INTEGER - 1,
+    end: Number.MAX_SAFE_INTEGER,
+    valid: true,
+  },
+].map(
+  ({
+    name,
+    start,
+    end,
+    numerator,
+    denominator,
+    rate = { numerator: 30, denominator: 1 },
+    valid,
+  }) => ({
+    name,
+    valid,
+    range: {
+      sequenceId: ids.project,
+      start: { value: start, rateNumerator: rate.numerator, rateDenominator: rate.denominator },
+      end: {
+        value: end,
+        rateNumerator: numerator ?? rate.numerator,
+        rateDenominator: denominator ?? rate.denominator,
+      },
+    },
+  }),
+);
+
 describe("V2 project contracts", () => {
+  it.each(affectedRangeCases)("validates affected range: $name", ({ range, valid }) => {
+    expect(affectedRangeSchema.safeParse(range).success).toBe(valid);
+  });
   it("matches the shared V2 fixture manifest", async () => {
     const manifestUrl = new URL("../fixtures/project-v2/manifest.json", import.meta.url);
     const manifest = JSON.parse(await readFile(manifestUrl, "utf8")) as {
@@ -413,6 +469,12 @@ describe("V2 project contracts", () => {
       cacheInvalidations: ["timeline" as const, "audio_mix" as const],
     };
     expect(projectHistoryEntryV2Schema.parse(historyEntry)).toEqual(historyEntry);
+    for (const { name, range, valid } of affectedRangeCases) {
+      expect(
+        projectHistoryEntryV2Schema.safeParse({ ...historyEntry, affectedRanges: [range] }).success,
+        name,
+      ).toBe(valid);
+    }
 
     expect(setTrackMutedCommandSchemaV2.safeParse({ ...muteCommand, muted: "true" }).success).toBe(
       false,
@@ -697,6 +759,12 @@ describe("V2 project contracts", () => {
 
     expect(projectProjectionSchema.parse(projection)).toEqual(projection);
     expect(commandResultSchema.parse(result)).toEqual(result);
+    for (const { name, range, valid } of affectedRangeCases) {
+      expect(
+        commandResultSchema.safeParse({ ...result, affectedRanges: [range] }).success,
+        name,
+      ).toBe(valid);
+    }
     expect(() =>
       projectProjectionSchema.parse({ ...projection, journalPath: "C:\\private" }),
     ).toThrow();

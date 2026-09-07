@@ -826,6 +826,8 @@ fn valid_affected_range(range: &AffectedRange) -> bool {
     is_canonical_uuid(&range.sequence_id)
         && valid_time_shape(&range.start)
         && valid_time_shape(&range.end)
+        && range.start.rate_numerator == range.end.rate_numerator
+        && range.start.rate_denominator == range.end.rate_denominator
         && range.end.value > range.start.value
 }
 

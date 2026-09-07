@@ -14,6 +14,7 @@ const nonBlankSchema = z.string().trim().min(1).max(512);
 const safeNonNegativeIntegerSchema = z.number().int().safe().nonnegative();
 const stateHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
+/** Half-open range; producers must explicitly convert endpoints to one common rate. */
 export const affectedRangeSchema = z
   .object({
     sequenceId: projectUuidSchema,
@@ -21,6 +22,12 @@ export const affectedRangeSchema = z
     end: rationalTimeSchema,
   })
   .strict()
+  .refine(
+    (range) =>
+      range.start.rateNumerator === range.end.rateNumerator &&
+      range.start.rateDenominator === range.end.rateDenominator,
+    "Affected range endpoints must use a common rate",
+  )
   .refine((range) => range.end.value > range.start.value, "Affected range must be nonempty");
 export const cacheInvalidationSchema = z.enum([
   "timeline",
