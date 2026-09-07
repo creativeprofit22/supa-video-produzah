@@ -170,3 +170,48 @@ Windows absence is separately source-deduced, not inferred from Linux output or 
 DEDUCED verdict: the existing narrow evidenced-unreachable function rationale remains supported for the recorded two-target scope. This closes the reviewed delta and missing current debug-source/link obligation, not GLib's advisory or library-wide safety. Debug-test evidence is not a production/release executable, proof for every feature subset, or a signed reproducible-build attestation. Passing release-budget tests does not turn this ELF into release evidence. Reopen on lock, feature, target, consumer, toolchain or external-generation changes.
 
 Only the GLib `reviewContext.sha256` is authorized to change after this document's final formatting, using the documented `reviewFingerprint` helper. Advisory/crate/version/kind, disposition, rationale, both target lists, review-context version, owner and `2026-10-06` expiry remain unchanged, as do all maintenance deferrals. The historical statements that no renewal occurred apply to their earlier checkpoints. Fresh local checks and the single subsequent hosted validation are reported separately; no future result is presumed here.
+
+## 2026-09-07 range-validation delta and authorized fingerprint renewal
+
+This addendum preserves every historical checkpoint above. Reviewed checkout: `3810297b21d22d45c3f573e9482c5605cd21a2a2`, tree `4d074fa98d9700ac2c6006cbec76f8a862dd9271`, on `wip/project-v2-range-validation-20260907-061706`; Git resolved the SHA and the worktree was clean before this documentation change. Relative to `580aabf79d3fbea20a705159ae7170b5669150a0`, the complete delta is five files, +484/-0:
+
+- `apps/desktop/src-tauri/src/video/project/integrity.rs`: +2, require identical endpoint rate numerators and denominators before comparing range values.
+- `apps/desktop/src-tauri/src/video/project/tests.rs`: +83, reject a rehashed journal with mismatched endpoint rates without repairing files or creating a session.
+- `packages/video-contracts/src/project-v2.ts`: +7, matching common-rate refinement and explicit half-open range documentation.
+- `packages/video-contracts/src/project-v2.test.ts`: +68, endpoint-rate, empty/reversed, fractional-rate and safe-integer boundary checks, including history and command-result consumers.
+- `packages/video-contracts/fixtures/project-v2/manifest.json`: +324, shared range fixtures; the final commit adds empty `[30,30)`, reversed `[31,30)`, and valid `[9007199254740990,9007199254740991)` cases at 30 fps (+108 of this total).
+
+CODE/DEDUCED: these changes tighten scalar range validation and add tests; they add no GLib producer, iterator construction, dependency, feature, generator, target or workflow change. The existing nonempty ordering rule remains. No production code is changed by this renewal.
+
+### Exact hosted receipts and inventory verification
+
+RUNTIME: [run 34097241777, attempt 1](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/34097241777/attempts/1), push event in `creativeprofit22/supa-video-produzah`, matches the checkout/event/workflow SHA above and the WIP branch ref. Linux runner image is `ubuntu24` / `20260831.293.1`; compiler is Rust 1.98.1, commit prefix `48a229cea`, target `x86_64-unknown-linux-gnu`. Before/after checkout and tree agree, tracked status is clean, and all 423 tracked-input SHA-256 values match Git blobs at the exact reviewed SHA. The target was initially empty.
+
+[Artifact 10009540393](https://github.com/creativeprofit22/supa-video-produzah/actions/runs/34097241777/artifacts/10009540393), named `hosted-glib-3810297b21d22d45c3f573e9482c5605cd21a2a2-34097241777-1`, was independently downloaded and verified against GitHub metadata. Verified SHA-256 receipts:
+
+- Outer ZIP: `84ab850a1894e8872904e03eebbd66b4d3ffa795f6fd000601e6024c07dc033d`.
+- Inner `hosted-glib.tar`, matching its sidecar: `3c269eef3d32b3cc6a2151eb8e584b5948421becfe7439ed91fc713916b85433`.
+- `cargo-metadata.json`: `185dfdeed1f4975621df4cd71c737d290f368313dd03abe940e48b0fca654b94`.
+- `generated-sources.json`: `19adc7ade5f18aad4ec0736c8e5276441c372eff6aba35c3c418afd9d5679c19`.
+- `provenance.json`: `16331da718b556c04d7d96859df3ba5248b524988e2d7991e1dd7a10946924bc`.
+- `elf/supa_video_desktop_lib.test.elf`: `2842f215e58a01e78e0ba9f0954880253cf8b649fcebbc7fd09e097645f6a64f` (281521712 bytes).
+
+Both archive layers were checked before extraction for exact entries, normalized paths, duplicate names, directory inventory and regular file types. All 24 manifest payload entries match their sizes and hashes, with no missing/additional files; the tar digest protects the manifest itself. No ELF was executed. All 67 build-script messages match unique directory mappings, including directories without Rust outputs. All 14 generated Rust files match the independent file inventory and hashes: 11 reported-build-script files and three labeled same-job debug extras; zero repository-generated untracked Rust files. Explicit UTF-8 decoding passed after an initial Windows default-codepage decoding error; this was a verifier error, not an artifact mismatch.
+
+The Cargo-selected `supa_video_desktop_lib-1d7804702dca7cd2` is an unstripped debug library test ELF with GNU build ID `fc7d3ee6491002efc314f075abe49ca2ea46095d`, `.symtab` and `.debug_info`. Recorded features are exactly `default`, `desktop-runtime`, `tauri-ipc-test`; profile is test/debug, opt-level 0, debuginfo 2, debug assertions and overflow checks enabled, `fresh: false`. Cargo/tee exits are 0/0; inspection commands succeeded. Hosted tests report 281 passed and 12 ignored, plus five passing integration tests; zero failures.
+
+### Construction argument, Windows scope and limits
+
+CODE/DEDUCED: GLib 0.18.5 `VariantStrIter` has private fields and a crate-private constructor (`variant_iter.rs:102–115`); `Variant::array_iter_str` is its sole public producer (`variant.rs:843–854`). The affected iterator methods require that constructed value. The locked hosted Linux metadata contains 323 packages; renewed local source inspection covers 8902 Rust files at those package versions. Seventeen exact producer/type hits are confined to GLib definitions, imports/exports, documentation and dependency-only tests, not downstream consumers. Four broad substring hits in bitflags were unrelated `to_writer_strict` identifiers, not producer calls. Dependency-only tests are not activated by the application test invocation. The reviewed five-file delta preserves this construction argument.
+
+RUNTIME/CODE: all 14 captured generated files have no producer/type use. The usable full demangled symbol report contains other GLib symbols but neither `array_iter_str` nor `VariantStrIter`. This corroborates the construction/source argument; symbol absence alone cannot exclude inlining and is not proof of unreachability.
+
+RUNTIME/DEDUCED: a fresh successful `cargo metadata --locked --all-features --format-version 1 --filter-platform x86_64-pc-windows-msvc --manifest-path apps/desktop/src-tauri/Cargo.toml` at the exact clean SHA resolves 299 nodes with no `glib`, `glib-sys`, `gtk`, `gtk-sys` or `gobject-sys`. This independently supports the unchanged target-gated manifest analysis above; it is not inferred from Linux symbols or a missing Windows output file.
+
+Limits remain: same-job generation can include Clippy outputs reused by tests, not necessarily same-step generation. Unmaterialized proc-macro expansions are not captured. Registry source inspection is local at the locked versions, not a hosted source archive. This debug test ELF is not a production/release binary, proof for every feature subset, or a signed reproducible-build attestation. Artifact retention is 30 days. These checks support only the existing bounded two-target function deferral, not library-wide safety or resolution of the advisory. Reopen on lock, feature, target, consumer, toolchain or external-generation changes.
+
+### Hosted failures, skipped work and renewal boundary
+
+The Linux Rust job `101663502455` passed formatting, Clippy, all-feature tests, release-budget tests, collection and upload. TypeScript job `101663502426` and Windows job `101663502473` passed. Dependency-policy/full-history-secrets job `101663502410` failed at exact Rust identity/review-context enforcement because the fingerprint was stale; its secrets scan passed. Its Node post-install cleanup step was skipped. Signed Windows installers and clean-runner smoke job `101670008537` was skipped. The entire hosted workflow was not green; ignored tests and skipped packaging are not passing evidence.
+
+The user separately authorized documenting this delta and renewing only the existing GLib `reviewContext.sha256` after formatting final inputs. Preserve advisory, crate/version/kind, disposition/rationale, both target lists, review-context version, owner, expiry `2026-10-06`, maintenance deferrals and all enforcement rules. Historical receipts remain unchanged. Required fresh local collector/policy tests and Rust audit/policy results are reported separately after the fingerprint update; no future local or hosted pass is presumed. This renewal does not authorize production changes, merge or push.

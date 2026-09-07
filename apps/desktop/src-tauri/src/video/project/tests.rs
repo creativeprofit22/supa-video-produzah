@@ -6271,6 +6271,89 @@ fn tampered_non_caption_journal_fails_closed_without_repair_or_session() {
 }
 
 #[test]
+fn tampered_affected_range_journal_fails_closed_without_repair_or_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_path = directory.path().join("tampered-range-journal.svpvideo");
+    let mut initial = caption_project_fixture();
+    fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    fs::create_dir_all(sidecar_path(&project_path).unwrap()).unwrap();
+    let header = create_journal_for_snapshot(&project_path, &mut initial).unwrap();
+    let request = CommandGroupRequest {
+        group_id: "86000000-0000-4000-8000-000000000001".to_owned(),
+        project_id: initial.id.clone(),
+        base_revision: initial.revision.number,
+        commands: vec![ProjectCommand::SetTrackHidden {
+            command_id: "86000000-0000-4000-8000-000000000002".to_owned(),
+            sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+            track_id: CAPTION_TRACK_ID.to_owned(),
+            hidden: true,
+        }],
+    };
+    let transition = commit_transition(&initial, &request, "2026-08-08T00:05:00Z").unwrap();
+    let mut ranges = transition.applied.affected_ranges.clone();
+    assert!(!ranges.is_empty());
+    assert_eq!(ranges[0].start.rate_numerator, ranges[0].end.rate_numerator);
+    assert_eq!(
+        ranges[0].start.rate_denominator,
+        ranges[0].end.rate_denominator
+    );
+    ranges[0].end.rate_numerator *= 2;
+    let record = with_record_hash(&JournalRecord {
+        kind: JournalRecordKind::Commit,
+        record_number: 1,
+        operation_id: transition.operation_id.clone(),
+        group_id: transition.group_id.clone(),
+        committed_at: transition.snapshot.updated_at.clone(),
+        base_revision: transition.prior_revision.clone(),
+        resulting_revision: transition.snapshot.revision.clone(),
+        commands: request.commands,
+        history_group: transition.history_group.clone(),
+        summary: transition.history_group.summary.clone(),
+        affected_ranges: ranges,
+        cache_invalidations: transition.applied.cache_invalidations.clone(),
+        previous_state_hash: transition.prior_revision.state_hash.clone(),
+        resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
+        payload_hash: None,
+        idempotency_result: None,
+        previous_record_hash: header.header_hash,
+        record_hash: String::new(),
+    })
+    .unwrap();
+    let journal = journal_path(&project_path).unwrap();
+    let mut record_bytes = canonical_bytes(&record).unwrap();
+    record_bytes.push(b'\n');
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&journal)
+        .unwrap()
+        .write_all(&record_bytes)
+        .unwrap();
+    let scanned = scan(&journal).unwrap();
+    assert_eq!(scanned.tail, TailClassification::Clean);
+    assert_eq!(scanned.records, vec![record]);
+    let journal_before = fs::read(&journal).unwrap();
+    let project_before = fs::read(&project_path).unwrap();
+    let owner = "tampered-range-owner";
+    let service = VideoProjectService::default();
+    let error = service
+        .open(
+            owner,
+            &project_path,
+            &crate::video::VideoPathGrants::default(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::video::error::VideoErrorCode::InvalidProject
+    );
+    assert_eq!(error.details["category"], "record_replay");
+    let close_error = service.close(owner, &initial.id).unwrap_err();
+    assert_eq!(close_error.details["category"], "unknown_session");
+    assert_eq!(fs::read(&journal).unwrap(), journal_before);
+    assert_eq!(fs::read(&project_path).unwrap(), project_before);
+}
+
+#[test]
 fn tampered_caption_artifact_snapshot_fails_closed() {
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("tampered-caption.svpvideo");
