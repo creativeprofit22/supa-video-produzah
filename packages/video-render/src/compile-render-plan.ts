@@ -97,7 +97,7 @@ function escapeDrawtextText(text: string): string {
 }
 
 function captionDrawtextFilter(caption: RenderCaptionInputV2): string {
-  return `drawtext=text='${escapeDrawtextText(caption.text)}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,${formatMicrosecondsAsSeconds(caption.startMicroseconds)}\\,${formatMicrosecondsAsSeconds(caption.endMicroseconds)})'`;
+  return `drawtext=text='${escapeDrawtextText(caption.text)}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,${formatMicrosecondsAsSeconds(caption.startMicroseconds)})*lt(t\\,${formatMicrosecondsAsSeconds(caption.endMicroseconds)})'`;
 }
 
 function toBoundarySeconds(time: RationalTime): string {

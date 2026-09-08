@@ -1026,7 +1026,7 @@ fn escape_drawtext_text(text: &str) -> String {
 
 fn caption_drawtext_filter(caption: &RenderCaptionInput) -> String {
     format!(
-        "drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,{}\\,{})'",
+        "drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,{})*lt(t\\,{})'",
         escape_drawtext_text(&caption.text),
         fixed_six_seconds(caption.start_microseconds),
         fixed_six_seconds(caption.end_microseconds),

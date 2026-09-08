@@ -2834,7 +2834,7 @@ fn multitrack_filter_mut(plan: &mut Value) -> &mut Value {
         .expect("multitrack filter must exist")
 }
 
-const RENDER_CAPTION_FILTER: &str = "drawtext=text='Path\\\\it\\'s\\: 50\\%\\, \\[yes\\]\\;\\nnext\\nline\\nend':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,0.250000\\,1.750000)'";
+const RENDER_CAPTION_FILTER: &str = "drawtext=text='Path\\\\it\\'s\\: 50\\%\\, \\[yes\\]\\;\\nnext\\nline\\nend':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
 
 fn render_caption_value() -> Value {
     serde_json::json!({
@@ -3041,6 +3041,30 @@ fn render_caption_metadata_exactly_binds_v1_and_v2_argv_and_escapes_drawtext() {
         .any(|argument| argument.contains(&format!(
             "[stack1]{RENDER_CAPTION_FILTER}[caption0];[caption0]null[vout]"
         ))));
+
+    for exact in [&v1_with_caption, &v2_with_caption] {
+        for replacement in [
+            "between(t\\,0.250000\\,1.750000)",
+            "gte(t\\,0.250001)*lt(t\\,1.750000)",
+            "gte(t\\,0.250000)*lt(t\\,1.750001)",
+            "1",
+        ] {
+            let mut forged = exact.clone();
+            for argument in forged["argv"].as_array_mut().unwrap() {
+                if let Some(text) = argument.as_str() {
+                    *argument = Value::String(
+                        text.replace("gte(t\\,0.250000)*lt(t\\,1.750000)", replacement),
+                    );
+                }
+            }
+            assert_eq!(
+                parse_and_validate_render_plan(forged, "owner", &grants)
+                    .expect_err("inclusive, altered or missing timing must fail")
+                    .code,
+                VideoErrorCode::InvalidRenderPlan
+            );
+        }
+    }
 
     let mut metadata_only_v1 = v1_without_caption;
     metadata_only_v1["captions"] = Value::Array(vec![render_caption_value()]);
@@ -4601,6 +4625,448 @@ async fn render_worker_local_ffmpeg_exports_av_and_video_only_with_ordered_verif
         OsString::from("ffprobe"),
     ))
     .await;
+}
+
+const CAPTION_BOUNDARY_CASES: [(u64, u64, u64, u64); 5] = [
+    (30, 1, 1_000_000, 2_000_000),
+    (30_000, 1_001, 1_001_000, 2_002_000),
+    (30_000, 1_001, 1_034_367, 2_035_367),
+    (24_000, 1_001, 1_001_000, 2_002_000),
+    (24_000, 1_001, 1_042_708, 2_085_417),
+];
+
+#[test]
+fn render_caption_boundary_matrix_validates_exact_v1_v2_plans_without_tools() {
+    let workspace = tempdir().unwrap();
+    let (grants, original) = validated_render_fixture(workspace.path(), false, RENDER_PLAN_ID);
+    let input = &original.input_paths[0];
+    let output = &original.output_path;
+    for (num, den, boundary, end) in CAPTION_BOUNDARY_CASES {
+        for version in [1, 2] {
+            let mut outgoing = render_caption_value();
+            outgoing["startMicroseconds"] = Value::from(0);
+            outgoing["endMicroseconds"] = Value::from(boundary);
+            outgoing["text"] = Value::from("OUTGOING LONG CAPTION");
+            let mut incoming = outgoing.clone();
+            incoming["captionId"] = Value::from("99999999-9999-4999-8999-999999999999");
+            incoming["text"] = Value::from("IN");
+            incoming["startMicroseconds"] = Value::from(boundary);
+            incoming["endMicroseconds"] = Value::from(end);
+            for captions in [
+                vec![],
+                vec![outgoing.clone()],
+                vec![incoming.clone()],
+                vec![outgoing.clone(), incoming.clone()],
+            ] {
+                let base = render_plan_value_for_profile(
+                    input,
+                    output,
+                    false,
+                    RENDER_PLAN_ID,
+                    90,
+                    num,
+                    den,
+                    640,
+                    360,
+                );
+                let plan = caption_boundary_plan(base, version, captions);
+                parse_and_validate_render_plan(plan, "owner", &grants).unwrap();
+            }
+        }
+    }
+}
+
+fn caption_boundary_plan(mut plan: Value, version: u64, captions: Vec<Value>) -> Value {
+    let duration = plan["argv"][12].as_str().unwrap().to_owned();
+    let rate = format!(
+        "{}/{}",
+        plan["expected"]["rate"]["numerator"], plan["expected"]["rate"]["denominator"]
+    );
+    if version == 2 {
+        let input = plan["inputPath"].clone();
+        let output = plan["outputPath"].clone();
+        let asset = "55555555-5555-4555-8555-555555555555";
+        plan.as_object_mut().unwrap().remove("inputPath");
+        plan["schemaVersion"] = Value::from(2);
+        plan["inputPathsByAssetId"] = serde_json::json!({ (asset): input });
+        plan["videoInputs"] = serde_json::json!([{
+            "assetId": asset, "path": input, "sourceInMicroseconds": 0,
+            "positionXPermille": 0, "positionYPermille": 0, "scaleXPermille": 1000,
+            "scaleYPermille": 1000, "rotationMilliDegrees": 0, "opacityPermille": 1000,
+            "hidden": false, "muted": true, "hasAudio": false
+        }]);
+        let graph = format!("color=c=black:s=640x360:r={rate}:d={duration}[base];[0:v:0]setpts=PTS-STARTPTS,scale=640:360:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,colorchannelmixer=aa=1.000,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={rate}[v0];[base][v0]overlay=0:0:format=auto[stack0];[stack0]null[vout]");
+        plan["argv"] = serde_json::json!([
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "warning",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "-ss",
+            "0.000000",
+            "-t",
+            duration,
+            "-i",
+            input,
+            "-filter_complex",
+            graph,
+            "-map",
+            "[vout]",
+            "-an",
+            "-t",
+            duration,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            output
+        ]);
+    }
+    let filters: Vec<String> = captions.iter().map(|caption| {
+        let seconds = |key: &str| {
+            let us = caption[key].as_u64().unwrap();
+            format!("{}.{:06}", us / 1_000_000, us % 1_000_000)
+        };
+        format!("drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,{})*lt(t\\,{})'",
+            caption["text"].as_str().unwrap(), seconds("startMicroseconds"), seconds("endMicroseconds"))
+    }).collect();
+    let arguments = plan["argv"].as_array_mut().unwrap();
+    let index = arguments
+        .iter()
+        .position(|arg| {
+            arg == if version == 1 {
+                "-vf"
+            } else {
+                "-filter_complex"
+            }
+        })
+        .unwrap()
+        + 1;
+    let mut graph = arguments[index].as_str().unwrap().to_owned();
+    if version == 1 {
+        for filter in filters {
+            graph.push(',');
+            graph.push_str(&filter);
+        }
+    } else {
+        let mut chain = String::new();
+        let mut previous = "stack0".to_owned();
+        for (index, filter) in filters.iter().enumerate() {
+            chain.push_str(&format!("[{previous}]{filter}[caption{index}];"));
+            previous = format!("caption{index}");
+        }
+        chain.push_str(&format!("[{previous}]null[vout]"));
+        graph = graph.replace("[stack0]null[vout]", &chain);
+    }
+    arguments[index] = Value::String(graph);
+    plan["captions"] = Value::Array(captions);
+    plan
+}
+
+// Fixed 640x100 luma region, at most 100 frames: stdout is bounded to 6.4 MB.
+fn caption_boundary_pixels(ffmpeg: &OsString, path: &Path) -> Vec<u8> {
+    let output = Command::new(ffmpeg)
+        .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"])
+        .arg(path)
+        .args([
+            "-an",
+            "-vf",
+            "crop=640:100:0:260",
+            "-frames:v",
+            "100",
+            "-pix_fmt",
+            "gray",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.len() <= 6_400_000);
+    output.stdout
+}
+
+fn caption_pixel_distance(left: &[u8], right: &[u8]) -> f64 {
+    assert_eq!(left.len(), 64_000);
+    assert_eq!(right.len(), left.len());
+    left.iter()
+        .zip(right)
+        .map(|(a, b)| f64::from(a.abs_diff(*b)))
+        .sum::<f64>()
+        / left.len() as f64
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires local FFmpeg, FFprobe and drawtext with a usable default font"]
+async fn render_caption_boundary_local_ffmpeg_v1_v2() {
+    let programs = MediaPrograms::explicit(OsString::from("ffmpeg"), OsString::from("ffprobe"));
+    let ffmpeg = programs.verified_ffmpeg("caption_boundary").await.unwrap();
+    let ffprobe = programs.verified_ffprobe("caption_boundary").await.unwrap();
+    for program in [&ffmpeg, &ffprobe] {
+        let version = Command::new(program).arg("-version").output().unwrap();
+        assert!(version.status.success());
+        println!("{}", String::from_utf8_lossy(&version.stdout));
+    }
+    let font_probe = Command::new(&ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "verbose",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=640x360:r=30/1:d=1",
+            "-vf",
+            "drawtext=text=probe:fontsize=h/18",
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    println!(
+        "drawtext/font preflight: {}",
+        String::from_utf8_lossy(&font_probe.stderr)
+    );
+    assert!(
+        font_probe.status.success(),
+        "UNVERIFIED: installed FFmpeg cannot render with its default font: {:?}",
+        font_probe.status
+    );
+    // Rounded endpoints are the plan contract, not a claim of exact rational alignment.
+    for (num, den, boundary_us, end_us) in CAPTION_BOUNDARY_CASES {
+        let workspace = tempdir().unwrap();
+        let source = workspace.path().join("solid.mp4");
+        let generated = Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+            ])
+            .arg(format!("color=c=gray:s=640x360:r={num}/{den}:d=4"))
+            .args(["-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(
+            generated.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        let grants = VideoPathGrants::default();
+        let source = grants
+            .grant_existing_file("owner", GrantCategory::Source, &source)
+            .unwrap();
+        for version in [1, 2] {
+            let cue = |index: usize, text: &str, start: u64, end: u64| {
+                serde_json::json!({
+                    "trackId": "77777777-7777-4777-8777-777777777777",
+                    "captionId": if index == 0 { "88888888-8888-4888-8888-888888888888" } else { "99999999-9999-4999-8999-999999999999" },
+                    "text": text, "startMicroseconds": start, "endMicroseconds": end
+                })
+            };
+            let mut pixels = Vec::new();
+            let mut adjacent_path = PathBuf::new();
+            for mode in 0..6 {
+                let output = grants
+                    .grant_destination(
+                        "owner",
+                        GrantCategory::Output,
+                        &workspace.path().join(format!("v{version}-{mode}.mp4")),
+                    )
+                    .unwrap();
+                let captions = match mode {
+                    0 => vec![],
+                    1 => vec![cue(0, "OUTGOING LONG CAPTION", 0, 2_500_000)],
+                    2 => vec![cue(1, "IN", 0, 2_500_000)],
+                    5 => vec![
+                        cue(0, "OUTGOING LONG CAPTION", 0, 2_500_000),
+                        cue(1, "IN", 0, 2_500_000),
+                    ],
+                    _ => vec![
+                        cue(0, "OUTGOING LONG CAPTION", 0, boundary_us),
+                        cue(1, "IN", boundary_us, end_us),
+                    ],
+                };
+                let base = render_plan_value_for_profile(
+                    &source,
+                    &output,
+                    false,
+                    RENDER_PLAN_ID,
+                    90,
+                    num,
+                    den,
+                    640,
+                    360,
+                );
+                let mut plan = caption_boundary_plan(base, version, captions);
+                if mode >= 4 {
+                    // Negative controls only: old argv and deliberately overlapping intervals.
+                    // The validator MUST reject both; neither is a production escape hatch.
+                    for argument in plan["argv"].as_array_mut().unwrap() {
+                        if let Some(text) = argument.as_str() {
+                            *argument = Value::String(
+                                text.replace("gte(t\\,", "between(t\\,")
+                                    .replace(")*lt(t\\,", "\\,"),
+                            );
+                        }
+                    }
+                    assert!(
+                        parse_and_validate_render_plan(plan.clone(), "owner", &grants).is_err()
+                    );
+                    let args: Vec<&str> = plan["argv"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|arg| arg.as_str().unwrap())
+                        .collect();
+                    let control = Command::new(&ffmpeg).args(args).output().unwrap();
+                    assert!(
+                        control.status.success(),
+                        "{}",
+                        String::from_utf8_lossy(&control.stderr)
+                    );
+                } else {
+                    let validated = parse_and_validate_render_plan(plan, "owner", &grants).unwrap();
+                    let (request, captured) = registered_render_worker(
+                        validated,
+                        false,
+                        workspace.path().join(format!("cache-{version}-{mode}")),
+                        programs.clone(),
+                    );
+                    run_render_worker(request).await;
+                    let events = captured_render_events(&captured);
+                    assert_worker_event_order(&events);
+                    assert!(
+                        matches!(events.last(), Some(VideoRenderEvent::Completed { .. })),
+                        "{events:?}"
+                    );
+                }
+                if mode == 3 {
+                    adjacent_path = output.clone();
+                }
+                pixels.push(caption_boundary_pixels(&ffmpeg, &output));
+            }
+            let probe = Command::new(&ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-read_intervals",
+                    "%+#100",
+                    "-show_entries",
+                    "stream=time_base:frame=best_effort_timestamp",
+                    "-of",
+                    "json",
+                ])
+                .arg(&adjacent_path)
+                .output()
+                .unwrap();
+            assert!(probe.status.success());
+            let probe: Value = serde_json::from_slice(&probe.stdout).unwrap();
+            let (tb_num, tb_den) = probe["streams"][0]["time_base"]
+                .as_str()
+                .unwrap()
+                .split_once('/')
+                .unwrap();
+            let tb_num: i128 = tb_num.parse().unwrap();
+            let tb_den: i128 = tb_den.parse().unwrap();
+            let pts: Vec<i128> = probe["frames"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|frame| {
+                    i128::from(frame["best_effort_timestamp"].as_i64().unwrap())
+                        * tb_num
+                        * 1_000_000
+                })
+                .collect();
+            assert_eq!(pts.len(), 90);
+            for bytes in &pixels {
+                assert_eq!(bytes.len(), pts.len() * 64_000);
+            }
+            for endpoint in [boundary_us, end_us] {
+                let target = i128::from(endpoint) * tb_den;
+                let first = pts.iter().position(|pts| *pts >= target).unwrap();
+                for index in first - 1..=first + 1 {
+                    let expected = if pts[index] < i128::from(boundary_us) * tb_den {
+                        1
+                    } else if pts[index] < i128::from(end_us) * tb_den {
+                        2
+                    } else {
+                        0
+                    };
+                    let frame = |mode: usize| &pixels[mode][index * 64_000..(index + 1) * 64_000];
+                    let error = caption_pixel_distance(frame(3), frame(expected));
+                    let old_error = caption_pixel_distance(frame(4), frame(expected));
+                    println!("v{version} {num}/{den} endpoint={endpoint} frame={index} pts_us={}/{} expected={expected} MAE={error:.6} inclusive_MAE={old_error:.6}", pts[index], tb_den);
+                    // Fixed before measurement: <=2 gray levels mean absolute error for H.264 variation.
+                    assert!(
+                        error <= 2.0,
+                        "caption frame differs from its isolated control: {error}"
+                    );
+                    for wrong in [0, 1, 2] {
+                        if wrong != expected {
+                            assert!(
+                                caption_pixel_distance(frame(3), frame(wrong)) > 2.0,
+                                "cue detector cannot distinguish controls"
+                            );
+                        }
+                    }
+                    if index == first {
+                        let overlap_error = caption_pixel_distance(frame(5), frame(expected));
+                        println!("deliberate_overlap_MAE={overlap_error:.6}");
+                        assert!(
+                            overlap_error > 2.0,
+                            "overlap must fail the same detector at every rate"
+                        );
+                    }
+                    if pts[index] == target {
+                        // FFmpeg n9.0.1 avfilter.c evaluates t = pts * av_q2d(time_base).
+                        // After fps, 30 * (1001/30000) is one ULP above parsed 1.001.
+                        // Rational equality alone cannot assert inclusive overlap. Preserve
+                        // the old-expression failure at binary equality and assert its
+                        // measured non-overlap when floating t has already crossed the end.
+                        let filter_t = index as f64 * (den as f64 / num as f64);
+                        let endpoint_seconds = endpoint as f64 / 1_000_000.0;
+                        println!("filter_t={filter_t:.18} endpoint_seconds={endpoint_seconds:.18}");
+                        if filter_t == endpoint_seconds {
+                            assert!(
+                                old_error > 2.0,
+                                "old inclusive expression must fail at binary equality"
+                            );
+                        } else {
+                            assert!(
+                                filter_t > endpoint_seconds,
+                                "unexpected rounding before endpoint"
+                            );
+                            assert!(
+                                old_error <= 2.0,
+                                "inclusive control should already exclude this frame"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn assert_every_render_frame_is_black(ffmpeg: &OsString, path: &Path, expected_frame_count: u64) {

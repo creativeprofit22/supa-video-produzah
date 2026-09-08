@@ -279,7 +279,7 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                     hidden: options.captionHidden,
                     captions: [
                       {
-                        id: ids.caption,
+                        id: String(ids.caption),
                         start: createRationalTime(15, sequence.rate),
                         end: createRationalTime(30, sequence.rate),
                         text: "Speaker: we're ready, 100%",
@@ -390,7 +390,7 @@ describe("compileSingleClipRenderPlan", () => {
     expect(hiddenPlan.captions).toEqual([]);
     expect(shownPlan.argv).not.toEqual(hiddenPlan.argv);
     expect(shownPlan.argv[shownPlan.argv.indexOf("-vf") + 1]).toBe(
-      `${shownVideoFilter},drawtext=text='Speaker\\: we\\'re ready\\, 100\\%':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='between(t\\,0.500500\\,1.001000)'`,
+      `${shownVideoFilter},drawtext=text='Speaker\\: we\\'re ready\\, 100\\%':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.500500)*lt(t\\,1.001000)'`,
     );
     expect(hiddenPlan.argv).toEqual(avArgv);
     expect(shownPlan.expected).toEqual(expectedMetadata(true));
@@ -712,6 +712,55 @@ describe("compileActiveSequenceRenderPlan", () => {
     expect(error.message).toBe(reason);
   });
 
+  it.each([
+    [30, 1, 30, 60, "1.000000", "2.000000"],
+    [30_000, 1_001, 30, 60, "1.001000", "2.002000"],
+    [24_000, 1_001, 25, 50, "1.042708", "2.085417"],
+  ])(
+    "uses half-open adjacent cues in both plan versions at %i/%i",
+    (num, den, boundary, end, startText, endText) => {
+      const revision = structuredClone(makeV2Revision({ captionHidden: false }));
+      const track = revision.state.sequences[0]!.tracks.find((item) => item.kind === "caption");
+      if (!track || track.kind !== "caption") throw new Error("expected caption track fixture");
+      const rate = createRationalRate(num, den);
+      track.captions = [
+        {
+          id: ids.caption,
+          start: createRationalTime(0, rate),
+          end: createRationalTime(boundary, rate),
+          text: "OUTGOING LONG",
+        },
+        {
+          id: "00000000-0000-4000-8000-00000000000d",
+          start: createRationalTime(boundary, rate),
+          end: createRationalTime(end, rate),
+          text: "IN",
+        },
+      ];
+      const compileBoth = () => [
+        compile(revision),
+        compileActiveSequenceRenderPlan({
+          planId: ids.plan,
+          revision,
+          inputPathsByAssetId: { [ids.asset]: inputPath },
+          outputPath,
+        }),
+      ];
+      for (const plan of compileBoth()) {
+        const graph = plan.argv.join(" ");
+        expect(graph).toContain(`enable='gte(t\\,0.000000)*lt(t\\,${startText})'`);
+        expect(graph).toContain(`enable='gte(t\\,${startText})*lt(t\\,${endText})'`);
+        expect(graph).not.toContain("between(t");
+        expect(plan.captions).toHaveLength(2);
+      }
+      track.captions = [];
+      for (const plan of compileBoth()) {
+        expect(plan.captions).toEqual([]);
+        expect(plan.argv.join(" ")).not.toContain("drawtext");
+      }
+    },
+  );
+
   it("binds shown caption metadata into the final filter graph and omits hidden cues", () => {
     const shownRevision = makeV2Revision({ captionHidden: false });
     const hiddenRevision = makeV2Revision({ captionHidden: true });
@@ -731,7 +780,7 @@ describe("compileActiveSequenceRenderPlan", () => {
     expect(shown.captions).toHaveLength(1);
     expect(hidden.captions).toEqual([]);
     expect(shownFilter).toContain("[stack0]drawtext=text='Speaker\\: we\\'re ready\\, 100\\%'");
-    expect(shownFilter).toContain(":enable='between(t\\,0.500500\\,1.001000)'[caption0]");
+    expect(shownFilter).toContain(":enable='gte(t\\,0.500500)*lt(t\\,1.001000)'[caption0]");
     expect(hiddenFilter).not.toContain("drawtext");
     expect(shown.videoInputs).toEqual(hidden.videoInputs);
     expect(shown.expected).toEqual(hidden.expected);
