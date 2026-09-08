@@ -1792,6 +1792,74 @@ pub(crate) mod tests {
         assert_eq!((after.managed_bytes, after.leased_bytes), (17, 17));
     }
 
+    // Test-only negative controls: deliberately omit the lifetime gate, never a production switch.
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_unsafe_baselines_expose_split_handoff_and_stale_selection() {
+        for kind in [
+            CacheArtifactKind::Transcript,
+            CacheArtifactKind::SourceObject,
+            CacheArtifactKind::Proxy,
+            CacheArtifactKind::ThumbnailTile,
+        ] {
+            for stale_selection in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                let (_store, cache) = service(root.path()).await;
+                let key = "a".repeat(64);
+                let path = create_artifact(root.path(), kind, &key, 8);
+                cache
+                    .register(registration(path.clone(), kind, &key))
+                    .await
+                    .unwrap();
+                let (gate, reached, resume) = race_gate();
+                let actor = cache.clone();
+                let actor_key = key.clone();
+                let actor_path = path.clone();
+                let worker = RaceWorker {
+                    resume,
+                    worker: Some(std::thread::spawn(move || {
+                        if stale_selection {
+                            let _candidate = actor.reserve_lru_candidate().unwrap().unwrap();
+                            gate.pause().unwrap();
+                            // Deliberately unsafe stale unlink: no lock or final lease recheck.
+                            fs::remove_file(actor_path).unwrap();
+                            None
+                        } else {
+                            // Deliberately split registration from lease acquisition.
+                            gate.pause().unwrap();
+                            Some(actor.lease_sync("baseline-reader", None, &actor_key))
+                        }
+                    })),
+                };
+                let acknowledged = reached.recv_timeout(Duration::from_secs(10));
+                let lease = if stale_selection {
+                    Some(cache.lease_sync("baseline-reader", None, &key).unwrap())
+                } else {
+                    assert_eq!(
+                        cache
+                            .enforce_budget_sync(Some(0))
+                            .unwrap()
+                            .evicted_artifacts,
+                        1
+                    );
+                    None
+                };
+                let result = worker.finish().unwrap();
+                assert!(acknowledged.is_ok());
+                assert!(!path.exists());
+                if stale_selection {
+                    assert!(lease.is_some());
+                    assert_eq!(catalog_and_lease_counts(&cache, &key), (1, 1));
+                } else {
+                    assert!(
+                        result.unwrap().is_err(),
+                        "split handoff loses publication before lease"
+                    );
+                    assert_eq!(catalog_and_lease_counts(&cache, &key), (0, 0));
+                }
+            }
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn race_publication_handoff_preserves_returned_lease_and_bytes() {
         let mut failures = Vec::new();
