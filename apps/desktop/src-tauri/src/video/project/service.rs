@@ -52,6 +52,7 @@ struct IdempotencyEntry {
 
 #[derive(Debug)]
 struct ProjectSession {
+    closed: bool,
     owner: String,
     path: PathBuf,
     _lock_file: File,
@@ -68,6 +69,8 @@ struct ProjectSession {
 #[derive(Debug, Default)]
 pub struct VideoProjectService {
     sessions: Mutex<HashMap<String, Arc<Mutex<ProjectSession>>>>,
+    #[cfg(test)]
+    close_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -95,6 +98,18 @@ fn error(code: VideoErrorCode, category: &'static str) -> VideoCommandError {
         "project_service",
         category,
     )
+}
+
+fn lock_open_session(
+    handle: &Mutex<ProjectSession>,
+) -> Result<std::sync::MutexGuard<'_, ProjectSession>, VideoCommandError> {
+    let session = handle
+        .lock()
+        .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+    if session.closed {
+        return Err(error(VideoErrorCode::InvalidProject, "unknown_session"));
+    }
+    Ok(session)
 }
 
 fn now() -> String {
@@ -440,6 +455,7 @@ impl VideoProjectService {
         };
         initialize_project_files(&path, &mut snapshot, None, failpoint)?;
         self.insert_session(ProjectSession {
+            closed: false,
             owner: owner.to_owned(),
             path,
             _lock_file: lock_file,
@@ -529,6 +545,7 @@ impl VideoProjectService {
             .number
             .saturating_sub(replayed_record_count);
         let projection = self.insert_session(ProjectSession {
+            closed: false,
             owner: owner.to_owned(),
             path,
             _lock_file: lock_file,
@@ -643,9 +660,7 @@ impl VideoProjectService {
             return Err(error(VideoErrorCode::StorageLimit, "command_group_bytes"));
         }
         let session = self.session(owner, &request.project_id)?;
-        let session = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        let session = lock_open_session(&session)?;
         let Some(existing) = session.idempotency.get(&request.group_id) else {
             return Ok(None);
         };
@@ -663,9 +678,7 @@ impl VideoProjectService {
             return Err(error(VideoErrorCode::StorageLimit, "command_group_bytes"));
         }
         let session = self.session(owner, &request.project_id)?;
-        let mut session = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        let mut session = lock_open_session(&session)?;
         let payload_hash = command_group_payload_hash(&request)?;
         if let Some(existing) = session.idempotency.get(&request.group_id) {
             reject_duplicate_conflict(&existing.payload_hash, &request)?;
@@ -705,9 +718,7 @@ impl VideoProjectService {
             return Err(error(VideoErrorCode::InvalidCommand, "operation_id"));
         }
         let session = self.session(owner, project_id)?;
-        let mut session = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        let mut session = lock_open_session(&session)?;
         let payload_hash = canonical_hash(
             &json!({ "projectId": project_id, "baseRevision": base_revision, "operationId": operation_id, "redo": redo }),
         )?;
@@ -784,12 +795,7 @@ impl VideoProjectService {
         grants: &VideoPathGrants,
     ) -> Result<CommandResult, VideoCommandError> {
         let session = self.session(owner, project_id)?;
-        let base_revision = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?
-            .snapshot
-            .revision
-            .number;
+        let base_revision = lock_open_session(&session)?.snapshot.revision.number;
         let request = CommandGroupRequest {
             group_id: new_id(),
             project_id: project_id.to_owned(),
@@ -812,9 +818,7 @@ impl VideoProjectService {
         asset_id: &str,
     ) -> Result<Option<MediaContentIdentityV1>, VideoCommandError> {
         let session = self.session(owner, project_id)?;
-        let session = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        let session = lock_open_session(&session)?;
         Ok(session
             .snapshot
             .state
@@ -830,9 +834,7 @@ impl VideoProjectService {
         project_id: &str,
     ) -> Result<ProjectInspector, VideoCommandError> {
         let session = self.session(owner, project_id)?;
-        let session = session
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        let session = lock_open_session(&session)?;
         Ok(ProjectInspector {
             project_id: project_id.to_owned(),
             revision: session.snapshot.revision.clone(),
@@ -845,53 +847,130 @@ impl VideoProjectService {
     }
 
     pub fn close(&self, owner: &str, project_id: &str) -> Result<(), VideoCommandError> {
-        let key = session_key(owner, project_id);
-        let session = self
+        let mut sessions = self
             .sessions
             .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "session_lock"))?
-            .remove(&key)
+            .map_err(|_| error(VideoErrorCode::ProjectIo, "session_lock"))?;
+        self.close_registered(&mut sessions, &session_key(owner, project_id))
+    }
+
+    fn close_registered(
+        &self,
+        sessions: &mut HashMap<String, Arc<Mutex<ProjectSession>>>,
+        key: &str,
+    ) -> Result<(), VideoCommandError> {
+        let handle = sessions
+            .get(key)
             .ok_or_else(|| error(VideoErrorCode::InvalidProject, "unknown_session"))?;
-        let session = session
+        let mut session = handle
             .lock()
             .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        self.checkpoint_on_close(&session)?;
+        session.closed = true;
+        drop(session);
+        sessions.remove(key);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_close(&self, project_id: &str, failpoint: CheckpointFailpoint) {
+        self.close_failpoints
+            .lock()
+            .unwrap()
+            .insert(project_id.to_owned(), failpoint);
+    }
+
+    fn checkpoint_on_close(&self, session: &ProjectSession) -> Result<(), VideoCommandError> {
+        #[cfg(test)]
+        {
+            let failpoint = self
+                .close_failpoints
+                .lock()
+                .unwrap()
+                .get(&session.snapshot.id)
+                .copied()
+                .unwrap_or(CheckpointFailpoint::None);
+            checkpoint_with_failpoint(&session.path, &session.snapshot, failpoint)
+        }
+        #[cfg(not(test))]
         checkpoint(&session.path, &session.snapshot)
     }
 
     pub fn close_owner(&self, owner: &str) -> Result<(), VideoCommandError> {
-        let project_ids = self
-            .sessions
-            .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "session_lock"))?
-            .values()
-            .filter_map(|session| {
-                session
-                    .lock()
-                    .ok()
-                    .filter(|session| session.owner == owner)
-                    .map(|session| session.snapshot.id.clone())
-            })
-            .collect::<Vec<_>>();
-        for project_id in project_ids {
-            self.close(owner, &project_id)?;
-        }
-        Ok(())
+        self.close_selected(Some(owner))
     }
 
     pub fn close_all(&self) -> Result<(), VideoCommandError> {
-        let sessions = self
+        self.close_selected(None)
+    }
+
+    fn close_selected(&self, owner: Option<&str>) -> Result<(), VideoCommandError> {
+        let mut sessions = self
             .sessions
             .lock()
-            .map_err(|_| error(VideoErrorCode::ProjectIo, "session_lock"))?
-            .drain()
-            .map(|(_, session)| session)
+            .map_err(|_| error(VideoErrorCode::ProjectIo, "session_lock"))?;
+        let keys = sessions
+            .keys()
+            .filter(|key| {
+                owner.is_none_or(|owner| {
+                    key.split_once('\0')
+                        .is_some_and(|(stored, _)| stored == owner)
+                })
+            })
+            .cloned()
             .collect::<Vec<_>>();
-        for session in sessions {
-            let session = session
-                .lock()
-                .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
-            let _ = checkpoint(&session.path, &session.snapshot);
+        let mut first_error = None;
+        for key in keys {
+            if let Err(failure) = self.close_registered(&mut sessions, &key) {
+                eprintln!("Project checkpoint failed during close; session retained for retry.");
+                first_error.get_or_insert(failure);
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
+    }
+}
+
+#[cfg(test)]
+mod close_concurrency_tests {
+    use super::*;
+
+    #[test]
+    fn acquired_writer_handle_cannot_write_after_close() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project.svpvideo");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/video-phase1/single-clip.svpvideo"),
+            &path,
+        )
+        .unwrap();
+        let service = VideoProjectService::default();
+        let grants = VideoPathGrants::default();
+        let id = service
+            .open("owner", &path, &grants)
+            .unwrap()
+            .projection
+            .project_id;
+        let (acquired_tx, acquired_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let service_ref = &service;
+            let id_ref = &id;
+            let writer = scope.spawn(move || {
+                let handle = service_ref.session("owner", id_ref).unwrap();
+                acquired_tx.send(()).unwrap();
+                release_rx
+                    .recv_timeout(std::time::Duration::from_secs(2))
+                    .unwrap();
+                assert!(lock_open_session(&handle).is_err());
+            });
+            acquired_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            service.close("owner", &id).unwrap();
+            release_tx.send(()).unwrap();
+            writer.join().unwrap();
+        });
+        assert!(acquire_project_lock(&path).is_ok());
     }
 }

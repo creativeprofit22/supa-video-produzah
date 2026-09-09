@@ -17,8 +17,21 @@ fn manage_media_toolchain<R: Runtime>(
     app.manage(state);
 }
 
-#[cfg(all(not(test), feature = "desktop-runtime"))]
+#[cfg(any(
+    all(not(test), feature = "desktop-runtime"),
+    feature = "tauri-ipc-test"
+))]
 use tauri::Emitter;
+
+#[cfg(any(
+    all(not(test), feature = "desktop-runtime"),
+    feature = "tauri-ipc-test"
+))]
+fn report_cleanup_failure<R: Runtime>(app: &AppHandle<R>, message: &'static str) {
+    eprintln!("{message}");
+    // Exit-time delivery is best effort; the diagnostic above does not depend on a window.
+    let _ = app.emit("video-cleanup-failed", message);
+}
 
 #[cfg(all(not(test), feature = "desktop-runtime"))]
 fn initialize_media_jobs<R: Runtime>(
@@ -110,9 +123,16 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
 ))]
 fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if matches!(event, WindowEvent::Destroyed) {
-        let _ = window
+        if window
             .state::<video::VideoProjectService>()
-            .close_owner(window.label());
+            .close_owner(window.label())
+            .is_err()
+        {
+            report_cleanup_failure(
+                window.app_handle(),
+                "Project checkpoint failed; recovery may be required.",
+            );
+        }
         let _ = window
             .state::<video::VideoPathGrants>()
             .revoke_window(window.label());
@@ -120,7 +140,12 @@ fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &Win
         let app = window.app_handle().clone();
         tauri::async_runtime::spawn(async move {
             let jobs = app.state::<video::jobs::MediaJobService>();
-            let _ = jobs.cancel_owner(&owner_label).await;
+            if jobs.cancel_owner(&owner_label).await.is_err() {
+                report_cleanup_failure(
+                    &app,
+                    "Media cleanup has not finished; recovery may be required.",
+                );
+            }
         });
     }
 }
@@ -131,9 +156,20 @@ fn clean_up_video_state_on_destroyed<R: Runtime>(window: &Window<R>, event: &Win
 ))]
 fn clean_up_video_state_on_exit<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
     if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
-        let _ = app.state::<video::VideoProjectService>().close_all();
+        if app
+            .state::<video::VideoProjectService>()
+            .close_all()
+            .is_err()
+        {
+            report_cleanup_failure(app, "Project checkpoint failed; recovery may be required.");
+        }
         let jobs = app.state::<video::jobs::MediaJobService>();
-        let _ = tauri::async_runtime::block_on(jobs.shutdown());
+        if tauri::async_runtime::block_on(jobs.shutdown()).is_err() {
+            report_cleanup_failure(
+                app,
+                "Media cleanup has not finished; recovery may be required.",
+            );
+        }
     }
 }
 
@@ -1132,6 +1168,51 @@ mod tests {
             .authorize("grant-owner", video::GrantCategory::Source, &source)
             .expect_err("destroyed-window grant must be revoked");
         assert_eq!(error.code, video::VideoErrorCode::PathNotGranted);
+    }
+
+    #[test]
+    fn checkpoint_failure_is_reported_without_skipping_grant_cleanup() {
+        use tauri::Listener;
+        let app = mock_video_app();
+        let webview = WebviewWindowBuilder::new(&app, "checkpoint-owner", Default::default())
+            .build()
+            .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("private-project-name.svpvideo");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/video-phase1/single-clip.svpvideo"),
+            &path,
+        )
+        .unwrap();
+        let grants = app.state::<video::VideoPathGrants>();
+        let projects = app.state::<video::VideoProjectService>();
+        let id = projects
+            .open("checkpoint-owner", &path, &grants)
+            .unwrap()
+            .projection
+            .project_id;
+        projects.fail_close(
+            &id,
+            video::project::snapshot::CheckpointFailpoint::BeforeTempSync,
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.listen("video-cleanup-failed", move |event| {
+            tx.send(event.payload().to_owned()).unwrap();
+        });
+        clean_up_video_state_on_destroyed(&webview.as_ref().window(), &WindowEvent::Destroyed);
+        let message = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<String>(&message).unwrap(),
+            "Project checkpoint failed; recovery may be required."
+        );
+        assert!(!message.contains("private-project-name"));
+        assert!(projects.inspector("checkpoint-owner", &id).is_ok());
+        assert!(grants
+            .authorize("checkpoint-owner", video::GrantCategory::Project, &path)
+            .is_err());
+        projects.fail_close(&id, video::project::snapshot::CheckpointFailpoint::None);
+        projects.close("checkpoint-owner", &id).unwrap();
     }
 
     #[test]

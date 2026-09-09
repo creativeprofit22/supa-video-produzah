@@ -3864,6 +3864,112 @@ fn service_migration_commit_undo_redo_and_reopen_preserve_exact_state() {
 }
 
 #[test]
+fn close_failure_retains_session_and_lock_for_retry() {
+    for failpoint in [
+        CheckpointFailpoint::BeforeTempSync,
+        CheckpointFailpoint::AfterTempSyncBeforeReplace,
+        CheckpointFailpoint::AfterReplace,
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("close.svpvideo");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/video-phase1/single-clip.svpvideo"),
+            &path,
+        )
+        .unwrap();
+        let grants = crate::video::VideoPathGrants::default();
+        let service = VideoProjectService::default();
+        let opened = service.open("owner", &path, &grants).unwrap();
+        let id = opened.projection.project_id;
+        service.fail_close(&id, failpoint);
+        assert!(service.close("owner", &id).is_err());
+        assert!(
+            service.inspector("owner", &id).is_ok(),
+            "failed close must retain session: {failpoint:?}"
+        );
+        assert!(acquire_project_lock(&path).is_err());
+        service.fail_close(&id, CheckpointFailpoint::None);
+        service.close("owner", &id).unwrap();
+        assert!(service.inspector("owner", &id).is_err());
+        assert!(acquire_project_lock(&path).is_ok());
+    }
+}
+
+#[test]
+fn failed_bulk_close_attempts_healthy_sessions_and_preserves_replay() {
+    for owner_scoped in [false, true] {
+        for failpoint in [
+            CheckpointFailpoint::BeforeTempSync,
+            CheckpointFailpoint::AfterTempSyncBeforeReplace,
+            CheckpointFailpoint::AfterReplace,
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let grants = crate::video::VideoPathGrants::default();
+            let service = VideoProjectService::default();
+            let mut expected = Vec::new();
+            for index in 0..3 {
+                let path = directory.path().join(format!("project-{index}.svpvideo"));
+                fs::copy(mixed_rate_fixture_path(), &path).unwrap();
+                // Distinct project identities allow multiple sessions for one owner.
+                let mut snapshot = read_snapshot(&path).unwrap();
+                snapshot.id = uuid::Uuid::new_v4().to_string();
+                fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+                let opened = service.open("owner", &path, &grants).unwrap();
+                let id = opened.projection.project_id;
+                let request = CommandGroupRequest {
+                    group_id: uuid::Uuid::new_v4().to_string(),
+                    project_id: id.clone(),
+                    base_revision: opened.projection.revision.number,
+                    commands: vec![ProjectCommand::SetTrackLocked {
+                        command_id: uuid::Uuid::new_v4().to_string(),
+                        sequence_id: opened.projection.state.sequences[0].id.clone(),
+                        track_id: opened.projection.state.sequences[0].tracks[0]
+                            .id()
+                            .to_owned(),
+                        locked: true,
+                    }],
+                };
+                let result = service.execute("owner", request, &grants).unwrap();
+                if index != 2 {
+                    service.fail_close(&id, failpoint);
+                }
+                let history = scan(&journal_path(&path).unwrap()).unwrap().records[0]
+                    .history_group
+                    .clone();
+                expected.push((path, id, result, history));
+            }
+            let closed = if owner_scoped {
+                service.close_owner("owner")
+            } else {
+                service.close_all()
+            };
+            assert!(closed.is_err());
+            for (_, id, result, _) in &expected[..2] {
+                assert_eq!(
+                    service.inspector("owner", id).unwrap().revision,
+                    result.new_revision
+                );
+            }
+            assert!(service.inspector("owner", &expected[2].1).is_err());
+            drop(service);
+            for (index, (path, _, result, history)) in expected.into_iter().enumerate() {
+                let recovered = recover(&path).unwrap();
+                assert_eq!(
+                    recovered.replayed_record_count,
+                    u64::from(index != 2 && failpoint != CheckpointFailpoint::AfterReplace)
+                );
+                assert_eq!(recovered.snapshot.revision, result.new_revision);
+                assert_eq!(recovered.snapshot.state, result.projection.state);
+                assert_eq!(recovered.snapshot.history.undo_stack, vec![history]);
+                assert!(recovered.snapshot.history.redo_stack.is_empty());
+                validate_snapshot(&recovered.snapshot).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn journal_replay_restores_exact_command_result_without_clean_close() {
     let directory = tempfile::tempdir().unwrap();
     let project_path = directory.path().join("replay-idempotency.svpvideo");
