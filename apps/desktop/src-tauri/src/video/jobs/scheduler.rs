@@ -230,6 +230,31 @@ impl MediaJobScheduler {
         Ok(())
     }
 
+    pub(crate) async fn reconcile_cancellation(
+        &self,
+        job_id: &str,
+    ) -> Result<(), MediaStateStoreError> {
+        let queue = self.queue.lock().await;
+        let running = self.running.lock().await;
+        // Neither a live worker nor its ancestors can settle yet. Avoid a write
+        // transaction that would hold scheduler locks without changing anything.
+        if running.contains_key(job_id) || queue.iter().any(|work| work.job_id == job_id) {
+            return Ok(());
+        }
+        let owned_ids = running
+            .keys()
+            .cloned()
+            .chain(queue.iter().map(|work| work.job_id.clone()))
+            .collect();
+        self.store
+            .reconcile_cancellation(job_id.to_owned(), owned_ids, self.clock.now_millis())
+            .await
+    }
+
+    pub(crate) async fn is_running(&self, job_id: &str) -> bool {
+        self.running.lock().await.contains_key(job_id)
+    }
+
     pub(crate) async fn signal_cancellation(&self, job_id: &str) -> Option<SchedulerCancellation> {
         let (queued, running_work) = {
             let mut queue = self.queue.lock().await;
@@ -239,9 +264,12 @@ impl MediaJobScheduler {
                 .position(|entry| entry.job_id == job_id)
                 .map(|index| queue.remove(index));
             let running_work = running.get(job_id).cloned();
-            (queued, running_work)
+            if let Some(work) = &queued {
+                work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
+            }
+            (queued.is_some(), running_work)
         };
-        if queued.is_some() {
+        if queued {
             return Some(SchedulerCancellation::Queued);
         }
         running_work.map(|running_work| {
@@ -259,32 +287,13 @@ impl MediaJobScheduler {
         let running = self.running.lock().await;
         if let Some(index) = queue.iter().position(|entry| entry.job_id == job_id) {
             let entry = queue.remove(index);
-            drop(running);
-            drop(queue);
             self.store
-                .transition(
-                    entry.job_id,
-                    MediaJobTransition {
-                        state: MediaJobState::Cancelled,
-                        stage: "cancelled".to_owned(),
-                        progress: MediaJobProgress {
-                            completed: 0,
-                            total: 0,
-                            unit: super::model::MediaJobProgressUnit::Items,
-                        },
-                        attempt: None,
-                        error: None,
-                        retry_at_ms: None,
-                        result: None,
-                        cancellation_requested: true,
-                        event_type: MediaJobEventType::StateChanged,
-                        message: Some("Media job cancelled.".to_owned()),
-                        occurred_at_ms: now,
-                    },
-                )
+                .request_cancellation(job_id.to_owned(), now)
                 .await?;
             entry.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
-            return Ok(());
+            drop(running);
+            drop(queue);
+            return self.reconcile_cancellation(job_id).await;
         }
 
         if let Some(running_work) = running.get(job_id).cloned() {
@@ -374,7 +383,6 @@ impl MediaJobScheduler {
         self.notify.notify_waiters();
     }
 
-    #[cfg(test)]
     pub(crate) async fn wait_idle(&self) {
         loop {
             let notified = self.notify.notified();
@@ -465,7 +473,11 @@ impl MediaJobScheduler {
                 return;
             }
             StartWorkDisposition::Discard => {
+                work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
                 self.running.lock().await.remove(&work.job_id);
+                if self.reconcile_cancellation(&work.job_id).await.is_err() {
+                    eprintln!("Media cancellation settlement failed; recovery may be required.");
+                }
                 return;
             }
         }
@@ -475,8 +487,19 @@ impl MediaJobScheduler {
             .worker
             .run(job_id.clone(), running_work.cancellation.clone())
             .await;
-        let _ = self.finish(work, attempt, running_work, outcome).await;
+
+        if self
+            .finish(work, attempt, running_work, outcome)
+            .await
+            .is_err()
+        {
+            eprintln!("Media worker settlement failed; recovery may be required.");
+        }
+
         self.running.lock().await.remove(&job_id);
+        if self.reconcile_cancellation(&job_id).await.is_err() {
+            eprintln!("Media cancellation settlement failed; recovery may be required.");
+        }
     }
 
     async fn start_work(&self, work: &QueuedWork, attempt: u8) -> StartWorkDisposition {
@@ -542,6 +565,40 @@ impl MediaJobScheduler {
         }
     }
 
+    async fn record_cancelled_cleanup(
+        &self,
+        job_id: String,
+        progress: MediaJobProgress,
+    ) -> Result<(), MediaStateStoreError> {
+        let current = self
+            .store
+            .request_cancellation(job_id.clone(), self.clock.now_millis())
+            .await?;
+
+        if current.state.is_terminal() {
+            return Ok(());
+        }
+        self.store
+            .transition(
+                job_id,
+                MediaJobTransition {
+                    state: current.state,
+                    stage: current.stage,
+                    progress,
+                    attempt: None,
+                    error: current.error,
+                    retry_at_ms: None,
+                    result: None,
+                    cancellation_requested: true,
+                    event_type: MediaJobEventType::Progress,
+                    message: None,
+                    occurred_at_ms: self.clock.now_millis(),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn finish(
         self: &Arc<Self>,
         work: QueuedWork,
@@ -562,21 +619,7 @@ impl MediaJobScheduler {
                 | MediaWorkerOutcome::Cancelled { progress }
                 | MediaWorkerOutcome::Failed { progress, .. } => progress,
             };
-            self.store
-                .transition(
-                    work.job_id,
-                    terminal_transition(TerminalTransitionRequest {
-                        state: MediaJobState::Cancelled,
-                        stage: "cancelled",
-                        progress,
-                        error: None,
-                        result: None,
-                        cancellation_requested: true,
-                        message: "Media job cancelled.",
-                        occurred_at_ms: now,
-                    }),
-                )
-                .await?;
+            self.record_cancelled_cleanup(work.job_id, progress).await?;
             work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
             return Ok(());
         }
@@ -601,21 +644,7 @@ impl MediaJobScheduler {
                 work.worker.on_terminal(MediaJobFinalOutcome::Complete);
             }
             MediaWorkerOutcome::Cancelled { progress } => {
-                self.store
-                    .transition(
-                        work.job_id,
-                        terminal_transition(TerminalTransitionRequest {
-                            state: MediaJobState::Cancelled,
-                            stage: "cancelled",
-                            progress,
-                            error: None,
-                            result: None,
-                            cancellation_requested: true,
-                            message: "Media job cancelled.",
-                            occurred_at_ms: now,
-                        }),
-                    )
-                    .await?;
+                self.record_cancelled_cleanup(work.job_id, progress).await?;
                 work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
             }
             MediaWorkerOutcome::Failed { error, progress } => {
@@ -656,19 +685,7 @@ impl MediaJobScheduler {
                         {
                             let cancelled_at = self.clock.now_millis();
                             self.store
-                                .transition(
-                                    work.job_id,
-                                    terminal_transition(TerminalTransitionRequest {
-                                        state: MediaJobState::Cancelled,
-                                        stage: "cancelled",
-                                        progress,
-                                        error: None,
-                                        result: None,
-                                        cancellation_requested: true,
-                                        message: "Media job cancelled.",
-                                        occurred_at_ms: cancelled_at,
-                                    }),
-                                )
+                                .request_cancellation(work.job_id, cancelled_at)
                                 .await?;
                             work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
                         }
@@ -686,19 +703,7 @@ impl MediaJobScheduler {
                         {
                             let cancelled_at = self.clock.now_millis();
                             self.store
-                                .transition(
-                                    work.job_id,
-                                    terminal_transition(TerminalTransitionRequest {
-                                        state: MediaJobState::Cancelled,
-                                        stage: "cancelled",
-                                        progress,
-                                        error: None,
-                                        result: None,
-                                        cancellation_requested: true,
-                                        message: "Media job cancelled.",
-                                        occurred_at_ms: cancelled_at,
-                                    }),
-                                )
+                                .request_cancellation(work.job_id, cancelled_at)
                                 .await?;
                             work.worker.on_terminal(MediaJobFinalOutcome::Cancelled);
                         }

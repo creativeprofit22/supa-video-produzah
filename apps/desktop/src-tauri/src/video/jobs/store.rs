@@ -50,6 +50,8 @@ pub(crate) enum MediaStateStoreError {
     PayloadTooLarge,
     #[error("media state worker stopped")]
     WorkerStopped,
+    #[error("Cancellation requested; cleanup has not finished.")]
+    CancellationPending,
     #[error("media state lock was poisoned")]
     LockPoisoned,
     #[error("media state model validation failed")]
@@ -515,26 +517,125 @@ impl MediaJobStore {
         job_id: String,
         occurred_at_ms: i64,
     ) -> Result<MediaJobRecord, MediaStateStoreError> {
-        let event_job_id = job_id.clone();
+        self.request_cancellations(vec![job_id], occurred_at_ms)
+            .await?
+            .pop()
+            .ok_or(MediaStateStoreError::NotFound)
+    }
+
+    pub(crate) async fn request_cancellations(
+        &self,
+        job_ids: Vec<String>,
+        occurred_at_ms: i64,
+    ) -> Result<Vec<MediaJobRecord>, MediaStateStoreError> {
         let state = self.state.clone();
-        let job = tauri::async_runtime::spawn_blocking(move || {
-            request_cancellation_sync(&state, &job_id, occurred_at_ms)
-        })
-        .await
-        .map_err(|_| MediaStateStoreError::WorkerStopped)??;
-        self.emit_latest(&event_job_id).await;
-        Ok(job)
+        let (jobs, events) = tauri::async_runtime::spawn_blocking(move || {
+
+            let mut connection = state.open_connection()?;
+
+            let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+            let mut jobs = Vec::new();
+            let mut events = Vec::new();
+            for id in job_ids {
+                let current = load_job(&transaction, &id)?.ok_or(MediaStateStoreError::NotFound)?;
+                if current.state.is_terminal() || current.cancellation_requested {
+                    jobs.push(current);
+                    continue;
+                }
+                let now = occurred_at_ms.max(parse_timestamp_millis(&current.updated_at)?);
+                transaction.execute(
+                    "UPDATE media_jobs SET cancellation_requested = 1, updated_at_ms = ?2 WHERE id = ?1",
+                    params![id, now],
+                )?;
+                let updated = load_job(&transaction, &id)?.ok_or(MediaStateStoreError::CorruptRecord)?;
+                insert_event(&transaction, &updated, MediaJobEventType::CancellationRequested,
+                    Some("Cancellation requested."), None, now)?;
+                if let Some(event) = latest_event_for_job(&transaction, &id)? { events.push(event); }
+                jobs.push(updated);
+            }
+            transaction.commit()?;
+
+            Ok::<_, MediaStateStoreError>((jobs, events))
+        }).await.map_err(|_| MediaStateStoreError::WorkerStopped)??;
+        let sink = self.event_sink.lock().ok().and_then(|slot| slot.clone());
+        if let Some(sink) = sink {
+            for event in events {
+                sink(event);
+            }
+        }
+        Ok(jobs)
+    }
+
+    // The scheduler holds its queue/running locks until this transaction completes.
+    pub(crate) async fn reconcile_cancellation(
+        &self,
+        job_id: String,
+        owned_ids: std::collections::HashSet<String>,
+        occurred_at_ms: i64,
+    ) -> Result<(), MediaStateStoreError> {
+        let state = self.state.clone();
+        let changed = tauri::async_runtime::spawn_blocking(move || {
+            let mut connection = state.open_connection()?;
+            let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let mut next = Some(job_id);
+            let mut visited = std::collections::HashSet::new();
+            let mut changed = Vec::new();
+            while let Some(id) = next {
+                if !visited.insert(id.clone()) { return Err(MediaStateStoreError::CorruptRecord); }
+                let current = load_job(&transaction, &id)?.ok_or(MediaStateStoreError::NotFound)?;
+                next = current.parent_id.clone();
+                if current.state.is_terminal() || !current.cancellation_requested || owned_ids.contains(&id) {
+                    continue;
+                }
+                let mut statement = transaction.prepare(
+                    "WITH RECURSIVE descendants(id) AS (
+                        SELECT id FROM media_jobs WHERE parent_id = ?1
+                        UNION SELECT j.id FROM media_jobs j JOIN descendants d ON j.parent_id = d.id
+                     ) SELECT id, state NOT IN ('cancelled', 'failed', 'complete')
+                       FROM media_jobs WHERE id IN descendants",
+                )?;
+                let descendants = statement.query_map([&id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                if descendants.iter().any(|(id, unsettled)| *unsettled || owned_ids.contains(id)) { continue; }
+                if !current.state.can_transition_to(MediaJobState::Cancelled) {
+                    return Err(MediaStateStoreError::InvalidTransition);
+                }
+                let now = occurred_at_ms.max(parse_timestamp_millis(&current.updated_at)?);
+                transaction.execute(
+                    "UPDATE media_jobs SET state = 'cancelled', stage = 'cancelled',
+                        updated_at_ms = ?2, settled_at_ms = ?2, retry_at_ms = NULL,
+                        error_code = NULL, error_category = NULL, error_message = NULL,
+                        error_retryable = NULL, error_action = NULL, result_json = NULL, result_version = NULL
+                     WHERE id = ?1 AND cancellation_requested = 1
+                        AND state NOT IN ('cancelled', 'failed', 'complete')",
+                    params![id, now],
+                )?;
+                let updated = load_job(&transaction, &id)?.ok_or(MediaStateStoreError::CorruptRecord)?;
+                updated.validate()?;
+                insert_event(&transaction, &updated, MediaJobEventType::StateChanged,
+                    Some("Media job cancelled."), None, now)?;
+                changed.push(id);
+            }
+            transaction.commit()?;
+            Ok::<_, MediaStateStoreError>(changed)
+        }).await.map_err(|_| MediaStateStoreError::WorkerStopped)??;
+        for id in changed {
+            self.emit_latest(&id).await;
+        }
+        Ok(())
     }
 
     async fn emit_latest(&self, job_id: &str) {
         let state = self.state.clone();
         let job_id = job_id.to_owned();
-        let event =
-            tauri::async_runtime::spawn_blocking(move || latest_event_for_job(&state, &job_id))
-                .await
-                .ok()
-                .and_then(Result::ok)
-                .flatten();
+        let event = tauri::async_runtime::spawn_blocking(move || {
+            latest_event_for_job(&state.open_connection()?, &job_id)
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
         let sink = self.event_sink.lock().ok().and_then(|sink| sink.clone());
         if let (Some(event), Some(sink)) = (event, sink) {
             sink(event);
@@ -984,34 +1085,6 @@ fn transition_sync(
     Ok(updated)
 }
 
-fn request_cancellation_sync(
-    state: &MediaStateStore,
-    job_id: &str,
-    occurred_at_ms: i64,
-) -> Result<MediaJobRecord, MediaStateStoreError> {
-    let mut connection = state.open_connection()?;
-    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let current = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::NotFound)?;
-    if current.state.is_terminal() || current.cancellation_requested {
-        return Ok(current);
-    }
-    transaction.execute(
-        "UPDATE media_jobs SET cancellation_requested = 1, updated_at_ms = ?2 WHERE id = ?1",
-        params![job_id, occurred_at_ms],
-    )?;
-    let updated = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::CorruptRecord)?;
-    insert_event(
-        &transaction,
-        &updated,
-        MediaJobEventType::CancellationRequested,
-        Some("Cancellation requested."),
-        None,
-        occurred_at_ms,
-    )?;
-    transaction.commit()?;
-    Ok(updated)
-}
-
 fn list_sync(
     state: &MediaStateStore,
     limit: usize,
@@ -1432,10 +1505,9 @@ fn insert_event(
 }
 
 fn latest_event_for_job(
-    state: &MediaStateStore,
+    connection: &Connection,
     job_id: &str,
 ) -> Result<Option<MediaJobEvent>, MediaStateStoreError> {
-    let connection = state.open_connection()?;
     let mut statement = connection.prepare(
         "SELECT event_id, job_id, event_type, state, stage, progress_completed,
                 progress_total, progress_unit, safe_message, category, created_at_ms

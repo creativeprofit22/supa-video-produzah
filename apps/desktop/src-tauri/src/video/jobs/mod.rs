@@ -12,13 +12,15 @@ use super::{
     cache::MediaCacheService,
     derived::{preparation_worker_from_durable_job, MediaPrograms},
 };
+#[cfg(test)]
+use model::MediaJobProgress;
 use model::{
-    MediaJobErrorCategory, MediaJobEventType, MediaJobKind, MediaJobProgress, MediaJobRecord,
-    MediaJobRecoveryAction, MediaJobRecoveryReport, MediaJobState,
+    MediaJobErrorCategory, MediaJobEventType, MediaJobKind, MediaJobRecord, MediaJobRecoveryAction,
+    MediaJobRecoveryReport, MediaJobState,
 };
 use scheduler::{
     default_blocked_error, MediaJobScheduler, MediaJobWorker, MediaSchedulerConfig,
-    SchedulerCancellation, SchedulerResource, SystemSchedulerClock,
+    SchedulerResource, SystemSchedulerClock,
 };
 use store::{MediaJobStore, MediaJobTransition, MediaStateStoreError, StoredPrivateJob};
 use uuid::Uuid;
@@ -26,10 +28,11 @@ use uuid::Uuid;
 pub struct MediaJobService {
     store: MediaJobStore,
     scheduler: Arc<MediaJobScheduler>,
-    scheduler_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    scheduler_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     cache: MediaCacheService,
     recovery: Mutex<MediaJobRecoveryReport>,
     retry_gate: tokio::sync::Mutex<()>,
+    acknowledgement_timeout: std::time::Duration,
 }
 
 impl MediaJobService {
@@ -60,10 +63,11 @@ impl MediaJobService {
         Ok(Self {
             store,
             scheduler,
-            scheduler_task: Mutex::new(Some(scheduler_task)),
+            scheduler_task: tokio::sync::Mutex::new(Some(scheduler_task)),
             cache,
             recovery: Mutex::new(recovery),
             retry_gate: tokio::sync::Mutex::new(()),
+            acknowledgement_timeout: std::time::Duration::from_secs(5),
         })
     }
 
@@ -198,6 +202,15 @@ impl MediaJobService {
         job_id: &str,
         owner_label: &str,
     ) -> Result<MediaJobRecord, MediaStateStoreError> {
+        self.cancel_job_until(job_id, owner_label, None).await
+    }
+
+    async fn cancel_job_until(
+        &self,
+        job_id: &str,
+        owner_label: &str,
+        deadline: Option<tokio::time::Instant>,
+    ) -> Result<MediaJobRecord, MediaStateStoreError> {
         let target = self.store.get_private(job_id.to_owned()).await?;
         if target
             .private_payload
@@ -223,49 +236,28 @@ impl MediaJobService {
                 return Err(MediaStateStoreError::NotFound);
             }
         }
+        let deadline =
+            deadline.unwrap_or_else(|| tokio::time::Instant::now() + self.acknowledgement_timeout);
         let requested_at = current_timestamp_millis();
         self.store
-            .request_cancellation(job_id.to_owned(), requested_at)
+            .request_cancellations(
+                std::iter::once(job_id.to_owned())
+                    .chain(descendants.iter().map(|job| job.id.clone()))
+                    .collect(),
+                requested_at,
+            )
             .await?;
-        for descendant in &descendants {
-            self.store
-                .request_cancellation(descendant.id.clone(), requested_at)
-                .await?;
-        }
 
-        let mut running_cancellations = HashSet::new();
-        for descendant in &descendants {
-            if descendant.state.is_terminal() {
-                continue;
-            }
-            if self.scheduler.signal_cancellation(&descendant.id).await
-                == Some(SchedulerCancellation::Running)
-            {
-                running_cancellations.insert(descendant.id.clone());
-            }
-        }
-
-        for descendant in &descendants {
-            if running_cancellations.contains(&descendant.id) {
-                self.wait_for_settlement(&descendant.id).await?;
-            }
+        for id in std::iter::once(job_id).chain(descendants.iter().map(|job| job.id.as_str())) {
+            self.scheduler.signal_cancellation(id).await;
         }
         for descendant in descendants.iter().rev() {
-            if !running_cancellations.contains(&descendant.id) {
-                self.settle_cancelled_once(&descendant.id).await?;
-            }
+            self.scheduler
+                .reconcile_cancellation(&descendant.id)
+                .await?;
         }
-
-        if descendants.is_empty() {
-            match self.scheduler.signal_cancellation(job_id).await {
-                Some(SchedulerCancellation::Running) => self.wait_for_settlement(job_id).await?,
-                Some(SchedulerCancellation::Queued) | None => {
-                    self.settle_cancelled_once(job_id).await?;
-                }
-            }
-        } else {
-            self.settle_cancelled_once(job_id).await?;
-        }
+        self.scheduler.reconcile_cancellation(job_id).await?;
+        self.wait_for_settlement(job_id, deadline).await?;
 
         Ok(self.store.get_private(job_id.to_owned()).await?.public)
     }
@@ -285,55 +277,23 @@ impl MediaJobService {
         Ok(descendants)
     }
 
-    async fn wait_for_settlement(&self, job_id: &str) -> Result<(), MediaStateStoreError> {
+    async fn wait_for_settlement(
+        &self,
+        job_id: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), MediaStateStoreError> {
         loop {
-            if self
-                .store
-                .get_private(job_id.to_owned())
-                .await?
-                .public
-                .state
-                .is_terminal()
-            {
+            let current = self.store.get_private(job_id.to_owned()).await?.public;
+            if current.state.is_terminal() && !self.scheduler.is_running(job_id).await {
                 return Ok(());
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    }
-
-    async fn settle_cancelled_once(&self, job_id: &str) -> Result<(), MediaStateStoreError> {
-        let current = self.store.get_private(job_id.to_owned()).await?.public;
-        if current.state.is_terminal() {
-            return Ok(());
-        }
-        let transition = MediaJobTransition {
-            state: MediaJobState::Cancelled,
-            stage: "cancelled".to_owned(),
-            progress: MediaJobProgress {
-                completed: current.progress.completed,
-                total: current.progress.total,
-                unit: current.progress.unit,
-            },
-            attempt: None,
-            error: None,
-            retry_at_ms: None,
-            result: None,
-            cancellation_requested: true,
-            event_type: MediaJobEventType::StateChanged,
-            message: Some("Media job cancelled.".to_owned()),
-            occurred_at_ms: current_timestamp_millis(),
-        };
-        match self.store.transition(job_id.to_owned(), transition).await {
-            Ok(_) => Ok(()),
-            Err(MediaStateStoreError::InvalidTransition) => {
-                let current = self.store.get_private(job_id.to_owned()).await?.public;
-                if current.state.is_terminal() {
-                    Ok(())
-                } else {
-                    Err(MediaStateStoreError::InvalidTransition)
-                }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(MediaStateStoreError::CancellationPending);
             }
-            Err(error) => Err(error),
+            tokio::time::sleep_until(
+                deadline.min(tokio::time::Instant::now() + std::time::Duration::from_millis(10)),
+            )
+            .await;
         }
     }
 
@@ -351,6 +311,8 @@ impl MediaJobService {
                 owned_ids.insert(job.id.clone());
             }
         }
+        let deadline = tokio::time::Instant::now() + self.acknowledgement_timeout;
+        let mut first_error = None;
         for job in jobs.iter().filter(|job| {
             owned_ids.contains(&job.id)
                 && job
@@ -358,23 +320,37 @@ impl MediaJobService {
                     .as_ref()
                     .is_none_or(|parent_id| !owned_ids.contains(parent_id))
         }) {
-            self.cancel_job(&job.id, owner_label).await?;
+            if let Err(error) = self
+                .cancel_job_until(&job.id, owner_label, Some(deadline))
+                .await
+            {
+                first_error.get_or_insert(error);
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         self.cache.release_owner(owner_label.to_owned()).await?;
         Ok(())
     }
 
     pub(crate) async fn shutdown(&self) -> Result<(), MediaStateStoreError> {
+        let deadline = tokio::time::Instant::now() + self.acknowledgement_timeout;
         self.scheduler.shutdown().await;
-        let task = self
-            .scheduler_task
-            .lock()
-            .map_err(|_| MediaStateStoreError::LockPoisoned)?
-            .take();
-        if let Some(task) = task {
-            task.await
-                .map_err(|_| MediaStateStoreError::WorkerStopped)?;
+        let mut task = tokio::time::timeout_at(deadline, self.scheduler_task.lock())
+            .await
+            .map_err(|_| MediaStateStoreError::CancellationPending)?;
+        if let Some(handle) = task.as_mut() {
+            // Borrow the handle: expiry must not detach or abort live cleanup.
+            let result = tokio::time::timeout_at(deadline, handle)
+                .await
+                .map_err(|_| MediaStateStoreError::CancellationPending)?;
+            task.take();
+            result.map_err(|_| MediaStateStoreError::WorkerStopped)?;
         }
+        tokio::time::timeout_at(deadline, self.scheduler.wait_idle())
+            .await
+            .map_err(|_| MediaStateStoreError::CancellationPending)?;
         self.cache.release_all_session().await?;
         self.store.passive_checkpoint().await
     }
@@ -445,6 +421,382 @@ mod tests {
                 }
             })
         }
+    }
+
+    struct GatedCancellationWorker {
+        partial: PathBuf,
+        started: Arc<tokio::sync::Notify>,
+        signalled: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+        cleaned: Arc<AtomicUsize>,
+    }
+
+    impl MediaJobWorker for GatedCancellationWorker {
+        fn run(&self, _id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
+            let partial = self.partial.clone();
+            let started = self.started.clone();
+            let signalled = self.signalled.clone();
+            let release = self.release.clone();
+            let cleaned = self.cleaned.clone();
+            Box::pin(async move {
+                fs::write(&partial, b"owned partial").unwrap();
+                started.notify_one();
+                while !cancellation.is_cancelled() {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                signalled.notify_one();
+                release.notified().await;
+                fs::remove_file(partial).unwrap();
+                cleaned.fetch_add(1, Ordering::SeqCst);
+                MediaWorkerOutcome::Cancelled {
+                    progress: MediaJobProgress {
+                        completed: 0,
+                        total: 1,
+                        unit: MediaJobProgressUnit::Items,
+                    },
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn nonsettling_worker_bounds_acknowledgement_without_terminal_cancellation() {
+        let root = tempfile::tempdir().unwrap();
+        let mut jobs =
+            MediaJobService::initialize(root.path().join("data"), root.path().join("cache"))
+                .await
+                .unwrap();
+        jobs.acknowledgement_timeout = Duration::from_millis(40);
+        let job = enqueue_job(&jobs, MediaJobKind::Proxy, None, "gated", "owner").await;
+        let started = Arc::new(tokio::sync::Notify::new());
+        let signalled = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let cleaned = Arc::new(AtomicUsize::new(0));
+        let partial = root.path().join("owned.part");
+        jobs.scheduler
+            .submit(
+                job.id.clone(),
+                job.priority,
+                job.attempt,
+                job.max_attempts,
+                SchedulerResource::Ffmpeg,
+                Arc::new(GatedCancellationWorker {
+                    partial: partial.clone(),
+                    started: started.clone(),
+                    signalled: signalled.clone(),
+                    release: release.clone(),
+                    cleaned: cleaned.clone(),
+                }),
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_millis(500),
+            jobs.cancel_job(&job.id, "owner"),
+        )
+        .await;
+        let state = jobs.store.get_private(job.id.clone()).await.unwrap().public;
+        let events_before = cancelled_event_count(&jobs, &job.id).await;
+        let partial_before = partial.exists();
+        let cleaned_before = cleaned.load(Ordering::SeqCst);
+        // Always release the real worker before assertions, including on the red path.
+        release.notify_one();
+        tokio::time::timeout(Duration::from_secs(2), jobs.scheduler.wait_idle())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), jobs.shutdown())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            result.is_ok(),
+            "cancellation acknowledgement exceeded its deadline"
+        );
+        assert!(result.unwrap().is_err(), "pending cleanup must be reported");
+        assert!(state.cancellation_requested);
+        assert!(!state.state.is_terminal());
+        assert_eq!(events_before, 0);
+        assert!(partial_before);
+        assert_eq!(cleaned_before, 0);
+        assert_eq!(cleaned.load(Ordering::SeqCst), 1);
+        assert_eq!(cancelled_event_count(&jobs, &job.id).await, 1);
+    }
+
+    #[tokio::test]
+    async fn timed_out_family_reconciles_after_cleanup_without_second_action() {
+        for running_root in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let mut jobs =
+                MediaJobService::initialize(root.path().join("data"), root.path().join("cache"))
+                    .await
+                    .unwrap();
+            jobs.acknowledgement_timeout = Duration::from_millis(40);
+            let parent = enqueue_job(
+                &jobs,
+                MediaJobKind::AssetPreparation,
+                None,
+                "family",
+                "owner",
+            )
+            .await;
+            let child_a = enqueue_job(
+                &jobs,
+                MediaJobKind::Proxy,
+                Some(parent.id.clone()),
+                "a",
+                "owner",
+            )
+            .await;
+            let child_b = enqueue_job(
+                &jobs,
+                MediaJobKind::ThumbnailTile,
+                Some(parent.id.clone()),
+                "b",
+                "owner",
+            )
+            .await;
+            let mut workers = Vec::new();
+            for job in [&child_a, &child_b]
+                .into_iter()
+                .chain(running_root.then_some(&parent))
+            {
+                let worker = Arc::new(GatedCancellationWorker {
+                    partial: root.path().join(format!("{}.part", job.id)),
+                    started: Arc::new(tokio::sync::Notify::new()),
+                    signalled: Arc::new(tokio::sync::Notify::new()),
+                    release: Arc::new(tokio::sync::Notify::new()),
+                    cleaned: Arc::new(AtomicUsize::new(0)),
+                });
+                let resource = if job.id == parent.id {
+                    SchedulerResource::Ffmpeg
+                } else {
+                    SchedulerResource::BlockingIo
+                };
+                jobs.scheduler
+                    .submit(
+                        job.id.clone(),
+                        job.priority,
+                        job.attempt,
+                        job.max_attempts,
+                        resource,
+                        worker.clone(),
+                    )
+                    .await
+                    .unwrap();
+                tokio::time::timeout(Duration::from_secs(2), worker.started.notified())
+                    .await
+                    .unwrap();
+                workers.push(worker);
+            }
+            let first = tokio::time::timeout(
+                Duration::from_millis(500),
+                jobs.cancel_job(&parent.id, "owner"),
+            )
+            .await;
+            let second = tokio::time::timeout(
+                Duration::from_millis(500),
+                jobs.cancel_job(&parent.id, "owner"),
+            )
+            .await;
+            let mut before = Vec::new();
+            for job in [&parent, &child_a, &child_b] {
+                before.push((
+                    jobs.store.get_private(job.id.clone()).await.unwrap().public,
+                    cancelled_event_count(&jobs, &job.id).await,
+                ));
+            }
+            let all_owned = workers.iter().all(|worker| {
+                worker.partial.exists() && worker.cleaned.load(Ordering::SeqCst) == 0
+            });
+            let all_signalled = futures_signalled(&workers).await;
+
+            // Release the running root first: children must still prevent parent settlement.
+            let root_settled = if running_root {
+                workers.last().unwrap().release.notify_one();
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while jobs.scheduler.is_running(&parent.id).await {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .is_ok()
+            } else {
+                true
+            };
+            let parent_before_children = jobs
+                .store
+                .get_private(parent.id.clone())
+                .await
+                .unwrap()
+                .public;
+            for worker in &workers {
+                worker.release.notify_one();
+            }
+            if !all_signalled {
+                jobs.scheduler.shutdown().await;
+            }
+            let idle =
+                tokio::time::timeout(Duration::from_secs(2), jobs.scheduler.wait_idle()).await;
+
+            idle.unwrap();
+            assert!(matches!(
+                first,
+                Ok(Err(MediaStateStoreError::CancellationPending))
+            ));
+            assert!(matches!(
+                second,
+                Ok(Err(MediaStateStoreError::CancellationPending))
+            ));
+            assert!(
+                root_settled,
+                "released running root failed to acknowledge cleanup"
+            );
+            assert!(all_owned && all_signalled);
+            assert!(!parent_before_children.state.is_terminal());
+            for (state, count) in before {
+                assert!(state.cancellation_requested && !state.state.is_terminal());
+                assert_eq!(count, 0);
+            }
+            for job in [&parent, &child_a, &child_b] {
+                assert_eq!(
+                    jobs.store
+                        .get_private(job.id.clone())
+                        .await
+                        .unwrap()
+                        .public
+                        .state,
+                    MediaJobState::Cancelled
+                );
+                assert_eq!(cancelled_event_count(&jobs, &job.id).await, 1);
+            }
+            assert!(workers.iter().all(
+                |worker| !worker.partial.exists() && worker.cleaned.load(Ordering::SeqCst) == 1
+            ));
+            jobs.shutdown().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_and_shutdown_timeouts_retain_leases_and_join_handle_for_retry() {
+        use crate::video::{
+            cache::{CacheArtifactKind, CacheArtifactRegistration},
+            media_store::MEDIA_STORE_NAMESPACE,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let mut jobs =
+            MediaJobService::initialize(root.path().join("data"), root.path().join("cache"))
+                .await
+                .unwrap();
+        jobs.acknowledgement_timeout = Duration::from_millis(40);
+        let key = "a".repeat(64);
+        let path = root
+            .path()
+            .join("cache")
+            .join(MEDIA_STORE_NAMESPACE)
+            .join("derived/proxy/aa")
+            .join(format!("{key}.mp4"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"leased input").unwrap();
+        jobs.cache
+            .register_and_lease(
+                CacheArtifactRegistration {
+                    key: key.clone(),
+                    content_digest: key,
+                    kind: CacheArtifactKind::Proxy,
+                    path,
+                    profile_id: None,
+                    toolchain_id: None,
+                    recipe_id: None,
+                },
+                "owner".to_owned(),
+                None,
+            )
+            .await
+            .unwrap();
+        let leases_before = crate::video::cache::tests::lease_snapshot(&jobs.cache);
+        assert_eq!(leases_before.len(), 1);
+        let mut workers = Vec::new();
+        for index in 0..2 {
+            let job = enqueue_job(
+                &jobs,
+                MediaJobKind::Proxy,
+                None,
+                &format!("owned-{index}"),
+                "owner",
+            )
+            .await;
+            let worker = Arc::new(GatedCancellationWorker {
+                partial: root.path().join(format!("owned-{index}.part")),
+                started: Arc::new(tokio::sync::Notify::new()),
+                signalled: Arc::new(tokio::sync::Notify::new()),
+                release: Arc::new(tokio::sync::Notify::new()),
+                cleaned: Arc::new(AtomicUsize::new(0)),
+            });
+            jobs.scheduler
+                .submit(
+                    job.id.clone(),
+                    job.priority,
+                    job.attempt,
+                    job.max_attempts,
+                    SchedulerResource::BlockingIo,
+                    worker.clone(),
+                )
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(2), worker.started.notified())
+                .await
+                .unwrap();
+            workers.push(worker);
+        }
+        let owner_result =
+            tokio::time::timeout(Duration::from_millis(500), jobs.cancel_owner("owner")).await;
+        let all_signalled = futures_signalled(&workers).await;
+        let shutdown_result =
+            tokio::time::timeout(Duration::from_millis(500), jobs.shutdown()).await;
+        let handle_retained = jobs.scheduler_task.lock().await.is_some();
+        let still_owned = workers
+            .iter()
+            .all(|worker| worker.partial.exists() && worker.cleaned.load(Ordering::SeqCst) == 0);
+        let leases_after = crate::video::cache::tests::lease_snapshot(&jobs.cache);
+        for worker in &workers {
+            worker.release.notify_one();
+        }
+        jobs.acknowledgement_timeout = Duration::from_secs(2);
+        tokio::time::timeout(Duration::from_secs(3), jobs.shutdown())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            owner_result,
+            Ok(Err(MediaStateStoreError::CancellationPending))
+        ));
+        assert!(matches!(
+            shutdown_result,
+            Ok(Err(MediaStateStoreError::CancellationPending))
+        ));
+        assert!(handle_retained && still_owned && all_signalled);
+        assert_eq!(leases_before, leases_after);
+        assert!(jobs.scheduler_task.lock().await.is_none());
+        assert!(crate::video::cache::tests::lease_snapshot(&jobs.cache).is_empty());
+        assert!(workers
+            .iter()
+            .all(|worker| !worker.partial.exists() && worker.cleaned.load(Ordering::SeqCst) == 1));
+        jobs.cancel_owner("owner").await.unwrap();
+    }
+
+    async fn futures_signalled(workers: &[Arc<GatedCancellationWorker>]) -> bool {
+        for worker in workers {
+            if tokio::time::timeout(Duration::from_millis(100), worker.signalled.notified())
+                .await
+                .is_err()
+            {
+                return false;
+            }
+        }
+        true
     }
 
     struct QueuedWorker {

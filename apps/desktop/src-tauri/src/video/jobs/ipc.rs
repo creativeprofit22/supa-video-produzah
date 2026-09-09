@@ -306,9 +306,15 @@ fn parse_timestamp(value: &str) -> Result<i64, VideoCommandError> {
         .map_err(|_| job_error("timestamp"))
 }
 
-fn map_store_error(_error: MediaStateStoreError) -> VideoCommandError {
-    #[cfg(test)]
-    eprintln!("media job IPC store error: {_error:?}");
+fn map_store_error(error: MediaStateStoreError) -> VideoCommandError {
+    if matches!(error, MediaStateStoreError::CancellationPending) {
+        return VideoCommandError::project_error(
+            crate::video::VideoErrorCode::ProjectIo,
+            "Cancellation requested; cleanup has not finished.",
+            "media_jobs",
+            "cancellation_pending",
+        );
+    }
     job_error("media_state")
 }
 
@@ -319,6 +325,18 @@ fn job_error(category: &'static str) -> VideoCommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancellation_pending_maps_to_sanitized_cleanup_message() {
+        let error = map_store_error(MediaStateStoreError::CancellationPending);
+        assert_eq!(
+            error.message,
+            "Cancellation requested; cleanup has not finished."
+        );
+        assert!(!serde_json::to_string(&error)
+            .unwrap()
+            .contains("ownerLabel"));
+    }
 
     #[test]
     fn output_reauthorization_request_is_strict_and_matches_the_shared_contract() {

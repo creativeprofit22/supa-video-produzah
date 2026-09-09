@@ -87,6 +87,35 @@ function mediaBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
 }
 
 describe("durable media jobs controller", () => {
+  it("keeps a cancellation timeout visible while refresh reports pending cleanup", async () => {
+    const message = "Cancellation requested; cleanup has not finished.";
+    let cancellationRequested = false;
+    const backend = mediaBackend({
+      cancelMediaJob: vi.fn(async () => {
+        cancellationRequested = true;
+        throw new Error(message);
+      }),
+      listMediaJobs: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        jobs: [{ ...testMediaJob, cancellationRequested }],
+        unsettledParentCount: 1,
+        nextBeforeUpdatedAt: null,
+        nextBeforeJobId: null,
+        latestEventId: 1,
+        recovery: null,
+      })),
+    });
+    const { result } = renderHook(() => useMediaJobs(backend));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { await result.current.cancelJob(testMediaJob.id); });
+    expect(result.current.actionError?.message).toBe(message);
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.jobs[0]?.cancellationRequested).toBe(true);
+    expect(result.current.jobs[0]?.state).not.toBe("cancelled");
+    expect(result.current.canCancelJob(testMediaJob.id)).toBe(false);
+    expect(result.current.canRetryJob(testMediaJob.id)).toBe(false);
+    expect(result.current.actionError?.message).toBe(message);
+  });
   it("subscribes before snapshot and reconciles live gaps by monotonic event ID", async () => {
     const calls: string[] = [];
     let onEvent: ((value: MediaJobEvent) => void) | undefined;

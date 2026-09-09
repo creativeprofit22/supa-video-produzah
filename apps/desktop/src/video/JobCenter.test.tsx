@@ -138,6 +138,21 @@ function controller(overrides: Partial<MediaJobsController> = {}): MediaJobsCont
 afterEach(cleanup);
 
 describe("JobCenter", () => {
+  it("shows pending cleanup and its timeout without claiming cancellation completed", () => {
+    const message = "Cancellation requested; cleanup has not finished.";
+    render(<JobCenter controller={controller({
+      jobs: [job({ cancellationRequested: true })],
+      actionError: new Error(message),
+      canCancelJob: () => false,
+      canRetryJob: () => false,
+      canReauthorizeJobOutput: () => false,
+    })} onClose={vi.fn()} />);
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.getAllByText("Cancelling")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Cancelling" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("Cancelled", { exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Retry/ })).toBeNull();
+  });
   it("renders ordered parent jobs, child stages, recovery and pinned cache health without axe violations", async () => {
     const value = controller();
     const { container } = render(<JobCenter controller={value} onClose={vi.fn()} />);
