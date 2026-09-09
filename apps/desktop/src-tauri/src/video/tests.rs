@@ -4845,8 +4845,115 @@ async fn render_caption_boundary_local_ffmpeg_v1_v2() {
         "UNVERIFIED: installed FFmpeg cannot render with its default font: {:?}",
         font_probe.status
     );
+    assert_caption_boundary_frames(programs, &CAPTION_BOUNDARY_CASES).await;
+}
+
+// Run media:bootstrap:windows first. Missing or modified resources are failures, not skips.
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn render_caption_boundary_bundled_ffmpeg_v1_v2() {
+    assert_bundled_caption_boundary_case(1).await;
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn render_caption_boundary_bundled_30_exact_v1_v2() {
+    assert_bundled_caption_boundary_case(0).await;
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn render_caption_boundary_bundled_30000_1001_rounded_v1_v2() {
+    assert_bundled_caption_boundary_case(2).await;
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn render_caption_boundary_bundled_24000_1001_exact_v1_v2() {
+    assert_bundled_caption_boundary_case(3).await;
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn render_caption_boundary_bundled_24000_1001_rounded_v1_v2() {
+    assert_bundled_caption_boundary_case(4).await;
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test(flavor = "current_thread")]
+async fn bundled_resolver_only_bounded_batch() {
+    let started = std::time::Instant::now();
+    for iteration in 1..=20 {
+        assert!(
+            started.elapsed() < Duration::from_secs(300),
+            "resolver batch deadline reached"
+        );
+        let resources = tempdir().unwrap();
+        println!(
+            "resolver_iteration={iteration} resource_root={:?}",
+            resources.path()
+        );
+        let destination = resources.path().join("media-tools");
+        fs::create_dir(&destination).unwrap();
+        let staged = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("media-toolchain/bin/x86_64-pc-windows-msvc");
+        for name in ["ffmpeg.exe", "ffprobe.exe"] {
+            fs::copy(staged.join(name), destination.join(name))
+                .expect("pinned resources missing: run media:bootstrap:windows");
+        }
+        let toolchain =
+            super::toolchain::MediaToolchain::resolve_from_resource_root(resources.path());
+        let programs =
+            MediaPrograms::bundled(super::toolchain::MediaToolchainState::from_ready(toolchain));
+        let remaining = Duration::from_secs(300)
+            .checked_sub(started.elapsed())
+            .expect("resolver batch deadline reached");
+        tokio::time::timeout(remaining, async {
+            programs.verified_ffmpeg("resolver_only").await.unwrap();
+            programs.verified_ffprobe("resolver_only").await.unwrap();
+        })
+        .await
+        .expect("resolver batch deadline reached");
+        println!("resolver_iteration={iteration} passed");
+    }
+}
+
+#[cfg(target_os = "windows")]
+async fn assert_bundled_caption_boundary_case(index: usize) {
+    for name in ["FONTCONFIG_FILE", "FONTCONFIG_PATH"] {
+        assert!(
+            std::env::var_os(name).is_none(),
+            "{name} must be unset: this test verifies application defaults"
+        );
+    }
+    let resources = tempdir().unwrap();
+    let destination = resources.path().join("media-tools");
+    fs::create_dir(&destination).unwrap();
+    let staged =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("media-toolchain/bin/x86_64-pc-windows-msvc");
+    for name in ["ffmpeg.exe", "ffprobe.exe"] {
+        fs::copy(staged.join(name), destination.join(name))
+            .expect("pinned resources missing: run media:bootstrap:windows");
+    }
+    let toolchain = super::toolchain::MediaToolchain::resolve_from_resource_root(resources.path());
+    let programs =
+        MediaPrograms::bundled(super::toolchain::MediaToolchainState::from_ready(toolchain));
+    for binary in [
+        programs.verified_ffmpeg("caption_boundary").await.unwrap(),
+        programs.verified_ffprobe("caption_boundary").await.unwrap(),
+    ] {
+        println!("verified bundled binary: {}", Path::new(&binary).display());
+    }
+    // Do not preflight drawtext: a font failure must surface through the render executor.
+    // Each independently selectable test runs one case, both versions, and 90 frames/render.
+    assert_caption_boundary_frames(programs, &CAPTION_BOUNDARY_CASES[index..=index]).await;
+}
+
+async fn assert_caption_boundary_frames(programs: MediaPrograms, cases: &[(u64, u64, u64, u64)]) {
+    let ffmpeg = programs.verified_ffmpeg("caption_boundary").await.unwrap();
+    let ffprobe = programs.verified_ffprobe("caption_boundary").await.unwrap();
     // Rounded endpoints are the plan contract, not a claim of exact rational alignment.
-    for (num, den, boundary_us, end_us) in CAPTION_BOUNDARY_CASES {
+    for &(num, den, boundary_us, end_us) in cases {
         let workspace = tempdir().unwrap();
         let source = workspace.path().join("solid.mp4");
         let generated = Command::new(&ffmpeg)

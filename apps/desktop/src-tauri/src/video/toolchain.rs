@@ -1021,8 +1021,12 @@ fn resolve_programs_from_resource_root(
         .targets
         .get(target_name)
         .ok_or_else(|| MediaToolchainError::new(MediaToolchainProblem::NotFound))?;
-    let canonical_root = fs::canonicalize(resource_root)
-        .map_err(|_| MediaToolchainError::new(MediaToolchainProblem::NotFound))?;
+    let canonical_root = fs::canonicalize(resource_root).map_err(|error| {
+        #[cfg(test)]
+        eprintln!("resolver_fs stage=canonicalize_root path={resource_root:?} kind={:?} raw_os_error={:?}", error.kind(), error.raw_os_error());
+        let _ = error;
+        MediaToolchainError::new(MediaToolchainProblem::NotFound)
+    })?;
     let ffmpeg = resolve_binary(&canonical_root, resource_root, &target.binaries.ffmpeg)
         .map(StoredBinary::Bundled);
     let ffprobe = resolve_binary(&canonical_root, resource_root, &target.binaries.ffprobe)
@@ -1041,9 +1045,13 @@ fn resolve_binary(
         ));
     }
     let candidate = resource_root.join(&binary.resource_path);
-    let metadata = fs::symlink_metadata(&candidate).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound => MediaToolchainError::new(MediaToolchainProblem::NotFound),
-        _ => MediaToolchainError::new(MediaToolchainProblem::IntegrityFailed),
+    let metadata = fs::symlink_metadata(&candidate).map_err(|error| {
+        #[cfg(test)]
+        eprintln!("resolver_fs stage=symlink_metadata_binary path={candidate:?} kind={:?} raw_os_error={:?}", error.kind(), error.raw_os_error());
+        match error.kind() {
+            io::ErrorKind::NotFound => MediaToolchainError::new(MediaToolchainProblem::NotFound),
+            _ => MediaToolchainError::new(MediaToolchainProblem::IntegrityFailed),
+        }
     })?;
     if !metadata.file_type().is_file()
         || metadata.file_type().is_symlink()
@@ -1775,6 +1783,21 @@ mod tests {
             resolve_programs_from_resource_root(&manifest, "wrong-target", workspace.path())
                 .expect_err("unknown target must fail closed");
         assert_eq!(error.problem(), MediaToolchainProblem::NotFound);
+    }
+
+    #[test]
+    fn resolver_missing_resources_emit_filesystem_diagnostics() {
+        let workspace = tempdir().unwrap();
+        let missing = MediaToolchain::resolve_from_resource_root(&workspace.path().join("missing"));
+        assert_eq!(
+            missing.programs().unwrap_err().problem(),
+            MediaToolchainProblem::NotFound
+        );
+        let empty = MediaToolchain::resolve_from_resource_root(workspace.path());
+        assert_eq!(
+            empty.programs().unwrap_err().problem(),
+            MediaToolchainProblem::NotFound
+        );
     }
 
     #[test]
