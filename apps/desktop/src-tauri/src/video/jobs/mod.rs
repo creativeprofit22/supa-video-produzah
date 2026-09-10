@@ -490,18 +490,23 @@ mod tests {
             )
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(2), started.notified())
-            .await
-            .unwrap();
+        let started_result = tokio::time::timeout(Duration::from_secs(2), started.notified()).await;
         let result = tokio::time::timeout(
             Duration::from_millis(500),
             jobs.cancel_job(&job.id, "owner"),
         )
         .await;
-        let state = jobs.store.get_private(job.id.clone()).await.unwrap().public;
-        let events_before = cancelled_event_count(&jobs, &job.id).await;
-        let partial_before = partial.exists();
-        let cleaned_before = cleaned.load(Ordering::SeqCst);
+        let signalled_result =
+            tokio::time::timeout(Duration::from_secs(2), signalled.notified()).await;
+        let observations = tokio::time::timeout(Duration::from_secs(2), async {
+            let state = jobs.store.get_private(job.id.clone()).await;
+            let events = jobs.store().events(Some(job.id.clone()), 0, 100).await;
+            let running = jobs.scheduler.is_running(&job.id).await;
+            let partial_bytes = fs::read(&partial);
+            let cleanup_count = cleaned.load(Ordering::SeqCst);
+            (state, events, running, partial_bytes, cleanup_count)
+        })
+        .await;
         // Always release the real worker before assertions, including on the red path.
         release.notify_one();
         tokio::time::timeout(Duration::from_secs(2), jobs.scheduler.wait_idle())
@@ -515,14 +520,45 @@ mod tests {
             result.is_ok(),
             "cancellation acknowledgement exceeded its deadline"
         );
-        assert!(result.unwrap().is_err(), "pending cleanup must be reported");
+        assert!(matches!(
+            result.unwrap(),
+            Err(MediaStateStoreError::CancellationPending)
+        ));
+        started_result.expect("worker must start before cancellation");
+        signalled_result.expect("cancellation must reach the gated worker");
+        let (state, events, running, partial_bytes, cleaned_before) =
+            observations.expect("pre-release observations must finish within the watchdog");
+        let state = state.unwrap().public;
         assert!(state.cancellation_requested);
         assert!(!state.state.is_terminal());
-        assert_eq!(events_before, 0);
-        assert!(partial_before);
+        assert_eq!(
+            events
+                .unwrap()
+                .events
+                .iter()
+                .filter(|event| event.state.is_terminal())
+                .count(),
+            0
+        );
+        assert!(
+            running,
+            "pending worker must retain its running registration"
+        );
+        assert_eq!(partial_bytes.unwrap(), b"owned partial");
         assert_eq!(cleaned_before, 0);
         assert_eq!(cleaned.load(Ordering::SeqCst), 1);
+        assert!(!partial.exists(), "cleanup must delete the owned partial");
         assert_eq!(cancelled_event_count(&jobs, &job.id).await, 1);
+        assert_eq!(
+            jobs.store
+                .get_private(job.id.clone())
+                .await
+                .unwrap()
+                .public
+                .state,
+            MediaJobState::Cancelled
+        );
+        assert!(!jobs.scheduler.is_running(&job.id).await);
     }
 
     #[tokio::test]
