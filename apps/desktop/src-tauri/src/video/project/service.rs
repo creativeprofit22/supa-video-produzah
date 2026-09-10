@@ -71,6 +71,8 @@ pub struct VideoProjectService {
     sessions: Mutex<HashMap<String, Arc<Mutex<ProjectSession>>>>,
     #[cfg(test)]
     close_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
+    #[cfg(test)]
+    automatic_checkpoint_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -565,6 +567,7 @@ impl VideoProjectService {
     }
 
     fn finish_transition(
+        &self,
         session: &mut ProjectSession,
         mut transition: HistoryTransition,
         sources: Vec<VideoSourceRecord>,
@@ -634,7 +637,7 @@ impl VideoProjectService {
         session.sources = sources;
         session.last_command = Some(last_command);
         if record_number % CHECKPOINT_INTERVAL == 0 {
-            if checkpoint(&session.path, &session.snapshot).is_ok() {
+            if self.automatic_checkpoint(session).is_ok() {
                 session.snapshot_revision = session.snapshot.revision.number;
                 session.journal_health = JournalHealth::Healthy;
             } else {
@@ -694,7 +697,7 @@ impl VideoProjectService {
         )?;
         grants.grant_opened_project_sources(owner, session.path.clone(), relative_grants)?;
         let result =
-            Self::finish_transition(&mut session, transition, sources, payload_hash.clone())?;
+            self.finish_transition(&mut session, transition, sources, payload_hash.clone())?;
         session.idempotency.insert(
             request.group_id,
             IdempotencyEntry {
@@ -744,7 +747,7 @@ impl VideoProjectService {
         )?;
         grants.grant_opened_project_sources(owner, session.path.clone(), relative_grants)?;
         let result =
-            Self::finish_transition(&mut session, transition, sources, payload_hash.clone())?;
+            self.finish_transition(&mut session, transition, sources, payload_hash.clone())?;
         session.idempotency.insert(
             operation_id.to_owned(),
             IdempotencyEntry {
@@ -878,6 +881,34 @@ impl VideoProjectService {
             .lock()
             .unwrap()
             .insert(project_id.to_owned(), failpoint);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_automatic_checkpoint(
+        &self,
+        project_id: &str,
+        failpoint: CheckpointFailpoint,
+    ) {
+        self.automatic_checkpoint_failpoints
+            .lock()
+            .unwrap()
+            .insert(project_id.to_owned(), failpoint);
+    }
+
+    fn automatic_checkpoint(&self, session: &ProjectSession) -> Result<(), VideoCommandError> {
+        #[cfg(test)]
+        {
+            let failpoint = self
+                .automatic_checkpoint_failpoints
+                .lock()
+                .unwrap()
+                .get(&session.snapshot.id)
+                .copied()
+                .unwrap_or(CheckpointFailpoint::None);
+            checkpoint_with_failpoint(&session.path, &session.snapshot, failpoint)
+        }
+        #[cfg(not(test))]
+        checkpoint(&session.path, &session.snapshot)
     }
 
     fn checkpoint_on_close(&self, session: &ProjectSession) -> Result<(), VideoCommandError> {

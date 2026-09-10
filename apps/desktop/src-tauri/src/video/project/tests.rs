@@ -3864,6 +3864,120 @@ fn service_migration_commit_undo_redo_and_reopen_preserve_exact_state() {
 }
 
 #[test]
+fn automatic_checkpoint_failure_warns_recovers_and_retries() {
+    use super::types::{JournalHealth, ProjectEvent};
+
+    let snapshot = clip_opacity_fixture();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("automatic-checkpoint.svpvideo");
+    fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let grants = crate::video::VideoPathGrants::default();
+    let id = snapshot.id.clone();
+    let request = |revision: u64| CommandGroupRequest {
+        group_id: format!("69000000-0000-4000-8000-{revision:012}"),
+        project_id: id.clone(),
+        base_revision: revision - 1,
+        commands: vec![set_clip_opacity_command(
+            &format!("69100000-0000-4000-8000-{revision:012}"),
+            1000 - revision as u16,
+        )],
+    };
+    let mut expected_state = snapshot.state.clone();
+    expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0]
+        .transform
+        .opacity_permille = 975;
+    let expected_hash = state_hash(&expected_state).unwrap();
+    let (acknowledged, initial_snapshot) = {
+        let service = VideoProjectService::default();
+        service.open("owner", &path, &grants).unwrap();
+        // Opening initializes the journal hash before any edit is committed.
+        let initial_snapshot = read_snapshot(&path).unwrap();
+        service.fail_automatic_checkpoint(&id, CheckpointFailpoint::AfterTempSyncBeforeReplace);
+        for revision in 1..25 {
+            service
+                .execute("owner", request(revision), &grants)
+                .unwrap();
+        }
+        let result = service.execute("owner", request(25), &grants).unwrap();
+        assert_eq!(result.new_revision.number, 25);
+        assert_eq!(result.state_hash, expected_hash);
+        assert_eq!(result.projection.state, expected_state);
+        assert_eq!(
+            result.projection.journal_health,
+            JournalHealth::SnapshotPending
+        );
+        assert_eq!(result.projection.snapshot_revision, 0);
+        let warnings: Vec<_> = result
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                ProjectEvent::SnapshotWarning { message } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            warnings,
+            vec!["Edit is durable in the journal, but snapshot checkpointing is pending"]
+        );
+        assert_eq!(read_snapshot(&path).unwrap(), initial_snapshot);
+        assert_eq!(
+            scan(&journal_path(&path).unwrap()).unwrap().records.len(),
+            25
+        );
+        // Drop the service and its locks without close/checkpoint, as in the existing crash tests.
+        (result, initial_snapshot)
+    };
+
+    assert_eq!(read_snapshot(&path).unwrap(), initial_snapshot);
+    let service = VideoProjectService::default();
+    let reopened = service.open("reopened", &path, &grants).unwrap();
+    assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+    assert_eq!(reopened.recovery.replayed_record_count, 25);
+    assert_eq!(reopened.projection.revision, acknowledged.new_revision);
+    assert_eq!(reopened.projection.state, expected_state);
+    assert_eq!(
+        state_hash(&reopened.projection.state).unwrap(),
+        expected_hash
+    );
+    assert_eq!(
+        reopened.projection.last_command,
+        acknowledged.projection.last_command
+    );
+    assert!(reopened.projection.can_undo);
+    assert!(!reopened.projection.can_redo);
+
+    // Explicitly clear the injected failure and reach the next automatic checkpoint.
+    service.fail_automatic_checkpoint(&id, CheckpointFailpoint::None);
+    for revision in 26..50 {
+        service
+            .execute("reopened", request(revision), &grants)
+            .unwrap();
+    }
+    let retried = service.execute("reopened", request(50), &grants).unwrap();
+    expected_state.sequences[0].tracks[0].clips_mut().unwrap()[0]
+        .transform
+        .opacity_permille = 950;
+    assert_eq!(retried.projection.state, expected_state);
+    assert_eq!(retried.projection.journal_health, JournalHealth::Healthy);
+    assert_eq!(retried.projection.snapshot_revision, 50);
+    assert!(!retried
+        .events
+        .iter()
+        .any(|event| matches!(event, ProjectEvent::SnapshotWarning { .. })));
+    let saved = read_snapshot(&path).unwrap();
+    assert_eq!(saved.state, expected_state);
+    assert_eq!(saved.revision, retried.new_revision);
+    assert_eq!(saved.history.undo_stack.len(), 50);
+    assert!(saved.history.redo_stack.is_empty());
+    drop(service);
+    let service = VideoProjectService::default();
+    let reopened = service.open("checkpointed", &path, &grants).unwrap();
+    assert_eq!(reopened.recovery.replayed_record_count, 0);
+    assert_eq!(reopened.projection.state, saved.state);
+    assert_eq!(reopened.projection.revision, saved.revision);
+}
+
+#[test]
 fn close_failure_retains_session_and_lock_for_retry() {
     for failpoint in [
         CheckpointFailpoint::BeforeTempSync,
