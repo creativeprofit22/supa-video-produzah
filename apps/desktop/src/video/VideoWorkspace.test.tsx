@@ -328,7 +328,70 @@ afterEach(() => {
 });
 
 describe("VideoWorkspace", () => {
-  it("passes every canonical video layer in stacking order with independent visibility and mute", () => {
+  it("restores and resets only the local layout without replacing children or invoking controller actions", () => {
+    const preferenceKey = "supa-video.workspace-preferences";
+    const previous = localStorage.getItem(preferenceKey);
+    localStorage.setItem(preferenceKey, JSON.stringify({ version: 1, split: 75 }));
+    try {
+      const controller = createController();
+      const projectionBefore = JSON.stringify(controller.projection);
+      render(workspace(controller));
+      const separator = screen.getByRole("separator", {
+        name: "Program and media / editing controls pane width",
+      });
+      const monitor = screen.getByTestId("program-monitor");
+      const controls = screen.getByRole("complementary", { name: "Editing controls" });
+      const actionCalls = () =>
+        Object.values(controller).flatMap((action) =>
+          vi.isMockFunction(action) ? [action.mock.calls.length] : [],
+        );
+      const callsBefore = actionCalls();
+      expect(separator.getAttribute("aria-valuenow")).toBe("75");
+      expect(separator.getAttribute("aria-orientation")).toBe("vertical");
+      expect(
+        document.getElementById(separator.getAttribute("aria-controls")!)?.contains(monitor),
+      ).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Reset layout" }));
+
+      expect(separator.getAttribute("aria-valuenow")).toBe("68.5");
+      expect(JSON.parse(localStorage.getItem(preferenceKey)!)).toEqual({
+        version: 1,
+        split: 68.5,
+      });
+      expect(screen.getByTestId("program-monitor")).toBe(monitor);
+      expect(screen.getByRole("complementary", { name: "Editing controls" })).toBe(controls);
+      expect(actionCalls()).toEqual(callsBefore);
+      expect(JSON.stringify(controller.projection)).toBe(projectionBefore);
+    } finally {
+      if (previous === null) localStorage.removeItem(preferenceKey);
+      else localStorage.setItem(preferenceKey, previous);
+    }
+  });
+
+  it("enables direct-asset retimed preview and passes canonical timing metadata", () => {
+    const projection = canonicalProjection(false, false);
+    const track = projection.state.sequences[0]!.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected video track");
+    track.clips[0]!.speed = { numerator: 1, denominator: 2 };
+    render(workspace(createController({ projection })));
+    const props = captureProgramMonitorProps.mock.lastCall?.[0];
+    expect(props.unsupportedReason).toBeNull();
+    expect(
+      props.sourceLayers.find((layer: { clipId: string }) => layer.clipId === id(21)),
+    ).toMatchObject({
+      timelineDurationFrames: 50,
+      speed: { numerator: 1, denominator: 2 },
+      sourceRate: {
+        numerator: track.clips[0]!.sourceIn.rateNumerator,
+        denominator: track.clips[0]!.sourceIn.rateDenominator,
+      },
+      timelineStartFrame: track.clips[0]!.timelineStart.value,
+      sourceInFrame: track.clips[0]!.sourceIn.value,
+      sourceOutFrame: track.clips[0]!.sourceOut.value,
+    });
+  });
+  it("passes canonical video and audio layers in track order with independent visibility and mute", () => {
     const controller = createController();
     const { rerender } = render(workspace(controller));
 
@@ -342,6 +405,20 @@ describe("VideoWorkspace", () => {
           opacityPermille: 1_000,
           hidden: false,
           muted: false,
+        },
+        {
+          clipId: id(39),
+          audioOnly: true,
+          canonicalTrackIndex: 2,
+          timelineStartFrame: 0,
+          sourceInFrame: 0,
+          sourceOutFrame: 25,
+          timelineDurationFrames: 25,
+          hasAudio: true,
+          hidden: false,
+          muted: false,
+          gainMilliDecibels: 0,
+          fades: { inFrames: 0, outFrames: 0 },
         },
         {
           clipId: previewClipId,
@@ -385,6 +462,20 @@ describe("VideoWorkspace", () => {
           muted: true,
         },
         {
+          clipId: id(39),
+          audioOnly: true,
+          canonicalTrackIndex: 2,
+          timelineStartFrame: 0,
+          sourceInFrame: 0,
+          sourceOutFrame: 25,
+          timelineDurationFrames: 25,
+          hasAudio: true,
+          hidden: false,
+          muted: false,
+          gainMilliDecibels: 0,
+          fades: { inFrames: 0, outFrames: 0 },
+        },
+        {
           clipId: previewClipId,
           canonicalTrackIndex: 3,
           opacityPermille: 425,
@@ -414,10 +505,61 @@ describe("VideoWorkspace", () => {
     expect(captureProgramMonitorProps.mock.lastCall?.[0]).toMatchObject({
       sourceLayers: [
         { clipId: id(21), opacityPermille: 600 },
+        { clipId: id(39), audioOnly: true, opacityPermille: 1000 },
         { clipId: previewClipId, opacityPermille: 425 },
         { clipId: id(36), opacityPermille: 0 },
       ],
     });
+  });
+
+  it("keeps speed drafts out of preview, routes Apply, and discards them on revision and selection changes", () => {
+    const setTimelineClipSpeed = vi.fn(async () => true);
+    const controller = createController({ setTimelineClipSpeed });
+    const view = render(workspace(controller));
+    const layers = structuredClone(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers);
+    fireEvent.click(screen.getByRole("button", { name: "50%" }));
+    expect(setTimelineClipSpeed).not.toHaveBeenCalled();
+    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers).toEqual(layers);
+    fireEvent.click(screen.getByRole("button", { name: "Apply speed" }));
+    expect(setTimelineClipSpeed).toHaveBeenCalledExactlyOnceWith({
+      sequenceId,
+      trackId: id(20),
+      clipId: id(21),
+      speed: { numerator: 1, denominator: 2 },
+    });
+    const projection = structuredClone(controller.projection!);
+    projection.revision.id = id(99);
+    view.rerender(workspace(createController({ projection, setTimelineClipSpeed })));
+    expect((screen.getByRole("spinbutton", { name: "Speed (%)" }) as HTMLInputElement).value).toBe(
+      "100",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "50%" }));
+    const timeline = captureTimelineProps.mock.lastCall?.[0] as {
+      onSelectClip: (id: string) => void;
+    };
+    act(() => timeline.onSelectClip(previewClipId));
+    expect((screen.getByRole("spinbutton", { name: "Speed (%)" }) as HTMLInputElement).value).toBe(
+      "100",
+    );
+  });
+
+  it("routes selected source Apply through canonical trim without legacy drafts or implicit movement", () => {
+    const controller = createController();
+    const view = render(workspace(controller));
+    const input = screen.getByRole("spinbutton", { name: /^Source in \(/ });
+    fireEvent.change(input, { target: { value: "1" } });
+    expect(controller.trimTimelineClip).not.toHaveBeenCalled();
+    expect(controller.updateTrimDraft).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Apply source range"));
+    expect(controller.trimTimelineClip).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clipId: id(21), sourceInFrame: 1, timelineStartFrame: 0 }),
+    );
+    const projection = structuredClone(controller.projection!);
+    projection.revision.id = id(99);
+    view.rerender(workspace({ ...controller, projection }));
+    expect(
+      (screen.getByRole("spinbutton", { name: /^Source in \(/ }) as HTMLInputElement).value,
+    ).toBe("50");
   });
 
   it("drafts only the selected video and clears the draft when selection changes", () => {
@@ -427,7 +569,11 @@ describe("VideoWorkspace", () => {
 
     expect((slider as HTMLInputElement).value).toBe("1000");
     fireEvent.change(slider, { target: { value: "333" } });
-    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers.slice(0, 2)).toMatchObject([
+    expect(
+      captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers
+        .filter((layer: { audioOnly?: boolean }) => !layer.audioOnly)
+        .slice(0, 2),
+    ).toMatchObject([
       { clipId: id(21), opacityPermille: 333 },
       { clipId: previewClipId, opacityPermille: 425 },
     ]);
@@ -438,7 +584,11 @@ describe("VideoWorkspace", () => {
     act(() => timeline.onSelectClip(previewClipId));
 
     expect((screen.getByRole("slider", { name: "Opacity" }) as HTMLInputElement).value).toBe("425");
-    expect(captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers.slice(0, 2)).toMatchObject([
+    expect(
+      captureProgramMonitorProps.mock.lastCall?.[0]?.sourceLayers
+        .filter((layer: { audioOnly?: boolean }) => !layer.audioOnly)
+        .slice(0, 2),
+    ).toMatchObject([
       { clipId: id(21), opacityPermille: 1_000 },
       { clipId: previewClipId, opacityPermille: 425 },
     ]);

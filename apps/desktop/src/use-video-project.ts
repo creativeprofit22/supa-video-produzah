@@ -1,6 +1,14 @@
+import { planBulkClipEdit, type BulkClipAction, type BulkClipTarget } from "./video/bulk-clip-edit";
+import { validClipAudio, type ClipAudioEdit } from "./video/clip-audio";
+import { prepareClipSpeedState, type ClipSpeedEdit } from "./video/clip-speed-edit";
 import {
+  clipSpeedPercent,
+  clipSpeedSchema,
   canToggleTrackVisibility,
   clipTransformSchema,
+  clipTimelineDuration,
+  sourceOffsetToTimeline,
+  rateOf,
   createRationalTime,
   isTrackHidden,
   isTrackLocked,
@@ -65,6 +73,8 @@ export type TimelineEditOperation =
   | "trim"
   | "ripple-delete"
   | "transcript-edit"
+  | "clip-speed"
+  | "clip-audio"
   | "clip-opacity"
   | "clip-transform"
   | "track-lock"
@@ -1204,6 +1214,14 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         rightClipId: newId(),
       };
       return runTimelineEdit(base, "split", async (isCurrent) => {
+        sourceOffsetToTimeline(
+          createRationalTime(
+            sourceFrame - selection.clip.sourceIn.value,
+            rateOf(selection.clip.sourceIn),
+          ),
+          selection.sequence.rate,
+          selection.clip.speed,
+        );
         const captionReferences = selectAffectedCaptionReferences(base, {
           type: "split",
           sequenceId: command.sequenceId,
@@ -1357,6 +1375,34 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         ...(moveCommand === undefined ? [] : [moveCommand]),
       ];
       return runTimelineEdit(base, "trim", async (isCurrent) => {
+        if (isTrackLocked(selection.track))
+          throw new VideoDomainError("invalid_project", "Track is locked.");
+        const duration = clipTimelineDuration(
+          { in: trimCommand.sourceIn, out: trimCommand.sourceOut },
+          selection.sequence.rate,
+          selection.clip.speed,
+        );
+        if (selection.clip.source.kind === "asset") {
+          const assetId = selection.clip.source.assetId;
+          const asset = base.state.assets.find(({ id }) => id === assetId);
+          const total =
+            asset &&
+            microsecondsToSourceFrames(asset.probe.durationMicroseconds, {
+              numerator: selection.clip.sourceOut.rateNumerator,
+              denominator: selection.clip.sourceOut.rateDenominator,
+            }).value;
+          if (total === undefined || sourceOutFrame > total)
+            throw new VideoDomainError("invalid_range", "Trim exceeds the probed source duration.");
+        }
+        if (
+          BigInt(selection.clip.fades?.inFrames ?? 0) +
+            BigInt(selection.clip.fades?.outFrames ?? 0) >
+          BigInt(duration.value)
+        )
+          throw new VideoDomainError(
+            "invalid_range",
+            "Trim is shorter than the existing audio fades.",
+          );
         const captionReferences = selectAffectedCaptionReferences(base, {
           type: "trim",
           sequenceId: trimCommand.sequenceId,
@@ -1433,6 +1479,122 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       });
     },
     [backend, runTimelineEdit],
+  );
+  const setTimelineClipSpeed = useCallback(
+    async (input: ClipSpeedEdit): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find(({ id }) => id === input.trackId);
+      if (
+        base === null ||
+        sequence?.id !== input.sequenceId ||
+        track?.kind !== "video" ||
+        isTrackLocked(track) ||
+        editOperationPendingRef.current
+      )
+        return false;
+      const clip = track.clips.find(({ id }) => id === input.clipId);
+      if (!clip) return false;
+      if (
+        clipSpeedSchema.safeParse(input.speed).success &&
+        clipSpeedPercent(clip.speed) === clipSpeedPercent(input.speed)
+      )
+        return false;
+      return runTimelineEdit(base, "clip-speed", async () => {
+        prepareClipSpeedState(base.state, input);
+        return { commands: [{ type: "SetClipSpeed", commandId: newId(), ...input }] };
+      });
+    },
+    [runTimelineEdit],
+  );
+  const editTimelineClips = useCallback(
+    async (targets: readonly BulkClipTarget[], action: BulkClipAction): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current) return false;
+      return runTimelineEdit(
+        base,
+        action.type === "speed" ? "clip-speed" : action.type === "move" ? "move" : "ripple-delete",
+        () => {
+          const commands = planBulkClipEdit(base.state, targets, action, newId);
+          return commands.length ? { commands } : null;
+        },
+      );
+    },
+    [runTimelineEdit],
+  );
+  const setTimelineClipAudio = useCallback(
+    async (inputs: readonly ClipAudioEdit[]): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current || inputs.length === 0) return false;
+      return runTimelineEdit(base, "clip-audio", () => {
+        if (inputs.length > 100)
+          throw new Error("Select at most 100 media clips; no changes were applied.");
+        const snapshot = structuredClone(base.state);
+        const commands: ProjectCommandV2[] = [];
+        const seen = new Set<string>();
+        for (const input of inputs) {
+          const sequence = snapshot.sequences.find(({ id }) => id === input.sequenceId);
+          const track = sequence?.tracks.find(({ id }) => id === input.trackId);
+          const clip =
+            track && track.kind !== "caption"
+              ? track.clips.find(({ id }) => id === input.clipId)
+              : undefined;
+          const key = `${input.sequenceId}:${input.trackId}:${input.clipId}`;
+          if (
+            !sequence ||
+            !track ||
+            !clip ||
+            clip.source.kind !== "asset" ||
+            !snapshot.assets.some(
+              (asset) =>
+                clip.source.kind === "asset" &&
+                asset.id === clip.source.assetId &&
+                !!asset.probe.audio,
+            ) ||
+            isTrackLocked(track) ||
+            seen.has(key) ||
+            !validClipAudio(
+              input,
+              clipTimelineDuration(
+                { in: clip.sourceIn, out: clip.sourceOut },
+                sequence.rate,
+                clip.speed,
+              ).value,
+            )
+          )
+            throw new Error("Invalid clip audio edit or locked track");
+          seen.add(key);
+          const target = {
+            sequenceId: input.sequenceId,
+            trackId: input.trackId,
+            clipId: input.clipId,
+          };
+          if (clip.gainMilliDecibels !== input.gainMilliDecibels)
+            commands.push({
+              type: "SetClipGain",
+              commandId: newId(),
+              ...target,
+              gainMilliDecibels: input.gainMilliDecibels,
+            });
+          if (
+            (clip.fades?.inFrames ?? 0) !== input.fades.inFrames ||
+            (clip.fades?.outFrames ?? 0) !== input.fades.outFrames
+          )
+            commands.push({
+              type: "SetClipFades",
+              commandId: newId(),
+              ...target,
+              fades: input.fades,
+            });
+        }
+        if (commands.length > 100)
+          throw new Error(
+            "This edit exceeds the 100-command group limit. Apply gain or fades separately; no changes were applied.",
+          );
+        return commands.length === 0 ? null : { commands };
+      });
+    },
+    [runTimelineEdit],
   );
   const setTimelineClipOpacity = useCallback(
     async ({
@@ -1800,6 +1962,9 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimTimelineClip,
     rippleDeleteTimelineClip,
     applyTranscriptEditProposal,
+    setTimelineClipSpeed,
+    editTimelineClips,
+    setTimelineClipAudio,
     setTimelineClipOpacity,
     setTimelineClipTransform,
     setTimelineTrackLocked,

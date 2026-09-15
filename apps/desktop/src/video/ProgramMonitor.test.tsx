@@ -56,10 +56,12 @@ function restoreVideoFrameCallbacks(): void {
 function installVideoFrameCallbacks() {
   let nextId = 1;
   const callbacks = new Map<number, VideoFrameRequestCallback>();
-  const request = vi.fn((callback: VideoFrameRequestCallback) => {
+  const videos = new Map<number, HTMLVideoElement>();
+  const request = vi.fn(function (this: HTMLVideoElement, callback: VideoFrameRequestCallback) {
     const id = nextId;
     nextId += 1;
     callbacks.set(id, callback);
+    videos.set(id, this);
     return id;
   });
   const cancel = vi.fn((id: number) => {
@@ -88,8 +90,9 @@ function installVideoFrameCallbacks() {
     cancel,
     peekNext,
     pendingCount: () => callbacks.size,
-    fireNext(mediaTime: number) {
+    fireNext(mediaTime: number, advanceMediaClock = true) {
       const pending = peekNext();
+      if (advanceMediaClock) videos.get(pending.id)!.currentTime = mediaTime;
       callbacks.delete(pending.id);
       act(() => {
         pending.callback(0, { mediaTime } as VideoFrameCallbackMetadata);
@@ -102,10 +105,12 @@ function preparedProxyMonitor(
   proxyPath = "/cache/proxy.mp4",
   hasAudio = true,
   timelineAudioMuted = false,
+  unsupportedReason: string | null = null,
 ) {
   return (
     <ProgramMonitor
       proxyPath={proxyPath}
+      unsupportedReason={unsupportedReason}
       finalPreviewPath={null}
       hasAudio={hasAudio}
       timelineAudioMuted={timelineAudioMuted}
@@ -121,6 +126,163 @@ function preparedProxyMonitor(
 }
 
 describe("ProgramMonitor", () => {
+  it("reports required clip audio effects when Web Audio is unavailable", () => {
+    vi.stubGlobal("AudioContext", undefined);
+    try {
+      render(
+        <ProgramMonitor
+          proxyPath={null}
+          finalPreviewPath={null}
+          hasAudio
+          timelineAudioMuted={false}
+          timelineVideoHidden={false}
+          convertCachePath={(path) => path}
+          rate={rate}
+          trimIn={0}
+          trimOut={50}
+          playhead={0}
+          onPlayheadChange={vi.fn()}
+          sourceLayers={[
+            {
+              clipId: "amplified",
+              path: "/source.mp4",
+              canonicalTrackIndex: 0,
+              timelineStartFrame: 0,
+              sourceInFrame: 0,
+              sourceOutFrame: 50,
+              timelineDurationFrames: 50,
+              ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+              opacityPermille: 1000,
+              hidden: false,
+              muted: false,
+              hasAudio: true,
+              gainMilliDecibels: 6000,
+              fades: { inFrames: 10, outFrames: 10 },
+            },
+          ]}
+        />,
+      );
+      expect(screen.getByRole("alert").textContent).toBe(
+        "Clip audio effects require Web Audio, which is unavailable.",
+      );
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+  });
+  it.each([0.5, 1, 1.5, 2])(
+    "maps %sx composition seeks and continuous clocks without intermediate frame rounding",
+    (speed) => {
+      Object.defineProperty(HTMLMediaElement.prototype, "preservesPitch", {
+        configurable: true,
+        writable: true,
+        value: true,
+      });
+      const onPlayheadChange = vi.fn();
+      const view = render(
+        <ProgramMonitor
+          proxyPath="/proxy.mp4"
+          finalPreviewPath="/final.mp4"
+          hasAudio
+          timelineAudioMuted={false}
+          timelineVideoHidden={false}
+          convertCachePath={(path) => path}
+          rate={rate}
+          trimIn={0}
+          trimOut={100}
+          playhead={11}
+          onPlayheadChange={onPlayheadChange}
+          sourceLayers={[
+            {
+              clipId: "retimed",
+              path: "/source.mp4",
+              canonicalTrackIndex: 0,
+              timelineStartFrame: 10,
+              sourceInFrame: 60,
+              sourceOutFrame: 180,
+              timelineDurationFrames: 100 / speed,
+              sourceRate: { numerator: 30, denominator: 1 },
+              speed: { numerator: speed * 100, denominator: 100 },
+              ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+              opacityPermille: 1000,
+              hidden: false,
+              muted: false,
+              hasAudio: true,
+            },
+          ]}
+        />,
+      );
+      const video = view.container.querySelector("video")!;
+      fireEvent.loadedMetadata(video);
+      expect(video.playbackRate).toBe(speed);
+      expect(video.preservesPitch).toBe(true);
+      // The media-write policy moves inside the boundary, not the canonical clock.
+      const expectedSeek = { 0.5: 2.020001, 1: 2.040001, 1.5: 2.060001, 2: 2.080001 };
+      expect(video.currentTime).toBe(expectedSeek[speed as keyof typeof expectedSeek]);
+      expect(onPlayheadChange).toHaveBeenLastCalledWith(11);
+      video.currentTime = 2 + (7.75 * speed) / 25;
+      fireEvent.timeUpdate(video);
+      expect(onPlayheadChange).toHaveBeenLastCalledWith(17);
+      fireEvent.click(screen.getByRole("button", { name: "Final" }));
+      expect(view.container.querySelector("video")!.playbackRate).toBe(1);
+      Reflect.deleteProperty(HTMLMediaElement.prototype, "preservesPitch");
+    },
+  );
+
+  it("visibly rejects retimed playback when pitch preservation is unavailable", () => {
+    Reflect.deleteProperty(HTMLMediaElement.prototype, "preservesPitch");
+    const view = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => path}
+        rate={rate}
+        trimIn={0}
+        trimOut={50}
+        playhead={0}
+        onPlayheadChange={vi.fn()}
+        sourceLayers={[
+          {
+            clipId: "fast",
+            path: "/fast.mp4",
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 0,
+            sourceInFrame: 0,
+            sourceOutFrame: 100,
+            timelineDurationFrames: 50,
+            speed: { numerator: 2, denominator: 1 },
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+            opacityPermille: 1000,
+            hidden: false,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("pitch-preserving");
+    expect(screen.getByRole("button", { name: "Play" }).hasAttribute("disabled")).toBe(true);
+    view.unmount();
+  });
+  it("unmounts media and exposes a visible reason for unsupported canonical preview", () => {
+    const view = render(preparedProxyMonitor());
+    expect(view.container.querySelector("video")).not.toBeNull();
+    view.rerender(
+      preparedProxyMonitor(
+        "/cache/proxy.mp4",
+        true,
+        false,
+        "Speed-aware program preview is not supported yet.",
+      ),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Speed-aware program preview is not supported yet.",
+    );
+    expect(view.container.querySelector("video")).toBeNull();
+  });
   beforeEach(() => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
@@ -614,6 +776,53 @@ describe("ProgramMonitor", () => {
     expect(onPlayheadChange).toHaveBeenLastCalledWith(41);
   });
 
+  it.each([
+    { audioOnly: true, hidden: false },
+    { audioOnly: false, hidden: true },
+  ])("keeps an invisible source clock and audio independent: %j", ({ audioOnly, hidden }) => {
+    const frameCallbacks = installVideoFrameCallbacks();
+    const onPlayheadChange = vi.fn();
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath={null}
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={hidden}
+        sourceLayers={[
+          {
+            clipId: "invisible-clock",
+            path: "/cache/audio.mp4",
+            audioOnly,
+            canonicalTrackIndex: 0,
+            timelineStartFrame: 40,
+            sourceInFrame: 10,
+            sourceOutFrame: 60,
+            ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+            opacityPermille: 1000,
+            hidden,
+            muted: false,
+            hasAudio: true,
+          },
+        ]}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={0}
+        trimOut={1}
+        playhead={40}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const media = container.querySelector<HTMLVideoElement>("video")!;
+    expect(media.style.visibility).toBe("hidden");
+    expect(media.muted).toBe(false);
+    expect(media.crossOrigin).toBe("anonymous");
+    Object.defineProperty(media, "paused", { configurable: true, value: false });
+    fireEvent.play(media);
+    frameCallbacks.fireNext(11 / 25);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(41);
+  });
+
   it("enforces canonical source mute and uses rendered media state for final preview", () => {
     const convertCachePath = vi.fn((path: string) => `asset:${path}`);
     render(
@@ -737,6 +946,52 @@ describe("ProgramMonitor", () => {
     expect(screen.getByLabelText("Prepared source proxy")).toBe(video);
     expect(video.volume).toBeCloseTo(0.35);
     expect(video.muted).toBe(false);
+  });
+
+  it("advances the program clock without decoded callbacks and never rewinds to metadata", () => {
+    const frames = installVideoFrameCallbacks();
+    const animationCallbacks = new Map<number, FrameRequestCallback>();
+    let nextId = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      animationCallbacks.set(++nextId, callback);
+      return nextId;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      animationCallbacks.delete(id);
+    });
+    const onPlayheadChange = vi.fn();
+    render(
+      <ProgramMonitor
+        proxyPath="/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => path}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+    for (const frame of [11, 12, 13]) {
+      video.currentTime = frame / 25;
+      act(() => {
+        const pending = [...animationCallbacks.values()];
+        animationCallbacks.clear();
+        for (const callback of pending) callback(frame * 40);
+      });
+      expect(onPlayheadChange).toHaveBeenLastCalledWith(frame);
+    }
+    expect(frames.request).toHaveBeenCalledTimes(1);
+    frames.fireNext(10 / 25, false);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(13);
+    fireEvent.pause(video);
+    expect(animationCallbacks.size).toBe(0);
   });
 
   it("uses monotonic presented frames and stops at the exact half-open trim-out", () => {

@@ -547,6 +547,44 @@ function createBackend(overrides: Partial<VideoBackend> = {}): VideoBackend {
 }
 
 describe("canonical project controller", () => {
+  it("rejects inexact retimed split and trim before submitting a revision", async () => {
+    const active = clipProjection();
+    const track = active.state.sequences[0]!.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected video track");
+    track.clips[0]!.speed = { numerator: 3, denominator: 2 };
+    const execute = vi.fn(async () => {
+      throw new Error("Inexact edits must not execute");
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(active)),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    await act(() => result.current.splitTimelineClip({ clipId: id(5), sourceFrame: 1 }));
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "split",
+      error: expect.objectContaining({ message: "Speed produces an inexact frame boundary" }),
+    });
+    await act(() =>
+      result.current.trimTimelineClip({
+        clipId: id(5),
+        sourceInFrame: 0,
+        sourceOutFrame: 59,
+        timelineStartFrame: 0,
+      }),
+    );
+    expect(result.current.editOperation).toMatchObject({
+      phase: "error",
+      operation: "trim",
+      error: expect.objectContaining({ message: "Speed produces an inexact frame boundary" }),
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.projection?.state).toEqual(active.state);
+    // Step 6 supports exporting the unchanged, exactly retimed canonical clip.
+    expect(result.current.renderReady).toBe(true);
+  });
   it("creates through Rust and never saves arbitrary project JSON", async () => {
     const backend = createBackend();
     const { result } = renderHook(() => useVideoProject(backend));
@@ -1108,6 +1146,35 @@ describe("canonical project controller", () => {
     );
   });
 
+  it("rejects selected source bounds, locked tracks and fade overflow before submitting a group", async () => {
+    for (const reason of ["bounds", "lock", "fades"] as const) {
+      const opened = captionedProjection(1);
+      const track = opened.state.sequences[0]!.tracks.find((track) => track.kind === "video")!;
+      if (track.kind !== "video") throw new Error("Expected video");
+      if (reason === "lock") track.locked = true;
+      if (reason === "fades") track.clips[0]!.fades = { inFrames: 30, outFrames: 30 };
+      const execute = vi.fn();
+      const backend = createBackend({
+        openVideoProject: vi.fn(async () => cleanOpenResult(opened)),
+        executeVideoProjectGroup: execute,
+      });
+      const { result, unmount } = renderHook(() => useVideoProject(backend));
+      await act(() => result.current.openProject());
+      await act(() =>
+        result.current.trimTimelineClip({
+          clipId: id(5),
+          sourceInFrame: 10,
+          sourceOutFrame: reason === "bounds" ? 999999 : 50,
+          timelineStartFrame: 0,
+        }),
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.current.editOperation).toMatchObject({ phase: "error", operation: "trim" });
+      expect(result.current.projection).toEqual(opened);
+      unmount();
+    }
+  });
+
   it("rejects stale transcript lineage without submitting a trim", async () => {
     const opened = captionedProjection(1);
     const execute = vi.fn();
@@ -1329,6 +1396,69 @@ describe("canonical project controller", () => {
     ).toBe(250);
     expect(result.current.renderReady).toBe(true);
     expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("applies speed once through the canonical revision and rejects inexact drafts without dispatch", async () => {
+    const opened = clipProjection(1);
+    const next = clipProjection(2);
+    const track = next.state.sequences[0]!.tracks[0]!;
+    if (track.kind !== "video") throw new Error("Expected video");
+    track.clips[0]!.speed = { numerator: 2, denominator: 1 };
+    const execute = vi.fn(async (request: CommandGroupRequest) => {
+      commandGroupRequestSchema.parse(request);
+      return commandResult(opened, next, request.groupId);
+    });
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      executeVideoProjectGroup: execute,
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    const target = { sequenceId: id(3), trackId: id(4), clipId: id(5) };
+    await act(async () => {
+      expect(
+        await result.current.setTimelineClipSpeed({
+          ...target,
+          speed: { numerator: 151, denominator: 100 },
+        }),
+      ).toBe(false);
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.editOperation.phase).toBe("error");
+    await act(async () => {
+      expect(
+        await result.current.setTimelineClipSpeed({
+          ...target,
+          speed: { numerator: 2, denominator: 1 },
+        }),
+      ).toBe(true);
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]![0].commands[0]).toMatchObject({
+      type: "SetClipSpeed",
+      ...target,
+      speed: { numerator: 2, denominator: 1 },
+    });
+    expect(result.current.projection).toBe(next);
+    await act(async () => {
+      expect(
+        await result.current.setTimelineClipSpeed({
+          ...target,
+          speed: { numerator: 2, denominator: 1 },
+        }),
+      ).toBe(false);
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("dispatches one complete clip transform and adopts the canonical projection", async () => {

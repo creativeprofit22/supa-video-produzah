@@ -12,6 +12,7 @@ import { deriveActiveTimelineRange, projectVisibleTimeline } from "@supa-video/p
 import { describe, expect, it } from "vitest";
 
 import { createMockVideoService, testProbe, testSourceIdentity } from "./test-video-service";
+import { planBulkClipEdit, type BulkClipAction } from "./video/bulk-clip-edit";
 
 const id = (value: number): string =>
   `70000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -82,6 +83,123 @@ function setupCommands(): ProjectCommandV2[] {
     },
   ];
 }
+
+it("bulk plans one snapshot, applies actual speed/move/delete and audio with atomic undo/redo", async () => {
+  const service = createMockVideoService();
+  await service.invoke("video_create_project");
+  let serial = 2000;
+  const newId = () => id(serial++);
+  const execute = (
+    commands: ProjectCommandV2[],
+    baseRevision = service.projection.revision.number,
+  ) =>
+    service.invoke("video_execute_project_group", {
+      request: {
+        groupId: newId(),
+        projectId: service.projection.projectId,
+        baseRevision,
+        commands,
+      },
+    });
+  await execute(setupCommands());
+  await execute([
+    {
+      type: "InsertClip",
+      commandId: newId(),
+      sequenceId,
+      trackId: unaffectedTrackId,
+      clip: { ...clip(siblingClipId), timelineStart: createRationalTime(20, rate) },
+    },
+  ]);
+  const targets = [unaffectedClipId, siblingClipId].map((clipId) => ({
+    sequenceId,
+    trackId: unaffectedTrackId,
+    clipId,
+  }));
+  const actions: BulkClipAction[] = [
+    { type: "move", deltaFrames: 10 },
+    { type: "speed", speed: { numerator: 2, denominator: 1 } },
+    { type: "delete" },
+  ];
+  for (const action of actions) {
+    const before = structuredClone(service.projection.state);
+    const commands = planBulkClipEdit(service.projection.state, targets, action, newId);
+    expect(service.projection.state).toEqual(before);
+    expect(commands).toHaveLength(2);
+    await execute(commands);
+    const after = structuredClone(service.projection.state);
+    const changedTrack = track(service.projection, unaffectedTrackId);
+    if (changedTrack.kind !== "video") throw new Error("fixture");
+    if (action.type === "move")
+      expect(changedTrack.clips.map((c) => c.timelineStart.value)).toEqual([10, 30]);
+    if (action.type === "speed")
+      expect(changedTrack.clips.map((c) => c.speed)).toEqual([action.speed, action.speed]);
+    if (action.type === "delete") expect(changedTrack.clips).toHaveLength(0);
+    await service.invoke("video_undo_project", { operationId: newId() });
+    expect(service.projection.state).toEqual(before);
+    await service.invoke("video_redo_project", { operationId: newId() });
+    expect(service.projection.state).toEqual(after);
+    if (action.type === "delete")
+      await service.invoke("video_undo_project", { operationId: newId() });
+  }
+  const beforeAudio = structuredClone(service.projection.state);
+  await execute(
+    targets.flatMap((target) => [
+      { type: "SetClipGain" as const, commandId: newId(), ...target, gainMilliDecibels: -6000 },
+      {
+        type: "SetClipFades" as const,
+        commandId: newId(),
+        ...target,
+        fades: { inFrames: 2, outFrames: 3 },
+      },
+    ]),
+  );
+  const audioTrack = track(service.projection, unaffectedTrackId);
+  if (audioTrack.kind !== "video") throw new Error("fixture");
+  expect(
+    audioTrack.clips.every(
+      (c) => c.gainMilliDecibels === -6000 && c.fades?.inFrames === 2 && c.fades.outFrames === 3,
+    ),
+  ).toBe(true);
+  const afterAudio = structuredClone(service.projection.state);
+  await service.invoke("video_undo_project", { operationId: newId() });
+  expect(service.projection.state).toEqual(beforeAudio);
+  await service.invoke("video_redo_project", { operationId: newId() });
+  expect(service.projection.state).toEqual(afterAudio);
+  expect(() =>
+    planBulkClipEdit(service.projection.state, targets, { type: "move", deltaFrames: -11 }, newId),
+  ).toThrow(/negative/);
+  expect(() =>
+    planBulkClipEdit(
+      service.projection.state,
+      [targets[0]!, { ...targets[1]!, clipId: id(9999) }],
+      { type: "delete" },
+      newId,
+    ),
+  ).toThrow(/stale/);
+  const stale = service.projection.revision.number;
+  await execute([
+    {
+      type: "SetTrackLocked",
+      commandId: newId(),
+      sequenceId,
+      trackId: lockedTrackId,
+      locked: true,
+    },
+  ]);
+  const lockedTargets = [targets[0]!, { sequenceId, trackId: lockedTrackId, clipId: lockedClipId }];
+  const lockedState = structuredClone(service.projection.state);
+  expect(() =>
+    planBulkClipEdit(service.projection.state, lockedTargets, { type: "delete" }, newId),
+  ).toThrow(/unlocked/);
+  await expect(
+    execute(
+      targets.map((target) => ({ type: "RemoveClip", commandId: newId(), ...target })),
+      stale,
+    ),
+  ).rejects.toMatchObject({ code: "stale_revision" });
+  expect(service.projection.state).toEqual(lockedState);
+});
 
 function track(projection: ProjectProjection, trackId: string) {
   const value = projection.state.sequences[0]?.tracks.find(
@@ -183,6 +301,226 @@ function activeCaptionTrack(projection: ProjectProjection) {
   if (value.kind !== "caption") throw new Error("Expected caption track fixture");
   return value;
 }
+
+describe("mock speed command admission", () => {
+  it.each(["audio", "nested", "managed captions"] as const)(
+    "rejects %s speed contexts atomically",
+    async (context) => {
+      const service = createMockVideoService();
+      await service.invoke("video_create_project");
+      const commands = setupCommands();
+      const setup = commands[1]!;
+      if (setup.type !== "CreateSequence") throw new Error("Expected sequence");
+      const target = setup.sequence.tracks[1]!;
+      if (target.kind !== "video") throw new Error("Expected video");
+      if (context === "audio") setup.sequence.tracks[1] = { ...target, kind: "audio" };
+      if (context === "nested")
+        commands.push({
+          type: "CreateSequence",
+          commandId: id(970),
+          sequence: {
+            ...structuredClone(setup.sequence),
+            id: id(971),
+            tracks: [
+              {
+                id: id(972),
+                name: "Parent",
+                kind: "video",
+                clips: [{ ...clip(id(973)), source: { kind: "sequence", sequenceId } }],
+              },
+            ],
+          },
+        });
+      if (context === "managed captions")
+        setup.sequence.tracks.push({
+          id: captionTrackId,
+          name: "Captions",
+          kind: "caption",
+          captions: [],
+          activeCaptionArtifact: captionArtifact(service.projection, "en-US"),
+        });
+      await service.invoke("video_execute_project_group", {
+        request: {
+          groupId: id(974),
+          projectId: service.projection.projectId,
+          baseRevision: 0,
+          commands,
+        },
+      });
+      const before = structuredClone(service.projection);
+      await expect(
+        service.invoke("video_execute_project_group", {
+          request: {
+            groupId: id(975),
+            projectId: before.projectId,
+            baseRevision: before.revision.number,
+            commands: [
+              {
+                type: "SetClipSpeed",
+                commandId: id(976),
+                sequenceId,
+                trackId: unaffectedTrackId,
+                clipId: unaffectedClipId,
+                speed: { numerator: 2, denominator: 1 },
+              },
+            ],
+          },
+        }),
+      ).rejects.toThrow(
+        context === "audio"
+          ? "direct-asset"
+          : context === "nested"
+            ? "child sequences"
+            : "managed captions",
+      );
+      expect(service.projection).toEqual(before);
+    },
+  );
+
+  it("keeps overlap, lock and stale edits atomic and permits exact adjacency", async () => {
+    const service = createMockVideoService();
+    await service.invoke("video_create_project");
+    let serial = 950;
+    const execute = (
+      commands: ProjectCommandV2[],
+      baseRevision = service.projection.revision.number,
+    ) =>
+      service.invoke("video_execute_project_group", {
+        request: {
+          groupId: id(serial++),
+          projectId: service.projection.projectId,
+          baseRevision,
+          commands,
+        },
+      });
+    await execute(setupCommands());
+    await execute([
+      {
+        type: "InsertClip",
+        commandId: id(940),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        clip: { ...clip(siblingClipId), timelineStart: createRationalTime(40, rate) },
+      },
+    ]);
+    const speed: Extract<ProjectCommandV2, { type: "SetClipSpeed" }> = {
+      type: "SetClipSpeed",
+      commandId: id(941),
+      sequenceId,
+      trackId: unaffectedTrackId,
+      clipId: unaffectedClipId,
+      speed: { numerator: 1, denominator: 2 },
+    };
+    await execute([speed]);
+    const adjacent = structuredClone(service.projection);
+    await expect(
+      execute([{ ...speed, speed: { numerator: 2, denominator: 1 } }], 0),
+    ).rejects.toMatchObject({ code: "stale_revision" });
+    expect(service.projection).toEqual(adjacent);
+    await execute([
+      { ...speed, speed: { numerator: 1, denominator: 1 } },
+      {
+        type: "MoveClip",
+        commandId: id(942),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        clipId: siblingClipId,
+        timelineStart: createRationalTime(30, rate),
+      },
+    ]);
+    const before = structuredClone(service.projection);
+    await expect(
+      execute([
+        {
+          type: "SetTrackLocked",
+          commandId: id(943),
+          sequenceId,
+          trackId: lockedTrackId,
+          locked: true,
+        },
+        speed,
+      ]),
+    ).rejects.toMatchObject({ details: { category: "clip_overlap" } });
+    expect(service.projection).toEqual(before);
+    await execute([
+      {
+        type: "SetTrackLocked",
+        commandId: id(944),
+        sequenceId,
+        trackId: unaffectedTrackId,
+        locked: true,
+      },
+    ]);
+    const locked = structuredClone(service.projection);
+    await expect(execute([speed])).rejects.toMatchObject({ details: { category: "track_locked" } });
+    expect(service.projection).toEqual(locked);
+  });
+
+  it("rejects inexact speed without advancing state or revision, applies exact speed and omits reset", async () => {
+    const service = createMockVideoService();
+    await service.invoke("video_create_project");
+    await service.invoke("video_execute_project_group", {
+      request: {
+        groupId: id(900),
+        projectId: service.projection.projectId,
+        baseRevision: service.projection.revision.number,
+        commands: setupCommands(),
+      },
+    });
+    const before = structuredClone(service.projection);
+    const request: CommandGroupRequest = {
+      groupId: id(901),
+      projectId: before.projectId,
+      baseRevision: before.revision.number,
+      commands: [
+        {
+          type: "SetClipSpeed",
+          commandId: id(902),
+          sequenceId,
+          trackId: unaffectedTrackId,
+          clipId: unaffectedClipId,
+          speed: { numerator: 3, denominator: 2 },
+        },
+      ],
+    };
+    await expect(service.invoke("video_execute_project_group", { request })).rejects.toThrow(
+      "inexact",
+    );
+    expect(service.projection).toEqual(before);
+    const command = request.commands[0]!;
+    if (command.type !== "SetClipSpeed") throw new Error("Expected speed");
+    const result = (await service.invoke("video_execute_project_group", {
+      request: { ...request, commands: [{ ...command, speed: { numerator: 2, denominator: 1 } }] },
+    })) as CommandResult;
+    expect(result.cacheInvalidations).toEqual(["timeline", "preview", "render_plan"]);
+    const updated = track(service.projection, unaffectedTrackId);
+    if (updated.kind !== "video") throw new Error("Expected video");
+    expect(updated.clips[0]).toEqual({
+      ...clip(unaffectedClipId),
+      speed: { numerator: 2, denominator: 1 },
+    });
+    await service.invoke("video_execute_project_group", {
+      request: {
+        ...request,
+        groupId: id(903),
+        baseRevision: service.projection.revision.number,
+        commands: [{ ...command, speed: { numerator: 1, denominator: 1 } }],
+      },
+    });
+    expect(track(service.projection, unaffectedTrackId)).toEqual(track(before, unaffectedTrackId));
+    const reset = structuredClone(service.projection);
+    await expect(
+      service.invoke("video_execute_project_group", {
+        request: {
+          ...request,
+          baseRevision: reset.revision.number,
+          commands: [{ ...command, type: "RestoreClipSpeed", speed: null }],
+        },
+      }),
+    ).rejects.toMatchObject({ details: { category: "private_inverse" } });
+    expect(service.projection).toEqual(reset);
+  });
+});
 
 describe("mock project track locking", () => {
   it("persists projected lock state, keeps history readable, and isolates locked mutations", async () => {

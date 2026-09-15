@@ -2,9 +2,9 @@ import {
   VideoDomainError,
   createRationalTime,
   createTimelineSnapIndex,
-  frameRangeDuration,
+  clipTimelineDuration,
   rateOf,
-  rescaleRationalTime,
+  sourceOffsetToTimeline,
   snapTimelineTime,
   type ProjectClip,
   type RationalRate,
@@ -68,13 +68,17 @@ export function timelineFrameForClipSourceFrame(
   if (sourceFrame < clip.sourceIn.value || sourceFrame >= clip.sourceOut.value) return null;
   const sourceOffset = createRationalTime(sourceFrame - clip.sourceIn.value, rateOf(clip.sourceIn));
   try {
-    const timelineOffset = rescaleRationalTime(sourceOffset, rateOf(clip.timelineStart), "exact");
+    const timelineOffset = sourceOffsetToTimeline(
+      sourceOffset,
+      rateOf(clip.timelineStart),
+      clip.speed,
+    );
     return clip.timelineStart.value + timelineOffset.value;
   } catch (error) {
     if (
       error instanceof VideoDomainError &&
       error.code === "invalid_time" &&
-      error.message === "Frame value cannot be represented exactly at the target rate"
+      error.message === "Speed produces an inexact frame boundary"
     ) {
       return null;
     }
@@ -102,8 +106,11 @@ export function createTimelineMoveSnapContext(
     if (track.kind === "caption") continue;
     for (const clip of track.clips) {
       const startFrame = clip.timelineStart.value;
-      const sourceDuration = frameRangeDuration({ in: clip.sourceIn, out: clip.sourceOut });
-      const durationFrames = rescaleRationalTime(sourceDuration, sequence.rate, "exact").value;
+      const durationFrames = clipTimelineDuration(
+        { in: clip.sourceIn, out: clip.sourceOut },
+        sequence.rate,
+        clip.speed,
+      ).value;
       const endFrame = startFrame + durationFrames;
       clipIntervals.push({
         clipId: clip.id,

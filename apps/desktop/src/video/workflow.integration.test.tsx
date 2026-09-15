@@ -115,6 +115,46 @@ describe("complete mocked Phase 2 workflow", () => {
     vi.stubGlobal("ResizeObserver", TestResizeObserver);
   });
 
+  it("applies and resets canonical speed with undo/redo while drafts issue no command", async () => {
+    const service = createMockVideoService();
+    invokeMock.mockImplementation(service.invoke);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Ready for video work" });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByRole("heading", { name: "Project media" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
+    await screen.findByRole("heading", { name: "Canonical composition" });
+    const groups = () =>
+      invokeMock.mock.calls.filter(([command]) => command === "video_execute_project_group");
+    const clip = () => {
+      const track = service.projection.state.sequences[0]!.tracks[0]!;
+      if (track.kind !== "video") throw new Error("Expected video track");
+      return track.clips[0]!;
+    };
+    const original = structuredClone(clip());
+    const revision = service.projection.revision.number;
+    const count = groups().length;
+    fireEvent.click(screen.getByRole("button", { name: "200%" }));
+    expect(groups()).toHaveLength(count);
+    expect(clip()).toEqual(original);
+    fireEvent.click(screen.getByRole("button", { name: "Apply speed" }));
+    await waitFor(() => expect(clip().speed).toEqual({ numerator: 2, denominator: 1 }));
+    expect(groups()).toHaveLength(count + 1);
+    expect(clip()).toEqual({ ...original, speed: { numerator: 2, denominator: 1 } });
+    expect(service.projection.revision.number).toBe(revision + 1);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(clip()).toEqual(original));
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(clip().speed).toEqual({ numerator: 2, denominator: 1 }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset speed" }));
+    expect(groups()).toHaveLength(count + 1);
+    expect(clip().speed).toEqual({ numerator: 2, denominator: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Apply speed" }));
+    await waitFor(() => expect(clip()).toEqual(original));
+    expect(groups()).toHaveLength(count + 2);
+    expect(service.projection.revision.number).toBe(revision + 4);
+  }, 15_000);
+
   it("creates, grouped-imports, trims, monotonic-undoes/redoes, exports, and reopens", async () => {
     const service = createMockVideoService();
     invokeMock.mockImplementation(service.invoke);
@@ -124,13 +164,13 @@ describe("complete mocked Phase 2 workflow", () => {
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Canonical composition" });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^Source in \(/ }), {
       target: { value: "5" },
     });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim out" }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^Source out \(exclusive\)/ }), {
       target: { value: "50" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply trim" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply source range" }));
     await waitFor(() => expect(screen.getByText("5–50")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(screen.getAllByText("0–100").length).toBeGreaterThan(0));
@@ -173,7 +213,8 @@ describe("complete mocked Phase 2 workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     await waitFor(() =>
       expect(
-        (screen.getByRole("spinbutton", { name: "Trim in" }) as HTMLInputElement).valueAsNumber,
+        (screen.getByRole("spinbutton", { name: /^Source in \(/ }) as HTMLInputElement)
+          .valueAsNumber,
       ).toBe(5),
     );
     expect(invokeMock.mock.calls.some(([command]) => command === "video_save_project")).toBe(false);
@@ -895,13 +936,13 @@ describe("complete mocked Phase 2 workflow", () => {
     expect(screen.getByText(/Your edit is durable in the project journal/)).toBeTruthy();
     expect(screen.getByText("Saved")).toBeTruthy();
 
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^Source in \(/ }), {
       target: { value: "5" },
     });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Trim out" }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^Source out \(exclusive\)/ }), {
       target: { value: "50" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply trim" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply source range" }));
 
     await waitFor(() =>
       expect(screen.queryByText("Revision 1 is saved. Checkpoint pending.")).toBeNull(),

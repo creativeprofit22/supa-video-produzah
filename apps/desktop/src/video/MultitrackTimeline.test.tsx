@@ -302,6 +302,23 @@ describe("MultitrackTimeline", () => {
     expect(onSplitClip).toHaveBeenCalledOnce();
     expect(onSplitClip).toHaveBeenCalledWith(firstId, 1);
 
+    const onSelectMediaClip = vi.fn();
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={null} selectedClipIds={[firstId, id(100_001)]} onSelectMediaClip={onSelectMediaClip} />);
+    expect(firstClip.getAttribute("aria-pressed")).toBe("true");
+    expect((split as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /Trim start of/ })).toBeNull();
+    fireEvent.click(firstClip, { ctrlKey: true });
+    expect(onSelectMediaClip).toHaveBeenLastCalledWith(firstId, "toggle");
+    fireEvent.click(firstClip, { metaKey: true });
+    expect(onSelectMediaClip).toHaveBeenLastCalledWith(firstId, "toggle");
+    fireEvent.click(firstClip, { shiftKey: true });
+    expect(onSelectMediaClip).toHaveBeenLastCalledWith(firstId, "range");
+    const selectButton = screen.getAllByRole("button", { name: "Select camera-a.mp4" })[0]!;
+    expect(selectButton.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(selectButton, { detail: 0 });
+    expect(onSelectMediaClip).toHaveBeenLastCalledWith(firstId, "toggle");
+    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={firstId} />);
+
     rendered.rerender(
       <MultitrackTimeline {...props} selectedClipId={firstId} previewSourceFrame={2} />,
     );
@@ -877,6 +894,30 @@ describe("MultitrackTimeline", () => {
 
     expect(onMoveClip).toHaveBeenCalledOnce();
     expect(onMoveClip).toHaveBeenCalledWith(firstId, 0);
+  });
+
+  it("rejects an inexact retimed drag visibly and commits one exact source-range edit", () => {
+    const firstId = id(100_000);
+    const onTrimClip = vi.fn();
+    const props = timelineProps({ selectedClipId: firstId, onTrimClip });
+    const track = props.projection.state.sequences[0]!.tracks[0]!;
+    if (track.kind === "caption") throw new Error("Expected video track");
+    track.clips[0]!.speed = { numerator: 3, denominator: 2 };
+    track.clips[0]!.sourceOut.value = 30;
+    render(<MultitrackTimeline {...props} />);
+    const right = screen.getByRole("button", { name: "Trim end of camera-a.mp4" });
+    // The viewport uses 4 pixels per second: at 10 fps, one frame is 0.4 pixels.
+    fireEvent.pointerDown(right, { button: 0, pointerId: 70, clientX: 8 });
+    fireEvent.pointerMove(right, { pointerId: 70, clientX: 8.4 });
+    fireEvent.pointerUp(right, { pointerId: 70, clientX: 8.4 });
+    expect(onTrimClip).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("inexact frame boundary");
+    fireEvent.pointerDown(right, { button: 0, pointerId: 71, clientX: 8 });
+    fireEvent.pointerMove(right, { pointerId: 71, clientX: 8.8 });
+    fireEvent.pointerUp(right, { pointerId: 71, clientX: 8.8 });
+    expect(onTrimClip).toHaveBeenCalledOnce();
+    expect(onTrimClip).toHaveBeenCalledWith(firstId, 0, 33, 0);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("previews both trim handles and emits one canonical trim on release", () => {

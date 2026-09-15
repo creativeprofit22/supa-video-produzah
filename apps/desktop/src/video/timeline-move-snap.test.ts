@@ -67,6 +67,40 @@ const snapGeometry = {
 };
 
 describe("timeline move snap resolution", () => {
+  it("uses retimed endpoints and rejects inexact source-to-timeline edit positions", () => {
+    const target = {
+      ...clip("retimed", 10, 35),
+      sourceIn: time(5),
+      speed: { numerator: 3, denominator: 2 },
+    };
+    const retimed = createTimelineMoveSnapContext(sequence([target]), null);
+    expect(retimed.clipIntervals).toEqual([
+      { clipId: "retimed", trackId: "video-track", startFrame: 10, endFrameExclusive: 30 },
+    ]);
+    expect(timelineFrameForClipSourceFrame(target, 8)).toBe(12);
+    expect(timelineFrameForClipSourceFrame(target, 6)).toBeNull();
+    expect(timelineFrameForClipSourceFrame(target, 35)).toBeNull();
+    expect(
+      resolveTimelineMoveSnap(retimed, {
+        movingClipId: "moving",
+        destinationTrackId: "video-track",
+        proposedStartFrame: 29,
+        durationFrames: 2,
+        ...snapGeometry,
+      }),
+    ).toMatchObject({ startFrame: 30, guide: { frame: 30, targetKind: "clip-end" } });
+  });
+  it("cancels speed before an otherwise inexact source-rate rescale", () => {
+    const target = {
+      ...clip("tiny", 4, 1),
+      sourceIn: sourceTime(0),
+      sourceOut: sourceTime(1),
+      speed: { numerator: 1, denominator: 2 },
+    };
+    expect(
+      createTimelineMoveSnapContext(sequence([target]), null).clipIntervals[0]?.endFrameExclusive,
+    ).toBe(5);
+  });
   const movingClip = clip("moving", 10, 4);
   const otherClip = clip("other", 30, 5);
   const context = createTimelineMoveSnapContext(sequence([movingClip, otherClip]), 50);

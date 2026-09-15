@@ -32,6 +32,7 @@ import {
 } from "react";
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
+import { minimumTimelineTrimStart, sourceFrameAtTimelineDelta } from "./timeline-trim-mapping";
 
 import {
   createTimelineMoveSnapContext,
@@ -45,6 +46,8 @@ interface MultitrackTimelineProps {
   readonly preparedAsset: PreparedVideoAsset | null;
   readonly convertCachePath: (path: string) => string;
   readonly selectedClipId: string | null;
+  readonly selectedClipIds?: readonly string[];
+  readonly onSelectMediaClip?: (clipId: string, mode: "replace" | "toggle" | "range") => void;
   readonly previewSourceFrame: number;
   readonly timelinePlayheadFrame: number | null;
   readonly editPending: boolean;
@@ -73,6 +76,8 @@ interface CanonicalTimelineClip {
 type PointerMode = "move" | "trim-left" | "trim-right";
 
 interface PointerSession {
+  readonly originClip: ProjectClip;
+  readonly valid: boolean;
   readonly pointerId: number;
   readonly clipId: string;
   readonly destinationTrackId: string;
@@ -167,8 +172,9 @@ function pointerCaptureTarget(element: HTMLElement) {
 
 function supportsTimelineFrameDeltaTrim(clip: ProjectClip): boolean {
   return (
-    clip.sourceIn.rateNumerator === clip.timelineStart.rateNumerator &&
-    clip.sourceIn.rateDenominator === clip.timelineStart.rateDenominator
+    (clip.sourceIn.rateNumerator === clip.timelineStart.rateNumerator &&
+      clip.sourceIn.rateDenominator === clip.timelineStart.rateDenominator) ||
+    (clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator)
   );
 }
 
@@ -177,6 +183,8 @@ export function MultitrackTimeline({
   preparedAsset,
   convertCachePath,
   selectedClipId,
+  selectedClipIds,
+  onSelectMediaClip,
   previewSourceFrame,
   timelinePlayheadFrame,
   editPending,
@@ -197,6 +205,7 @@ export function MultitrackTimeline({
   const [viewportWidth, setViewportWidth] = useState(960);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [pointerSession, setPointerSession] = useState<PointerSession | null>(null);
+  const [pointerEditError, setPointerEditError] = useState<string | null>(null);
 
   const updatePointerSession = useCallback((next: PointerSession | null) => {
     pointerSessionRef.current = next;
@@ -219,7 +228,8 @@ export function MultitrackTimeline({
 
   useEffect(() => {
     updatePointerSession(null);
-  }, [projection, updatePointerSession]);
+    setPointerEditError(null);
+  }, [projection, selectedClipId, updatePointerSession]);
 
   const geometryViewport = useMemo(
     () => createGeometryViewport(projection, viewportWidth, 0),
@@ -364,7 +374,7 @@ export function MultitrackTimeline({
     endFrameExclusive: number,
     mode: PointerMode,
   ) => {
-    if (event.button !== 0 || editPending || selectedClipId !== clipId) return;
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || (selectedClipIds?.length ?? 0) > 1 || editPending || selectedClipId !== clipId) return;
     const canonical = canonicalTimelineClip(projection, clipId);
     if (
       canonical === null ||
@@ -378,7 +388,10 @@ export function MultitrackTimeline({
     const sequence = projection.state.sequences.find(
       (candidate) => candidate.id === projection.state.activeSequenceId,
     );
+    setPointerEditError(null);
     updatePointerSession({
+      originClip: canonical.clip,
+      valid: true,
       pointerId: event.pointerId,
       clipId,
       destinationTrackId: canonical.trackId,
@@ -414,51 +427,63 @@ export function MultitrackTimeline({
     );
     const frameDelta = pointerFrame - anchorFrame;
     let next: PointerSession;
-    if (current.mode === "move") {
-      const duration = current.originEndFrameExclusive - current.originStartFrame;
-      const proposedStartFrame = Math.max(0, current.originStartFrame + frameDelta);
-      const resolution =
-        current.moveSnapContext === null
-          ? { startFrame: proposedStartFrame, guide: null }
-          : resolveTimelineMoveSnap(current.moveSnapContext, {
-              movingClipId: current.clipId,
-              destinationTrackId: current.destinationTrackId,
-              proposedStartFrame,
-              durationFrames: duration,
-              zoomScale: geometryViewport.zoomScale,
-              maximumSnapDistancePixels: MOVE_SNAP_DISTANCE_PIXELS,
-            });
-      next = {
-        ...current,
-        draftStartFrame: resolution.startFrame,
-        draftEndFrameExclusive: resolution.startFrame + duration,
-        snapGuide: resolution.guide,
-      };
-    } else if (current.mode === "trim-left") {
-      const minimumStart = Math.max(0, current.originStartFrame - current.originSourceInFrame);
-      const draftStartFrame = Math.min(
-        current.originEndFrameExclusive - 1,
-        Math.max(minimumStart, current.originStartFrame + frameDelta),
-      );
-      next = {
-        ...current,
-        draftStartFrame,
-        draftSourceInFrame:
-          current.originSourceInFrame + draftStartFrame - current.originStartFrame,
-      };
-    } else {
-      const draftEndFrameExclusive = Math.max(
-        current.originStartFrame + 1,
-        current.originEndFrameExclusive + frameDelta,
-      );
-      next = {
-        ...current,
-        draftEndFrameExclusive,
-        draftSourceOutFrame:
-          current.originSourceOutFrame + draftEndFrameExclusive - current.originEndFrameExclusive,
-      };
+    try {
+      if (current.mode === "move") {
+        const duration = current.originEndFrameExclusive - current.originStartFrame;
+        const proposedStartFrame = Math.max(0, current.originStartFrame + frameDelta);
+        const resolution =
+          current.moveSnapContext === null
+            ? { startFrame: proposedStartFrame, guide: null }
+            : resolveTimelineMoveSnap(current.moveSnapContext, {
+                movingClipId: current.clipId,
+                destinationTrackId: current.destinationTrackId,
+                proposedStartFrame,
+                durationFrames: duration,
+                zoomScale: geometryViewport.zoomScale,
+                maximumSnapDistancePixels: MOVE_SNAP_DISTANCE_PIXELS,
+              });
+        next = {
+          ...current,
+          draftStartFrame: resolution.startFrame,
+          draftEndFrameExclusive: resolution.startFrame + duration,
+          snapGuide: resolution.guide,
+        };
+      } else if (current.mode === "trim-left") {
+        const minimumStart = minimumTimelineTrimStart(current.originClip);
+        const draftStartFrame = Math.min(
+          current.originEndFrameExclusive - 1,
+          Math.max(minimumStart, current.originStartFrame + frameDelta),
+        );
+        next = {
+          ...current,
+          draftStartFrame,
+          draftSourceInFrame: sourceFrameAtTimelineDelta(
+            current.originClip,
+            current.originSourceInFrame,
+            draftStartFrame - current.originStartFrame,
+          ),
+        };
+      } else {
+        const draftEndFrameExclusive = Math.max(
+          current.originStartFrame + 1,
+          current.originEndFrameExclusive + frameDelta,
+        );
+        next = {
+          ...current,
+          draftEndFrameExclusive,
+          draftSourceOutFrame: sourceFrameAtTimelineDelta(
+            current.originClip,
+            current.originSourceOutFrame,
+            draftEndFrameExclusive - current.originEndFrameExclusive,
+          ),
+        };
+      }
+      updatePointerSession({ ...next, valid: true });
+      setPointerEditError(null);
+    } catch (error) {
+      updatePointerSession({ ...current, valid: false });
+      setPointerEditError(error instanceof Error ? error.message : "Trim boundary is invalid");
     }
-    updatePointerSession(next);
   };
 
   const finishPointerSession = (event: ReactPointerEvent<HTMLElement>) => {
@@ -466,6 +491,7 @@ export function MultitrackTimeline({
     if (completed === null || completed.pointerId !== event.pointerId) return;
     pointerCaptureTarget(event.currentTarget).releasePointerCapture?.(event.pointerId);
     updatePointerSession(null);
+    if (!completed.valid) return;
     if (completed.mode === "move") {
       if (completed.draftStartFrame !== completed.originStartFrame)
         onMoveClip(completed.clipId, completed.draftStartFrame);
@@ -535,6 +561,11 @@ export function MultitrackTimeline({
         </div>
       </div>
 
+      {pointerEditError === null ? null : (
+        <p className="multitrack-edit-error" role="alert">
+          {pointerEditError}
+        </p>
+      )}
       {editError === null ? null : (
         <p className="multitrack-edit-error" role="alert">
           {editError.message}
@@ -706,7 +737,7 @@ export function MultitrackTimeline({
                           thumbnailSource !== null &&
                           clip.sourceKind === "asset" &&
                           clip.assetContentIdentity === thumbnailSource.identity;
-                        const isSelected = selectedClipId === clip.clipId;
+                        const isSelected = selectedClipIds?.includes(clip.clipId) ?? selectedClipId === clip.clipId;
                         const isDragging = draft !== null;
                         const canonical = canonicalTimelineClip(projection, clip.clipId);
                         const trimDisabled =
@@ -749,7 +780,10 @@ export function MultitrackTimeline({
                                       .join(" ") || undefined
                                   : undefined
                               }
-                              onClick={() => onSelectClip(clip.clipId)}
+                              onClick={(event) => {
+                                if (onSelectMediaClip && clip.sourceKind === "asset") onSelectMediaClip(clip.clipId, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "replace");
+                                else onSelectClip(clip.clipId);
+                              }}
                               onPointerDown={(event) =>
                                 startPointerSession(
                                   event,
@@ -782,7 +816,8 @@ export function MultitrackTimeline({
                                 <small>{endFrameExclusive - startFrame}f</small>
                               </span>
                             </button>
-                            {isSelected ? (
+                            {onSelectMediaClip && clip.sourceKind === "asset" ? <button type="button" aria-label={`Select ${clip.sourceLabel}`} aria-pressed={isSelected} onClick={(event) => onSelectMediaClip(clip.clipId, event.shiftKey ? "range" : "toggle")}>Select</button> : null}
+                            {isSelected && (selectedClipIds?.length ?? 0) <= 1 ? (
                               <>
                                 <button
                                   type="button"

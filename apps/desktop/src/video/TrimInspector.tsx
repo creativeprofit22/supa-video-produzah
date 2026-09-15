@@ -12,6 +12,7 @@ interface TrimInspectorProps {
   readonly onInFrameChange: (frame: number) => void;
   readonly onOutFrameChange: (frame: number) => void;
   readonly onApply: () => void;
+  readonly showHistoryActions?: boolean;
 }
 
 export function TrimInspector({
@@ -24,6 +25,7 @@ export function TrimInspector({
   onInFrameChange,
   onOutFrameChange,
   onApply,
+  showHistoryActions = true,
 }: TrimInspectorProps) {
   const pending = operation.phase === "saving";
   const undoCommand = useCommand("history.undo");
@@ -38,36 +40,38 @@ export function TrimInspector({
           <p className="state-kicker">Exact edit</p>
           <h2 id="trim-title">Trim inspector</h2>
         </div>
-        <div className="history-actions" aria-label="Edit history">
-          <button
-            type="button"
-            disabled={!undoCommand.canExecute}
-            aria-keyshortcuts={undoCommand.ariaKeyShortcuts}
-            onClick={undoCommand.execute}
-          >
-            <Undo2 size={16} aria-hidden />
-            Undo
-            {undoCommand.shortcutLabel !== null ? (
-              <kbd className="command-shortcut-hint" aria-hidden="true">
-                {undoCommand.shortcutLabel}
-              </kbd>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            disabled={!redoCommand.canExecute}
-            aria-keyshortcuts={redoCommand.ariaKeyShortcuts}
-            onClick={redoCommand.execute}
-          >
-            <Redo2 size={16} aria-hidden />
-            Redo
-            {redoCommand.shortcutLabel !== null ? (
-              <kbd className="command-shortcut-hint" aria-hidden="true">
-                {redoCommand.shortcutLabel}
-              </kbd>
-            ) : null}
-          </button>
-        </div>
+        {showHistoryActions ? (
+          <div className="history-actions" aria-label="Edit history">
+            <button
+              type="button"
+              disabled={!undoCommand.canExecute}
+              aria-keyshortcuts={undoCommand.ariaKeyShortcuts}
+              onClick={undoCommand.execute}
+            >
+              <Undo2 size={16} aria-hidden />
+              Undo
+              {undoCommand.shortcutLabel !== null ? (
+                <kbd className="command-shortcut-hint" aria-hidden="true">
+                  {undoCommand.shortcutLabel}
+                </kbd>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              disabled={!redoCommand.canExecute}
+              aria-keyshortcuts={redoCommand.ariaKeyShortcuts}
+              onClick={redoCommand.execute}
+            >
+              <Redo2 size={16} aria-hidden />
+              Redo
+              {redoCommand.shortcutLabel !== null ? (
+                <kbd className="command-shortcut-hint" aria-hidden="true">
+                  {redoCommand.shortcutLabel}
+                </kbd>
+              ) : null}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="trim-fields">

@@ -1,11 +1,21 @@
+import { prepareClipSpeedState } from "./video/clip-speed-edit";
 import type {
   CommandGroupRequest,
   CommandResult,
   ProjectCommandV2,
+  ProjectClip,
   ProjectProjection,
   RecoveryReport,
 } from "@supa-video/contracts";
-import { isTrackLocked, VideoDomainError } from "@supa-video/contracts";
+import {
+  isTrackLocked,
+  projectTrackSchema,
+  VideoDomainError,
+  clipTimelineDuration,
+  createRationalTime,
+  sourceOffsetToTimeline,
+  rateOf,
+} from "@supa-video/contracts";
 import {
   listMediaJobsRequestSchema,
   reauthorizeMediaJobOutputRequestSchema,
@@ -170,6 +180,8 @@ function commandSummary(command: ProjectCommandV2): string {
       return "Split clip";
     case "MoveClip":
       return "Moved clip";
+    case "SetClipSpeed":
+      return "Set clip speed";
     case "TrimClip":
       return "Applied trim";
     case "RippleDeleteClip":
@@ -195,6 +207,8 @@ function lockedMutationTarget(command: ProjectCommandV2) {
     case "MoveClip":
     case "TrimClip":
     case "SetClipTransform":
+    case "SetClipSpeed":
+    case "SetClipFades":
     case "SetClipGain":
     case "AddCaption":
     case "RemoveCaption":
@@ -246,30 +260,17 @@ function addCacheInvalidations(
 function historyCacheInvalidations(
   summary: string | undefined,
 ): CommandResult["cacheInvalidations"] {
+  if (summary?.split(", ").includes("Set clip speed"))
+    return ["timeline", "preview", "render_plan"];
   return summary?.split(", ").includes("Apply caption artifact") ? ["captions", "render_plan"] : [];
 }
 
-function exactTimelineDuration(clip: {
-  readonly timelineStart: { readonly rateNumerator: number; readonly rateDenominator: number };
-  readonly sourceIn: {
-    readonly value: number;
-    readonly rateNumerator: number;
-    readonly rateDenominator: number;
-  };
-  readonly sourceOut: { readonly value: number };
-}): number {
-  const scaledNumerator =
-    BigInt(clip.sourceOut.value - clip.sourceIn.value) *
-    BigInt(clip.timelineStart.rateNumerator) *
-    BigInt(clip.sourceIn.rateDenominator);
-  const scaledDenominator =
-    BigInt(clip.sourceIn.rateNumerator) * BigInt(clip.timelineStart.rateDenominator);
-  if (scaledNumerator % scaledDenominator !== 0n)
-    throw new Error("Mock clip duration must rescale exactly");
-  const duration = Number(scaledNumerator / scaledDenominator);
-  if (!Number.isSafeInteger(duration) || duration <= 0)
-    throw new Error("Mock clip duration is invalid");
-  return duration;
+function exactTimelineDuration(clip: ProjectClip): number {
+  return clipTimelineDuration(
+    { in: clip.sourceIn, out: clip.sourceOut },
+    rateOf(clip.timelineStart),
+    clip.speed,
+  ).value;
 }
 
 type ProjectTrack = ProjectProjection["state"]["sequences"][number]["tracks"][number];
@@ -310,6 +311,14 @@ function validateNoClipOverlaps(candidate: ProjectProjection): void {
   for (const sequence of candidate.state.sequences) {
     for (const track of sequence.tracks) {
       if (track.kind === "caption") continue;
+      for (const clip of track.clips) {
+        if (
+          clip.fades !== undefined &&
+          clip.fades.inFrames + clip.fades.outFrames > exactTimelineDuration(clip)
+        ) {
+          throw commandError("invalid_clip_fades", "Fades exceed the retimed clip duration");
+        }
+      }
       const intervals = track.clips
         .map((clip) => ({
           clipId: clip.id,
@@ -340,6 +349,7 @@ export function createMockVideoService(
     sourceStatusOnOpen?: "missing" | "relink_required";
     checkpointWarningRevisions?: readonly number[];
     mediaJobs?: readonly MediaJobRecord[];
+    sourcePath?: string;
     mediaCacheStatus?: MediaCacheStatus;
     mediaRecovery?: MediaJobRecoveryReport | null;
   } = {},
@@ -357,7 +367,7 @@ export function createMockVideoService(
   const undo: ProjectProjection[] = [];
   const redo: ProjectProjection[] = [];
   const path = "C:\\Neutral\\Projects\\workflow.svpvideo";
-  const sourcePath = "C:\\Neutral\\Media\\clip.mp4";
+  const sourcePath = options.sourcePath ?? "C:\\Neutral\\Media\\clip.mp4";
   const replacementPath = "C:\\Neutral\\Media\\replacement.mp4";
   const outputPath = "C:\\Neutral\\Exports\\clip.mp4";
   let mediaJobs: MediaJobRecord[] = (options.mediaJobs ?? [testMediaJob]).map((job) =>
@@ -425,12 +435,25 @@ export function createMockVideoService(
         request.commands.some(
           (item) =>
             item.type === "RestoreRippleDeletedClip" ||
-            item.type === "RestoreActiveCaptionArtifact",
+            item.type === "RestoreActiveCaptionArtifact" ||
+            item.type === "RestoreClipSpeed" ||
+            item.type === "RestoreClipFades",
         )
       ) {
         throw historyError("invalid_command", "private_inverse");
       }
+
       for (const item of request.commands) {
+        // Preserve original-group lineage: detaching captions earlier in this group
+        // must not authorize retiming their source. Timing remains final-state validated.
+        if (item.type === "SetClipSpeed") {
+          const track = projection.state.sequences
+            .find(({ id }) => id === item.sequenceId)
+            ?.tracks.find(({ id }) => id === item.trackId);
+          if (track?.kind !== "caption" && track?.clips.some(({ id }) => id === item.clipId)) {
+            prepareClipSpeedState(projection.state, item, false, true);
+          }
+        }
         if (
           item.type === "ApplyCaptionArtifact" &&
           (item.artifact.trackLink.projectId !== request.projectId ||
@@ -459,6 +482,19 @@ export function createMockVideoService(
         else if (item.type === "CreateSequence") {
           next.state.sequences.push(item.sequence);
           next.state.activeSequenceId = item.sequence.id;
+        } else if (item.type === "InsertTrack") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (!sequence) throw commandError("unknown_sequence");
+          if (
+            !Number.isSafeInteger(item.index) ||
+            item.index < 0 ||
+            item.index > sequence.tracks.length
+          )
+            throw commandError("invalid_track_index");
+          if (sequence.tracks.some(({ id }) => id === item.track.id))
+            throw commandError("duplicate_track");
+          sequence.tracks.splice(item.index, 0, projectTrackSchema.parse(item.track));
+          addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
         } else if (item.type === "SetTrackLocked") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
@@ -492,6 +528,74 @@ export function createMockVideoService(
           for (const invalidation of ["timeline", "preview", "captions", "render_plan"] as const) {
             if (!cacheInvalidations.includes(invalidation)) cacheInvalidations.push(invalidation);
           }
+        } else if (item.type === "SetClipGain" || item.type === "SetClipFades") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          const track = sequence?.tracks.find(({ id }) => id === item.trackId);
+          const clip =
+            track && track.kind !== "caption"
+              ? track.clips.find(({ id }) => id === item.clipId)
+              : undefined;
+          if (!sequence || !clip) throw commandError("unknown_clip");
+          if (item.type === "SetClipGain") {
+            if (
+              !Number.isSafeInteger(item.gainMilliDecibels) ||
+              item.gainMilliDecibels < -96000 ||
+              item.gainMilliDecibels > 24000
+            )
+              throw commandError("clip_gain");
+            clip.gainMilliDecibels = item.gainMilliDecibels;
+          } else {
+            const { inFrames, outFrames } = item.fades;
+            const duration = clipTimelineDuration(
+              { in: clip.sourceIn, out: clip.sourceOut },
+              sequence.rate,
+              clip.speed,
+            ).value;
+            if (
+              !Number.isSafeInteger(inFrames) ||
+              !Number.isSafeInteger(outFrames) ||
+              inFrames < 0 ||
+              outFrames < 0 ||
+              inFrames + outFrames > duration
+            )
+              throw commandError("clip_fades");
+            if (inFrames === 0 && outFrames === 0) delete clip.fades;
+            else clip.fades = { inFrames, outFrames };
+          }
+          addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
+        } else if (item.type === "SetClipSpeed") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          const track = sequence?.tracks.find(({ id }) => id === item.trackId);
+          if (track?.kind === "video")
+            affectedRanges.push(
+              ...visualTrackRanges(item.sequenceId, {
+                ...track,
+                clips: track.clips.filter(({ id }) => id === item.clipId),
+              }),
+            );
+          next.state = prepareClipSpeedState(next.state, item, false);
+          const updatedTrack = next.state.sequences
+            .find(({ id }) => id === item.sequenceId)
+            ?.tracks.find(({ id }) => id === item.trackId);
+          if (updatedTrack?.kind === "video")
+            affectedRanges.push(
+              ...visualTrackRanges(item.sequenceId, {
+                ...updatedTrack,
+                clips: updatedTrack.clips.filter(({ id }) => id === item.clipId),
+              }),
+            );
+          addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
+        } else if (item.type === "RemoveClip") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          const track = sequence?.tracks.find(({ id }) => id === item.trackId);
+          if (
+            !track ||
+            track.kind === "caption" ||
+            !track.clips.some(({ id }) => id === item.clipId)
+          )
+            throw commandError("unknown_clip");
+          track.clips = track.clips.filter(({ id }) => id !== item.clipId);
+          addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
         } else if (item.type === "InsertClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
@@ -508,7 +612,16 @@ export function createMockVideoService(
             rightClip.sourceIn = item.splitAt;
             rightClip.timelineStart = {
               ...leftClip.timelineStart,
-              value: leftClip.timelineStart.value + item.splitAt.value - originalSourceIn,
+              value:
+                leftClip.timelineStart.value +
+                sourceOffsetToTimeline(
+                  createRationalTime(
+                    item.splitAt.value - originalSourceIn,
+                    rateOf(leftClip.sourceIn),
+                  ),
+                  rateOf(leftClip.timelineStart),
+                  leftClip.speed,
+                ).value,
             };
             leftClip.sourceOut = item.splitAt;
             track.clips.splice(clipIndex + 1, 0, rightClip);

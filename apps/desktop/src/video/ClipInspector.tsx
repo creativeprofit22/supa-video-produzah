@@ -2,6 +2,9 @@ import { DEFAULT_CLIP_TRANSFORM_GEOMETRY, type ClipTransform } from "@supa-video
 import { AlertCircle, LockKeyhole, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { ClipSpeedControl, type ClipSpeedSelection } from "./ClipSpeedControl";
+import type { ClipSpeedEdit } from "./clip-speed-edit";
+
 export interface ClipOpacityTarget {
   readonly sequenceId: string;
   readonly trackId: string;
@@ -9,6 +12,7 @@ export interface ClipOpacityTarget {
 }
 
 export interface SelectedVideoClip extends ClipOpacityTarget {
+  readonly speedTiming?: ClipSpeedSelection;
   readonly clipLabel: string;
   readonly trackLabel: string;
   readonly transform: ClipTransform;
@@ -25,6 +29,10 @@ export interface ClipTransformDraft extends ClipOpacityTarget {
 }
 
 interface ClipInspectorProps {
+  readonly revisionKey?: string;
+  readonly speedSaving?: boolean;
+  readonly speedError?: Error | null;
+  readonly onSpeedCommit?: (edit: ClipSpeedEdit) => void;
   readonly selection: SelectedVideoClip | null;
   readonly transform: ClipTransform | null;
   readonly opacityPermille: number | null;
@@ -130,6 +138,10 @@ function geometryInputValues(transform: ClipTransform | null): Record<GeometryFi
 }
 
 export function ClipInspector({
+  revisionKey,
+  speedSaving = false,
+  speedError = null,
+  onSpeedCommit,
   selection,
   transform,
   opacityPermille,
@@ -141,6 +153,12 @@ export function ClipInspector({
   onTransformDraftChange,
   onTransformCommit,
 }: ClipInspectorProps) {
+  const speedInputRef = useRef<HTMLInputElement | null>(null);
+  const speedReturnFocusRef = useRef<{
+    selectionKey: string | null;
+    revisionKey: string | undefined;
+    sawSaving: boolean;
+  } | null>(null);
   const opacityDirtyRef = useRef(false);
   const opacityDraftValueRef = useRef(opacityPermille);
   const transformDirtyRef = useRef(false);
@@ -150,6 +168,23 @@ export function ClipInspector({
   const [transformInputs, setTransformInputs] = useState(() => geometryInputValues(transform));
   const selectionKey =
     selection === null ? null : `${selection.sequenceId}:${selection.trackId}:${selection.clipId}`;
+
+  useEffect(() => {
+    const pending = speedReturnFocusRef.current;
+    if (pending === null) return;
+    if (pending.selectionKey !== selectionKey) {
+      speedReturnFocusRef.current = null;
+      return;
+    }
+    if (speedSaving) pending.sawSaving = true;
+    if (speedSaving || saving || disabled || selection?.locked) return;
+    if (!pending.sawSaving && pending.revisionKey === revisionKey && speedError === null) return;
+    speedReturnFocusRef.current = null;
+    const input = speedInputRef.current;
+    // Only repair focus lost by our disabled/remounted Apply, not focus moved elsewhere.
+    if (input !== null && input.ownerDocument.activeElement === input.ownerDocument.body)
+      input.focus();
+  }, [selectionKey, revisionKey, speedSaving, saving, disabled, selection?.locked, speedError]);
 
   useEffect(() => {
     opacityDirtyRef.current = false;
@@ -242,6 +277,23 @@ export function ClipInspector({
               <dd>{selection.trackLabel}</dd>
             </div>
           </dl>
+
+          {selection.speedTiming !== undefined && onSpeedCommit !== undefined ? (
+            <ClipSpeedControl
+              key={`${selectionKey}:${revisionKey}`}
+              selection={{ ...selection, ...selection.speedTiming }}
+              disabled={controlsDisabled || saving}
+              saving={speedSaving}
+              error={speedError}
+              inputRef={speedInputRef}
+              onCommit={(edit, keyboard) => {
+                speedReturnFocusRef.current = keyboard
+                  ? { selectionKey, revisionKey, sawSaving: false }
+                  : null;
+                onSpeedCommit(edit);
+              }}
+            />
+          ) : null}
 
           <fieldset className="clip-transform-controls" disabled={controlsDisabled}>
             <legend>Transform</legend>

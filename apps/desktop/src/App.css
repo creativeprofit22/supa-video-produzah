@@ -55,7 +55,8 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 video:focus-visible,
-dialog:focus-visible {
+dialog:focus-visible,
+.workspace-separator:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
@@ -483,11 +484,52 @@ video {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.workspace-layout {
+  container-type: inline-size;
+  min-width: 0;
+}
+.workspace-layout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 8px;
+}
 .workbench-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(300px, 0.85fr);
+  grid-template-columns:
+    clamp(
+      18rem,
+      calc((100% - 16px) * var(--workspace-split, 68.5) / 100),
+      calc(100% - 18rem - 16px)
+    )
+    16px minmax(18rem, 1fr);
   align-items: start;
-  gap: 16px;
+}
+.workspace-pane {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-separator {
+  align-self: stretch;
+  min-height: 44px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: linear-gradient(var(--border), var(--border)) center / 2px 100% no-repeat;
+}
+.workspace-separator:hover,
+.workspace-separator:active {
+  background-color: var(--border);
+}
+@container (max-width: 60rem) {
+  .workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .workspace-separator {
+    display: none;
+  }
 }
 .monitor-column,
 .inspector-column {
@@ -518,6 +560,8 @@ video {
   align-items: center;
 }
 .monitor-stage {
+  width: 100%;
+  min-width: 0;
   position: relative;
   display: grid;
   overflow: hidden;
@@ -596,13 +640,23 @@ video {
   background: #000;
   pointer-events: none;
 }
+.monitor-stage:has(.monitor-fallback) {
+  aspect-ratio: auto;
+  min-height: 180px;
+}
 .monitor-fallback {
+  width: 100%;
+  min-width: 0;
   display: grid;
   max-width: 460px;
   place-items: center;
   padding: 28px;
   color: var(--muted);
   text-align: center;
+}
+.monitor-fallback button {
+  max-width: 100%;
+  white-space: normal;
 }
 .monitor-fallback svg {
   color: var(--quiet);
@@ -1165,6 +1219,35 @@ video {
   width: 100%;
   min-height: 24px;
   accent-color: var(--accent);
+}
+
+.multi-clip-inspector fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+}
+.multi-clip-inspector label {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.multi-clip-inspector input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+}
+.multi-clip-inspector button,
+.multi-clip-inspector legend {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.multi-clip-inspector {
+  overflow-wrap: anywhere;
 }
 
 .asset-panel,
@@ -2113,9 +2196,6 @@ video {
   .job-center-grid {
     grid-template-columns: 1fr;
   }
-  .workbench-grid {
-    grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
-  }
   .project-actions {
     flex-wrap: wrap;
   }
@@ -2171,9 +2251,6 @@ video {
   .project-actions {
     width: 100%;
     justify-content: flex-start;
-  }
-  .workbench-grid {
-    grid-template-columns: 1fr;
   }
   .project-inspector-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2476,6 +2553,17 @@ video {
   .multitrack-scroll-region:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: -2px;
+  }
+  .clip-inspector-panel {
+    --text: CanvasText;
+    --muted: CanvasText;
+    --quiet: CanvasText;
+    --accent: LinkText;
+    color: CanvasText;
+  }
+  .clip-inspector-panel .primary-button {
+    color: HighlightText;
+    background: Highlight;
   }
   .opacity-control input {
     accent-color: Highlight;

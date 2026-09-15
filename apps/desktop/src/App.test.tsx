@@ -152,6 +152,8 @@ describe("App Phase 3B durable workspace", () => {
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Canonical composition" });
+    // The legacy audition draft is available when no canonical clip is selected.
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Trim in" }), {
       target: { value: "1" },
     });
@@ -246,7 +248,7 @@ describe("App Phase 3B durable workspace", () => {
     await screen.findByRole("heading", { name: "Project media" });
     fireEvent.click(screen.getByRole("button", { name: "Choose video" }));
     await screen.findByRole("heading", { name: "Canonical composition" });
-    const input = screen.getByRole("spinbutton", { name: "Trim in" });
+    const input = screen.getByRole("spinbutton", { name: /^Source in \(/ });
     input.focus();
     fireEvent.keyDown(input, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(screen.queryByRole("heading", { name: "Project diagnostics" })).toBeNull();

@@ -1,4 +1,14 @@
+import { selectClips, pruneSelection, type ClipSelection } from "./clip-selection";
+import { MultiClipInspector } from "./MultiClipInspector";
+import { ClipAudioInspector } from "./ClipAudioInspector";
+import { ClipSourceRangeInspector } from "./ClipSourceRangeInspector";
+import type { SelectedMediaClip } from "./clip-source-range";
 import {
+  clipTimelineDuration,
+  microsecondsToSourceFrames,
+  createRationalTime,
+  rateOf,
+  timelineOffsetToSource,
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
@@ -16,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
 import { AssetPanel } from "./AssetPanel";
+import { TwoPaneWorkspace } from "./TwoPaneWorkspace";
 import {
   ClipInspector,
   type ClipOpacityDraft,
@@ -153,7 +164,74 @@ export function VideoWorkspace({
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ClipSelection>({ ids: [], primary: null });
+  const selectedClipId = selection.primary;
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const selectionProject = useRef<string | null>(null);
+  const previousClipCount = useRef(0);
+  const deleteFocus = useRef<{ ids: string; succeeded: boolean } | null>(null);
+  const undoFallback = useRef<HTMLButtonElement>(null);
+  const redoFocus = useRef<HTMLButtonElement>(null);
+  const historyFocus = useRef<{
+    action: "undo" | "redo";
+    projectId: string | undefined;
+    revision: number | undefined;
+    pending: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const request = historyFocus.current;
+    if (!request) return;
+    if (request.projectId !== controller.projection?.projectId) {
+      historyFocus.current = null;
+      return;
+    }
+    if (controller.editOperation.phase === "saving") {
+      request.pending = true;
+      return;
+    }
+    if (
+      !request.pending &&
+      request.revision === controller.projection?.revision.number &&
+      controller.editOperation.phase !== "error"
+    )
+      return;
+    if (
+      document.activeElement !== document.body &&
+      document.activeElement !== undoFallback.current &&
+      document.activeElement !== redoFocus.current
+    ) {
+      historyFocus.current = null;
+      return;
+    }
+    const preferred = request.action === "undo" ? undoFallback.current : redoFocus.current;
+    const alternative = request.action === "undo" ? redoFocus.current : undoFallback.current;
+    if (preferred && !preferred.disabled) {
+      historyFocus.current = null;
+      preferred.focus();
+    } else if (alternative && !alternative.disabled) {
+      historyFocus.current = null;
+      alternative.focus();
+    }
+  });
+  const [, refreshDeleteFocus] = useState(0);
+  useEffect(() => {
+    const pending = deleteFocus.current;
+    if (!pending) return;
+    if (selection.ids.length && selection.ids.join(",") !== pending.ids) deleteFocus.current = null;
+    else if (
+      !selection.ids.length &&
+      pending.succeeded &&
+      undoFallback.current &&
+      !undoFallback.current.disabled
+    ) {
+      undoFallback.current.focus();
+      deleteFocus.current = null;
+    }
+  });
+  const setSelectedClipId = (id: string) => {
+    setSelection({ ids: [id], primary: id });
+    setSelectionError(null);
+  };
   const [selectedClipOpacityDraft, setSelectedClipOpacityDraft] = useState<ClipOpacityDraft | null>(
     null,
   );
@@ -165,6 +243,8 @@ export function VideoWorkspace({
   const inspectorReturnFocus = useRef<HTMLElement | null>(null);
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const reconciledPreparationJobs = useRef(new Set<string>());
+  const undoCommand = useCommand("history.undo");
+  const redoCommand = useCommand("history.redo");
   const newProjectCommand = useCommand("project.new");
   const openProjectCommand = useCommand("project.open");
   const revision = project.revisions[0]!;
@@ -175,7 +255,104 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
+  const orderedMediaIds =
+    canonicalSequence?.tracks.flatMap((track) =>
+      track.kind === "caption"
+        ? []
+        : [...track.clips]
+            .sort((a, b) => a.timelineStart.value - b.timelineStart.value)
+            .filter((clip) => clip.source.kind === "asset")
+            .map((clip) => clip.id),
+    ) ?? [];
+  const bulkTargets =
+    canonicalSequence?.tracks.flatMap((track) =>
+      track.kind === "caption"
+        ? []
+        : track.clips
+            .filter((clip) => selection.ids.includes(clip.id) && clip.source.kind === "asset")
+            .map((clip) => ({
+              sequenceId: canonicalSequence.id,
+              trackId: track.id,
+              clipId: clip.id,
+              duration: clipTimelineDuration(
+                { in: clip.sourceIn, out: clip.sourceOut },
+                canonicalSequence.rate,
+                clip.speed,
+              ).value,
+              gainMilliDecibels: clip.gainMilliDecibels,
+              fades: clip.fades ?? { inFrames: 0, outFrames: 0 },
+              isVideo: track.kind === "video",
+              ...(clip.speed ? { speed: clip.speed } : {}),
+              locked: isTrackLocked(track),
+              hasAudio:
+                controller.projection?.state.assets.some(
+                  (asset) =>
+                    clip.source.kind === "asset" &&
+                    asset.id === clip.source.assetId &&
+                    !!asset.probe.audio,
+                ) ?? false,
+            })),
+    ) ?? [];
+  const multiSelected = selection.ids.length > 1;
   const canonicalPreview = findCanonicalPreviewClip(canonicalSequence, clip ?? null);
+  const selectedSourceClip = useMemo(() => {
+    if (!canonicalSequence) return null;
+    for (const track of canonicalSequence.tracks) {
+      if (track.kind === "caption") continue;
+      const clip = track.clips.find(({ id }) => id === selectedClipId);
+      if (!clip) continue;
+      if (clip.source.kind !== "asset") return "nested" as const;
+      const asset = controller.projection?.state.assets.find(
+        ({ id }) => clip.source.kind === "asset" && id === clip.source.assetId,
+      );
+      if (!asset) return null;
+      return {
+        sequenceId: canonicalSequence.id,
+        trackId: track.id,
+        clipId: clip.id,
+        label: asset.displayName,
+        locked: isTrackLocked(track),
+        sourceIn: clip.sourceIn,
+        sourceOut: clip.sourceOut,
+        totalAssetFrames: microsecondsToSourceFrames(
+          asset.probe.durationMicroseconds,
+          rateOf(clip.sourceIn),
+        ).value,
+        timelineStartFrame: clip.timelineStart.value,
+        sequenceRate: canonicalSequence.rate,
+        ...(clip.speed === undefined ? {} : { speed: clip.speed }),
+        ...(clip.fades === undefined ? {} : { fades: clip.fades }),
+      } satisfies SelectedMediaClip;
+    }
+    return null;
+  }, [canonicalSequence, selectedClipId, controller.projection]);
+  const selectedAudioClip = useMemo(() => {
+    if (!canonicalSequence) return null;
+    for (const track of canonicalSequence.tracks) {
+      if (track.kind === "caption") continue;
+      const clip = track.clips.find(({ id }) => id === selectedClipId);
+      if (!clip || clip.source.kind !== "asset") continue;
+      const asset = controller.projection?.state.assets.find(
+        ({ id }) => clip.source.kind === "asset" && id === clip.source.assetId,
+      );
+      if (!asset?.probe.audio) continue;
+      return {
+        sequenceId: canonicalSequence.id,
+        trackId: track.id,
+        clipId: clip.id,
+        gainMilliDecibels: clip.gainMilliDecibels,
+        fades: clip.fades ?? { inFrames: 0, outFrames: 0 },
+        duration: clipTimelineDuration(
+          { in: clip.sourceIn, out: clip.sourceOut },
+          canonicalSequence.rate,
+          clip.speed,
+        ).value,
+        locked: isTrackLocked(track),
+        label: asset.displayName,
+      };
+    }
+    return null;
+  }, [canonicalSequence, selectedClipId, controller.projection]);
   const selectedVideoClip = useMemo<SelectedVideoClip | null>(() => {
     if (canonicalSequence === null || selectedClipId === null) return null;
     for (const track of canonicalSequence.tracks) {
@@ -191,6 +368,12 @@ export function VideoWorkspace({
         sequenceId: canonicalSequence.id,
         trackId: track.id,
         clipId: selectedClip.id,
+        speedTiming: {
+          ...(selectedClip.speed === undefined ? {} : { speed: selectedClip.speed }),
+          sourceIn: selectedClip.sourceIn,
+          sourceOut: selectedClip.sourceOut,
+          sequenceRate: canonicalSequence.rate,
+        },
         clipLabel: selectedAsset?.displayName ?? "Video clip",
         trackLabel: track.name,
         transform: selectedClip.transform,
@@ -218,11 +401,25 @@ export function VideoWorkspace({
     canonicalPreview === null ? false : isTrackMuted(canonicalPreview.track);
   const timelineVideoHidden =
     canonicalPreview === null ? false : isTrackHidden(canonicalPreview.track);
+  const speedPreviewUnsupported = useMemo(
+    () =>
+      canonicalSequence?.tracks.some(
+        (track) =>
+          track.kind !== "caption" &&
+          track.clips.some(
+            (clip) =>
+              clip.speed !== undefined &&
+              clip.speed.numerator !== clip.speed.denominator &&
+              clip.source.kind !== "asset",
+          ),
+      ) ?? false,
+    [canonicalSequence],
+  );
   const sourceLayers = useMemo<readonly ProgramMonitorLayer[]>(() => {
     if (canonicalSequence === null || controller.projection === null) return [];
     const assets = new Map(controller.projection.state.assets.map((item) => [item.id, item]));
     return canonicalSequence.tracks.flatMap((track, canonicalTrackIndex) => {
-      if (track.kind !== "video") return [];
+      if (track.kind === "caption") return [];
       return track.clips.flatMap((canonicalClip) => {
         if (canonicalClip.source.kind !== "asset") return [];
         const canonicalAsset = assets.get(canonicalClip.source.assetId);
@@ -238,11 +435,19 @@ export function VideoWorkspace({
         return [
           {
             clipId: canonicalClip.id,
+            audioOnly: track.kind === "audio",
             path,
             canonicalTrackIndex,
             timelineStartFrame: canonicalClip.timelineStart.value,
             sourceInFrame: canonicalClip.sourceIn.value,
             sourceOutFrame: canonicalClip.sourceOut.value,
+            sourceRate: rateOf(canonicalClip.sourceIn),
+            ...(canonicalClip.speed === undefined ? {} : { speed: canonicalClip.speed }),
+            timelineDurationFrames: clipTimelineDuration(
+              { in: canonicalClip.sourceIn, out: canonicalClip.sourceOut },
+              canonicalSequence.rate,
+              canonicalClip.speed,
+            ).value,
             positionXPermille: previewTransform.positionXPermille,
             positionYPermille: previewTransform.positionYPermille,
             scaleXPermille: previewTransform.scaleXPermille,
@@ -261,6 +466,8 @@ export function VideoWorkspace({
             hidden: isTrackHidden(track),
             muted: isTrackMuted(track),
             hasAudio: canonicalAsset.probe.audio !== null,
+            gainMilliDecibels: canonicalClip.gainMilliDecibels,
+            fades: canonicalClip.fades ?? { inFrames: 0, outFrames: 0 },
           },
         ];
       });
@@ -289,9 +496,10 @@ export function VideoWorkspace({
     previewClockLayer.timelineStartFrame <= legacyTimelinePlayheadFrame &&
     legacyTimelinePlayheadFrame <
       previewClockLayer.timelineStartFrame +
-        previewClockLayer.sourceOutFrame -
-        previewClockLayer.sourceInFrame;
-  const visibleSourceLayers = sourceLayers.filter((layer) => !layer.hidden);
+        (previewClockLayer.timelineDurationFrames ??
+          previewClockLayer.sourceOutFrame - previewClockLayer.sourceInFrame);
+  // Hidden and logical audio clips still own timeline/seek boundaries.
+  const visibleSourceLayers = sourceLayers;
   const visibleTimelineStart =
     visibleSourceLayers.length === 0
       ? null
@@ -301,7 +509,9 @@ export function VideoWorkspace({
       ? null
       : Math.max(
           ...visibleSourceLayers.map(
-            (layer) => layer.timelineStartFrame + layer.sourceOutFrame - layer.sourceInFrame,
+            (layer) =>
+              layer.timelineStartFrame +
+              (layer.timelineDurationFrames ?? layer.sourceOutFrame - layer.sourceInFrame),
           ),
         );
   const compositionPlayheadIsInRange =
@@ -319,7 +529,9 @@ export function VideoWorkspace({
     (layer) =>
       timelinePlayheadFrame !== null &&
       layer.timelineStartFrame <= timelinePlayheadFrame &&
-      timelinePlayheadFrame < layer.timelineStartFrame + layer.sourceOutFrame - layer.sourceInFrame,
+      timelinePlayheadFrame <
+        layer.timelineStartFrame +
+          (layer.timelineDurationFrames ?? layer.sourceOutFrame - layer.sourceInFrame),
   );
   const activeCaptions = useMemo(
     () =>
@@ -409,9 +621,15 @@ export function VideoWorkspace({
 
   useEffect(() => {
     const clipIds = selectableClipIds(canonicalSequence ?? undefined);
-    setSelectedClipId((current) =>
-      current !== null && clipIds.includes(current) ? current : (clipIds[0] ?? null),
-    );
+    const projectId = controller.projection?.projectId ?? null;
+    if (
+      selectionProject.current !== projectId ||
+      (previousClipCount.current === 0 && clipIds.length > 0)
+    ) {
+      selectionProject.current = projectId;
+      setSelection({ ids: clipIds[0] ? [clipIds[0]] : [], primary: clipIds[0] ?? null });
+    } else setSelection((current) => pruneSelection(current, clipIds));
+    previousClipCount.current = clipIds.length;
   }, [canonicalSequence]);
 
   useEffect(() => {
@@ -476,7 +694,14 @@ export function VideoWorkspace({
   }, [controller.source]);
 
   return (
-    <main className="video-workspace shared-rail" id="workspace" tabIndex={-1}>
+    <main
+      className="video-workspace shared-rail"
+      id="workspace"
+      tabIndex={-1}
+      onPointerDownCapture={() => {
+        historyFocus.current = null;
+      }}
+    >
       <header className="project-bar">
         <div className="project-identity">
           <p className="state-kicker">Active project</p>
@@ -623,10 +848,15 @@ export function VideoWorkspace({
         </div>
       ) : null}
 
-      <div className="workbench-grid">
+      <TwoPaneWorkspace label="Program and media / editing controls pane width">
         <div className="monitor-column">
           {sequence !== null && clip !== undefined && draft !== null ? (
             <ProgramMonitor
+              unsupportedReason={
+                speedPreviewUnsupported
+                  ? "Retimed nested sequences and dedicated audio tracks are not supported in program preview."
+                  : null
+              }
               proxyPath={controller.preparedAsset?.proxyPath ?? null}
               finalPreviewPath={finalPreviewPath}
               hasAudio={sourceHasAudio}
@@ -648,8 +878,15 @@ export function VideoWorkspace({
                 if (canonicalPreview === null) return;
                 const previewSourceFrame =
                   canonicalPreview.clip.sourceIn.value +
-                  frame -
-                  canonicalPreview.clip.timelineStart.value;
+                  timelineOffsetToSource(
+                    createRationalTime(
+                      Math.max(0, frame - canonicalPreview.clip.timelineStart.value),
+                      canonicalSequence!.rate,
+                    ),
+                    rateOf(canonicalPreview.clip.sourceIn),
+                    canonicalPreview.clip.speed,
+                    "floor",
+                  ).value;
                 if (
                   timelineFrameForClipSourceFrame(canonicalPreview.clip, previewSourceFrame) ===
                   frame
@@ -679,7 +916,17 @@ export function VideoWorkspace({
               projection={controller.projection}
               preparedAsset={controller.preparedAsset}
               convertCachePath={controller.convertCachePath}
-              selectedClipId={selectedClipId}
+              selectedClipId={multiSelected ? null : selectedClipId}
+              selectedClipIds={selection.ids}
+              onSelectMediaClip={(id, mode) => {
+                try {
+                  deleteFocus.current = null;
+                  setSelection(selectClips(selection, id, orderedMediaIds, mode));
+                  setSelectionError(null);
+                } catch (error) {
+                  setSelectionError((error as Error).message);
+                }
+              }}
               previewSourceFrame={playhead}
               timelinePlayheadFrame={timelinePlayheadFrame}
               editPending={editPending}
@@ -738,31 +985,158 @@ export function VideoWorkspace({
             onRetryPreparation={() => void controller.retryPreparation()}
             onRelinkSource={() => void controller.regrantSourceAccess()}
           />
-          <ClipInspector
-            selection={selectedVideoClip}
-            transform={inspectedTransform}
-            opacityPermille={inspectedOpacityPermille}
-            disabled={editPending}
-            saving={appearanceSaving}
-            error={appearanceError}
-            onDraftChange={setSelectedClipOpacityDraft}
-            onCommit={(opacityDraft) => void commitClipOpacity(opacityDraft)}
-            onTransformDraftChange={setSelectedClipTransformDraft}
-            onTransformCommit={(transformDraft) => void commitClipTransform(transformDraft)}
-          />
-          {draft !== null ? (
-            <TrimInspector
-              inFrame={draft.inFrame}
-              outFrame={draft.outFrame}
-              durationFrames={durationFrames}
-              valid={controller.trimValid}
-              changed={controller.trimChanged}
-              operation={controller.editOperation}
-              onInFrameChange={(inFrame) => controller.updateTrimDraft({ inFrame })}
-              onOutFrameChange={(outFrame) => controller.updateTrimDraft({ outFrame })}
-              onApply={() => void controller.applyTrim()}
+          <div className="history-actions" role="group" aria-label="Edit history">
+            <button
+              type="button"
+              ref={undoFallback}
+              disabled={!undoCommand.canExecute}
+              aria-keyshortcuts={undoCommand.ariaKeyShortcuts}
+              onClick={(event) => {
+                if (event.detail === 0)
+                  historyFocus.current = {
+                    action: "undo",
+                    projectId: controller.projection?.projectId,
+                    revision: controller.projection?.revision.number,
+                    pending: false,
+                  };
+                undoCommand.execute();
+              }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              ref={redoFocus}
+              disabled={!redoCommand.canExecute}
+              aria-keyshortcuts={redoCommand.ariaKeyShortcuts}
+              onClick={(event) => {
+                if (event.detail === 0)
+                  historyFocus.current = {
+                    action: "redo",
+                    projectId: controller.projection?.projectId,
+                    revision: controller.projection?.revision.number,
+                    pending: false,
+                  };
+                redoCommand.execute();
+              }}
+            >
+              Redo
+            </button>
+          </div>
+          <p role="status" aria-live="polite">
+            {selection.ids.length} clips selected (maximum 100)
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              deleteFocus.current = null;
+              setSelection({ ids: [], primary: null });
+              setSelectionError(null);
+            }}
+          >
+            Clear selection
+          </button>
+          {selectionError ? <p role="alert">{selectionError}</p> : null}
+          {multiSelected ? (
+            <MultiClipInspector
+              key={selection.ids.join(",")}
+              revisionKey={controller.projection?.revision.id ?? "none"}
+              targets={bulkTargets}
+              disabled={editPending}
+              error={
+                controller.editOperation.phase === "error" ? controller.editOperation.error : null
+              }
+              onBulk={async (action, keyboard) => {
+                const record =
+                  action.type === "delete" && keyboard
+                    ? { ids: selection.ids.join(","), succeeded: false }
+                    : null;
+                deleteFocus.current = record;
+                const success = await controller.editTimelineClips(bulkTargets, action);
+                if (deleteFocus.current === record && record) {
+                  record.succeeded = success;
+                  refreshDeleteFocus((value) => value + 1);
+                  if (!success) deleteFocus.current = null;
+                }
+                return success;
+              }}
+              onApply={(inputs) => controller.setTimelineClipAudio(inputs)}
             />
-          ) : null}
+          ) : (
+            <>
+              <ClipAudioInspector
+                selection={selectedAudioClip}
+                revisionKey={controller.projection?.revision.id ?? "none"}
+                disabled={editPending}
+                saving={controller.editOperation.phase === "saving"}
+                error={
+                  controller.editOperation.phase === "error" &&
+                  controller.editOperation.operation === "clip-audio"
+                    ? controller.editOperation.error
+                    : null
+                }
+                onCommit={(input) => {
+                  if (!editPending) void controller.setTimelineClipAudio([input]);
+                }}
+              />
+              <ClipSourceRangeInspector
+                selection={selectedSourceClip === "nested" ? null : selectedSourceClip}
+                unsupported={selectedSourceClip === "nested"}
+                revisionKey={controller.projection?.revision.id ?? "none"}
+                disabled={editPending}
+                saving={controller.editOperation.phase === "saving"}
+                error={
+                  controller.editOperation.phase === "error" &&
+                  controller.editOperation.operation === "trim"
+                    ? controller.editOperation.error
+                    : null
+                }
+                onCommit={(input) => {
+                  if (!editPending) void controller.trimTimelineClip(input);
+                }}
+              />
+              <ClipInspector
+                revisionKey={controller.projection?.revision.id ?? "none"}
+                speedSaving={
+                  controller.editOperation.phase === "saving" &&
+                  controller.editOperation.operation === "clip-speed"
+                }
+                speedError={
+                  controller.editOperation.phase === "error" &&
+                  controller.editOperation.operation === "clip-speed"
+                    ? controller.editOperation.error
+                    : null
+                }
+                onSpeedCommit={(input) => {
+                  if (!editPending) void controller.setTimelineClipSpeed(input);
+                }}
+                selection={selectedVideoClip}
+                transform={inspectedTransform}
+                opacityPermille={inspectedOpacityPermille}
+                disabled={editPending}
+                saving={appearanceSaving}
+                error={appearanceError}
+                onDraftChange={setSelectedClipOpacityDraft}
+                onCommit={(opacityDraft) => void commitClipOpacity(opacityDraft)}
+                onTransformDraftChange={setSelectedClipTransformDraft}
+                onTransformCommit={(transformDraft) => void commitClipTransform(transformDraft)}
+              />
+              {draft !== null && selectedSourceClip === null ? (
+                <TrimInspector
+                  showHistoryActions={false}
+                  inFrame={draft.inFrame}
+                  outFrame={draft.outFrame}
+                  durationFrames={durationFrames}
+                  valid={controller.trimValid}
+                  changed={controller.trimChanged}
+                  operation={controller.editOperation}
+                  onInFrameChange={(inFrame) => controller.updateTrimDraft({ inFrame })}
+                  onOutFrameChange={(outFrame) => controller.updateTrimDraft({ outFrame })}
+                  onApply={() => void controller.applyTrim()}
+                />
+              ) : null}
+            </>
+          )}
           <ExportPanel
             render={controller.render}
             renderJob={renderJob}
@@ -779,7 +1153,7 @@ export function VideoWorkspace({
             onOpenJobCenter={onOpenJobCenter}
           />
         </aside>
-      </div>
+      </TwoPaneWorkspace>
     </main>
   );
 }
