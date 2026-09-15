@@ -215,3 +215,79 @@ Limits remain: same-job generation can include Clippy outputs reused by tests, n
 The Linux Rust job `101663502455` passed formatting, Clippy, all-feature tests, release-budget tests, collection and upload. TypeScript job `101663502426` and Windows job `101663502473` passed. Dependency-policy/full-history-secrets job `101663502410` failed at exact Rust identity/review-context enforcement because the fingerprint was stale; its secrets scan passed. Its Node post-install cleanup step was skipped. Signed Windows installers and clean-runner smoke job `101670008537` was skipped. The entire hosted workflow was not green; ignored tests and skipped packaging are not passing evidence.
 
 The user separately authorized documenting this delta and renewing only the existing GLib `reviewContext.sha256` after formatting final inputs. Preserve advisory, crate/version/kind, disposition/rationale, both target lists, review-context version, owner, expiry `2026-10-06`, maintenance deferrals and all enforcement rules. Historical receipts remain unchanged. Required fresh local collector/policy tests and Rust audit/policy results are reported separately after the fingerprint update; no future local or hosted pass is presumed. This renewal does not authorize production changes, merge or push.
+
+## 2026-09-13 focused renewal attempt — not renewed
+
+The user authorized recording the delta and running focused dependency audits and policy tests, with fingerprint renewal only if supported. Reviewed local HEAD: `b21a303c51c258d3aa63fa51217bcbb4508fef0f`, including the existing dirty Cargo test-profile and cancellation changes. This is not a clean-commit attestation. Existing user changes and the unresolved supervisor-timeout note were left untouched.
+
+CODE/DEDUCED: comparison against renewal commit `eb4ea08` found no lockfile, dependency-feature, target-declaration, build-script, security-policy or CI change. Production deltas concern cancellation/SQLite settlement, checkpoint lifecycle, sanitized cleanup reporting and caption endpoint timing. A scoped search of application Rust source found no `array_iter_str`, `VariantStrIter`, GLib or GTK references; the only searched macro-definition hit was an existing test helper. This supports retaining the bounded source-construction argument, not a new binary-wide assurance. The new `[profile.test.package.sha2] opt-level = 3` changes the test build; the historical Linux ELF and generated-source receipts remain historical. External dependency sources, current generated outputs and current Linux binaries were not regenerated or fully re-reviewed.
+
+### Executed checks
+
+Environment: Node `v22.20.0`, pnpm `10.34.5`, cargo-audit `0.22.2`.
+
+- RUNTIME: `node --test scripts/tests/check-dependency-policy.test.mjs scripts/tests/local-security-recipes.test.mjs scripts/tests/collect-glib-evidence.test.mjs` — **62 passed, zero failed/skipped; exit 0**. Execution receipt: `1438835c-6d14-4f63-835c-d38b9db26ecf`.
+- RUNTIME: `pnpm audit --json` — scanner exit **1**, empty stderr, two moderate findings (`1193683` in vitest and `1193684` in @vitest/mocker, both 4.1.10). The existing JavaScript policy accepted both, with `ok: true` and no policy errors. This is an accepted-exception result, not zero advisories.
+- RUNTIME: `cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings` — scanner exit **1**, empty stderr. Reported zero entries in the vulnerabilities list and **seven warnings**: six unmaintained packages and GLib 0.18.5's unsoundness warning. No ignore entries or architecture/OS filters were recorded in the JSON settings. Report database: `b50980aad8b8f14f77e25a97b32dd94bf008b0af`, 1243 advisories, last updated `2026-09-09T12:49:52+02:00`.
+- RUNTIME: Rust policy using the unchanged exception file and both declared targets returned **`ok: false`**. The wrapper preserved the failed gate as exit **1**. In addition to the expected GLib `review-required` fingerprint mismatch, it rejected ten stale exception identities absent from this audit: atk, atk-sys, gdk, gdk-sys, gdkwayland-sys, gdkx11, gdkx11-sys, gtk, gtk-sys and gtk3-macros (the existing RUSTSEC-2024-0411 through -0420 identities). Execution receipt for audits and policies: `3695d14d-66ab-47a4-ae3f-0feb98aea19e`.
+
+The reason those ten warnings are absent is **not established**. Do not interpret absence as upstream withdrawal or resolved maintenance risk. A separate read of `$HOME/.cargo/advisory-db` found HEAD `0bfde9d6a469ae503f8a6147c2dd552856cd5999`, different from the database identified by the scanner, and its gtk advisory still described unmaintained bindings. That separate checkout is not proof of which database cargo-audit used.
+
+### Retained raw-result provenance
+
+Local raw results are in `.cache/p1-security/renewal-20260913-5TCSK5/` (ignored, not committed). SHA-256:
+
+- `rust.json`: `821c359833c5b267aae7b96deb7e847c1b9461a1169b3a6af56f8451fc5f3b2d`
+- `javascript.json`: `0d7ca559b86656e66aa3615d9f29ed51524884da5a5958a3ea50fa3dbd1d662d`
+- Both empty stderr files: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+- Both exit files (`1` plus newline): `4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865`
+
+This durable summary does not embed the complete raw logs; cache cleanup can remove them. Historical evidence above is unchanged.
+
+### Decision and remaining scope
+
+**No fingerprint renewal and no exception removal.** The changed warning inventory needs diagnosis against the scanner's actual database before any approval change. All enforcement rules, owners, expiry dates, target lists and dependencies remain unchanged. No application code, Roadmap status, commits or hosted jobs were changed. Full-history secret scanning and the full application test matrix were not rerun; the intermittent Windows supervisor timeout remains unresolved. The test pass above precedes this documentation-only addendum and is not a passing dependency-policy result for the amended review inputs.
+
+### Follow-up diagnosis: ten upstream withdrawals confirmed
+
+The later investigation resolves the warning-inventory uncertainty above without rewriting that historical failed attempt.
+
+RUNTIME/CODE: this shell sets `CARGO_HOME=E:\DevCaches\cargo`. The relevant database is therefore `E:/DevCaches/cargo/advisory-db`, not the older checkout under `$HOME/.cargo`. Its HEAD is `b50980aad8b8f14f77e25a97b32dd94bf008b0af`, matching the original scanner report, and its origin is `https://github.com/RustSec/advisory-db.git`. No database files or Git settings were changed. Both local database checkouts contain an existing untracked nostr advisory; it was left untouched, and the Git-blob checks below do not rely on it.
+
+CODE: upstream commit [`b266fb89baa88c73c6aaa53e0e87509c80bdf962`](https://github.com/RustSec/advisory-db/commit/b266fb89baa88c73c6aaa53e0e87509c80bdf962), titled “Withdraw gtk3-rs unmaintained advisories (#3189)”, adds `withdrawn = "2026-08-14"`. Independent `git show` reads at the exact scanner-reported database commit confirmed this field for **all ten** stale identities: RUSTSEC-2024-0411 through RUSTSEC-2024-0420. The advisory update says the gtk-rs repository was unarchived, README warnings were removed and development resumed. These are withdrawals of maintenance advisories, not dependency upgrades or fixes to GLib's separate unsoundness advisory.
+
+RUNTIME: a controlled rerun explicitly selecting that database, with fetching disabled and the same lockfile/deny settings, again reported the same seven warning IDs and scanner exit **1**:
+
+```sh
+cargo audit --db E:/DevCaches/cargo/advisory-db --no-fetch --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings
+```
+
+Execution receipt: `f14184be-97bc-427d-bd95-68083a6e255e`. Raw report, stderr and exit are retained alongside the earlier results as `rust-explicit-db.json`, `rust-explicit-db.stderr` and `rust-explicit-db.exit`. The no-fetch report leaves database commit/time null; the matching Git HEAD comes from the separate repository inspection, not those null report fields. Wrapper exit 0 denotes successful capture, **not a passing audit**.
+
+Conclusion: the ten missing warnings are explained by upstream withdrawals in the database cargo-audit actually uses. The policy's exact-inventory rejection is working as designed. The next scoped change is to retire those ten active exceptions while preserving this history, then separately finalize the GLib review fingerprint and rerun the focused policy checks. This diagnostic follow-up changes no exceptions, fingerprint, application code or Roadmap status.
+
+### Authorized policy reconciliation (2026-09-13)
+
+The user subsequently authorized retiring the ten withdrawn-advisory exceptions, finalizing the existing GLib review and rerunning focused policy checks. Only the ten maintenance exceptions RUSTSEC-2024-0411 through RUSTSEC-2024-0420 are retired; their original dispositions and withdrawal evidence remain in this document and Git history. Six maintenance deferrals remain, along with the narrowly scoped GLib unsoundness deferral. No warning is ignored, no enforcement is relaxed, and no dependency changes.
+
+The GLib renewal accepts the source delta reviewed above against `eb4ea08`, including the existing dirty cancellation changes, SHA-256-only test optimization and engineering notes. Dependency locks/features/targets and generation configuration remain unchanged; reviewed application changes do not introduce a consumer of the affected producer. Earlier external-source and Linux binary receipts remain corroborating historical evidence, not freshly generated evidence for this working tree. The renewal does not assert that a current Linux ELF was inspected, that all features/platforms are safe, or that the Windows timeout is fixed. The bounded function deferral is retained on that combined, qualified evidence; its advisory identity, rationale, two-target scope, owner and expiry remain unchanged.
+
+The fingerprint is computed only after the final review-note inputs are saved. Focused tests and policy checks are run separately; their execution receipts are the authority for pass/fail. No Roadmap completion is implied by this policy reconciliation.
+
+### Authorized pre-commit delta review (2026-09-15)
+
+The user explicitly authorized reviewing the changed approval inputs and renewing only the existing bounded approval if supported, preserving enforcement and scope, before atomic commits and push. This review covers the working-tree delta at HEAD `b21a303c51c258d3aa63fa51217bcbb4508fef0f0` and the earlier delta against `eb4ea08`; it is not a clean-checkout or current Linux binary attestation.
+
+CODE: compared with `eb4ea08`, the Cargo lockfile, build script, Cargo configuration, CI workflows and dependency-policy implementation are unchanged. The manifest adds the already pinned Tokio 1.53.1 `test-util` development feature and the previously recorded SHA-256 test optimization. Tokio's installed manifest defines `test-util` as `rt`, `sync` and `time`; these feature definitions add no GLib dependency or producer. Unlike the September 13 review, this review explicitly includes that development-feature change. Application changes concern job cancellation/cache settlement, exact clip speed/fade timing, project commands and persistence, render validation, and editor preview/controls; no GLib/GTK or affected iterator producer/type reference was found in application Rust source. The only searched macro-definition hit remains the existing test helper. The dated copied capture prototypes and generated outputs stay local and outside the Git inventory; curated reports remain tracked. This is publication scoping, not a change to the policy's inventory algorithm.
+
+RUNTIME: fresh `cargo metadata --offline --locked --all-features --format-version 1 --filter-platform <target> --manifest-path apps/desktop/src-tauri/Cargo.toml` succeeded for both declared targets. Windows resolves 299 nodes and no `glib`, `glib-sys`, `gtk`, `gtk-sys` or `gobject-sys`. Linux resolves 323 nodes, retaining GLib 0.18.5 and GTK 0.18.2. Execution receipt: `7ca48164-2e33-4a3e-9e54-084013cf9619`.
+
+RUNTIME/CODE: a renewed local scan of all 323 Linux-resolved package source roots read 8912 Rust files and found 17 exact `array_iter_str` / `VariantStrIter` matches, all confined to GLib definitions, imports/exports, documentation and dependency-only tests. No downstream consumer was found. Receipt: `7c72cddf-c76f-4f79-8b82-f25ed2566c72`. Direct source inspection reconfirmed private iterator fields and the crate-private constructor at `glib-0.18.5/src/variant_iter.rs:102-115`, with `Variant::array_iter_str` constructing the value at `variant.rs:843-854`. Dependency-only tests are not application tests. This retains the existing construction argument rather than inferring safety from a missing symbol.
+
+RUNTIME: `pnpm lint`, `pnpm check` and `pnpm test` passed after narrowing lint exclusions to the safety-disabled historical snapshots and declaring diagnostic-script globals. `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --offline` passed 333 library tests and five security-configuration integration tests; 12 existing environment-dependent library tests remain ignored. All 62 `scripts/tests/*.test.mjs` tests passed, including policy and hosted collector tests. Rust/Node execution receipt: `32a26b81-8232-4dbd-85a9-cc3774794244`. These are local default-feature test results, not hosted/all-feature or media-capture results.
+
+RUNTIME: the explicit no-fetch audit reproduced the seven-warning inventory but supplied null database provenance; the policy correctly rejected it as `invalid advisory database`. No validation was relaxed. A normal `cargo audit --file apps/desktop/src-tauri/Cargo.lock --json --deny warnings` then produced acceptable database provenance, scanner exit 1 and the same six maintenance warnings plus the GLib unsoundness warning. Before renewal, the only policy error was the stale GLib fingerprint. Fresh-audit receipt: `6be6855f-2f04-49f7-a3ec-db6a48f4500f`. Raw reports, stderr and preserved scanner exits are local under `.cache/p1-security/commit-review-20260915-qbkY2a/`; they are not committed or represented as zero-advisory passes.
+
+DEDUCED/decision: the fresh target graphs, renewed locked-source construction check, reviewed test-only feature delta and unchanged generation/lock configuration support retaining the existing bounded function deferral. Renew only `reviewContext.sha256` after saving all final inputs. The final inventory also orders the original raw-runner exclusions after the Markdown allowlist so generated Playwright error contexts are not published; that scoping correction reopens the whole-inventory fingerprint, not the unchanged source-construction review. Preserve the advisory identity, rationale, two targets, owner, expiry and six maintenance deferrals; the ten previously documented upstream-withdrawn maintenance exceptions remain retired. Run the unchanged policy on the fresh report after renewal and use that execution result for pass/fail, not this note.
+
+Limits: the 14 generated-source and unstripped Linux ELF receipts above remain historical; no new Linux ELF, current external generated output or unmaterialized macro expansion was inspected. No live browser/audio capture, release packaging, hosted CI or full-history secret scan was performed by this review. This is not library-wide safety, a resolved advisory, a new acceptance claim for the speed feature, or Roadmap completion. Reopen on subsequent lock, feature, target, consumer, generation or toolchain changes.

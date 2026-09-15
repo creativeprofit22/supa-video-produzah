@@ -3,126 +3,6 @@
   "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
   "exceptions": [
     {
-      "advisory": "RUSTSEC-2024-0413",
-      "crate": "atk",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "GTK accessibility runtime on Linux, absent on Windows; no affected sink specified or compatible parent replacement.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0416",
-      "crate": "atk-sys",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "GTK/ATK accessibility FFI runtime on Linux, absent on Windows; maintenance warning without an identified affected sink.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0412",
-      "crate": "gdk",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "GTK/WebKit display runtime on Linux, absent on Windows; current compatible graph has no replacement and no affected sink specified.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0418",
-      "crate": "gdk-sys",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "GTK/GDK display FFI runtime on Linux, absent on Windows; maintenance-only advisory, not an unsoundness exception.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0411",
-      "crate": "gdkwayland-sys",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Tao Wayland FFI runtime on Linux, absent on Windows; compatible update dry-run finds no replacement for this maintenance warning.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0417",
-      "crate": "gdkx11",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Wry X11 runtime on Linux, absent on Windows; no specific vulnerable function in maintenance advisory.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0414",
-      "crate": "gdkx11-sys",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Tao/gdkx11 FFI runtime on Linux, absent on Windows; no compatible replacement or specified affected function.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0415",
-      "crate": "gtk",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Required Tauri/Wry/Tao/Muda/WebKit GUI runtime on Linux, absent on Windows; only maintenance status deferred, GLib unsoundness still fails.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0420",
-      "crate": "gtk-sys",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Required GTK/WebKit native FFI on Linux, absent on Windows; compatible parent upgrades cannot replace this maintenance-only dependency.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
-      "advisory": "RUSTSEC-2024-0419",
-      "crate": "gtk3-macros",
-      "version": "0.18.2",
-      "kind": "unmaintained",
-      "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-      "disposition": "maintenance-only",
-      "rationale": "Host procedural macro building Linux GTK; absent for Windows graph. Repository/derived code inputs, no affected function specified.",
-      "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
-      "owner": "dependency/security maintainer",
-      "expires": "2026-10-06"
-    },
-    {
       "advisory": "RUSTSEC-2024-0370",
       "crate": "proc-macro-error",
       "version": "1.0.4",
@@ -204,7 +84,7 @@
       "reviewContext": {
         "version": 1,
         "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-        "sha256": "57bd261ba242f8003956f9661fb6772492d613ab7a68c77c7e2f1f3ef898e20e"
+        "sha256": "2c8b3e58d69eeb0df4114e28f30326b0ccf431f1218eeddf42a1b797ddf71a22"
       },
       "rationale": "Absent from Windows graph. Reviewed locked all-feature Linux graph has no consumer of the sole public VariantStrIter producer across 323 packages/8902 Rust source files; 14 generated Rust files and the linked unstripped test ELF corroborate absence. Narrow function deferral, not library safety; reopen on lock/feature/target/consumer changes. Linux regression failures are separate, not evidence of safety.",
       "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
