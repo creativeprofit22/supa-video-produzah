@@ -31,6 +31,18 @@ coverage/
 test-results/
 playwright-report/
 blob-report/
+# Local speed-verification browser traces and raw run output; summaries stay reviewable.
+evidence/2026-09-14-p2-speed/**/*-results/
+evidence/2026-09-14-p2-speed/browser-media-controls/
+evidence/2026-09-14-p2-speed/raw-browser-control/
+evidence/2026-09-14-p2-speed/**/trace.zip
+# These dated captures contain local generated output and copied diagnostic
+# prototypes. Preserve them on disk; publish only their curated Markdown reports.
+evidence/2026-09-14-p2-speed/**
+!evidence/2026-09-14-p2-speed/**/
+!evidence/2026-09-14-p2-speed/**/*.md
+evidence/2026-09-14-p2-editor-controls/*.json
+evidence/2026-09-14-p2-editor-controls/*.png
 
 # Product-owned runtime artifacts
 video-phase1/
