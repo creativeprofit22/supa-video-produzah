@@ -225,6 +225,16 @@ export function resolveCaptionLifecycleContext(
     });
   }
 
+  if (
+    sourceClip?.speed !== undefined &&
+    sourceClip.speed.numerator !== sourceClip.speed.denominator
+  ) {
+    fail(
+      "caption_lifecycle_speed_unsupported",
+      "Managed caption lifecycle does not support retimed clips",
+      { clipId: sourceClip.id },
+    );
+  }
   return {
     projection: input.projection,
     transcript: input.transcript,

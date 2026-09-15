@@ -1,4 +1,5 @@
 export * from "./caption.js";
+export * from "./clip-timing.js";
 export * from "./commands.js";
 export * from "./errors.js";
 export * from "./migrations.js";

@@ -1,7 +1,7 @@
 import {
   VideoDomainError,
   canToggleTrackVisibility,
-  frameRangeDuration,
+  clipTimelineDuration,
   frameToPixel,
   isTrackHidden,
   isTrackLocked,
@@ -126,8 +126,11 @@ function clipRange(clip: ProjectClip, sequenceRate: RationalRate): TimelineRange
     );
   }
 
-  const sourceDuration = frameRangeDuration({ in: clip.sourceIn, out: clip.sourceOut });
-  const durationFrames = rescaleRationalTime(sourceDuration, sequenceRate, "exact").value;
+  const durationFrames = clipTimelineDuration(
+    { in: clip.sourceIn, out: clip.sourceOut },
+    sequenceRate,
+    clip.speed,
+  ).value;
   const endFrameExclusive = clip.timelineStart.value + durationFrames;
   if (durationFrames <= 0 || !Number.isSafeInteger(endFrameExclusive)) {
     throw new VideoDomainError("invalid_range", "Timeline clip range must be nonempty and safe", {

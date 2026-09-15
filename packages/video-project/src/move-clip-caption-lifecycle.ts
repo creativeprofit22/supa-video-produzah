@@ -1,12 +1,11 @@
 import {
   VideoDomainError,
-  createRationalTime,
+  clipTimelineDuration,
   isTrackLocked,
   moveClipCommandSchemaV2,
   projectProjectionSchema,
   rateOf,
   ratesEqual,
-  rescaleRationalTime,
   videoProjectStateV2Schema,
   type ProjectCommandV2,
   type ProjectProjection,
@@ -138,10 +137,10 @@ function replayMoveAgainstCandidateState(
 
   let duration: number;
   try {
-    duration = rescaleRationalTime(
-      createRationalTime(clip.sourceOut.value - clip.sourceIn.value, rateOf(clip.sourceIn)),
+    duration = clipTimelineDuration(
+      { in: clip.sourceIn, out: clip.sourceOut },
       rateOf(clip.timelineStart),
-      "exact",
+      clip.speed,
     ).value;
   } catch {
     moveFailure(

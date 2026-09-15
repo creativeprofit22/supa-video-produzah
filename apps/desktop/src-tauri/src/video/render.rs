@@ -932,6 +932,7 @@ fn transformed_video_filter(
     index: usize,
     input: &super::types::RenderVideoInputV2,
     expected: &super::types::RenderExpectation,
+    timing_filter: &str,
 ) -> String {
     let contain = format!(
         "scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos",
@@ -939,7 +940,7 @@ fn transformed_video_filter(
     );
     if has_default_geometry(input) {
         return format!(
-            "[{index}:v:0]setpts=PTS-STARTPTS,{contain},format=rgba,colorchannelmixer=aa={},pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
+            "[{index}:v:0]{timing_filter},{contain},format=rgba,colorchannelmixer=aa={},pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps={}/{}[v{index}]",
             fixed_three_opacity(input.opacity_permille),
             expected.width,
             expected.height,
@@ -949,7 +950,7 @@ fn transformed_video_filter(
     }
 
     let mut filters = vec![
-        "setpts=PTS-STARTPTS".to_owned(),
+        timing_filter.to_owned(),
         contain,
         "format=rgba".to_owned(),
         format!(
@@ -1101,7 +1102,110 @@ fn expected_render_arguments_v1(plan: &RenderPlanV1, duration_microseconds: u64)
     arguments
 }
 
-fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String {
+fn render_time_microseconds(time: &super::types::RationalTime) -> Result<u64, VideoCommandError> {
+    let invalid = || VideoCommandError::invalid_render_plan("clip_timing");
+    if time.value > MAX_SAFE_INTEGER || time.rate_numerator == 0 || time.rate_denominator == 0 {
+        return Err(invalid());
+    }
+    let numerator = u128::from(time.value)
+        .checked_mul(u128::from(time.rate_denominator))
+        .and_then(|value| value.checked_mul(1_000_000))
+        .ok_or_else(invalid)?;
+    let denominator = u128::from(time.rate_numerator);
+    let value = numerator.checked_add(denominator / 2).ok_or_else(invalid)? / denominator;
+    if value > u128::from(MAX_SAFE_INTEGER) {
+        return Err(invalid());
+    }
+    Ok(value as u64)
+}
+
+fn validated_input_timing(
+    input: &super::types::RenderVideoInputV2,
+    expected: &super::types::RenderExpectation,
+) -> Result<Option<u64>, VideoCommandError> {
+    let Some(timing) = &input.timing else {
+        return Ok(None);
+    };
+    let invalid = || VideoCommandError::invalid_render_plan("clip_timing");
+    let duration = super::project::clip_timing::clip_timeline_duration(
+        &timing.source_in,
+        &timing.source_out,
+        &expected.rate,
+        &timing.speed,
+    )
+    .map_err(|_| invalid())?;
+    if [
+        &timing.source_in,
+        &timing.source_out,
+        &timing.output_duration,
+    ]
+    .iter()
+    .any(|time| {
+        time.rate_numerator != expected.rate.numerator
+            || time.rate_denominator != expected.rate.denominator
+    }) || duration != timing.output_duration
+        || duration.value != expected.duration_frames
+        || render_time_microseconds(&timing.source_in)? != input.source_in_microseconds
+    {
+        return Err(invalid());
+    }
+    let source_duration = super::types::RationalTime {
+        value: timing.source_out.value - timing.source_in.value,
+        rate_numerator: timing.source_in.rate_numerator,
+        rate_denominator: timing.source_in.rate_denominator,
+    };
+    Ok(Some(render_time_microseconds(&source_duration)?))
+}
+
+fn audio_fade_filter(
+    input: &super::types::RenderVideoInputV2,
+    expected: &super::types::RenderExpectation,
+) -> Result<String, VideoCommandError> {
+    let Some(fades) = &input.fades else {
+        return Ok(String::new());
+    };
+    let invalid = || VideoCommandError::invalid_render_plan("clip_fades");
+    if !fades.valid()
+        || fades
+            .in_frames
+            .checked_add(fades.out_frames)
+            .ok_or_else(invalid)?
+            > expected.duration_frames
+    {
+        return Err(invalid());
+    }
+    let seconds = |frames| -> Result<String, VideoCommandError> {
+        let us = render_time_microseconds(&super::types::RationalTime {
+            value: frames,
+            rate_numerator: expected.rate.numerator,
+            rate_denominator: expected.rate.denominator,
+        })?;
+        if frames > 0 && us == 0 {
+            return Err(invalid());
+        }
+        Ok(fixed_six_seconds(us))
+    };
+    let mut filter = String::new();
+    if fades.in_frames > 0 {
+        filter.push_str(&format!(
+            ",afade=t=in:st=0.000000:d={}:curve=tri",
+            seconds(fades.in_frames)?
+        ));
+    }
+    if fades.out_frames > 0 {
+        filter.push_str(&format!(
+            ",afade=t=out:st={}:d={}:curve=tri",
+            seconds(expected.duration_frames - fades.out_frames)?,
+            seconds(fades.out_frames)?
+        ));
+    }
+    Ok(filter)
+}
+
+fn expected_v2_filter(
+    plan: &RenderPlanV2,
+    duration_microseconds: u64,
+) -> Result<String, VideoCommandError> {
     let expected = &plan.expected;
     let duration = fixed_six_seconds(duration_microseconds);
     let mut parts = vec![format!(
@@ -1111,12 +1215,57 @@ fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String
     let mut visible = Vec::new();
     let mut audible = Vec::new();
     for (index, input) in plan.video_inputs.iter().enumerate() {
+        let gain = input.gain_milli_decibels.unwrap_or(0);
+        if !(-96_000..=24_000).contains(&gain) {
+            return Err(VideoCommandError::invalid_render_plan("clip_gain"));
+        }
+        let gain_filter = if gain == 0 {
+            String::new()
+        } else {
+            let magnitude = gain.abs();
+            format!(
+                ",volume={}{}.{:03}dB",
+                if gain < 0 { "-" } else { "" },
+                magnitude / 1_000,
+                magnitude % 1_000
+            )
+        };
+        let fade_filter = audio_fade_filter(input, expected)?;
+        let source_duration = validated_input_timing(input, expected)?;
+        let mut video_timing = "setpts=PTS-STARTPTS".to_owned();
+        let mut audio_timing = "asetpts=PTS-STARTPTS".to_owned();
+        if let (Some(timing), Some(source_duration)) = (&input.timing, source_duration) {
+            video_timing = format!(
+                "trim=end_frame={},setpts=PTS-STARTPTS,setpts=PTS*{}/{}",
+                timing.source_out.value - timing.source_in.value,
+                timing.speed.denominator,
+                timing.speed.numerator
+            );
+            let percent = timing.speed.numerator * 100 / timing.speed.denominator;
+            audio_timing = format!(
+                "atrim=duration={},asetpts=PTS-STARTPTS,atempo={}.{:02},atrim=duration={duration}",
+                fixed_six_seconds(source_duration),
+                percent / 100,
+                percent % 100
+            );
+        }
+        if input.timing.is_none() && !fade_filter.is_empty() {
+            audio_timing =
+                format!("atrim=duration={duration},asetpts=PTS-STARTPTS,atrim=duration={duration}");
+        }
         if !input.hidden {
-            parts.push(transformed_video_filter(index, input, expected));
+            parts.push(transformed_video_filter(
+                index,
+                input,
+                expected,
+                &video_timing,
+            ));
             visible.push(index);
         }
         if !input.muted && input.has_audio {
-            parts.push(format!("[{index}:a:0]asetpts=PTS-STARTPTS[a{index}]"));
+            parts.push(format!(
+                "[{index}:a:0]{audio_timing}{gain_filter}{fade_filter}[a{index}]"
+            ));
             audible.push(index);
         }
     }
@@ -1150,7 +1299,7 @@ fn expected_v2_filter(plan: &RenderPlanV2, duration_microseconds: u64) -> String
             audible.len(),
         ));
     }
-    parts.join(";")
+    Ok(parts.join(";"))
 }
 
 fn expected_render_arguments_v2(
@@ -1201,14 +1350,16 @@ fn expected_render_arguments_v2(
             "-ss".to_owned(),
             fixed_six_seconds(input.source_in_microseconds),
             "-t".to_owned(),
-            duration.clone(),
+            fixed_six_seconds(
+                validated_input_timing(input, &plan.expected)?.unwrap_or(duration_microseconds),
+            ),
             "-i".to_owned(),
             input.path.clone(),
         ]);
     }
     arguments.extend([
         "-filter_complex".to_owned(),
-        expected_v2_filter(plan, duration_microseconds),
+        expected_v2_filter(plan, duration_microseconds)?,
         "-map".to_owned(),
         "[vout]".to_owned(),
     ]);

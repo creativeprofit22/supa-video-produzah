@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { captionArtifactV1Schema } from "./caption.js";
+import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { projectUuidSchema, videoAssetSchema } from "./project.js";
 import { rationalRateSchema, rationalTimeSchema } from "./time.js";
 
@@ -72,6 +73,12 @@ export const clipTransformSchema = clipTransformGeometrySchema
   .strict();
 export type ClipTransform = z.infer<typeof clipTransformSchema>;
 
+export const clipFadesSchema = z.object({
+  inFrames: z.number().int().safe().nonnegative(),
+  outFrames: z.number().int().safe().nonnegative(),
+}).strict();
+export type ClipFades = z.infer<typeof clipFadesSchema>;
+
 export const projectClipSchema = z
   .object({
     id: projectUuidSchema,
@@ -81,12 +88,20 @@ export const projectClipSchema = z
     sourceOut: rationalTimeSchema,
     transform: clipTransformSchema,
     gainMilliDecibels: z.number().int().safe().min(-96_000).max(24_000),
+    speed: clipSpeedSchema.optional(),
+    fades: clipFadesSchema.optional(),
   })
   .strict()
   .refine(
     (clip) => clip.sourceOut.value > clip.sourceIn.value,
     "Clip source range must be nonempty",
-  );
+  ).refine((clip) => {
+    if (clip.fades === undefined) return true;
+    try {
+      const duration = clipTimelineDuration({ in: clip.sourceIn, out: clip.sourceOut }, { numerator: clip.timelineStart.rateNumerator, denominator: clip.timelineStart.rateDenominator }, clip.speed);
+      return BigInt(clip.fades.inFrames) + BigInt(clip.fades.outFrames) <= BigInt(duration.value);
+    } catch { return false; }
+  }, "Audio fades exceed exact clip duration");
 export type ProjectClip = z.infer<typeof projectClipSchema>;
 
 export const projectMarkerSchema = z
@@ -189,7 +204,22 @@ export const videoProjectStateV2Schema = z
   .superRefine((state, context) => {
     const assetIds = new Set(state.assets.map((asset) => asset.id));
     const sequenceIds = new Set(state.sequences.map((sequence) => sequence.id));
+    const assetsById = new Map(state.assets.map((asset) => [asset.id, asset]));
+    const nestedIds = new Set<string>();
+    for (const sequence of state.sequences)
+      for (const track of sequence.tracks) {
+        if (track.kind === "caption") continue;
+        for (const clip of track.clips)
+          if (clip.source.kind === "sequence") nestedIds.add(clip.source.sequenceId);
+      }
     state.sequences.forEach((sequence, sequenceIndex) => {
+      const managedSources = new Set(
+        sequence.tracks.flatMap((track) => {
+          if (track.kind !== "caption" || track.activeCaptionArtifact === undefined) return [];
+          const identity = track.activeCaptionArtifact.sourceIdentity;
+          return [`${identity.digest}:${identity.byteLength}`];
+        }),
+      );
       sequence.tracks.forEach((track, trackIndex) => {
         if (track.kind === "caption") {
           const artifact = track.activeCaptionArtifact;
@@ -245,6 +275,45 @@ export const videoProjectStateV2Schema = z
           return;
         }
         track.clips.forEach((clip, clipIndex) => {
+          if (clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator) {
+            let reason: string | null = null;
+            if (track.kind !== "video" || clip.source.kind !== "asset") {
+              reason = "Speed requires a direct-asset video clip";
+            } else if (nestedIds.has(sequence.id)) {
+              reason = "Speed in referenced child sequences is unsupported";
+            } else if (managedSources.size > 0) {
+              const identity = assetsById.get(clip.source.assetId)?.contentIdentity;
+              if (
+                identity === undefined ||
+                managedSources.has(`${identity.digest}:${identity.byteLength}`)
+              ) {
+                reason = "Speed with matching or unresolved managed captions is unsupported";
+              }
+            }
+            try {
+              clipTimelineDuration(
+                { in: clip.sourceIn, out: clip.sourceOut },
+                sequence.rate,
+                clip.speed,
+              );
+            } catch {
+              reason ??= "Speed requires a positive exact timeline duration";
+            }
+            if (reason !== null)
+              context.addIssue({
+                code: "custom",
+                path: [
+                  "sequences",
+                  sequenceIndex,
+                  "tracks",
+                  trackIndex,
+                  "clips",
+                  clipIndex,
+                  "speed",
+                ],
+                message: reason,
+              });
+          }
           const referenceExists =
             clip.source.kind === "asset"
               ? assetIds.has(clip.source.assetId)

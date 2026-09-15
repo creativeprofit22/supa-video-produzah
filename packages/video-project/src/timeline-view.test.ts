@@ -115,6 +115,33 @@ function viewportFor(value: ProjectProjection, start: number, width: number, ove
 }
 
 describe("visible timeline projection", () => {
+  it.each([
+    { numerator: 1, denominator: 2, duration: 600 },
+    { numerator: 1, denominator: 1, duration: 300 },
+    { numerator: 3, denominator: 2, duration: 200 },
+    { numerator: 2, denominator: 1, duration: 150 },
+  ])(
+    "projects retimed endpoints without moving later clips: %j",
+    ({ numerator, denominator, duration }) => {
+      const target = clip(100, 10, 310);
+      target.speed = { numerator, denominator };
+      const value = projection([
+        { id: id(10), name: "Video", kind: "video", clips: [target, clip(101, 800, 810)] },
+      ]);
+      const before = structuredClone(value);
+      const result = projectVisibleTimeline(value, viewportFor(value, 0, 1000, 0));
+      expect(result?.tracks[0]?.clips[0]).toMatchObject({
+        startFrame: 10,
+        endFrameExclusive: 10 + duration,
+      });
+      expect(result?.tracks[0]?.clips[1]).toMatchObject({
+        startFrame: 800,
+        endFrameExclusive: 810,
+      });
+      expect(deriveActiveTimelineRange(value).endFrameExclusive).toBe(810);
+      expect(value).toEqual(before);
+    },
+  );
   it("preserves canonical multitrack identity, order, source metadata, and exact ranges", () => {
     const nestedSequence: VideoSequenceV2 = {
       id: id(3),

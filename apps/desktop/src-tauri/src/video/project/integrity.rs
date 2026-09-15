@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{FixedOffset, NaiveDate, TimeZone};
 use uuid::Uuid;
 
+use super::clip_speed::validate_retimed_state;
+use super::clip_timing::{project_clip_timeline_duration, validate_speed};
 use super::types::{
     AffectedRange, ClipSource, ClipTransform, ProjectCaption, ProjectClip, ProjectCommand,
     ProjectHistoryEntryV2, ProjectTrack, VideoProjectSnapshotV2, VideoProjectStateV2,
@@ -163,7 +165,7 @@ fn date_time_millis(value: &str) -> Option<i64> {
         .map(|date_time| date_time.timestamp_millis())
 }
 
-fn valid_rate(rate: &RationalRate) -> bool {
+pub(super) fn valid_rate(rate: &RationalRate) -> bool {
     rate.numerator > 0
         && rate.denominator > 0
         && rate.numerator <= MAX_SAFE_INTEGER
@@ -171,7 +173,7 @@ fn valid_rate(rate: &RationalRate) -> bool {
         && gcd(rate.numerator, rate.denominator) == 1
 }
 
-fn valid_time_shape(time: &RationalTime) -> bool {
+pub(super) fn valid_time_shape(time: &RationalTime) -> bool {
     time.value <= MAX_SAFE_INTEGER
         && time.rate_numerator > 0
         && time.rate_denominator > 0
@@ -184,31 +186,6 @@ fn valid_time(time: &RationalTime, rate: &RationalRate) -> bool {
     valid_time_shape(time)
         && time.rate_numerator == rate.numerator
         && time.rate_denominator == rate.denominator
-}
-
-fn rescale_frames_exact(
-    value: u64,
-    source_rate_numerator: u64,
-    source_rate_denominator: u64,
-    timeline_rate_numerator: u64,
-    timeline_rate_denominator: u64,
-) -> Option<u64> {
-    let mut numerators = [value, source_rate_denominator, timeline_rate_numerator];
-    let mut denominators = [source_rate_numerator, timeline_rate_denominator];
-    for denominator in &mut denominators {
-        for numerator in &mut numerators {
-            let divisor = gcd(*numerator, *denominator);
-            *numerator /= divisor;
-            *denominator /= divisor;
-        }
-    }
-    if denominators != [1, 1] {
-        return None;
-    }
-    numerators
-        .into_iter()
-        .try_fold(1_u64, |product, factor| product.checked_mul(factor))
-        .filter(|duration| *duration <= MAX_SAFE_INTEGER)
 }
 
 pub(super) fn valid_transform(transform: &ClipTransform) -> bool {
@@ -292,6 +269,7 @@ fn valid_clip_shape(clip: &ProjectClip) -> bool {
         ClipSource::Sequence { sequence_id } => is_canonical_uuid(sequence_id),
     };
     is_canonical_uuid(&clip.id)
+        && clip.fades.is_none_or(|f| f.valid() && f.in_frames.checked_add(f.out_frames).is_some_and(|sum| project_clip_timeline_duration(clip).is_ok_and(|d| sum <= d)))
         && source_id_valid
         && valid_time_shape(&clip.timeline_start)
         && valid_time_shape(&clip.source_in)
@@ -299,6 +277,10 @@ fn valid_clip_shape(clip: &ProjectClip) -> bool {
         && clip.source_out.value > clip.source_in.value
         && valid_transform(&clip.transform)
         && (-96_000..=24_000).contains(&clip.gain_milli_decibels)
+        && clip
+            .speed
+            .as_ref()
+            .is_none_or(|speed| validate_speed(speed).is_ok())
 }
 
 fn valid_track_shape(track: &ProjectTrack) -> bool {
@@ -437,19 +419,8 @@ fn validate_sequence(
                     if clip.timeline_start.value < previous_end {
                         return Err(invalid("clip_overlap"));
                     }
-                    let source_duration = clip
-                        .source_out
-                        .value
-                        .checked_sub(clip.source_in.value)
-                        .ok_or_else(|| invalid("clip_range"))?;
-                    let duration = rescale_frames_exact(
-                        source_duration,
-                        clip.source_in.rate_numerator,
-                        clip.source_in.rate_denominator,
-                        sequence.rate.numerator,
-                        sequence.rate.denominator,
-                    )
-                    .ok_or_else(|| invalid("clip_range"))?;
+                    let duration =
+                        project_clip_timeline_duration(clip).map_err(|_| invalid("clip_range"))?;
                     previous_end = clip
                         .timeline_start
                         .value
@@ -568,6 +539,7 @@ pub fn validate_state(state: &VideoProjectStateV2) -> Result<(), VideoCommandErr
         Some(id) if !sequence_ids.contains(id) => return Err(invalid("active_sequence")),
         _ => {}
     }
+    validate_retimed_state(state)?;
     validate_acyclic(state)
 }
 
@@ -730,6 +702,58 @@ fn valid_command(command: &ProjectCommand) -> bool {
                 && is_canonical_uuid(track_id)
                 && is_canonical_uuid(clip_id)
                 && *opacity_permille <= 1_000
+        }
+        ProjectCommand::SetClipSpeed {
+            sequence_id,
+            track_id,
+            clip_id,
+            speed,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(clip_id)
+                && validate_speed(speed).is_ok()
+        }
+        ProjectCommand::RestoreClipSpeed {
+            sequence_id,
+            track_id,
+            clip_id,
+            speed,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(clip_id)
+                && speed
+                    .as_ref()
+                    .is_none_or(|value| validate_speed(value).is_ok())
+        }
+        ProjectCommand::SetClipFades {
+            sequence_id,
+            track_id,
+            clip_id,
+            fades,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(clip_id)
+                && fades.valid()
+        }
+        ProjectCommand::RestoreClipFades {
+            sequence_id,
+            track_id,
+            clip_id,
+            fades,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(clip_id)
+                && fades
+                    .as_ref()
+                    .is_none_or(|value| value.valid())
         }
         ProjectCommand::SetClipGain {
             sequence_id,

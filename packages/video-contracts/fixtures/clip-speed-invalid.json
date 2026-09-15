@@ -1,0 +1,19 @@
+[
+  { "name": "null instead of omission", "speed": null },
+  { "name": "zero numerator", "speed": { "numerator": 0, "denominator": 1 } },
+  { "name": "zero denominator", "speed": { "numerator": 1, "denominator": 0 } },
+  { "name": "negative numerator", "speed": { "numerator": -1, "denominator": 1 } },
+  { "name": "negative denominator", "speed": { "numerator": 1, "denominator": -1 } },
+  { "name": "fractional numerator", "speed": { "numerator": 1.5, "denominator": 1 } },
+  { "name": "fractional denominator", "speed": { "numerator": 1, "denominator": 1.5 } },
+  { "name": "unsafe numerator", "speed": { "numerator": 9007199254740992, "denominator": 1 } },
+  { "name": "unsafe denominator", "speed": { "numerator": 1, "denominator": 9007199254740992 } },
+  { "name": "unreduced ratio", "speed": { "numerator": 100, "denominator": 100 } },
+  { "name": "below domain", "speed": { "numerator": 49, "denominator": 100 } },
+  { "name": "above domain", "speed": { "numerator": 201, "denominator": 100 } },
+  { "name": "fractional percentage", "speed": { "numerator": 2, "denominator": 3 } },
+  { "name": "missing denominator", "speed": { "numerator": 1 } },
+  { "name": "string numerator", "speed": { "numerator": "1", "denominator": 1 } },
+  { "name": "unknown speed field", "speed": { "numerator": 1, "denominator": 1, "pitch": true } },
+  { "name": "numeric multiplier", "speed": 1.5 }
+]

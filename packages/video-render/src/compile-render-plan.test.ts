@@ -1,6 +1,7 @@
 import {
   DEFAULT_CLIP_TRANSFORM_GEOMETRY,
   type ProjectRevision,
+  type ClipSpeed,
   type RationalRate,
   type VideoTrack,
   VideoDomainError,
@@ -124,6 +125,8 @@ interface RevisionOptions {
 }
 
 interface V2RevisionOptions {
+  readonly sourceOut?: number;
+  readonly speed?: ClipSpeed;
   readonly muted?: boolean;
   readonly hidden?: boolean;
   readonly opacityPermille?: number;
@@ -188,7 +191,9 @@ function makeRevision(options: RevisionOptions = {}): ProjectRevision {
 }
 
 function makeV2Revision(options: V2RevisionOptions = {}) {
-  const legacy = makeRevision();
+  const legacy = makeRevision(
+    options.sourceOut === undefined ? {} : { sourceOut: options.sourceOut },
+  );
   const asset = legacy.state.asset!;
   const sequence = legacy.state.sequence!;
   const clip = sequence.videoTracks[0].clips[0]!;
@@ -236,6 +241,7 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                     opacityPermille: options.opacityPermille ?? 1_000,
                   },
                   gainMilliDecibels: 0,
+                  ...(options.speed === undefined ? {} : { speed: options.speed }),
                 },
               ],
             },
@@ -336,6 +342,306 @@ function malformedRevision(transform: (revision: ProjectRevision) => void): Proj
   transform(revision);
   return revision;
 }
+
+describe("V2 fades export", () => {
+  const active = (revision = makeV2Revision()) =>
+    compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+  const faded = (inFrames: number, outFrames: number, options: V2RevisionOptions = {}) => {
+    const revision = makeV2Revision(options);
+    const track = revision.state.sequences[0]!.tracks[0]!;
+    if (track.kind !== "video") throw new Error("video fixture");
+    Object.assign(track.clips[0]!, { fades: { inFrames, outFrames } });
+    return revision;
+  };
+  it.each([
+    [0, 0],
+    [15, 0],
+    [0, 30],
+    [15, 30],
+  ])("compiles linear output-frame fades %i/%i at fractional rate", (inFrames, outFrames) => {
+    const revision = faded(inFrames, outFrames);
+    const plan = active(revision);
+    const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+    if (inFrames + outFrames === 0) {
+      expect(plan).toEqual(active());
+      expect(filter).not.toContain("afade");
+    } else {
+      expect(plan.videoInputs[0]!.fades).toEqual({ inFrames, outFrames });
+      expect(filter).toContain(
+        "atrim=duration=2.502500,asetpts=PTS-STARTPTS,atrim=duration=2.502500",
+      );
+      expect(filter.includes("afade=t=in:st=0.000000:d=0.500500:curve=tri")).toBe(inFrames > 0);
+      expect(filter.includes("afade=t=out:st=1.501500:d=1.001000:curve=tri")).toBe(outFrames > 0);
+      expect(() => compile(revision)).toThrow("V1 export does not support nonzero audio fades");
+    }
+  });
+  it.each([false, true])(
+    "orders retiming, bounded trim, gain and fades independently of hidden/opacity and mute=%s",
+    (muted) => {
+      const revision = faded(15, 30, {
+        speed: { numerator: 2, denominator: 1 },
+        sourceOut: 105,
+        hidden: true,
+        opacityPermille: 0,
+        muted,
+      });
+      const track = revision.state.sequences[0]!.tracks[0]!;
+      if (track.kind !== "video") throw new Error("video fixture");
+      track.clips[0]!.gainMilliDecibels = -6123;
+      const plan = active(revision);
+      const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+      expect(plan.expected.durationFrames).toBe(45);
+      expect(plan.videoInputs[0]!.fades).toEqual({ inFrames: 15, outFrames: 30 });
+      expect(filter).not.toContain("[0:v:0]");
+      if (muted) expect(filter).not.toContain("afade");
+      else
+        expect(filter).toContain(
+          "atempo=2.00,atrim=duration=1.501500,volume=-6.123dB,afade=t=in:st=0.000000:d=0.500500:curve=tri,afade=t=out:st=0.500500:d=1.001000:curve=tri[a0]",
+        );
+    },
+  );
+  it("rejects invalid metadata, context and modified filter durations", () => {
+    const plan = active(faded(15, 30));
+    for (const fades of [
+      null,
+      { inFrames: -1, outFrames: 0 },
+      { inFrames: 0.5, outFrames: 0 },
+      { inFrames: 46, outFrames: 30 },
+      { inFrames: Number.MAX_SAFE_INTEGER, outFrames: 1 },
+      { inFrames: 15, outFrames: 30, extra: true },
+    ]) {
+      expect(
+        renderPlanV2Schema.safeParse({ ...plan, videoInputs: [{ ...plan.videoInputs[0], fades }] })
+          .success,
+      ).toBe(false);
+    }
+    expectInvalidRenderPlan(() => active(faded(46, 30)));
+    expect(
+      renderPlanV2Schema.safeParse({ ...plan, expected: { ...plan.expected, durationFrames: 76 } })
+        .success,
+    ).toBe(false);
+    expect(
+      renderPlanV2Schema.safeParse({
+        ...plan,
+        argv: plan.argv.map((arg) => arg.replace("d=0.500500:curve=tri", "d=0.500501:curve=tri")),
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("V2 volume export", () => {
+  const active = (revision = makeV2Revision()) =>
+    compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+  const withGain = (gain: number, options: V2RevisionOptions = {}) => {
+    const revision = makeV2Revision(options);
+    const track = revision.state.sequences[0]!.tracks[0]!;
+    if (track.kind !== "video") throw new Error("video fixture");
+    track.clips[0]!.gainMilliDecibels = gain;
+    return revision;
+  };
+  it.each([
+    [-96000, "-96.000"],
+    [-6123, "-6.123"],
+    [-1, "-0.001"],
+    [0, ""],
+    [24000, "24.000"],
+  ] as const)("exports exact bounded gain %i", (gain, db) => {
+    const revision = withGain(gain);
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+    const plan = active(revision);
+    const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+    expect(plan.videoInputs[0]!.gainMilliDecibels).toBe(gain === 0 ? undefined : gain);
+    if (gain === 0) {
+      expect(filter).not.toContain("volume=");
+      expect(JSON.stringify(plan)).toBe(JSON.stringify(active()));
+    } else {
+      expect(filter).toContain(`asetpts=PTS-STARTPTS,volume=${db}dB[a0]`);
+      expect(() => compile(revision)).toThrow("requires default transform and gain");
+    }
+  });
+  it.each([-96001, 24001, 0.1, null, "-6000", { value: -6000 }])(
+    "rejects invalid gain metadata %j",
+    (gainMilliDecibels) => {
+      const plan = active();
+      expect(
+        renderPlanV2Schema.safeParse({
+          ...plan,
+          videoInputs: [{ ...plan.videoInputs[0], gainMilliDecibels }],
+        }).success,
+      ).toBe(false);
+    },
+  );
+  it("rejects unknown input metadata", () => {
+    const plan = active();
+    expect(
+      renderPlanV2Schema.safeParse({ ...plan, videoInputs: [{ ...plan.videoInputs[0], gain: -6 }] })
+        .success,
+    ).toBe(false);
+  });
+  it.each([false, true])("keeps gain independent of hidden/opacity/speed and mute=%s", (muted) => {
+    const plan = active(
+      withGain(-6123, {
+        hidden: true,
+        opacityPermille: 0,
+        muted,
+        speed: { numerator: 2, denominator: 1 },
+        sourceOut: 105,
+      }),
+    );
+    expect(plan.videoInputs[0]!.gainMilliDecibels).toBe(-6123);
+    expect(plan.expected.audio).toBe(!muted);
+    const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+    expect(filter).not.toContain("[0:v:0]");
+    if (muted) expect(filter).not.toContain("volume=");
+    else expect(filter).toContain("atempo=2.00,atrim=duration=1.501500,volume=-6.123dB[a0]");
+    expect(filter).not.toContain("asetrate");
+  });
+});
+
+describe("V2 speed export", () => {
+  const active = (revision = makeV2Revision()) =>
+    compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+  it.each([
+    { numerator: 1, denominator: 2, frames: 180, tempo: "0.50" },
+    { numerator: 3, denominator: 2, frames: 60, tempo: "1.50" },
+    { numerator: 2, denominator: 1, frames: 45, tempo: "2.00" },
+  ])(
+    "compiles exact source trim, tempo and duration: %j",
+    ({ numerator, denominator, frames, tempo }) => {
+      const speed = { numerator, denominator };
+      const revision = makeV2Revision({ speed, sourceOut: 105 });
+      const before = structuredClone(revision);
+      expect(getActiveSequenceRenderEligibility(revision)).toEqual({ eligible: true });
+      const plan = active(revision);
+      expect(plan.expected.durationFrames).toBe(frames);
+      expect(plan.videoInputs[0]!.timing).toEqual({
+        sourceIn: createRationalTime(15, plan.expected.rate),
+        sourceOut: createRationalTime(105, plan.expected.rate),
+        speed,
+        outputDuration: createRationalTime(frames, plan.expected.rate),
+      });
+      expect(plan.argv.slice(7, 13)).toEqual([
+        "-ss",
+        "0.500500",
+        "-t",
+        "3.003000",
+        "-i",
+        inputPath,
+      ]);
+      const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+      expect(filter).toContain(
+        `trim=end_frame=90,setpts=PTS-STARTPTS,setpts=PTS*${denominator}/${numerator},scale=`,
+      );
+      expect(filter).toContain(
+        `atrim=duration=3.003000,asetpts=PTS-STARTPTS,atempo=${tempo},atrim=duration=`,
+      );
+      expect(filter).not.toContain("asetrate");
+      expect(revision).toEqual(before);
+      expect(() =>
+        compileSingleClipRenderPlan({ planId: ids.plan, revision, inputPath, outputPath }),
+      ).toThrow("Clip speed rendering is not supported yet");
+    },
+  );
+  it("rejects inconsistent, missing and malformed timing fields", () => {
+    const plan = active(
+      makeV2Revision({ speed: { numerator: 2, denominator: 1 }, sourceOut: 105 }),
+    );
+    expect(renderPlanV2Schema.safeParse(plan).success).toBe(true);
+    const input = plan.videoInputs[0]!;
+    for (const timing of [
+      null,
+      { ...input.timing, speed: undefined },
+      { ...input.timing, speed: { numerator: 0, denominator: 1 } },
+      { ...input.timing, outputDuration: createRationalTime(46, plan.expected.rate) },
+      { ...input.timing, surprise: true },
+    ]) {
+      expect(
+        renderPlanV2Schema.safeParse({ ...plan, videoInputs: [{ ...input, timing }] }).success,
+      ).toBe(false);
+    }
+    expect(
+      renderPlanV2Schema.safeParse({ ...plan, expected: { ...plan.expected, durationFrames: 46 } })
+        .success,
+    ).toBe(false);
+    expect(
+      renderPlanV2Schema.safeParse({
+        ...plan,
+        videoInputs: [{ ...input, sourceInMicroseconds: 0 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      renderPlanV2Schema.safeParse({
+        ...plan,
+        expected: { ...plan.expected, rate: { numerator: 30, denominator: 1 } },
+      }).success,
+    ).toBe(false);
+  });
+  it("compares retimed rather than source durations across layers", () => {
+    const revision = makeV2Revision({ speed: { numerator: 2, denominator: 1 }, sourceOut: 105 });
+    const sequence = revision.state.sequences[0]!;
+    const top = sequence.tracks[0]!;
+    if (top.kind !== "video") throw new Error("video fixture");
+    const second = structuredClone(top);
+    second.id = "00000000-0000-4000-8000-000000000091";
+    second.clips[0]!.id = "00000000-0000-4000-8000-000000000092";
+    delete second.clips[0]!.speed;
+    second.clips[0]!.sourceOut.value = 60;
+    sequence.tracks.push(second);
+    const plan = active(revision);
+    expect(plan.expected.durationFrames).toBe(45);
+    expect(plan.videoInputs).toHaveLength(2);
+    expect(plan.videoInputs[1]!.timing).toBeUndefined();
+    second.clips[0]!.sourceOut.value = 105;
+    expect(getActiveSequenceRenderEligibility(revision)).toEqual({
+      eligible: false,
+      reason: "Every video track must have one common positive duration",
+    });
+  });
+  it("retains hidden, mute and dedicated-audio restrictions", () => {
+    const revision = makeV2Revision({
+      speed: { numerator: 2, denominator: 1 },
+      sourceOut: 105,
+      hidden: true,
+      muted: true,
+    });
+    const plan = active(revision);
+    expect(plan.expected.durationFrames).toBe(45);
+    expect(plan.expected.audio).toBe(false);
+    const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+    expect(filter).not.toContain("[0:v:0]");
+    expect(filter).not.toContain("[0:a:0]");
+    expect(plan.argv).toContain("-an");
+    expect(
+      getActiveSequenceRenderEligibility(
+        makeV2Revision({
+          speed: { numerator: 2, denominator: 1 },
+          sourceOut: 105,
+          dedicatedAudioTrack: "non-empty",
+        }),
+      ).eligible,
+    ).toBe(false);
+  });
+  it("keeps omitted and explicit normal-speed output identical in V1 and V2", () => {
+    const normal = makeV2Revision({ speed: { numerator: 1, denominator: 1 } });
+    expect(active(normal)).toEqual(active());
+    expect(compile(normal)).toEqual(compile(makeV2Revision()));
+  });
+});
 
 describe("compileSingleClipRenderPlan", () => {
   it("keeps exact AV argv and omits videoHidden when the V2 video track is shown", () => {

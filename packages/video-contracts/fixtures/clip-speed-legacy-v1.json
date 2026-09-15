@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "10000000-0000-4000-8000-000000000001",
+  "name": "Speed compatibility legacy clip",
+  "createdAt": "2026-07-26T12:00:00Z",
+  "updatedAt": "2026-07-26T12:00:00Z",
+  "currentRevisionId": "10000000-0000-4000-8000-000000000003",
+  "revisions": [
+    {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "parentRevisionId": null,
+      "sequenceNumber": 0,
+      "committedAt": "2026-07-26T12:00:00Z",
+      "commandSummary": "Imported clip",
+      "state": {
+        "asset": {
+          "id": "10000000-0000-4000-8000-000000000005",
+          "displayName": "clip.mp4",
+          "locator": { "relativePath": "media/clip.mp4" },
+          "probe": {
+            "durationMicroseconds": 1000000,
+            "averageFrameRate": { "numerator": 30, "denominator": 1 },
+            "realFrameRate": { "numerator": 30, "denominator": 1 },
+            "variableFrameRate": false,
+            "width": 640,
+            "height": 360,
+            "videoCodecName": "h264",
+            "audio": null,
+            "fileSizeBytes": 1000
+          }
+        },
+        "sequence": {
+          "id": "10000000-0000-4000-8000-000000000006",
+          "rate": { "numerator": 30, "denominator": 1 },
+          "width": 640,
+          "height": 360,
+          "audioSampleRate": 48000,
+          "videoTracks": [
+            {
+              "id": "10000000-0000-4000-8000-000000000007",
+              "clips": [
+                {
+                  "id": "10000000-0000-4000-8000-000000000008",
+                  "assetId": "10000000-0000-4000-8000-000000000005",
+                  "timelineStart": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                  "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                  "sourceOut": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

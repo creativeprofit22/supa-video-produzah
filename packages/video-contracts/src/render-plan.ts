@@ -1,9 +1,15 @@
 import { z } from "zod";
 
+import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { videoCommandErrorSchema } from "./errors.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
-import { clipTransformGeometrySchema } from "./project-v2-entities.js";
-import { rationalRateSchema } from "./time.js";
+import { clipFadesSchema, clipTransformGeometrySchema } from "./project-v2-entities.js";
+import {
+  rationalRateSchema,
+  rationalTimeSchema,
+  rateOf,
+  rationalTimeToMicroseconds,
+} from "./time.js";
 
 const safePositiveIntegerSchema = z.number().int().safe().positive();
 const safeNonNegativeIntegerSchema = z.number().int().safe().nonnegative();
@@ -80,6 +86,38 @@ export const renderPlanV1Schema = z
 
 export type RenderPlanV1 = z.infer<typeof renderPlanV1Schema>;
 
+/** Exact source boundaries and retimed output duration travel together, never as a float. */
+export const renderClipTimingV2Schema = z
+  .object({
+    sourceIn: rationalTimeSchema,
+    sourceOut: rationalTimeSchema,
+    speed: clipSpeedSchema,
+    outputDuration: rationalTimeSchema,
+  })
+  .strict()
+  .superRefine((timing, context) => {
+    try {
+      const expected = clipTimelineDuration(
+        { in: timing.sourceIn, out: timing.sourceOut },
+        rateOf(timing.outputDuration),
+        timing.speed,
+      );
+      if (expected.value !== timing.outputDuration.value) {
+        context.addIssue({
+          code: "custom",
+          path: ["outputDuration"],
+          message: "Output duration must exactly match the retimed source range",
+        });
+      }
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Render timing must have valid exact frame boundaries",
+      });
+    }
+  });
+export type RenderClipTimingV2 = z.infer<typeof renderClipTimingV2Schema>;
+
 /**
  * Geometry values use the canonical clip composition semantics declared by
  * clipTransformGeometrySchema. Render metadata carries exact integers so preview and
@@ -90,6 +128,9 @@ export const renderVideoInputV2Schema = z
     assetId: projectUuidSchema,
     path: pathSchema,
     sourceInMicroseconds: safeNonNegativeIntegerSchema,
+    timing: renderClipTimingV2Schema.optional(),
+    fades: clipFadesSchema.optional(),
+    gainMilliDecibels: z.number().int().safe().min(-96_000).max(24_000).optional(),
     ...clipTransformGeometrySchema.shape,
     opacityPermille: z.number().int().safe().min(0).max(1_000),
     hidden: z.boolean(),
@@ -125,7 +166,80 @@ export const renderPlanV2Schema = z
     if (entries.length === 0) {
       context.addIssue({ code: "custom", message: "A render requires at least one input asset" });
     }
-    for (const videoInput of plan.videoInputs) {
+    for (const [index, videoInput] of plan.videoInputs.entries()) {
+      const timing = videoInput.timing;
+      if (videoInput.fades !== undefined) {
+        try {
+          const { inFrames, outFrames } = videoInput.fades;
+          if (BigInt(inFrames) + BigInt(outFrames) > BigInt(plan.expected.durationFrames))
+            throw new Error("fade sum");
+          const seconds = (frames: number) => {
+            const us = rationalTimeToMicroseconds(
+              {
+                value: frames,
+                rateNumerator: plan.expected.rate.numerator,
+                rateDenominator: plan.expected.rate.denominator,
+              },
+              "nearestTiesAwayFromZero",
+            );
+            if (frames > 0 && us === 0) throw new Error("zero fade duration");
+            return `${Math.floor(us / 1_000_000)}.${String(us % 1_000_000).padStart(6, "0")}`;
+          };
+          const duration = seconds(plan.expected.durationFrames);
+          let audio = "asetpts=PTS-STARTPTS";
+          if (timing !== undefined) {
+            const percent = (timing.speed.numerator * 100) / timing.speed.denominator;
+            audio = `atrim=duration=${seconds(timing.sourceOut.value - timing.sourceIn.value)},asetpts=PTS-STARTPTS,atempo=${Math.floor(percent / 100)}.${String(percent % 100).padStart(2, "0")},atrim=duration=${duration}`;
+          } else if (inFrames > 0 || outFrames > 0) {
+            audio = `atrim=duration=${duration},asetpts=PTS-STARTPTS,atrim=duration=${duration}`;
+          }
+          const gain = videoInput.gainMilliDecibels ?? 0;
+          if (gain !== 0)
+            audio += `,volume=${gain < 0 ? "-" : ""}${Math.floor(Math.abs(gain) / 1000)}.${String(Math.abs(gain) % 1000).padStart(3, "0")}dB`;
+          if (inFrames > 0) audio += `,afade=t=in:st=0.000000:d=${seconds(inFrames)}:curve=tri`;
+          if (outFrames > 0)
+            audio += `,afade=t=out:st=${seconds(plan.expected.durationFrames - outFrames)}:d=${seconds(outFrames)}:curve=tri`;
+          const filters = plan.argv[plan.argv.indexOf("-filter_complex") + 1]?.split(";") ?? [];
+          const branch = `[${index}:a:0]${audio}[a${index}]`;
+          if (
+            (!videoInput.muted && videoInput.hasAudio
+              ? filters.filter((part) => part === branch).length !== 1
+              : filters.some((part) => part.startsWith(`[${index}:a:0]`))) ||
+            plan.argv[plan.argv.lastIndexOf("-t") + 1] !== duration
+          )
+            throw new Error("fade graph");
+        } catch {
+          context.addIssue({
+            code: "custom",
+            message: "Audio fades must match exact output duration and filter context",
+          });
+        }
+      }
+      if (timing !== undefined) {
+        try {
+          const times = [timing.sourceIn, timing.sourceOut, timing.outputDuration];
+          if (
+            times.some(
+              (time) =>
+                time.rateNumerator !== plan.expected.rate.numerator ||
+                time.rateDenominator !== plan.expected.rate.denominator,
+            ) ||
+            timing.outputDuration.value !== plan.expected.durationFrames ||
+            rationalTimeToMicroseconds(timing.sourceIn, "nearestTiesAwayFromZero") !==
+              videoInput.sourceInMicroseconds
+          ) {
+            context.addIssue({
+              code: "custom",
+              message: "Clip timing must match the render rate, duration and source offset",
+            });
+          }
+        } catch {
+          context.addIssue({
+            code: "custom",
+            message: "Clip timing exceeds the render time boundary",
+          });
+        }
+      }
       if (plan.inputPathsByAssetId[videoInput.assetId] !== videoInput.path) {
         context.addIssue({
           code: "custom",

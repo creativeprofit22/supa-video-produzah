@@ -4,9 +4,14 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::{
+    clip_speed::{find_speed_target, validate_retimed_context},
+    clip_timing::{
+        normalize_speed, project_clip_timeline_duration, source_offset_to_timeline, validate_speed,
+        ClipSpeed, SamplePolicy, TimingError,
+    },
     integrity::{is_canonical_uuid, valid_transform, validate_state},
     types::{
-        AffectedRange, CacheInvalidation, ProjectClip, ProjectCommand, ProjectTrack,
+        AffectedRange, CacheInvalidation, ClipFades, ProjectClip, ProjectCommand, ProjectTrack,
         TrackMuteError, TrackVisibilityError, VideoProjectStateV2, MAX_NON_BLANK_UTF16,
         MAX_SAFE_INTEGER,
     },
@@ -14,7 +19,7 @@ use super::{
 use crate::video::{
     caption::{validate_caption_artifact, CaptionArtifactV1},
     error::{VideoCommandError, VideoErrorCode},
-    types::RationalTime,
+    types::{RationalRate, RationalTime},
 };
 
 #[derive(Debug, Clone)]
@@ -132,63 +137,18 @@ fn find_clip_mut<'a>(
         .ok_or_else(|| invalid("unknown_clip"))
 }
 
-fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
-    while right != 0 {
-        let remainder = left % right;
-        left = right;
-        right = remainder;
-    }
-    left
-}
-
-fn rescale_frames_exact(
-    value: u64,
-    source_rate_numerator: u64,
-    source_rate_denominator: u64,
-    timeline_rate_numerator: u64,
-    timeline_rate_denominator: u64,
-) -> Result<u64, VideoCommandError> {
-    if source_rate_numerator == 0
-        || source_rate_denominator == 0
-        || timeline_rate_numerator == 0
-        || timeline_rate_denominator == 0
-    {
-        return Err(invalid("time_rate"));
-    }
-
-    // value / source_rate * timeline_rate, cross-cancelled before multiplication.
-    let mut numerators = [value, source_rate_denominator, timeline_rate_numerator];
-    let mut denominators = [source_rate_numerator, timeline_rate_denominator];
-    for denominator in &mut denominators {
-        for numerator in &mut numerators {
-            let divisor = greatest_common_divisor(*numerator, *denominator);
-            *numerator /= divisor;
-            *denominator /= divisor;
-        }
-    }
-    if denominators != [1, 1] {
-        return Err(invalid("inexact_time"));
-    }
-    numerators
-        .into_iter()
-        .try_fold(1_u64, |product, factor| product.checked_mul(factor))
-        .filter(|value| *value <= MAX_SAFE_INTEGER)
-        .ok_or_else(|| invalid("safe_integer"))
+fn timing_error(error: TimingError) -> VideoCommandError {
+    invalid(match error {
+        TimingError::Inexact => "inexact_time",
+        TimingError::Overflow => "safe_integer",
+        TimingError::InvalidRate => "time_rate",
+        TimingError::InvalidSpeed => "clip_speed",
+        TimingError::InvalidRange => "clip_range",
+    })
 }
 
 fn clip_duration_on_timeline(clip: &ProjectClip) -> Result<u64, VideoCommandError> {
-    let source_frames = clip
-        .source_out
-        .value
-        .checked_sub(clip.source_in.value)
-        .ok_or_else(|| invalid("clip_range"))?;
-    rescale_frames_exact(
-        source_frames,
-        clip.source_in.rate_numerator,
-        clip.source_in.rate_denominator,
-        clip.timeline_start.rate_numerator,
-        clip.timeline_start.rate_denominator,
-    )
+    project_clip_timeline_duration(clip).map_err(timing_error)
 }
 
 fn clip_range(sequence_id: &str, clip: &ProjectClip) -> Result<AffectedRange, VideoCommandError> {
@@ -208,6 +168,44 @@ fn clip_range(sequence_id: &str, clip: &ProjectClip) -> Result<AffectedRange, Vi
             rate_denominator: clip.timeline_start.rate_denominator,
         },
     })
+}
+
+fn set_clip_speed(
+    state: &mut VideoProjectStateV2,
+    command_id: &str,
+    sequence_id: &str,
+    track_id: &str,
+    clip_id: &str,
+    desired: Option<ClipSpeed>,
+) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    if let Some(speed) = desired {
+        validate_speed(&speed).map_err(|_| invalid("clip_speed"))?;
+    }
+    let previous = find_speed_target(state, sequence_id, track_id, clip_id)?.speed;
+    if previous.unwrap_or_default() != desired.unwrap_or_default() {
+        validate_retimed_context(state, sequence_id, track_id, clip_id)?;
+    }
+    let clip = find_clip_mut(state, sequence_id, track_id, clip_id)?;
+    let before = clip_range(sequence_id, clip)?;
+    clip.speed = desired;
+    let after = clip_range(sequence_id, clip)?;
+    Ok((
+        vec![ProjectCommand::RestoreClipSpeed {
+            command_id: inverse_id(command_id, 0),
+            sequence_id: sequence_id.to_owned(),
+            track_id: track_id.to_owned(),
+            clip_id: clip_id.to_owned(),
+            speed: previous,
+        }],
+        vec![before, after],
+    ))
+}
+
+fn set_clip_fades(state: &mut VideoProjectStateV2, command_id: &str, sequence_id: &str, track_id: &str, clip_id: &str, desired: Option<ClipFades>) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    let clip = find_clip_mut(state, sequence_id, track_id, clip_id)?;
+    if desired.is_some_and(|f| !f.valid() || f.in_frames.checked_add(f.out_frames).is_none_or(|sum| clip_duration_on_timeline(clip).map_or(true, |duration| sum > duration))) { return Err(invalid("clip_fades")); }
+    let previous = std::mem::replace(&mut clip.fades, desired);
+    Ok((vec![ProjectCommand::RestoreClipFades { command_id: inverse_id(command_id, 0), sequence_id: sequence_id.to_owned(), track_id: track_id.to_owned(), clip_id: clip_id.to_owned(), fades: previous }], vec![clip_range(sequence_id, clip)?]))
 }
 
 fn track_range(
@@ -414,6 +412,18 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             "Updated clip opacity",
             vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
         ),
+        ProjectCommand::SetClipSpeed { .. } | ProjectCommand::RestoreClipSpeed { .. } => (
+            "Updated clip speed",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::AudioMix,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::SetClipFades { .. } | ProjectCommand::RestoreClipFades { .. } => (
+            "Updated clip fades", vec![CacheInvalidation::AudioMix, CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
+        ),
         ProjectCommand::SetClipGain { .. } => (
             "Updated clip gain",
             vec![CacheInvalidation::AudioMix, CacheInvalidation::RenderPlan],
@@ -503,6 +513,18 @@ fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
             track_id,
             ..
         }
+        | ProjectCommand::SetClipSpeed {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RestoreClipSpeed {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetClipFades { sequence_id, track_id, .. }
+        | ProjectCommand::RestoreClipFades { sequence_id, track_id, .. }
         | ProjectCommand::SetClipGain {
             sequence_id,
             track_id,
@@ -926,13 +948,20 @@ fn apply_one(
                 .value
                 .checked_sub(original.source_in.value)
                 .ok_or_else(|| invalid("split_range"))?;
-            let timeline_offset = rescale_frames_exact(
-                source_offset,
-                original.source_in.rate_numerator,
-                original.source_in.rate_denominator,
-                original.timeline_start.rate_numerator,
-                original.timeline_start.rate_denominator,
-            )?;
+            let timeline_offset = source_offset_to_timeline(
+                &RationalTime {
+                    value: source_offset,
+                    ..original.source_in.clone()
+                },
+                &RationalRate {
+                    numerator: original.timeline_start.rate_numerator,
+                    denominator: original.timeline_start.rate_denominator,
+                },
+                &original.speed.unwrap_or_default(),
+                SamplePolicy::Exact,
+            )
+            .map_err(timing_error)?
+            .value;
             let right_timeline_start = original
                 .timeline_start
                 .value
@@ -1084,6 +1113,25 @@ fn apply_one(
                 vec![affected_range],
             ))
         }
+        ProjectCommand::SetClipSpeed {
+            sequence_id,
+            track_id,
+            clip_id,
+            speed,
+            ..
+        } => {
+            let desired = normalize_speed(*speed).map_err(|_| invalid("clip_speed"))?;
+            set_clip_speed(state, id, sequence_id, track_id, clip_id, desired)
+        }
+        ProjectCommand::RestoreClipSpeed {
+            sequence_id,
+            track_id,
+            clip_id,
+            speed,
+            ..
+        } => set_clip_speed(state, id, sequence_id, track_id, clip_id, *speed),
+        ProjectCommand::SetClipFades { sequence_id, track_id, clip_id, fades, .. } => set_clip_fades(state, id, sequence_id, track_id, clip_id, if fades.in_frames == 0 && fades.out_frames == 0 { None } else { Some(*fades) }),
+        ProjectCommand::RestoreClipFades { sequence_id, track_id, clip_id, fades, .. } => set_clip_fades(state, id, sequence_id, track_id, clip_id, *fades),
         ProjectCommand::SetClipGain {
             sequence_id,
             track_id,
@@ -1287,6 +1335,23 @@ pub fn apply_group(
         !is_canonical_uuid(command.command_id()) || !command_ids.insert(command.command_id())
     }) {
         return Err(invalid("command_id"));
+    }
+    // A group must not silently detach managed captions before retiming their source.
+    for command in commands {
+        if let ProjectCommand::SetClipSpeed {
+            sequence_id,
+            track_id,
+            clip_id,
+            speed,
+            ..
+        } = command
+        {
+            if let Ok(clip) = find_speed_target(base, sequence_id, track_id, clip_id) {
+                if clip.speed.unwrap_or_default() != *speed {
+                    validate_retimed_context(base, sequence_id, track_id, clip_id)?;
+                }
+            }
+        }
     }
     let mut state = base.clone();
     let mut inverse_commands = Vec::new();

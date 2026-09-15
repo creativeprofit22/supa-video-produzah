@@ -3188,6 +3188,248 @@ fn multitrack_render_plan_binds_order_visibility_audio_and_source_ranges_to_exac
 }
 
 #[test]
+fn render_clip_timing_metadata_requires_matching_duration_and_argv() {
+    let directory = tempdir().expect("timing render workspace");
+    let (grants, exact) = granted_multitrack_render_plan(directory.path());
+    parse_and_validate_render_plan(exact.clone(), "owner", &grants).expect("legacy plan");
+    for (numerator, denominator, frames) in [(1, 2, 60), (1, 1, 30), (3, 2, 20), (2, 1, 15)] {
+        let mut value = exact.clone();
+        value["videoInputs"][0]["timing"] = serde_json::json!({
+            "sourceIn":{"value":0,"rateNumerator":30,"rateDenominator":1},
+            "sourceOut":{"value":30,"rateNumerator":30,"rateDenominator":1},
+            "speed":{"numerator":numerator,"denominator":denominator},
+            "outputDuration":{"value":frames,"rateNumerator":30,"rateDenominator":1}
+        });
+        let error = parse_and_validate_render_plan(value, "owner", &grants)
+            .expect_err("metadata must not be ignored");
+        assert_eq!(error.code, VideoErrorCode::InvalidRenderPlan);
+        assert_eq!(
+            error.details["category"],
+            if frames == 60 {
+                "argv_grammar"
+            } else {
+                "clip_timing"
+            }
+        );
+    }
+    let mut null = exact;
+    null["videoInputs"][0]["timing"] = Value::Null;
+    assert!(parse_and_validate_render_plan(null, "owner", &grants).is_err());
+}
+
+#[test]
+fn render_fades_exact_output_frames_and_tamper_rejection() {
+    let directory = tempdir().unwrap();
+    let (grants, base) = granted_multitrack_render_plan(directory.path());
+    for (fade_in, fade_out) in [(0, 0), (15, 0), (0, 30), (15, 30)] {
+        let mut plan = base.clone();
+        plan["videoInputs"][0]["fades"] =
+            serde_json::json!({"inFrames":fade_in,"outFrames":fade_out});
+        let mut audio = "asetpts=PTS-STARTPTS".to_owned();
+        if fade_in + fade_out > 0 {
+            audio =
+                "atrim=duration=2.000000,asetpts=PTS-STARTPTS,atrim=duration=2.000000".to_owned();
+        }
+        if fade_in > 0 {
+            audio.push_str(",afade=t=in:st=0.000000:d=0.500000:curve=tri");
+        }
+        if fade_out > 0 {
+            audio.push_str(",afade=t=out:st=1.000000:d=1.000000:curve=tri");
+        }
+        let filter = multitrack_filter_mut(&mut plan);
+        *filter = Value::String(filter.as_str().unwrap().replace(
+            "[0:a:0]asetpts=PTS-STARTPTS[a0]",
+            &format!("[0:a:0]{audio}[a0]"),
+        ));
+        parse_and_validate_render_plan(plan.clone(), "owner", &grants).unwrap();
+        if fade_in + fade_out > 0 {
+            let mut missing = plan.clone();
+            missing["videoInputs"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("fades");
+            assert!(parse_and_validate_render_plan(missing, "owner", &grants).is_err());
+            let mut bad = plan.clone();
+            let filter = multitrack_filter_mut(&mut bad);
+            *filter = Value::String(
+                filter
+                    .as_str()
+                    .unwrap()
+                    .replace(":curve=tri", ":curve=qsin"),
+            );
+            assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
+            let mut duration = plan.clone();
+            duration["expected"]["durationFrames"] = Value::from(61);
+            assert!(parse_and_validate_render_plan(duration, "owner", &grants).is_err());
+        } else {
+            assert_eq!(plan["argv"], base["argv"]);
+        }
+    }
+    for fades in [
+        Value::Null,
+        serde_json::json!({"inFrames":-1,"outFrames":0}),
+        serde_json::json!({"inFrames":0.5,"outFrames":0}),
+        serde_json::json!({"inFrames":31,"outFrames":30}),
+        serde_json::json!({"inFrames":9007199254740992_u64,"outFrames":0}),
+        serde_json::json!({"inFrames":0,"outFrames":0,"extra":true}),
+    ] {
+        let mut bad = base.clone();
+        bad["videoInputs"][0]["fades"] = fades;
+        assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
+    }
+}
+
+#[test]
+fn render_volume_exact_bounds_metadata_and_argv_fail_closed() {
+    let directory = tempdir().unwrap();
+    let (grants, base) = granted_multitrack_render_plan(directory.path());
+    for (gain, db) in [
+        (-96000, "-96.000"),
+        (-6123, "-6.123"),
+        (-1, "-0.001"),
+        (0, "0.000"),
+        (24000, "24.000"),
+    ] {
+        let mut plan = base.clone();
+        plan["videoInputs"][0]["gainMilliDecibels"] = Value::from(gain);
+        if gain != 0 {
+            let filter = multitrack_filter_mut(&mut plan);
+            *filter = Value::String(filter.as_str().unwrap().replace(
+                "[0:a:0]asetpts=PTS-STARTPTS[a0]",
+                &format!("[0:a:0]asetpts=PTS-STARTPTS,volume={db}dB[a0]"),
+            ));
+        } else {
+            assert_eq!(plan["argv"], base["argv"]);
+        }
+        parse_and_validate_render_plan(plan.clone(), "owner", &grants).unwrap();
+        if gain != 0 {
+            let mut missing = plan.clone();
+            missing["videoInputs"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("gainMilliDecibels");
+            assert!(parse_and_validate_render_plan(missing, "owner", &grants).is_err());
+            for replacement in [
+                "",
+                ",volume=0.5",
+                ",volume=-6.124dB",
+                ",volume=-6.123dB,anull",
+            ] {
+                let mut bad = plan.clone();
+                let filter = multitrack_filter_mut(&mut bad);
+                *filter = Value::String(
+                    filter
+                        .as_str()
+                        .unwrap()
+                        .replace(&format!(",volume={db}dB"), replacement),
+                );
+                assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
+            }
+        }
+        let mut extra = plan.clone();
+        extra["argv"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, Value::from("-y"));
+        assert!(parse_and_validate_render_plan(extra, "owner", &grants).is_err());
+    }
+    for value in [
+        Value::from(-96001),
+        Value::from(24001),
+        Value::from(0.1),
+        Value::Null,
+        Value::from("-6000"),
+        serde_json::json!({"value": -6000}),
+    ] {
+        let mut bad = base.clone();
+        bad["videoInputs"][0]["gainMilliDecibels"] = value;
+        assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
+    }
+    let mut unknown = base.clone();
+    unknown["videoInputs"][0]["gain"] = Value::from(-6);
+    assert!(parse_and_validate_render_plan(unknown, "owner", &grants).is_err());
+    let validated = parse_and_validate_render_plan(base.clone(), "owner", &grants).unwrap();
+    let serialized = serde_json::to_value(validated.plan).unwrap();
+    assert!(serialized["videoInputs"][0]
+        .get("gainMilliDecibels")
+        .is_none());
+    assert_eq!(serialized["argv"], base["argv"]);
+}
+
+#[test]
+fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
+    let directory = tempdir().expect("speed workspace");
+    let (grants, base) = granted_multitrack_render_plan(directory.path());
+    for (numerator, denominator, source_frames, source_seconds, tempo) in [
+        (1, 2, 30, "1.000000", "0.50"),
+        (3, 2, 90, "3.000000", "1.50"),
+        (2, 1, 120, "4.000000", "2.00"),
+    ] {
+        let mut plan = base.clone();
+        plan["videoInputs"][0]["timing"] = serde_json::json!({
+            "sourceIn":{"value":0,"rateNumerator":30,"rateDenominator":1},
+            "sourceOut":{"value":source_frames,"rateNumerator":30,"rateDenominator":1},
+            "speed":{"numerator":numerator,"denominator":denominator},
+            "outputDuration":{"value":60,"rateNumerator":30,"rateDenominator":1}
+        });
+        plan["argv"][10] = Value::from(source_seconds);
+        let filter = multitrack_filter_mut(&mut plan);
+        *filter = Value::String(filter.as_str().unwrap()
+            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
+            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={source_seconds},asetpts=PTS-STARTPTS,atempo={tempo},atrim=duration=2.000000")));
+        parse_and_validate_render_plan(plan.clone(), "owner", &grants).expect("exact speed plan");
+        assert!(parse_and_validate_render_plan(plan.clone(), "other-owner", &grants).is_err());
+        for key in ["timing", "speed"] {
+            let mut missing = plan.clone();
+            if key == "timing" {
+                missing["videoInputs"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(key);
+            } else {
+                missing["videoInputs"][0]["timing"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(key);
+            }
+            assert!(parse_and_validate_render_plan(missing, "owner", &grants).is_err());
+        }
+        for (from, to) in [
+            (format!("atempo={tempo}"), "atempo=1.00".to_owned()),
+            (
+                format!("setpts=PTS*{denominator}/{numerator}"),
+                "setpts=PTS".to_owned(),
+            ),
+            (
+                format!("trim=end_frame={source_frames}"),
+                "trim=end_frame=1".to_owned(),
+            ),
+        ] {
+            let mut tampered = plan.clone();
+            let filter = multitrack_filter_mut(&mut tampered);
+            *filter = Value::String(filter.as_str().unwrap().replace(&from, &to));
+            let error = parse_and_validate_render_plan(tampered, "owner", &grants)
+                .expect_err("tampered filter");
+            assert_eq!(error.details["category"], "argv_grammar");
+        }
+        let mut extra = plan.clone();
+        extra["argv"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, Value::from("-y"));
+        assert!(parse_and_validate_render_plan(extra, "owner", &grants).is_err());
+        for (field, value) in [
+            ("sourceInMicroseconds", Value::from(1)),
+            ("timing", Value::Null),
+        ] {
+            let mut tampered = plan.clone();
+            tampered["videoInputs"][0][field] = value;
+            assert!(parse_and_validate_render_plan(tampered, "owner", &grants).is_err());
+        }
+    }
+}
+
+#[test]
 fn render_transform_geometry_requires_exact_metadata_and_filter_graph() {
     let directory = tempdir().expect("transform render workspace must be created");
     let (grants, exact) = granted_multitrack_render_plan(directory.path());
@@ -4919,6 +5161,174 @@ async fn bundled_resolver_only_bounded_batch() {
 }
 
 #[cfg(target_os = "windows")]
+mod speed_export_parity;
+#[cfg(target_os = "windows")]
+mod audio_export;
+
+#[cfg(target_os = "windows")]
+// Real-media test: requires provisioned bundled tools; no PATH or executor bypass.
+#[tokio::test]
+async fn render_speed_bundled_actual_media() {
+    let resources = tempdir().unwrap();
+    let destination = resources.path().join("media-tools");
+    fs::create_dir(&destination).unwrap();
+    let staged =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("media-toolchain/bin/x86_64-pc-windows-msvc");
+    for name in ["ffmpeg.exe", "ffprobe.exe"] {
+        fs::copy(staged.join(name), destination.join(name)).unwrap();
+    }
+    let toolchain = super::toolchain::MediaToolchain::resolve_from_resource_root(resources.path());
+    let programs =
+        MediaPrograms::bundled(super::toolchain::MediaToolchainState::from_ready(toolchain));
+    let ffmpeg = programs.verified_ffmpeg("speed_measurement").await.unwrap();
+    let ffprobe = programs
+        .verified_ffprobe("speed_measurement")
+        .await
+        .unwrap();
+    let workspace = tempdir().unwrap();
+    let source = workspace.path().join("tone-and-testsrc.mp4");
+    let generated = Command::new(&ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=30:d=6",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1000:sample_rate=48000:duration=6",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ])
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let grants = VideoPathGrants::default();
+    let source = grants
+        .grant_existing_file("owner", GrantCategory::Source, &source)
+        .unwrap();
+    let mut failures = Vec::new();
+    for (numerator, denominator, source_frames, seconds, tempo) in [
+        (1, 2, 30, "1.000000", "0.50"),
+        (1, 1, 60, "2.000000", "1.00"),
+        (3, 2, 90, "3.000000", "1.50"),
+        (2, 1, 120, "4.000000", "2.00"),
+    ] {
+        let output = grants
+            .grant_destination(
+                "owner",
+                GrantCategory::Output,
+                &workspace
+                    .path()
+                    .join(format!("speed-{numerator}-{denominator}.mp4")),
+            )
+            .unwrap();
+        let mut plan = multitrack_render_plan_value(&source, &source, &output);
+        // Both eligible layers have a two-second timeline duration. The lower layer
+        // retains its existing mute/zero-opacity metadata; the upper is retimed.
+        plan["videoInputs"][0]["sourceInMicroseconds"] = Value::from(1_000_000);
+        plan["videoInputs"][0]["timing"] = serde_json::json!({
+            "sourceIn":{"value":30,"rateNumerator":30,"rateDenominator":1},
+            "sourceOut":{"value":30+source_frames,"rateNumerator":30,"rateDenominator":1},
+            "speed":{"numerator":numerator,"denominator":denominator},
+            "outputDuration":{"value":60,"rateNumerator":30,"rateDenominator":1}
+        });
+        plan["argv"][8] = Value::from("1.000000");
+        plan["argv"][10] = Value::from(seconds);
+        let filter = multitrack_filter_mut(&mut plan);
+        *filter = Value::String(filter.as_str().unwrap()
+            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
+            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={seconds},asetpts=PTS-STARTPTS,atempo={tempo},atrim=duration=2.000000")));
+        let validated = parse_and_validate_render_plan(plan, "owner", &grants).unwrap();
+        let (request, captured) = registered_render_worker(
+            validated,
+            false,
+            workspace
+                .path()
+                .join(format!("cache-{numerator}-{denominator}")),
+            programs.clone(),
+        );
+        run_render_worker(request).await;
+        let events = captured_render_events(&captured);
+        assert_worker_event_order(&events);
+        assert!(
+            matches!(events.last(), Some(VideoRenderEvent::Completed { .. })),
+            "{events:?}"
+        );
+        let probe = Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-count_frames",
+                "-show_entries",
+                "stream=codec_type,duration,nb_read_frames,avg_frame_rate,start_time",
+                "-of",
+                "json",
+            ])
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        let probe: Value = serde_json::from_slice(&probe.stdout).unwrap();
+        println!("SPEED_MEASUREMENT speed={numerator}/{denominator} plan={RENDER_PLAN_ID} revision={RENDER_REVISION_ID} probe={probe}");
+        let streams = probe["streams"].as_array().unwrap();
+        let video = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
+        assert_eq!(video["nb_read_frames"], "60");
+        assert_eq!(video["avg_frame_rate"], "30/1");
+        let video_duration: f64 = video["duration"].as_str().unwrap().parse().unwrap();
+        assert!((video_duration - 2.0).abs() < 0.000001);
+        let audio = streams.iter().find(|s| s["codec_type"] == "audio").unwrap();
+        let audio_duration: f64 = audio["duration"].as_str().unwrap().parse().unwrap();
+        let decoded = Command::new(&ffmpeg)
+            .args(["-v", "error", "-i"])
+            .arg(&output)
+            .args([
+                "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1",
+            ])
+            .output()
+            .unwrap();
+        assert!(decoded.status.success());
+        let pcm: Vec<f32> = decoded
+            .stdout
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .collect();
+        // Exclude 250 ms onset/tail. Positive zero crossings measure steady tone,
+        // not container metadata or the intended atempo expression.
+        let middle = &pcm[12_000..pcm.len() - 12_000];
+        let crossings = middle
+            .windows(2)
+            .filter(|p| p[0] <= 0.0 && p[1] > 0.0)
+            .count();
+        let hz = crossings as f64 * 48_000.0 / (middle.len() - 1) as f64;
+        let pitch_ok = (hz / 1000.0 - 1.0).abs() <= 0.01;
+        let duration_ok = (audio_duration - 2.0).abs() <= 1.0 / 30.0;
+        println!("SPEED_MEASUREMENT speed={numerator}/{denominator} tone_hz={hz:.6} pcm_samples={} audio_duration={audio_duration:.6} pitch_ok={pitch_ok} duration_ok={duration_ok}", pcm.len());
+        if !pitch_ok || !duration_ok {
+            failures.push(format!(
+                "{numerator}/{denominator}: pitch={hz}, audio_duration={audio_duration}"
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "actual export gates failed: {failures:?}"
+    );
+}
+
 async fn assert_bundled_caption_boundary_case(index: usize) {
     for name in ["FONTCONFIG_FILE", "FONTCONFIG_PATH"] {
         assert!(

@@ -5,7 +5,8 @@ import {
   projectProjectionSchema,
   rateOf,
   ratesEqual,
-  rescaleRationalTime,
+  clipTimelineDuration,
+  sourceOffsetToTimeline,
   rippleDeleteClipCommandSchemaV2,
   splitClipCommandSchemaV2,
   videoProjectStateV2Schema,
@@ -113,10 +114,10 @@ function exactTimelineDuration(
     replayFailure(reason, "Caption lifecycle clip source rates do not match", { clipId: clip.id });
   }
   try {
-    return rescaleRationalTime(
-      createRationalTime(clip.sourceOut.value - clip.sourceIn.value, rateOf(clip.sourceIn)),
+    return clipTimelineDuration(
+      { in: clip.sourceIn, out: clip.sourceOut },
       rateOf(clip.timelineStart),
-      "exact",
+      clip.speed,
     ).value;
   } catch {
     replayFailure(reason, "Caption lifecycle clip duration is not exact", { clipId: clip.id });
@@ -157,13 +158,13 @@ function replaySplit(state: VideoProjectStateV2, command: SplitClipCommandV2): v
 
   let timelineOffset: number;
   try {
-    timelineOffset = rescaleRationalTime(
+    timelineOffset = sourceOffsetToTimeline(
       createRationalTime(
         command.splitAt.value - original.sourceIn.value,
         rateOf(original.sourceIn),
       ),
       rateOf(original.timelineStart),
-      "exact",
+      original.speed,
     ).value;
   } catch {
     replayFailure(

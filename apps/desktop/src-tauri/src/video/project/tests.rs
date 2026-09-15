@@ -444,6 +444,8 @@ fn mixed_rate_commands() -> Vec<ProjectCommand> {
                 source_out: source_time(20),
                 transform: ClipTransform::default(),
                 gain_milli_decibels: 0,
+                speed: None,
+                fades: None,
             },
         },
         ProjectCommand::SplitClip {
@@ -1898,6 +1900,16 @@ fn locked_tracks_reject_every_clip_and_caption_mutation() {
             clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
             gain_milli_decibels: -1_000,
         },
+        ProjectCommand::SetClipFades {
+            command_id: command_id(1999),
+            sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
+            track_id: RIPPLE_TRACK_ID.to_owned(),
+            clip_id: RIPPLE_SELECTED_CLIP_ID.to_owned(),
+            fades: super::types::ClipFades {
+                in_frames: 0,
+                out_frames: 0,
+            },
+        },
         ProjectCommand::AddCaption {
             command_id: command_id(109),
             sequence_id: RIPPLE_SEQUENCE_ID.to_owned(),
@@ -3028,6 +3040,8 @@ fn ripple_delete_uses_exact_rational_timeline_duration() {
         source_out: source_time(source_out),
         transform: ClipTransform::default(),
         gain_milli_decibels: 0,
+        speed: None,
+                fades: None,
     };
     *clips = vec![
         make_clip("63000000-0000-4000-8000-000000000001", 0, 0, 8),

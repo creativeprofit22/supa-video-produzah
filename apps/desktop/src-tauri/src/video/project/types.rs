@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::clip_timing::{deserialize_valid_speed, validate_speed, ClipSpeed};
+
 use crate::video::caption::CaptionArtifactV1;
 use crate::video::types::{
     deserialize_optional_non_null, AssetLocator, MediaContentIdentityV1, MediaProbe, RationalRate,
@@ -58,6 +60,45 @@ pub enum ClipSource {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClipFades {
+    pub in_frames: u64,
+    pub out_frames: u64,
+}
+impl ClipFades {
+    pub fn valid(&self) -> bool { self.in_frames <= MAX_SAFE_INTEGER && self.out_frames <= MAX_SAFE_INTEGER }
+}
+fn deserialize_restored_fades<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<ClipFades>, D::Error> {
+    Option::<ClipFades>::deserialize(d)
+}
+
+fn deserialize_restored_speed<'de, D>(deserializer: D) -> Result<Option<ClipSpeed>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let speed = Option::<ClipSpeed>::deserialize(deserializer)?;
+    if let Some(value) = speed {
+        validate_speed(&value).map_err(|_| serde::de::Error::custom("Invalid restored speed"))?;
+    }
+    Ok(speed)
+}
+
+fn deserialize_clip_speed<'de, D>(deserializer: D) -> Result<Option<ClipSpeed>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let speed: Option<ClipSpeed> = deserialize_optional_non_null(deserializer)?;
+    if let Some(speed) = &speed {
+        validate_speed(speed).map_err(|_| {
+            serde::de::Error::custom(
+                "Speed must be a reduced whole percentage from 50% through 200%",
+            )
+        })?;
+    }
+    Ok(speed)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectClip {
@@ -68,6 +109,14 @@ pub struct ProjectClip {
     pub source_out: RationalTime,
     pub transform: ClipTransform,
     pub gain_milli_decibels: i64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_clip_speed"
+    )]
+    pub speed: Option<ClipSpeed>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_optional_non_null")]
+    pub fades: Option<ClipFades>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -452,6 +501,53 @@ pub enum ProjectCommand {
         #[serde(rename = "opacityPermille")]
         opacity_permille: u16,
     },
+    SetClipSpeed {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+        #[serde(deserialize_with = "deserialize_valid_speed")]
+        speed: ClipSpeed,
+    },
+    RestoreClipSpeed {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+        #[serde(deserialize_with = "deserialize_restored_speed")]
+        speed: Option<ClipSpeed>,
+    },
+    SetClipFades {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+        fades: ClipFades,
+    },
+    RestoreClipFades {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "clipId")]
+        clip_id: String,
+        #[serde(deserialize_with = "deserialize_restored_fades")]
+        fades: Option<ClipFades>,
+    },
     SetClipGain {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -569,6 +665,10 @@ impl ProjectCommand {
             | Self::SetClipTransform { command_id, .. }
             | Self::SetClipOpacity { command_id, .. }
             | Self::SetClipGain { command_id, .. }
+            | Self::SetClipFades { command_id, .. }
+            | Self::RestoreClipFades { command_id, .. }
+            | Self::SetClipSpeed { command_id, .. }
+            | Self::RestoreClipSpeed { command_id, .. }
             | Self::AddMarker { command_id, .. }
             | Self::RemoveMarker { command_id, .. }
             | Self::AddCaption { command_id, .. }
@@ -583,7 +683,10 @@ impl ProjectCommand {
     pub(crate) fn is_private_inverse(&self) -> bool {
         matches!(
             self,
-            Self::RestoreRippleDeletedClip { .. } | Self::RestoreActiveCaptionArtifact { .. }
+            Self::RestoreRippleDeletedClip { .. }
+                | Self::RestoreActiveCaptionArtifact { .. }
+                | Self::RestoreClipSpeed { .. }
+                | Self::RestoreClipFades { .. }
         )
     }
 }

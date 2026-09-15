@@ -1,0 +1,173 @@
+[
+  {
+    "name": "omitted normal",
+    "sourceIn": { "value": 15, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 315, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "expected": 300
+  },
+  {
+    "name": "half",
+    "sourceIn": { "value": 15, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 315, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 1, "denominator": 2 },
+    "expected": 600
+  },
+  {
+    "name": "one and half",
+    "sourceIn": { "value": 15, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 315, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 3, "denominator": 2 },
+    "expected": 200
+  },
+  {
+    "name": "double",
+    "sourceIn": { "value": 15, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 315, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 2, "denominator": 1 },
+    "expected": 150
+  },
+  {
+    "name": "cancel before intermediate inexact rescale",
+    "sourceIn": { "value": 0, "rateNumerator": 60, "rateDenominator": 1 },
+    "sourceOut": { "value": 1, "rateNumerator": 60, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 1, "denominator": 2 },
+    "expected": 1
+  },
+  {
+    "name": "ntsc half",
+    "sourceIn": { "value": 11, "rateNumerator": 30000, "rateDenominator": 1001 },
+    "sourceOut": { "value": 311, "rateNumerator": 30000, "rateDenominator": 1001 },
+    "sequenceRate": { "numerator": 30000, "denominator": 1001 },
+    "speed": { "numerator": 1, "denominator": 2 },
+    "expected": 600
+  },
+  {
+    "name": "fractional mixed rates",
+    "sourceIn": { "value": 0, "rateNumerator": 24000, "rateDenominator": 1001 },
+    "sourceOut": { "value": 240, "rateNumerator": 24000, "rateDenominator": 1001 },
+    "sequenceRate": { "numerator": 30000, "denominator": 1001 },
+    "speed": { "numerator": 3, "denominator": 2 },
+    "expected": 200
+  },
+  {
+    "name": "whole percentage 51",
+    "sourceIn": { "value": 0, "rateNumerator": 24, "rateDenominator": 1 },
+    "sourceOut": { "value": 51, "rateNumerator": 24, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 24, "denominator": 1 },
+    "speed": { "numerator": 51, "denominator": 100 },
+    "expected": 100
+  },
+  {
+    "name": "inexact duration",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 2, "denominator": 1 },
+    "expected": null
+  },
+  {
+    "name": "zero duration",
+    "sourceIn": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "expected": null
+  },
+  {
+    "name": "reversed range",
+    "sourceIn": { "value": 2, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "expected": null
+  },
+  {
+    "name": "mixed source endpoints",
+    "sourceIn": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 60, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "expected": null
+  },
+  {
+    "name": "unreduced speed",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 2, "denominator": 2 },
+    "expected": null
+  },
+  {
+    "name": "zero speed",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 0, "denominator": 1 },
+    "expected": null
+  },
+  {
+    "name": "zero speed denominator",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 1, "denominator": 0 },
+    "expected": null
+  },
+  {
+    "name": "non whole percentage",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 2, "denominator": 3 },
+    "expected": null
+  },
+  {
+    "name": "speed over limit",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 201, "denominator": 100 },
+    "expected": null
+  },
+  {
+    "name": "speed below limit",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 30, "denominator": 1 },
+    "speed": { "numerator": 49, "denominator": 100 },
+    "expected": null
+  },
+  {
+    "name": "duration safe integer overflow",
+    "sourceIn": { "value": 0, "rateNumerator": 1, "rateDenominator": 1 },
+    "sourceOut": { "value": 9007199254740991, "rateNumerator": 1, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 1, "denominator": 1 },
+    "speed": { "numerator": 1, "denominator": 2 },
+    "expected": null
+  },
+  {
+    "name": "large factors cancel",
+    "sourceIn": {
+      "value": 0,
+      "rateNumerator": 9007199254740991,
+      "rateDenominator": 9007199254740990
+    },
+    "sourceOut": {
+      "value": 300,
+      "rateNumerator": 9007199254740991,
+      "rateDenominator": 9007199254740990
+    },
+    "sequenceRate": { "numerator": 9007199254740991, "denominator": 9007199254740990 },
+    "speed": { "numerator": 3, "denominator": 2 },
+    "expected": 200
+  },
+  {
+    "name": "invalid sequence rate",
+    "sourceIn": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+    "sourceOut": { "value": 300, "rateNumerator": 30, "rateDenominator": 1 },
+    "sequenceRate": { "numerator": 0, "denominator": 1 },
+    "expected": null
+  }
+]

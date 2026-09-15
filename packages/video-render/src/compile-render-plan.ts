@@ -11,6 +11,7 @@ import {
   type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
+  clipTimelineDuration,
   formatMilliDegreesAsDegrees,
   formatPermilleDecimal,
   isTrackHidden,
@@ -48,6 +49,20 @@ interface ValidatedSingleClipRevision {
   readonly audioSuppressed: boolean;
   readonly videoHidden: boolean;
   readonly captions: readonly RenderCaptionInputV2[];
+}
+
+function assertNormalSpeedRendering(sequence: VideoProjectStateV2["sequences"][number]): void {
+  if (
+    sequence.tracks.some(
+      (track) =>
+        track.kind !== "caption" &&
+        track.clips.some(
+          (clip) => clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator,
+        ),
+    )
+  ) {
+    invalidRenderPlan("Clip speed rendering is not supported yet");
+  }
 }
 
 function invalidRenderPlan(
@@ -143,6 +158,19 @@ function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
     track.clips.length !== 1
   ) {
     invalidRenderPlan("A V2 render requires one active sequence, video track, and clip");
+  }
+  assertNormalSpeedRendering(sequence);
+  if (
+    sequence.tracks.some(
+      (track) =>
+        track.kind !== "caption" &&
+        track.clips.some(
+          (item) =>
+            item.fades !== undefined && (item.fades.inFrames > 0 || item.fades.outFrames > 0),
+        ),
+    )
+  ) {
+    invalidRenderPlan("V1 export does not support nonzero audio fades");
   }
   if (clip.source.kind !== "asset") {
     invalidRenderPlan("Nested sequences are not renderable by the single-clip compiler");
@@ -423,16 +451,43 @@ function hasDefaultGeometry(transform: ClipTransform): boolean {
   );
 }
 
+function isRetimed(clip: V2Clip): boolean {
+  return clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator;
+}
+
+function sourceDurationSeconds(clip: V2Clip): string {
+  return toBoundarySeconds({ ...clip.sourceIn, value: clip.sourceOut.value - clip.sourceIn.value });
+}
+
+function videoTimingFilter(clip: V2Clip): string {
+  if (!isRetimed(clip)) return "setpts=PTS-STARTPTS";
+  const speed = clip.speed!;
+  return `trim=end_frame=${clip.sourceOut.value - clip.sourceIn.value},setpts=PTS-STARTPTS,setpts=PTS*${speed.denominator}/${speed.numerator}`;
+}
+
+function audioTimingFilter(clip: V2Clip, duration: string): string {
+  if (!isRetimed(clip))
+    return hasFades(clip)
+      ? `atrim=duration=${sourceDurationSeconds(clip)},asetpts=PTS-STARTPTS,atrim=duration=${duration}`
+      : "asetpts=PTS-STARTPTS";
+  const speed = clip.speed!;
+  // Whole-percent speed is exactly representable with two decimal places.
+  const percent = (speed.numerator * 100) / speed.denominator;
+  const tempo = `${Math.floor(percent / 100)}.${String(percent % 100).padStart(2, "0")}`;
+  // Bound the tail; do not invent silence or compensate algorithm latency without media proof.
+  return `atrim=duration=${sourceDurationSeconds(clip)},asetpts=PTS-STARTPTS,atempo=${tempo},atrim=duration=${duration}`;
+}
+
 function transformedClipFilter(inputIndex: number, clip: V2Clip, sequence: V2Sequence): string {
   const { transform } = clip;
   const frameRate = `${sequence.rate.numerator}/${sequence.rate.denominator}`;
   const contain = `scale=${sequence.width}:${sequence.height}:force_original_aspect_ratio=decrease:flags=lanczos`;
   if (hasDefaultGeometry(transform)) {
-    return `[${inputIndex}:v:0]setpts=PTS-STARTPTS,${contain},format=rgba,colorchannelmixer=aa=${formatPermilleDecimal(transform.opacityPermille)},pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${frameRate}[v${inputIndex}]`;
+    return `[${inputIndex}:v:0]${videoTimingFilter(clip)},${contain},format=rgba,colorchannelmixer=aa=${formatPermilleDecimal(transform.opacityPermille)},pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=${frameRate}[v${inputIndex}]`;
   }
 
   const filters = [
-    "setpts=PTS-STARTPTS",
+    videoTimingFilter(clip),
     contain,
     "format=rgba",
     `pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:color=black@0`,
@@ -471,8 +526,27 @@ function transformedOverlayFilter(transform: ClipTransform): string {
   return `overlay=x='${overlayCoordinate("x", transform.positionXPermille)}':y='${overlayCoordinate("y", transform.positionYPermille)}':format=auto`;
 }
 
-function hasSupportedGain(clip: V2Clip): boolean {
-  return clip.gainMilliDecibels === 0;
+function hasFades(clip: V2Clip): boolean {
+  return clip.fades !== undefined && (clip.fades.inFrames > 0 || clip.fades.outFrames > 0);
+}
+
+function audioFadeFilter(clip: V2Clip, sequence: V2Sequence, durationFrames: number): string {
+  if (!hasFades(clip)) return "";
+  const fades = clip.fades!;
+  const seconds = (frames: number) => toBoundarySeconds(createRationalTime(frames, sequence.rate));
+  return (
+    (fades.inFrames > 0 ? `,afade=t=in:st=0.000000:d=${seconds(fades.inFrames)}:curve=tri` : "") +
+    (fades.outFrames > 0
+      ? `,afade=t=out:st=${seconds(durationFrames - fades.outFrames)}:d=${seconds(fades.outFrames)}:curve=tri`
+      : "")
+  );
+}
+
+function audioGainFilter(clip: V2Clip): string {
+  const gain = clip.gainMilliDecibels;
+  if (gain === 0) return "";
+  const magnitude = Math.abs(gain);
+  return `,volume=${gain < 0 ? "-" : ""}${Math.floor(magnitude / 1_000)}.${String(magnitude % 1_000).padStart(3, "0")}dB`;
 }
 
 function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequenceRevision {
@@ -487,6 +561,7 @@ function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequence
   }
 
   const state = stateResult.data;
+
   const sequence = state.sequences.find((item) => item.id === state.activeSequenceId);
   if (sequence === undefined) invalidRenderPlan("A render requires an active sequence");
   if (sequence.audioSampleRate !== 48_000) {
@@ -525,10 +600,11 @@ function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequence
         trackIndex,
       });
     }
-    if (!hasSupportedGain(directClip)) {
-      invalidRenderPlan("Canonical multi-track export requires default gain", { trackIndex });
-    }
-    const clipDuration = directClip.sourceOut.value - directClip.sourceIn.value;
+    const clipDuration = clipTimelineDuration(
+      { in: directClip.sourceIn, out: directClip.sourceOut },
+      sequence.rate,
+      directClip.speed,
+    ).value;
     if (clipDuration <= 0 || (durationFrames !== undefined && clipDuration !== durationFrames)) {
       invalidRenderPlan("Every video track must have one common positive duration", { trackIndex });
     }
@@ -605,12 +681,24 @@ export function compileActiveSequenceRenderPlan(
       assetId: asset.id,
       path: inputPath,
       sourceInMicroseconds: rationalTimeToMicroseconds(clip.sourceIn, "nearestTiesAwayFromZero"),
+      ...(isRetimed(clip)
+        ? {
+            timing: {
+              sourceIn: clip.sourceIn,
+              sourceOut: clip.sourceOut,
+              speed: clip.speed!,
+              outputDuration: createRationalTime(durationFrames, sequence.rate),
+            },
+          }
+        : {}),
       positionXPermille: clip.transform.positionXPermille,
       positionYPermille: clip.transform.positionYPermille,
       scaleXPermille: clip.transform.scaleXPermille,
       scaleYPermille: clip.transform.scaleYPermille,
       rotationMilliDegrees: clip.transform.rotationMilliDegrees,
       opacityPermille: clip.transform.opacityPermille,
+      ...(clip.gainMilliDecibels !== 0 ? { gainMilliDecibels: clip.gainMilliDecibels } : {}),
+      ...(hasFades(clip) ? { fades: clip.fades } : {}),
       hidden: isTrackHidden(track),
       muted: isTrackMuted(track),
       hasAudio: asset.probe.audio !== null,
@@ -637,7 +725,9 @@ export function compileActiveSequenceRenderPlan(
         visibleTrackIndices.push(trackIndex);
       }
       if (!isTrackMuted(track) && asset.probe.audio !== null) {
-        filterParts.push(`[${trackIndex}:a:0]asetpts=PTS-STARTPTS[a${trackIndex}]`);
+        filterParts.push(
+          `[${trackIndex}:a:0]${audioTimingFilter(clip, duration)}${audioGainFilter(clip)}${audioFadeFilter(clip, sequence, durationFrames)}[a${trackIndex}]`,
+        );
         audibleTrackIndices.push(trackIndex);
       }
     });
@@ -678,7 +768,7 @@ export function compileActiveSequenceRenderPlan(
         "-ss",
         toBoundarySeconds(clip.sourceIn),
         "-t",
-        duration,
+        isRetimed(clip) ? sourceDurationSeconds(clip) : duration,
         "-i",
         inputPath,
       ]),

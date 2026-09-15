@@ -356,6 +356,14 @@ async function expectDomainFailure(
 }
 
 describe("transcript source and timeline mapping", () => {
+  it("rejects transcript mapping for a retimed source instead of interpreting it as 1x", () => {
+    const target = { ...clip(100, 0, 10), speed: { numerator: 2, denominator: 1 } };
+    const project = projection([target]);
+    const value = artifact([{ startUs: 50_001, endUs: 149_999, text: "retimed" }]);
+    expect(() => projectTranscriptToTimeline(scope(value, project))).toThrow(
+      "Transcript mapping does not support retimed clips",
+    );
+  });
   it("preserves an immutable artifact while exposing immutable source mappings", () => {
     const value = artifact([
       { startUs: 50_001, endUs: 149_999, text: "precise" },

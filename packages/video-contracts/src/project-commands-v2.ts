@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { captionArtifactV1Schema } from "./caption.js";
+import { clipSpeedSchema } from "./clip-timing.js";
 import {
   clipTransformSchema,
+  clipFadesSchema,
   projectCaptionSchema,
   projectClipSchema,
   projectMarkerSchema,
@@ -168,6 +170,46 @@ export const setClipOpacityCommandSchemaV2 = z
     opacityPermille: z.number().int().safe().min(0).max(1_000),
   })
   .strict();
+export const setClipSpeedCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetClipSpeed"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+    speed: clipSpeedSchema,
+  })
+  .strict();
+
+export const restoreClipSpeedCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreClipSpeed"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+    speed: clipSpeedSchema.nullable(),
+  })
+  .strict();
+
+export const setClipFadesCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetClipFades"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+    fades: clipFadesSchema,
+  })
+  .strict();
+
+export const restoreClipFadesCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreClipFades"),
+    ...commandId,
+    ...target,
+    clipId: projectUuidSchema,
+    fades: clipFadesSchema.nullable(),
+  })
+  .strict();
+
 export const setClipGainCommandSchemaV2 = z
   .object({
     type: z.literal("SetClipGain"),
@@ -298,6 +340,10 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   setClipTransformCommandSchemaV2,
   setClipOpacityCommandSchemaV2,
   setClipGainCommandSchemaV2,
+  setClipSpeedCommandSchemaV2,
+  setClipFadesCommandSchemaV2,
+  restoreClipFadesCommandSchemaV2,
+  restoreClipSpeedCommandSchemaV2,
   addMarkerCommandSchemaV2,
   removeMarkerCommandSchemaV2,
   addCaptionCommandSchemaV2,
@@ -321,7 +367,8 @@ export const commandGroupRequestSchema = z
     for (const [index, command] of request.commands.entries()) {
       if (
         command.type === "RestoreRippleDeletedClip" ||
-        command.type === "RestoreActiveCaptionArtifact"
+        command.type === "RestoreActiveCaptionArtifact" ||
+        command.type === "RestoreClipSpeed" || command.type === "RestoreClipFades"
       ) {
         context.addIssue({
           code: "custom",

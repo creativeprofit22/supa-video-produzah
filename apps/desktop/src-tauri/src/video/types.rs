@@ -9,6 +9,7 @@ use super::{
     derived::{DerivedMediaIdentityV1, MediaProfileIdentityV1},
     error::VideoCommandError,
     media_store::SourceFingerprintV1,
+    project::clip_timing::{clip_timeline_duration, ClipSpeed},
 };
 
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -408,11 +409,83 @@ pub struct RenderPlanV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", try_from = "RenderClipTimingV2Wire")]
+pub struct RenderClipTimingV2 {
+    pub source_in: RationalTime,
+    pub source_out: RationalTime,
+    pub speed: ClipSpeed,
+    pub output_duration: RationalTime,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenderClipTimingV2Wire {
+    source_in: RationalTime,
+    source_out: RationalTime,
+    speed: ClipSpeed,
+    output_duration: RationalTime,
+}
+
+impl TryFrom<RenderClipTimingV2Wire> for RenderClipTimingV2 {
+    type Error = &'static str;
+
+    fn try_from(wire: RenderClipTimingV2Wire) -> Result<Self, Self::Error> {
+        let rate = RationalRate {
+            numerator: wire.output_duration.rate_numerator,
+            denominator: wire.output_duration.rate_denominator,
+        };
+        let expected =
+            clip_timeline_duration(&wire.source_in, &wire.source_out, &rate, &wire.speed)
+                .map_err(|_| "Render timing must have valid exact frame boundaries")?;
+        if expected != wire.output_duration {
+            return Err("Output duration must exactly match the retimed source range");
+        }
+        Ok(Self {
+            source_in: wire.source_in,
+            source_out: wire.source_out,
+            speed: wire.speed,
+            output_duration: wire.output_duration,
+        })
+    }
+}
+
+fn deserialize_render_gain<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let gain = i64::deserialize(deserializer)?;
+    if !(-96_000..=24_000).contains(&gain) {
+        return Err(serde::de::Error::custom(
+            "Render gain must be -96000..24000 milliDecibels",
+        ));
+    }
+    Ok(Some(gain))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RenderVideoInputV2 {
     pub asset_id: ProjectUuid,
     pub path: String,
     pub source_in_microseconds: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub timing: Option<RenderClipTimingV2>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_render_gain"
+    )]
+    pub gain_milli_decibels: Option<i64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub fades: Option<super::project::types::ClipFades>,
     #[serde(deserialize_with = "deserialize_position_permille")]
     pub position_x_permille: i64,
     #[serde(deserialize_with = "deserialize_position_permille")]

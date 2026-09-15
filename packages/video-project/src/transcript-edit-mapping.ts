@@ -205,6 +205,23 @@ function resolveScopeFromState(
       { sourceDigest: input.artifact.identity.sourceIdentity.digest },
     );
   }
+  const matchingIds = new Set(matchingAssets.map((asset) => asset.id));
+  if (
+    track.clips.some(
+      (clip) =>
+        clip.source.kind === "asset" &&
+        matchingIds.has(clip.source.assetId) &&
+        clip.speed !== undefined &&
+        clip.speed.numerator !== clip.speed.denominator,
+    )
+  ) {
+    throw transcriptError(
+      "invalid_project",
+      "Transcript mapping does not support retimed clips",
+      "unsupported_clip_speed",
+      { trackId: track.id },
+    );
+  }
   return { projection, sequence, track, matchingAssets };
 }
 

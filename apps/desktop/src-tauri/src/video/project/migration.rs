@@ -56,6 +56,8 @@ pub fn migrate_v1(
                             source_out: clip.source_out.clone(),
                             transform: ClipTransform::default(),
                             gain_milli_decibels: 0,
+                            speed: None,
+                fades: None,
                         })
                         .collect(),
                 })
