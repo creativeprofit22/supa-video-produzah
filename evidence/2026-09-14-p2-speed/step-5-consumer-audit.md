@@ -1,0 +1,94 @@
+# P2 speed — step 5 consumer/diff audit
+
+Date: 14 September 2026. Scope: **only step 5** of approved plan `77dce439-7822-4159-8c8a-d6ea5b50ec81`.
+
+Follow-up: the user subsequently authorized [steps 1–4 reconciliation](steps-1-4-reconciliation.md). Supported ordered checkpoints for steps 1–5 all returned `committed`; step 5 was saved at Notes revision **168**. The original ordering refusal below is retained as history, not a current blocker. Speed and phase remain in-progress; no step-6 work started.
+
+## Verdict and authorization boundary
+
+**Works as asked at the step-5 boundary.** No confirmed implementation defect or missing step-5 criterion remained after reconciling the complete scoped diffs, current callers, existing normal-speed regression coverage, and fresh affected tests. No source code or test assertions were changed in this audit. Existing regression fixture corrections were preserved.
+
+Approved snapshot: `.gg/plans/approved/77dce439-7822-4159-8c8a-d6ea5b50ec81.md`.
+
+- Plan content SHA-256: `e1803d381687055114e5855729faeadb0b8434beebe4a636176ac644f2815fec` (recomputed from the approved snapshot).
+- Canonical step-5 ID: `fa7a2d5745400c9666d69d52dc08ee35ca0bebab4649d13f6453902246128839`.
+- Step: update projection, snap/playhead mapping, split/trim/move/ripple timing and affected transcript/caption guards; add unchanged-normal-speed and exact retimed-edit regression coverage.
+- Step 6 export compilation, step 7 inspector/controller/mock speed-command parity, step 8 playback, and subsequent responsive/real-media/integration verification are **not completed or newly implemented here**.
+- The preview/export unsupported guards remain in place. This report is not speed completion, preview/export parity, or phase completion.
+
+## Criteria reconciliation
+
+| Step-5 criterion | Current implementation and regression evidence |
+| --- | --- |
+| Projection uses retimed sequence endpoints without moving later clips | `packages/video-project/src/timeline-view.ts` uses `clipTimelineDuration`; its test covers 50/100/150/200%, canonical active-range endpoints, immutable projection, and unchanged later-clip positions. Existing omitted-speed multitrack tests still run. |
+| Snap and source-playhead mapping share exact arithmetic | `timeline-move-snap.ts` uses `clipTimelineDuration` and `sourceOffsetToTimeline`; tests cover retimed endpoints, exact offsets, rejected inexact/out-of-range positions, cancellation before otherwise inexact rate rescaling, and existing normal-speed overlap/playhead/self-edge behavior. |
+| Pointer trim does not silently round or commit an invalid boundary | `timeline-trim-mapping.ts` converts signed timeline deltas exactly; its floor operation only bounds available pre-source-zero timeline frames. `MultitrackTimeline.tsx` carries a validity flag, shows an alert, refuses invalid release, and clears the error on a valid proposal. Helper tests exercise signed deltas, source zero and differing rates; component test rejects the first drag and commits exactly one valid canonical trim. Existing normal-speed pointer/keyboard/locked-track tests remain intact. |
+| Canonical split/trim admission rejects inexact proposals | `use-video-project.ts` calls the exact helper before submitting split or trim groups. Its regression asserts the error, no backend execution, and unchanged projected state. Rust remains the canonical transaction authority. |
+| Native split/trim/move/ripple duration, positions and affected ranges are speed-aware | `commands.rs` uses the shared duration for range consumers and the exact source offset for split placement; `integrity.rs` uses the same duration for overlap validation. `speed_timing_tests.rs` checks retimed split/trim/move/ripple positions, affected ranges, preserved speed/source/sibling data, exact inverse hashes, and atomic rejection of inexact groups. Existing `speed_edit_tests.rs` and project tests cover adjacency, lock/overlap/stale/invalid failures, mixed rates, normal-speed operations and service history. |
+| Transcript/caption consumers reject unsupported retiming rather than assuming 1x | `transcript-edit-mapping.ts` rejects matching retimed source clips in its shared scope resolver; language-server references confirm transcript proposals also call that resolver. `caption-lifecycle-context.ts` rejects a retimed managed source clip; references confirm split/trim/move/ripple callers. Candidate move/split/ripple replay uses speed-aware duration/offset helpers. Native `clip_speed.rs` protects managed-caption/nested/non-video contexts and `commands.rs` checks the original group state against implicit caption detachment. Transcript rejection and native caption-lineage/context tests pass. |
+| Remaining unsupported consumers stay explicit | Mock speed commands reject before mutation, with an unchanged-state/revision assertion. The mock's existing split/ripple duration consumers use shared timing. `VideoWorkspace` projects retimed duration but supplies an unsupported preview reason; `ProgramMonitor` removes media and shows an alert. Render regression uses an exactly timed speed fixture to reach the unsupported-render guard without weakening strict timing. Implementing those consumers belongs to later steps. |
+
+The complete existing suite matters: a separate normal-speed case need not be duplicated in every newly added test file, and step 5 does not require a new all-percentage-by-every-consumer matrix. Shared contract tests cover the supported percentage/rate arithmetic, while consumer tests cover their actual integration seams.
+
+## Complete scoped diff inspection
+
+Review base: dirty working tree against unchanged HEAD `b21a303c51c258d3aa63fa51217bcbb4508fef0f`. This is not a claim to review unrelated preserved changes or every later-step prerequisite diff.
+
+The parent inspected the actual complete scoped diff, not just terminal tails. Sanitized foreground logs live locally under `C:/Users/SPARTAN PC/.gg/foreground/<execution-id>.log`:
+
+- `9783f71e-02e7-49e2-b18e-7650a68bc5a3`: **all 1,206 lines**, read in ranges 1–400, 401–800, 801–1200 and 1201–end. Includes the complete changed hunks in native project `commands.rs`/`integrity.rs`; desktop mock service and tests, controller and tests, timeline component and tests, move/snap helper and tests, monitor/workspace tests; and every dirty file under `packages/video-project/src` (projection, caption lifecycle context/replay, transcript mapping and tests).
+- `1f0d56d5-10f5-4cea-ba72-4ef238912c77`: complete `ProgramMonitor.tsx` and `VideoWorkspace.tsx` diff, read through EOF (the follow-up offset 141 was already EOF).
+- `02562011-43cd-409c-8762-9a8680802d85`: complete render compiler/fixture diff read from its saved log. Reviewed only to confirm the existing unsupported boundary and exact-duration fixture; not export implementation sign-off.
+- New/untracked step-5 files were read directly in full, because ordinary `git diff` omits them: `timeline-trim-mapping.ts`, `timeline-trim-mapping.test.ts`, and native `speed_timing_tests.rs`.
+- Shared TS `clip-timing.ts` and native timing/context source were inspected as prerequisites/callers, not treated as newly implemented steps. Current language-server references traced transcript proposals and all four caption lifecycle consumers to the guarded resolvers.
+
+Two independent read-only reviews were reconciled rather than accepted blindly. The alleged missing mock-speed handler was withdrawn after verifying explicit pre-mutation rejection and the step-7 boundary. Suggested missing normal-speed/context coverage was withdrawn after inspecting existing tests. Child source review did not itself establish complete diff coverage; the parent log reads above establish that coverage.
+
+## Fresh executions in this audit
+
+No source edits occurred between these executions and this report. All commands ran to completion in the foreground. Workspace dependencies were rebuilt before downstream tests so package imports did not use stale `dist` exports.
+
+| Execution | Command | Actual result |
+| --- | --- | --- |
+| `18a23567-0739-4ac5-b14d-a51815cd5af0` | `pnpm --filter @supa-video/desktop build:workspace-dependencies && pnpm --filter @supa-video/contracts --filter @supa-video/project --filter @supa-video/render test` | Exit 0. Dependency builds completed; contracts **261**, project **137**, render **34** tests passed: **432 total**, 25 files. Full-log summaries reread in `f9589b4d-0d4f-40e4-ab8f-08bb1203d9bc`. |
+| `e1059cd1-fea1-4f2a-9434-fbd3acbac0c0` | `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml video::project:: --lib` | Exit 0. **115 passed**, 0 failed, 0 ignored, 222 filtered out. Includes both retimed-edit tests and the existing project/normal-speed/history/context suites. The build emitted 18 unused-code warnings; none were suppressed. This is the default-feature project namespace, not the full native suite, an all-features run or strict Clippy proof. |
+| `6430eab8-c326-4259-ad9e-6e92af74859d` | `pnpm --filter @supa-video/desktop exec vitest run src/video/timeline-trim-mapping.test.ts src/video/timeline-move-snap.test.ts src/test-video-service.test.ts src/video/ProgramMonitor.test.tsx src/video/VideoWorkspace.test.tsx src/use-video-project.test.tsx src/video/MultitrackTimeline.test.tsx --maxWorkers=1 --no-file-parallelism` | Exit 0. **122 passed**, 7 files: trim mapping 3, move/snap 7, mock service 6, monitor 34, workspace 7, controller 46, timeline 19. Serial execution only. |
+| `cabf049c-727e-415f-a96e-e3c4d731d02d` | `pnpm -r check && git diff --check` | Exit 0. All workspace TypeScript checks and tracked whitespace checks pass. Git reports an existing CRLF-to-LF warning for `project/migration.rs`; no source formatting was performed. |
+
+## Historical results and unresolved failure — not relabeled
+
+`step-5-regression-checks.md` remains the historical account of the two corrected test fixtures, previous 432 package passes, two native timing passes, and serial UI/type-check passes. The rows above are fresh executions, not copied historical passes.
+
+**The historical default-parallel desktop worker-startup failure remains unresolved.** Execution `6e0424b0-e118-46f7-8bf3-42b433d7b482` exited 1: four suites failed to start workers before any test ran (`[vitest-pool]: Timeout waiting for worker to respond`). No default-parallel rerun or runner repair was attempted in this bounded audit. The fresh serial result verifies assertions, not parallel startup reliability; no timeout setting, test assertion, runner configuration or test selection was weakened to relabel that failure.
+
+Step 5's approved consumer/regression criteria are satisfied by the scoped source review and fresh tests. This does **not** clear the separate runner/runtime/integration concerns or later-plan completion gates.
+
+## Preservation and source snapshot
+
+Only audit documentation was added/linked by this continuation. No source, configuration, dependency, assertion, Git history, lock state or fencing state was changed.
+
+- Current HEAD: `b21a303c51c258d3aa63fa51217bcbb4508fef0f`.
+- Current all-tracked binary diff SHA-256: `87bbc40b3fd7ea3fd14571408b80a4d30894d020b376e90ece4b88bf30730642` (`7b6ca904-9624-4cbe-ad4c-f29edbc16f64`). New/untracked files are not included in this diff hash.
+- Original unrelated tracked boundaries still have exact starting binary diff hash `c491466f3c174dfd82494d02cbfa8c62614e1fd52fb217edcd3eb7f028d6c22e` (`f3ab0642-1dac-4d4a-85f2-e0f34f3d10eb`). The preceding fingerprint attempt used the wrong dependency-evidence directory; the corrected command uses the real `2026-09-06-p1-dependency-triage` path and matches the original hash.
+- Post-build/typecheck status was reread; generated outputs remain outside the Git change list.
+
+Current SHA-256 fingerprints for the new step-5 source and its native prerequisites (`7b6ca904-9624-4cbe-ad4c-f29edbc16f64`):
+
+```text
+30675add9666d4fa1c9759295eeab462c8d3b3a3da9a99e727fb6c9205078e8a apps/desktop/src/video/timeline-trim-mapping.ts
+95cab364b928745f2ffeb31ed5e0b6cf457183570fa918bd4fafb4082e0b2580 apps/desktop/src/video/timeline-trim-mapping.test.ts
+069010fc6bb34da3448e604e64464c52c96dc1cbcf574cf9e38389edbfc8a655 apps/desktop/src-tauri/src/video/project/speed_timing_tests.rs
+d3a59022bf0929ba4952a98a5b65fb18d3ed8f97ef85611582329ecd8b065872 apps/desktop/src-tauri/src/video/project/clip_timing.rs
+9535d009fbda974549b799d1b1af2d0fe4cd7823e48fa47a5e23b5fa46c75803 apps/desktop/src-tauri/src/video/project/clip_speed.rs
+```
+
+## Checkpoint boundary
+
+This report supports checkpointing **only canonical step 5**, but the supported checkpoint was **refused**.
+
+- Audit progress saved successfully with update `p2-speed-step5-consumer-audit-20260914-7c268fbe`, Notes revision 161, phase unchanged as in-progress.
+- `roadmap_checkpoint` was called once with the approved plan hash and exact step-5 ID above, `expected_revision: 161`.
+- Exact result: `{"result":"step-order-invalid","phaseId":"c6896507-0c41-4941-9a86-cd318ea2afcf","stepId":"fa7a2d5745400c9666d69d52dc08ee35ca0bebab4649d13f6453902246128839"}`.
+- Canonical metadata read in `6b1aca1a-a9bb-4891-afbf-30231d4c3301` records steps 1–4 as pending despite historical progress reports. Step-5 completion cannot be persisted out of order. Those earlier steps were not reconciled or checkpointed because this request authorizes only step 5.
+
+**Audit complete; step 5 not checkpointed.** Resolving this ordering blocker requires a separately authorized reconciliation of the earlier canonical steps against their evidence, not changing the plan, directly writing Notes, repeating takeover, or bypassing ordering/fencing. No checkpoint retry was made. Speed and phase remain in-progress; work stops before step 6.

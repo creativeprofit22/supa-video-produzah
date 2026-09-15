@@ -1,0 +1,57 @@
+# Whole editor-controls implementation and verification
+
+Updated 15 September 2026 (UTC). This continues **all remaining controls in the selected P2 phase**, not only speed. Existing speed evidence/checkpoints are retained; this report does not create or retroactively alter approved plan steps.
+
+## Implemented scope
+
+| Control | Implementation and verification boundary |
+| --- | --- |
+| Volume / audio fades | Volume uses existing integer milli-decibels, displayed as dB (-96 to +24). Optional fades use exact output sequence frames with linear amplitude ramps; sum cannot exceed retimed duration. Apply/Reset produce bounded canonical groups, private inverses preserve omitted/explicit-zero representations, and timing edits cannot silently invalidate fades. Native export independently validates gain/fade metadata and the entire expected argument vector. Owned Web Audio graphs provide gain/fades in preview, including logical audio-only layers; source audition/final output bypass clip effects. |
+| Source range | Selected direct-media source in/out fields use exact source-rate frames and real asset bounds. Drafts do not submit commands; Apply uses the existing canonical trim/lifecycle path. Speed/fade constraints, locking, pending/error states, and stale-selection/revision drafts are guarded. The legacy audition trim remains available without a canonical selection; it no longer misleadingly edits the first clip underneath a different selected clip. |
+| Multiselect | Ephemeral primary/ordered selection with keyboard, modifier and range interaction, bounded at100 selected media clips. Mixed volume/fades/speed values are explicit. Bulk audio/speed, numeric relative movement and undoable deletion use one bounded native command group and reject invalid/locked members without partial mutation. Existing command-count limits still apply; groups are not silently chunked. Unsupported managed-caption/nested timing batches fail explicitly. Single-selection pointer editing remains separate from bulk movement. |
+| Layout | Two-pane Assemble workspace resizes by pointer or keyboard, supports RTL/Home/End/reset, reports observed effective pane widths rather than an impossible stored preference, and persists only a validated local view preference. At320px/200% text it stacks instead of clipping controls. Selection/layout preferences intentionally are not project revisions. |
+| Existing controls | Speed, transform/opacity, track visibility/mute/locking and canonical history remain. Actual regressions in selection fallback, strict command targeting, empty-project Undo availability, post-Undo keyboard focus, media seek boundaries and narrow error-state rendering were fixed, not hidden by weaker assertions. |
+
+`CONTEXT.md` and `docs/adr/0001-clip-audio-fades.md` record fade units and rejection semantics. No database migration/backfill, package installation, commit/push, OS upgrade or user-project rewrite occurred. Existing constrained exporter admission (including unsupported sequence shapes/dedicated audio export) remains explicit; production-audio/advanced-export scope is not silently claimed.
+
+## Verification results
+
+These are actual executions, not editor-diagnostics conclusions. Reused earlier executions are distinguished from checks run after the latest changes.
+
+| Execution | Observed result |
+| --- | --- |
+| `2531f066-affc-42f3-a220-c36792d961c9` | Ordinary `pnpm test` exited1. Contracts271, render54, media44 and project137 passed; desktop started only136 tests in21 files, with **11 worker-startup errors**. This configured parallel execution is **not passed**. |
+| `f100b81b-4369-486b-9bac-9c54049f09f1` | Complete desktop suite with explicit `--maxWorkers=1 --no-file-parallelism`: **333/333 tests,32/32 files passed**. Followed by successful `pnpm build`. This verifies assertions serially, not a repair of default-parallel startup. Production bundling still emits its large-chunk advisory. |
+| `79466f93-4fb2-4626-aa86-aba1ec4ad5e3` | Strict all-target/all-feature Clippy and ordinary offline native debug build both exited0. No installer/package publication. |
+| `765fcf77-c7c6-4cd4-a6f3-2a509cdeb47c` | Latest native targeted run: **2 audio fade/gain persistence tests passed**, **1 locked-track mutation test passed**, then **29 native render tests passed**,5 existing optional tests ignored. The persistence cases apply gain and fades together, retry/reopen the real journal, undo/redo/reset and compare exact state across omitted, explicit-zero and positive prior fades. Locked mutation coverage includes the new fades command. No new ignored tests were introduced. |
+| `b495d049-8175-417b-891c-f70a652ebfa1` | Actual production TScompiler→native grants/validator/worker→FFmpeg→decodedPCM test passed. Five cases cover gain0/-6/+24dB and linear fade-in/out at normal/2x speed. Measured gain ratios1,0.5011573,15.8477442,1.00000019,1.9956505; unchanged2% relative gain and0.04 envelope tolerances. This native test's production source has not changed since execution. |
+| `4576e2e2-4b61-424f-b7fd-1c75d65c1f26` | **9/9 browser tests passed using5 workers**: populated canonical controls/history, two distinct tracks with only one locked, long unbroken media names at320px/200% text, layout keyboard/persistence/RTL geometry, scoped axe and five real-PCM preview/bypass cases. Browser source/native media paths are not conflated. |
+| `7f12862f-1b82-4267-8576-f87b93e872bf` | Final strict all-target/all-feature Clippy (`-D warnings`), all workspace/browser TypeScript checks, whole `pnpm lint`, and `git diff --check` exited0. No success is inferred from delayed or failed language-server diagnostics. |
+
+Full-suite regressions found during implementation were retained as failures until fixed. Workflow tests now exercise the selected-source controls; their command/history/recovery assertions remain. The explicit legacy draft-discard test clears canonical selection to exercise that still-supported legacy flow. No new source test was skipped to obtain the results above.
+
+### Real browser audio: resource isolation, not reduced assertions
+
+The first combined browser run `10d39930-bea3-4b93-ba70-abb122be6e89` failed all five audio cases while four UI/layout cases passed. Concurrent real audio streams yielded zero-input samples and one raw rate of0.8953. Extra raw state/sample attachments were added **before** assertions. The unchanged audio-only case passed in isolation in `0b76db60-e0bb-4c38-a307-a46b755a55c8`.
+
+The new real-audio spec now uses Playwright `test.describe.configure({ mode: "default" })`: one playback stream from that file at a time, independent failures, **not serial-mode fail-fast/skips**. Installed Playwright1.62 declarations at `types/test.d.ts:4206–4215` confirm this behavior. Global workers, existing Vitest policy, assertions, timeouts, retry counts and signal tolerances were not changed. Other UI files still ran concurrently in the final5-worker pass.
+
+Final raw/final PCM ratios were0.99980/0.99978 with measured1x rates1.00396/1.00481. Program preview gain ratios were approximately0.50119 and1.99526. Maximum measured fade-envelope error was0.00837, below the unchanged0.0216667 allowance. These are real-node, real-media digital amplitude/envelope observations—not proof of physical speaker/display synchronization or arbitrary-load reliability.
+
+## Unresolved findings retained
+
+1. **Default-parallel Vitest startup:**11 errors as recorded above; the serial desktop pass does not clear it.
+2. **Native acknowledgement performance:** the wider project namespace run `cb806dfb-aef2-46a0-8fbc-d518f57c7685` had116 passes/1 failure: existing p95 budget765.0175ms versus300ms. No budget or unrelated performance source was changed. Scoped native passes do not relabel that wider run passed.
+3. **Live A/V synchronization sign-off:** speed plan step10 remains unverified. New read-only API review corrected an earlier overstatement: Windows19045 supports exact-window WGC and endpoint loopback;20348 is the minimum for the separate process-loopback API, not for every possible capture method.
+
+Authorized follow-up capture calibration used actual decoded synchronized and ±100ms controls, a six-timestamp conservative visual interval, packet-QPC audio onset and ±1ms uncertainty, without latency subtraction. The first timing intervals satisfied all three sensitivity conditions but that run exceeded its strict recording-duration bound. Runner ownership/deadline/stop-ack defects were then corrected, not waived.
+
+The subsequent `output-capture/bounded-2026-09-15T03-45-43-670Z` run met the ≤6s recording bound. Its synchronized control interval **[+2.749,+31.416]ms** passed, but the +100/-100 controls contained **3/4 sound groups** respectively and remain inconclusive. All unmatched sounds and earlier failures are retained; none were discarded. No matrix advancement or phase completion follows from one positive control. Only local test-window/system output was recorded, not microphone audio; no recordings were uploaded or unrelated app audio settings muted.
+
+See that run's `HANDOFF.md` and preserved source snapshots. The latest runner's additional watchdog fixes are syntax/mock-tested but not capture-validated. A valid, uncontaminated capture method still needs calibration; newer Windows alone would not prove timing.
+
+## Preservation and status
+
+HEAD remains `b21a303c51c258d3aa63fa51217bcbb4508fef0f`. Execution `5d6fa9ab-d98f-4855-b2f1-5612a00cdc0b` recomputed the exact original preserved-user diff hash **`c491466f3c174dfd82494d02cbfa8c62614e1fd52fb217edcd3eb7f028d6c22e`**. No unrelated work was reverted. Scope review combined source/caller inspection, actual diffs and the checks above; it is not an application-wide security/accessibility/performance certification.
+
+Supported ownership acquisition after resume bound the same conversation at fence12 without lock deletion or fencing bypass. Media controls use canonical history; view preferences and selection remain outside it. Completed speed checkpoints1–9 are preserved. Whole editor **implementation is present**, but final phase verification is incomplete; no speed/phase Done transition is justified yet.
