@@ -388,6 +388,12 @@ mod tests {
     };
     use crate::video::process::ProcessCancellation;
 
+    // Finite integration-test hang watchdog, not an API or storage latency guarantee.
+    // The injected 40ms deadline bounds settlement polling between awaited operations;
+    // database work and scheduler-lock acquisition are not individually interrupted.
+    // Test that deadline directly below; allow storage/scheduling headroom here.
+    const CANCELLATION_HANG_WATCHDOG: Duration = Duration::from_secs(30);
+
     struct CancellableFfmpegWorker {
         partial_path: PathBuf,
         started: Arc<AtomicBool>,
@@ -460,6 +466,241 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancellation_write_delay_distinguishes_acknowledgement_from_caller_watchdog() {
+        assert_cancellation_write_delay(Duration::ZERO).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_write_delay_survives_slow_fixture_inspection() {
+        assert_cancellation_write_delay(Duration::from_millis(600)).await;
+    }
+
+    // This tests timer ordering, not an API-wide wall-clock latency guarantee.
+    // A manually advanced clock excludes host scheduling and real SQLite/fixture
+    // work from the controlled 40/80/500/600ms timeline. Store and worker tasks
+    // still run on Tauri's separate, real-time runtime. The nonsettling-worker
+    // tests separately retain real-time acknowledgement/hang watchdogs.
+    async fn assert_cancellation_write_delay(fixture_delay: Duration) {
+        for controlled_wait in [Duration::from_millis(80), Duration::from_millis(600)] {
+            let root = tempfile::tempdir().unwrap();
+            let mut jobs =
+                MediaJobService::initialize(root.path().join("data"), root.path().join("cache"))
+                    .await
+                    .unwrap();
+            jobs.acknowledgement_timeout = Duration::from_millis(40);
+            let job = enqueue_job(
+                &jobs,
+                MediaJobKind::Proxy,
+                None,
+                "deadline boundary",
+                "owner",
+            )
+            .await;
+            let worker = Arc::new(GatedCancellationWorker {
+                started: Arc::new(tokio::sync::Notify::new()),
+                signalled: Arc::new(tokio::sync::Notify::new()),
+                release: Arc::new(tokio::sync::Notify::new()),
+                partial: root.path().join("boundary.part"),
+                cleaned: Arc::new(AtomicUsize::new(0)),
+            });
+            jobs.scheduler
+                .submit(
+                    job.id.clone(),
+                    MediaJobPriority::Interactive,
+                    0,
+                    3,
+                    SchedulerResource::Ffmpeg,
+                    worker.clone(),
+                )
+                .await
+                .unwrap();
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, worker.started.notified())
+                .await
+                .unwrap();
+            // An outstanding local blocking task inhibits Tokio's automatic clock
+            // advancement while we await I/O on Tauri's separate runtime. Dropping
+            // the sender on panic releases it; the real-time limit bounds hangs.
+            let (clock_release, clock_wait) = std::sync::mpsc::channel();
+            let clock_guard = tokio::task::spawn_blocking(move || {
+                clock_wait.recv_timeout(CANCELLATION_HANG_WATCHDOG)
+            });
+            tokio::time::pause();
+            let gate = jobs.store.gate_next_cancellation_write();
+            let entered = std::time::Instant::now();
+            let acknowledgement = tokio::time::timeout(
+                Duration::from_millis(500),
+                jobs.cancel_job(&job.id, "owner"),
+            );
+            tokio::pin!(acknowledgement);
+            tokio::select! {
+                _ = gate.reached.notified() => {},
+                early = &mut acknowledgement => panic!("caller returned before reaching controlled write boundary: {early:?}"),
+            }
+            let gate_entered = std::time::Instant::now();
+            eprintln!(
+                "controlled cancellation: hold={controlled_wait:?} write_gate_reached={:?}",
+                entered.elapsed()
+            );
+            // Only this controlled hold consumes logical time. Poll once without
+            // dropping the API future: pending at 80ms, caller timeout at 600ms.
+            tokio::time::advance(controlled_wait).await;
+            let observed = std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(std::future::Future::poll(acknowledgement.as_mut(), cx))
+            })
+            .await;
+            let inspection_clock = tokio::time::Instant::now();
+            eprintln!(
+                "controlled cancellation: wall_held={:?} wall_api_elapsed={:?} observation={observed:?}",
+                gate_entered.elapsed(),
+                entered.elapsed()
+            );
+            assert!(
+                !jobs
+                    .store
+                    .get_private(job.id.clone())
+                    .await
+                    .unwrap()
+                    .public
+                    .cancellation_requested
+            );
+            // Model host/fixture latency without changing any cancellation deadline.
+            tokio::task::spawn_blocking(move || std::thread::sleep(fixture_delay))
+                .await
+                .unwrap();
+            assert!(jobs.scheduler.is_running(&job.id).await);
+            assert!(worker.partial.exists());
+            assert_eq!(worker.cleaned.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                tokio::time::Instant::now(),
+                inspection_clock,
+                "fixture and database inspection must not consume the caller timer"
+            );
+            gate.release.notify_one();
+            if controlled_wait == Duration::from_millis(80) {
+                assert!(
+                    observed.is_pending(),
+                    "40ms budget must not be mistaken for an API-wide deadline"
+                );
+                let returned = acknowledgement.await;
+                eprintln!("controlled cancellation: released write; api_elapsed={:?} returned={returned:?}", entered.elapsed());
+                assert!(matches!(
+                    returned,
+                    Ok(Err(MediaStateStoreError::CancellationPending))
+                ));
+            } else {
+                assert!(
+                    matches!(observed, std::task::Poll::Ready(Err(_))),
+                    "500ms caller watchdog must interrupt the gated API wait"
+                );
+            }
+            let before_cleanup = jobs.store.get_private(job.id.clone()).await.unwrap().public;
+            assert!(!before_cleanup.state.is_terminal());
+            assert_eq!(
+                before_cleanup.cancellation_requested,
+                controlled_wait == Duration::from_millis(80),
+                "caller timeout at the gate must not pretend a durable write completed"
+            );
+            assert_eq!(cancelled_event_count(&jobs, &job.id).await, 0);
+            assert!(worker.partial.exists());
+            assert_eq!(worker.cleaned.load(Ordering::SeqCst), 0);
+            tokio::time::resume();
+            clock_release.send(()).unwrap();
+            clock_guard
+                .await
+                .unwrap()
+                .expect("real-time fixture watchdog expired");
+            // Explicit fixture teardown, not evidence that the timed-out API continued:
+            // the long-delay case stopped being polled before its durable write or signal.
+            let cleanup_request = jobs.cancel_job(&job.id, "owner").await;
+            assert!(matches!(
+                cleanup_request,
+                Err(MediaStateStoreError::CancellationPending)
+            ));
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, worker.signalled.notified())
+                .await
+                .unwrap();
+            worker.release.notify_one();
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.scheduler.wait_idle())
+                .await
+                .unwrap();
+            assert_eq!(
+                jobs.store
+                    .get_private(job.id.clone())
+                    .await
+                    .unwrap()
+                    .public
+                    .state,
+                MediaJobState::Cancelled
+            );
+            assert_eq!(cancelled_event_count(&jobs, &job.id).await, 1);
+            assert!(!jobs.scheduler.is_running(&job.id).await);
+            assert!(!worker.partial.exists());
+            assert_eq!(worker.cleaned.load(Ordering::SeqCst), 1);
+            jobs.shutdown().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn settlement_polling_honours_deadline_without_an_api_latency_assumption() {
+        let root = tempfile::tempdir().unwrap();
+        let jobs = MediaJobService::initialize(root.path().join("data"), root.path().join("cache"))
+            .await
+            .unwrap();
+        let job = enqueue_job(
+            &jobs,
+            MediaJobKind::Proxy,
+            None,
+            "polling deadline",
+            "owner",
+        )
+        .await;
+        let budget = Duration::from_millis(40);
+        for expired in [true, false] {
+            let now = tokio::time::Instant::now();
+            let deadline = if expired { now - budget } else { now + budget };
+            let result = tokio::time::timeout(
+                CANCELLATION_HANG_WATCHDOG,
+                jobs.wait_for_settlement(&job.id, deadline),
+            )
+            .await
+            .expect("settlement polling exceeded the finite hang watchdog");
+            assert!(matches!(
+                result,
+                Err(MediaStateStoreError::CancellationPending)
+            ));
+            assert!(
+                tokio::time::Instant::now() >= deadline,
+                "nonterminal polling must not expire early"
+            );
+            let stored = jobs.store.get_private(job.id.clone()).await.unwrap().public;
+            assert_eq!(stored.state, MediaJobState::Queued);
+            assert!(
+                !stored.cancellation_requested,
+                "polling must not request cancellation"
+            );
+            assert_eq!(cancelled_event_count(&jobs, &job.id).await, 0);
+        }
+        // Terminal state wins even when the supplied acknowledgement deadline is past.
+        let cancelled = tokio::time::timeout(
+            CANCELLATION_HANG_WATCHDOG,
+            jobs.cancel_job(&job.id, "owner"),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cancelled.state, MediaJobState::Cancelled);
+        tokio::time::timeout(
+            CANCELLATION_HANG_WATCHDOG,
+            jobs.wait_for_settlement(&job.id, tokio::time::Instant::now() - budget),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cancelled_event_count(&jobs, &job.id).await, 1);
+        jobs.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn nonsettling_worker_bounds_acknowledgement_without_terminal_cancellation() {
         let root = tempfile::tempdir().unwrap();
         let mut jobs =
@@ -490,15 +731,16 @@ mod tests {
             )
             .await
             .unwrap();
-        let started_result = tokio::time::timeout(Duration::from_secs(2), started.notified()).await;
+        let started_result =
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, started.notified()).await;
         let result = tokio::time::timeout(
-            Duration::from_millis(500),
+            CANCELLATION_HANG_WATCHDOG,
             jobs.cancel_job(&job.id, "owner"),
         )
         .await;
         let signalled_result =
-            tokio::time::timeout(Duration::from_secs(2), signalled.notified()).await;
-        let observations = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, signalled.notified()).await;
+        let observations = tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, async {
             let state = jobs.store.get_private(job.id.clone()).await;
             let events = jobs.store().events(Some(job.id.clone()), 0, 100).await;
             let running = jobs.scheduler.is_running(&job.id).await;
@@ -509,16 +751,16 @@ mod tests {
         .await;
         // Always release the real worker before assertions, including on the red path.
         release.notify_one();
-        tokio::time::timeout(Duration::from_secs(2), jobs.scheduler.wait_idle())
+        tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.scheduler.wait_idle())
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(2), jobs.shutdown())
+        tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.shutdown())
             .await
             .unwrap()
             .unwrap();
         assert!(
             result.is_ok(),
-            "cancellation acknowledgement exceeded its deadline"
+            "cancellation API exceeded the finite hang watchdog"
         );
         assert!(matches!(
             result.unwrap(),
@@ -622,18 +864,18 @@ mod tests {
                     )
                     .await
                     .unwrap();
-                tokio::time::timeout(Duration::from_secs(2), worker.started.notified())
+                tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, worker.started.notified())
                     .await
                     .unwrap();
                 workers.push(worker);
             }
             let first = tokio::time::timeout(
-                Duration::from_millis(500),
+                CANCELLATION_HANG_WATCHDOG,
                 jobs.cancel_job(&parent.id, "owner"),
             )
             .await;
             let second = tokio::time::timeout(
-                Duration::from_millis(500),
+                CANCELLATION_HANG_WATCHDOG,
                 jobs.cancel_job(&parent.id, "owner"),
             )
             .await;
@@ -652,7 +894,7 @@ mod tests {
             // Release the running root first: children must still prevent parent settlement.
             let root_settled = if running_root {
                 workers.last().unwrap().release.notify_one();
-                tokio::time::timeout(Duration::from_secs(2), async {
+                tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, async {
                     while jobs.scheduler.is_running(&parent.id).await {
                         tokio::task::yield_now().await;
                     }
@@ -674,10 +916,45 @@ mod tests {
             if !all_signalled {
                 jobs.scheduler.shutdown().await;
             }
+            let idle_started = std::time::Instant::now();
             let idle =
-                tokio::time::timeout(Duration::from_secs(2), jobs.scheduler.wait_idle()).await;
+                tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.scheduler.wait_idle()).await;
+            if idle.is_err() || !root_settled {
+                eprintln!("settlement hang watchdog: running_root={running_root} root_settled={root_settled} idle={idle:?} elapsed={:?} first={first:?} second={second:?} all_signalled={all_signalled}", idle_started.elapsed());
+                for (index, worker) in workers.iter().enumerate() {
+                    eprintln!(
+                        "worker={index} cleaned={} partial_exists={}",
+                        worker.cleaned.load(Ordering::SeqCst),
+                        worker.partial.exists()
+                    );
+                }
+                // Diagnostics must not hang behind a stalled store or scheduler lock.
+                // Observe only: no cancellation retry and no replacement of `idle`.
+                let snapshot = tokio::time::timeout(Duration::from_secs(2), async {
+                    for job in [&parent, &child_a, &child_b] {
+                        let state = jobs
+                            .store
+                            .get_private(job.id.clone())
+                            .await
+                            .map(|stored| stored.public);
+                        eprintln!("job={} state={state:?}", job.id);
+                        let running = jobs.scheduler.is_running(&job.id).await;
+                        eprintln!("job={} running={running}", job.id);
+                        let events = jobs.store.events(Some(job.id.clone()), 0, 100).await;
+                        let cancelled = events.map(|page| {
+                            page.events
+                                .iter()
+                                .filter(|event| event.state == MediaJobState::Cancelled)
+                                .count()
+                        });
+                        eprintln!("job={} cancelled_events={cancelled:?}", job.id);
+                    }
+                })
+                .await;
+                eprintln!("settlement diagnostic snapshot={snapshot:?}");
+            }
 
-            idle.unwrap();
+            idle.expect("durable settlement exceeded the finite hang watchdog");
             assert!(matches!(
                 first,
                 Ok(Err(MediaStateStoreError::CancellationPending))
@@ -782,16 +1059,16 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            tokio::time::timeout(Duration::from_secs(2), worker.started.notified())
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, worker.started.notified())
                 .await
                 .unwrap();
             workers.push(worker);
         }
         let owner_result =
-            tokio::time::timeout(Duration::from_millis(500), jobs.cancel_owner("owner")).await;
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.cancel_owner("owner")).await;
         let all_signalled = futures_signalled(&workers).await;
         let shutdown_result =
-            tokio::time::timeout(Duration::from_millis(500), jobs.shutdown()).await;
+            tokio::time::timeout(CANCELLATION_HANG_WATCHDOG, jobs.shutdown()).await;
         let handle_retained = jobs.scheduler_task.lock().await.is_some();
         let still_owned = workers
             .iter()

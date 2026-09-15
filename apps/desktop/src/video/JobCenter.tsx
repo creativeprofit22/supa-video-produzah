@@ -528,7 +528,8 @@ export function JobCenter({ controller, focusJobId = null, onClose }: JobCenterP
             <div>
               <strong>Job action did not finish</strong>
               <p>
-                {controller.actionError.message === "Cancellation requested; cleanup has not finished."
+                {controller.actionError.message ===
+                "Cancellation requested; cleanup has not finished."
                   ? "Cancellation requested; cleanup has not finished."
                   : "The saved job state was preserved. Refresh before trying again."}
               </p>

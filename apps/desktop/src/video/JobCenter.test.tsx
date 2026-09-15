@@ -140,13 +140,18 @@ afterEach(cleanup);
 describe("JobCenter", () => {
   it("shows pending cleanup and its timeout without claiming cancellation completed", () => {
     const message = "Cancellation requested; cleanup has not finished.";
-    render(<JobCenter controller={controller({
-      jobs: [job({ cancellationRequested: true })],
-      actionError: new Error(message),
-      canCancelJob: () => false,
-      canRetryJob: () => false,
-      canReauthorizeJobOutput: () => false,
-    })} onClose={vi.fn()} />);
+    render(
+      <JobCenter
+        controller={controller({
+          jobs: [job({ cancellationRequested: true })],
+          actionError: new Error(message),
+          canCancelJob: () => false,
+          canRetryJob: () => false,
+          canReauthorizeJobOutput: () => false,
+        })}
+        onClose={vi.fn()}
+      />,
+    );
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.getAllByText("Cancelling")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Cancelling" }).hasAttribute("disabled")).toBe(true);

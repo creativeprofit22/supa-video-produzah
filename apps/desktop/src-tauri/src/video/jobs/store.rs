@@ -407,6 +407,23 @@ pub(crate) struct MediaJobStore {
     state: MediaStateStore,
     recovery_notice: Arc<Mutex<Option<MediaJobRecoveryReport>>>,
     event_sink: Arc<Mutex<Option<MediaJobEventSink>>>,
+    #[cfg(test)]
+    cancellation_write_gate: Arc<Mutex<Option<CancellationWriteGate>>>,
+    #[cfg(test)]
+    start_transition_failures: Arc<Mutex<Option<StartTransitionFailures>>>,
+}
+
+#[cfg(test)]
+struct StartTransitionFailures {
+    remaining: u8,
+    release: Arc<tokio::sync::Notify>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct CancellationWriteGate {
+    pub reached: Arc<tokio::sync::Notify>,
+    pub release: Arc<tokio::sync::Notify>,
 }
 
 impl MediaJobStore {
@@ -444,12 +461,38 @@ impl MediaJobStore {
             state,
             recovery_notice: Arc::new(Mutex::new(recovery_notice)),
             event_sink: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            cancellation_write_gate: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            start_transition_failures: Arc::new(Mutex::new(None)),
         })
     }
 
     #[cfg(test)]
     fn initialize_for_test(local_data_dir: &Path) -> Result<Self, MediaStateStoreError> {
         Self::initialize_sync(local_data_dir)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_next_cancellation_write(&self) -> CancellationWriteGate {
+        let gate = CancellationWriteGate {
+            reached: Arc::new(tokio::sync::Notify::new()),
+            release: Arc::new(tokio::sync::Notify::new()),
+        };
+        *self.cancellation_write_gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_three_start_transitions(&self) -> Arc<tokio::sync::Notify> {
+        let release = Arc::new(tokio::sync::Notify::new());
+        let mut injection = self.start_transition_failures.lock().unwrap();
+        assert!(injection.is_none(), "start-transition injection already armed");
+        *injection = Some(StartTransitionFailures {
+            remaining: 3,
+            release: release.clone(),
+        });
+        release
     }
 
     #[cfg(test)]
@@ -501,6 +544,28 @@ impl MediaJobStore {
         job_id: String,
         transition: MediaJobTransition,
     ) -> Result<MediaJobRecord, MediaStateStoreError> {
+        #[cfg(test)]
+        if transition.state == MediaJobState::Running {
+            let release = {
+                let mut injection = self.start_transition_failures.lock().unwrap();
+                if let Some(failures) = injection.as_mut() {
+                    if failures.remaining > 0 {
+                        failures.remaining -= 1;
+                        return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                            None,
+                        )
+                        .into());
+                    }
+                }
+                injection.take().map(|failures| failures.release)
+            };
+            // Keep the job queued until the fixture has inspected all three retries.
+            // Take the hook before awaiting; no mutex spans an await, and it is one-shot.
+            if let Some(release) = release {
+                release.notified().await;
+            }
+        }
         let event_job_id = job_id.clone();
         let state = self.state.clone();
         let job = tauri::async_runtime::spawn_blocking(move || {
@@ -528,6 +593,16 @@ impl MediaJobStore {
         job_ids: Vec<String>,
         occurred_at_ms: i64,
     ) -> Result<Vec<MediaJobRecord>, MediaStateStoreError> {
+        #[cfg(test)]
+        {
+            // One-shot gate after the API has created its acknowledgement deadline,
+            // before the durable write and worker signalling. Never compiled in production.
+            let gate = self.cancellation_write_gate.lock().unwrap().take();
+            if let Some(gate) = gate {
+                gate.reached.notify_one();
+                gate.release.notified().await;
+            }
+        }
         let state = self.state.clone();
         let (jobs, events) = tauri::async_runtime::spawn_blocking(move || {
 
@@ -627,6 +702,11 @@ impl MediaJobStore {
     }
 
     async fn emit_latest(&self, job_id: &str) {
+        // Events are already durable. Avoid a blocking task and database open when
+        // there is no live listener; later subscribers can replay persisted events.
+        let Some(sink) = self.event_sink.lock().ok().and_then(|sink| sink.clone()) else {
+            return;
+        };
         let state = self.state.clone();
         let job_id = job_id.to_owned();
         let event = tauri::async_runtime::spawn_blocking(move || {
@@ -636,8 +716,7 @@ impl MediaJobStore {
         .ok()
         .and_then(Result::ok)
         .flatten();
-        let sink = self.event_sink.lock().ok().and_then(|sink| sink.clone());
-        if let (Some(event), Some(sink)) = (event, sink) {
+        if let Some(event) = event {
             sink(event);
         }
     }
@@ -2304,6 +2383,133 @@ mod tests {
                 "release restart recovery selection across 10k jobs took {elapsed:?} with budget {budget:?}"
             );
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn event_emission_without_a_listener_does_not_open_sqlite() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        // Point only this fixture at a fresh path: opening SQLite would create it,
+        // so this detects needless I/O without a timing assertion or a mock runtime.
+        store.state.path = directory.path().join("unobserved.sqlite3");
+        store.emit_latest("unobserved-job").await;
+        assert!(
+            !store.state.path.exists(),
+            "event emission without a listener must not open SQLite"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn listener_receives_durable_events_after_listenerless_enqueue() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        let queued = store
+            .enqueue(new_job("proxy:listener", MediaJobKind::Proxy, 1_000))
+            .await
+            .unwrap();
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let captured = delivered.clone();
+        store
+            .set_event_sink(Arc::new(move |event| captured.lock().unwrap().push(event)))
+            .unwrap();
+        store
+            .transition(queued.job.id.clone(), running_transition(1_100))
+            .await
+            .unwrap();
+        let persisted = store.events(Some(queued.job.id), 0, 10).await.unwrap();
+        assert_eq!(persisted.events.len(), 2);
+        assert_eq!(persisted.events[0].state, MediaJobState::Queued);
+        assert_eq!(persisted.events[1].state, MediaJobState::Running);
+        let delivered = delivered.lock().unwrap();
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0].event_id, persisted.events[1].event_id);
+        assert_eq!(delivered[0].state, MediaJobState::Running);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn start_transition_injection_is_per_store_shared_by_clones_and_one_shot() {
+        let directory = tempfile::tempdir().unwrap();
+        let other_directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        let other = MediaJobStore::initialize_for_test(other_directory.path()).unwrap();
+        let job = store
+            .enqueue(new_job("proxy:injected-start", MediaJobKind::Proxy, 1_000))
+            .await
+            .unwrap()
+            .job;
+        let other_job = other
+            .enqueue(new_job("proxy:other-start", MediaJobKind::Proxy, 1_000))
+            .await
+            .unwrap()
+            .job;
+        let release = store.fail_next_three_start_transitions();
+        other
+            .transition(other_job.id, running_transition(1_100))
+            .await
+            .unwrap();
+        let cloned = store.clone();
+        for source in [&store, &cloned, &store] {
+            let result = source
+                .transition(job.id.clone(), running_transition(1_100))
+                .await;
+            assert!(matches!(
+                result,
+                Err(MediaStateStoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+            ));
+        }
+        assert_eq!(
+            store.get_private(job.id.clone()).await.unwrap().public.state,
+            MediaJobState::Queued
+        );
+        assert_eq!(store.events(Some(job.id.clone()), 0, 20).await.unwrap().events.len(), 1);
+        release.notify_one();
+        cloned
+            .transition(job.id.clone(), running_transition(1_100))
+            .await
+            .unwrap();
+        assert!(store.start_transition_failures.lock().unwrap().is_none());
+        let events = store.events(Some(job.id), 0, 20).await.unwrap().events;
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].state, MediaJobState::Running);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn start_transition_real_sqlite_contention_preserves_queued_state_and_events() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize_for_test(directory.path()).unwrap();
+        let job = store
+            .enqueue(new_job("proxy:contended-start", MediaJobKind::Proxy, 1_000))
+            .await
+            .unwrap()
+            .job;
+        // No injection: exercise the real connection, busy timeout and failed write.
+        // SQLite's busy policy is not a wall-clock bound on host scheduling or I/O.
+        let blocker = Connection::open(store.database_path()).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let result = store
+            .transition(job.id.clone(), running_transition(1_100))
+            .await;
+        blocker.execute_batch("ROLLBACK").unwrap();
+        assert!(matches!(
+            result,
+            Err(MediaStateStoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+                if matches!(error.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+        ));
+        assert_eq!(
+            store.get_private(job.id.clone()).await.unwrap().public.state,
+            MediaJobState::Queued
+        );
+        let events = store.events(Some(job.id.clone()), 0, 20).await.unwrap().events;
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].state, MediaJobState::Queued);
+        store
+            .transition(job.id.clone(), running_transition(1_100))
+            .await
+            .unwrap();
+        let events = store.events(Some(job.id), 0, 20).await.unwrap().events;
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].state, MediaJobState::Running);
     }
 
     #[tokio::test(flavor = "current_thread")]

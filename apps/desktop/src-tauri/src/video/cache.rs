@@ -143,6 +143,7 @@ pub(crate) struct MediaCacheService {
 #[cfg(test)]
 #[derive(Clone, Default)]
 struct CacheRaceHooks {
+    eviction_contention: Option<Arc<EvictionContentionProbe>>,
     write_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     after_register: Option<std::sync::Arc<CacheRaceGate>>,
     before_unlink: Option<std::sync::Arc<CacheRaceGate>>,
@@ -150,6 +151,13 @@ struct CacheRaceHooks {
     before_eviction_lock: Option<std::sync::Arc<CacheRaceGate>>,
     lock_attempt: Option<std::sync::mpsc::SyncSender<()>>,
     publication: std::sync::Arc<std::sync::Mutex<Option<PublicationRace>>>,
+}
+
+// Opt-in for one fixture and its clones: real SQLite contention, without busy sleeps.
+#[cfg(test)]
+#[derive(Default)]
+struct EvictionContentionProbe {
+    errors: Mutex<Vec<(&'static str, rusqlite::ErrorCode)>>,
 }
 
 #[cfg(test)]
@@ -871,18 +879,38 @@ impl MediaCacheService {
         Ok(candidate)
     }
 
+    #[cfg(test)]
+    fn record_eviction_database_error(
+        &self,
+        stage: &'static str,
+        error: Option<&MediaStateStoreError>,
+    ) {
+        if let (
+            Some(probe),
+            Some(MediaStateStoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _))),
+        ) = (&self.race_hooks.eviction_contention, error)
+        {
+            probe.errors.lock().unwrap().push((stage, error.code));
+        }
+    }
+
     fn evict_reserved_candidate(
         &self,
         candidate: &EvictionCandidate,
     ) -> Result<bool, MediaStateStoreError> {
         let result = self.evict_reserved_candidate_inner(candidate);
+        #[cfg(test)]
+        self.record_eviction_database_error("eviction", result.as_ref().err());
         if result.is_err() {
             // The inner call has released all file/database guards before taking this mutex.
             self.failed_evictions
                 .lock()
                 .map_err(|_| MediaStateStoreError::WorkerStopped)?
                 .push(candidate.clone());
-            self.reconcile_failed_evictions()?;
+            let repair = self.reconcile_failed_evictions();
+            #[cfg(test)]
+            self.record_eviction_database_error("repair", repair.as_ref().err());
+            repair?;
         }
         result
     }
@@ -898,6 +926,10 @@ impl MediaCacheService {
             return Ok(());
         }
         let mut connection = self.state.open_connection()?;
+        #[cfg(test)]
+        if self.race_hooks.eviction_contention.is_some() {
+            connection.busy_timeout(Duration::ZERO)?;
+        }
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         for candidate in pending.iter() {
             let Some((current, availability)) =
@@ -951,6 +983,10 @@ impl MediaCacheService {
         }
         let _lock = CacheFileLock::acquire(&lock_path)?;
         let mut connection = self.state.open_connection()?;
+        #[cfg(test)]
+        if self.race_hooks.eviction_contention.is_some() {
+            connection.busy_timeout(Duration::ZERO)?;
+        }
         // simplification: SQLite serializes short unlink sections across keys.
         // Upgrade to a per-key deletion-state protocol only if measured contention warrants it.
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -2168,7 +2204,9 @@ pub(crate) mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn failed_eviction_reconciles_after_both_database_waits() {
         let root = tempfile::tempdir().unwrap();
-        let (_store, cache) = service(root.path()).await;
+        let (_store, mut cache) = service(root.path()).await;
+        let contention = Arc::new(EvictionContentionProbe::default());
+        cache.race_hooks.eviction_contention = Some(contention.clone());
         let kind = CacheArtifactKind::Proxy;
         let key = "3".repeat(64);
         let path = create_artifact(root.path(), kind, &key, 8);
@@ -2198,7 +2236,20 @@ pub(crate) mod tests {
         drop(transaction);
         let joined = worker.join();
         joined.unwrap();
-        assert!(result.unwrap().is_err());
+        assert!(matches!(
+            result.unwrap(),
+            Err(MediaStateStoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+                if error.code == rusqlite::ErrorCode::DatabaseBusy
+        ));
+        assert_eq!(
+            *contention.errors.lock().unwrap(),
+            vec![
+                ("eviction", rusqlite::ErrorCode::DatabaseBusy),
+                ("repair", rusqlite::ErrorCode::DatabaseBusy),
+            ]
+        );
+        assert_eq!(cache.failed_evictions.lock().unwrap().len(), 1);
+        assert_eq!(fs::read(&path).unwrap(), b"xxxxxxxx");
         assert_eq!(
             MediaCacheService::catalog_candidate(&connection, &key)
                 .unwrap()
@@ -2220,8 +2271,14 @@ pub(crate) mod tests {
                 .unwrap();
             let repair_error = cache.status_sync();
             drop(held);
-            assert!(repair_error.is_err());
+            assert!(matches!(
+                repair_error,
+                Err(MediaStateStoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+            ));
+            assert_eq!(cache.failed_evictions.lock().unwrap().len(), 1);
             assert_eq!(cache.status_sync().unwrap().managed_bytes, 8);
+            assert!(cache.failed_evictions.lock().unwrap().is_empty());
             assert_eq!(
                 MediaCacheService::catalog_candidate(&connection, &active_key)
                     .unwrap()

@@ -139,6 +139,7 @@ pub(crate) struct MediaJobScheduler {
     running: Mutex<HashMap<String, RunningWork>>,
     ffmpeg_permits: Arc<Semaphore>,
     blocking_io_permits: Arc<Semaphore>,
+    // Shared by dispatch and idle observers: state changes must wake every waiter.
     notify: Notify,
     sequence: AtomicU64,
     active_count: AtomicUsize,
@@ -226,7 +227,7 @@ impl MediaJobScheduler {
         queue.push(queued);
         drop(running);
         drop(queue);
-        self.notify.notify_one();
+        self.notify.notify_waiters();
         Ok(())
     }
 
@@ -366,7 +367,7 @@ impl MediaJobScheduler {
         });
         drop(running);
         drop(queue);
-        self.notify.notify_one();
+        self.notify.notify_waiters();
         Ok(retried)
     }
 
@@ -561,7 +562,7 @@ impl MediaJobScheduler {
         drop(running);
         drop(queue);
         if should_requeue {
-            self.notify.notify_one();
+            self.notify.notify_waiters();
         }
     }
 
@@ -743,7 +744,7 @@ impl MediaJobScheduler {
                     queue.push(retry);
                     drop(running);
                     drop(queue);
-                    self.notify.notify_one();
+                    self.notify.notify_waiters();
                 } else {
                     let state = if classification == RetryClassification::Actionable {
                         MediaJobState::Blocked
@@ -1291,9 +1292,8 @@ mod tests {
             )
             .await
             .unwrap();
-        // Leave the worker completion as the only notification capable of waking queued work.
-        scheduler.notify.notified().await;
-
+        // Earlier submission broadcasts have no saved permit; worker completion is
+        // the only notification capable of waking queued work after failed acquisition.
         let loop_handle = scheduler.start();
         failed_acquisition.wait().await;
         release_first.wait().await;
@@ -1325,6 +1325,108 @@ mod tests {
             store.get_private(second_id).await.unwrap().public.state,
             MediaJobState::Complete
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn idle_observer_does_not_steal_submission_wakeup() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaJobStore::initialize(directory.path().to_path_buf())
+            .await
+            .unwrap();
+        let scheduler = MediaJobScheduler::new(
+            store.clone(),
+            MediaSchedulerConfig::default(),
+            TestClock::at(12_000),
+        )
+        .unwrap();
+        let held_permit = scheduler
+            .acquire_resource_permit(SchedulerResource::Ffmpeg)
+            .await
+            .unwrap();
+        let order = Arc::new(StdMutex::new(Vec::new()));
+        let worker = Arc::new(RecordingWorker {
+            name: "work",
+            order: order.clone(),
+            active: Arc::new(AtomicUsize::new(0)),
+            peak: Arc::new(AtomicUsize::new(0)),
+            delay: Duration::ZERO,
+        });
+        let blocked = queued_job(&store, "blocked", MediaJobPriority::Interactive, 12_000).await;
+        scheduler
+            .submit(
+                blocked,
+                MediaJobPriority::Interactive,
+                0,
+                3,
+                SchedulerResource::Ffmpeg,
+                worker.clone(),
+            )
+            .await
+            .unwrap();
+
+        // Register a real idle observer before the dispatcher. Its queue is nonempty,
+        // but the FFmpeg permit prevents that queued work from completing.
+        let idle = scheduler.wait_idle();
+        tokio::pin!(idle);
+        std::future::poll_fn(|cx| {
+            assert!(idle.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        let reached = Arc::new(tokio::sync::Barrier::new(2));
+        let resume = Arc::new(tokio::sync::Barrier::new(2));
+        *scheduler.wait_barriers.lock().unwrap() = Some((reached.clone(), resume.clone()));
+        let loop_handle = scheduler.start();
+        reached.wait().await;
+
+        // This job has an available permit and must run even while idle is observed.
+        let runnable = queued_job(&store, "runnable", MediaJobPriority::Interactive, 12_000).await;
+        scheduler
+            .submit(
+                runnable.clone(),
+                MediaJobPriority::Interactive,
+                0,
+                3,
+                SchedulerResource::BlockingIo,
+                worker,
+            )
+            .await
+            .unwrap();
+        resume.wait().await;
+        let completed = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                std::future::poll_fn(|cx| {
+                    assert!(idle.as_mut().poll(cx).is_pending());
+                    std::task::Poll::Ready(())
+                })
+                .await;
+                if store
+                    .get_private(runnable.clone())
+                    .await
+                    .unwrap()
+                    .public
+                    .state
+                    == MediaJobState::Complete
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+
+        // Clean up before asserting, including on the regression's failure path.
+        scheduler.shutdown().await;
+        drop(held_permit);
+        tokio::time::timeout(Duration::from_secs(2), loop_handle)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            completed.is_ok(),
+            "idle observer consumed the runnable job's dispatch wakeup"
+        );
+        assert_eq!(*order.lock().unwrap(), vec!["work"]);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1368,8 +1470,7 @@ mod tests {
             .await
             .unwrap();
 
-        let blocker = rusqlite::Connection::open(store.database_path()).unwrap();
-        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let release_start = store.fail_next_three_start_transitions();
         let loop_handle = scheduler.start();
         tokio::time::timeout(Duration::from_secs(10), async {
             loop {
@@ -1386,7 +1487,16 @@ mod tests {
             MediaJobState::Queued
         );
 
-        blocker.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(
+            *clock.sleeps.lock().unwrap(),
+            vec![
+                Duration::from_millis(10),
+                Duration::from_millis(50),
+                Duration::from_millis(100),
+            ]
+        );
+        assert!(order.lock().unwrap().is_empty());
+        release_start.notify_one();
         tokio::time::timeout(Duration::from_secs(5), scheduler.wait_idle())
             .await
             .unwrap();
@@ -1402,6 +1512,13 @@ mod tests {
             events
                 .iter()
                 .filter(|event| event.state == MediaJobState::Running)
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.state == MediaJobState::Complete)
                 .count(),
             1
         );

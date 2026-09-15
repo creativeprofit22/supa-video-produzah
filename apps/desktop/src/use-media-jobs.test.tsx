@@ -107,9 +107,13 @@ describe("durable media jobs controller", () => {
     });
     const { result } = renderHook(() => useMediaJobs(backend));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    await act(async () => { await result.current.cancelJob(testMediaJob.id); });
+    await act(async () => {
+      await result.current.cancelJob(testMediaJob.id);
+    });
     expect(result.current.actionError?.message).toBe(message);
-    await act(async () => { await result.current.refresh(); });
+    await act(async () => {
+      await result.current.refresh();
+    });
     expect(result.current.jobs[0]?.cancellationRequested).toBe(true);
     expect(result.current.jobs[0]?.state).not.toBe("cancelled");
     expect(result.current.canCancelJob(testMediaJob.id)).toBe(false);
