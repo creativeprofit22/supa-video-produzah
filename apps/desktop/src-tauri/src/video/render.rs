@@ -31,6 +31,7 @@ use super::{
         store::{MediaJobStore, MediaJobTransition, MediaStateStoreError, NewMediaJob},
         MediaJobService,
     },
+    media_store::MEDIA_STORE_NAMESPACE,
     probe::{probe_trusted_media_with_program, InspectedMedia},
     process::{
         run_supervised_streaming, ProcessCancellation, ProcessFailure, ProcessSpec,
@@ -1738,17 +1739,20 @@ pub(crate) fn ensure_preview_directory(
     app_cache_dir: &Path,
     job_id: &str,
 ) -> Result<PathBuf, VideoCommandError> {
-    if job_id.contains(['/', '\\']) || job_id.is_empty() {
+    if job_id.contains(['/', '\\']) || job_id.is_empty() || matches!(job_id, "." | "..") {
         return Err(VideoCommandError::invalid_render_plan("preview_job_id"));
     }
     ensure_directory_without_symlink(app_cache_dir)?;
-    let phase_directory = app_cache_dir.join("video-phase1");
-    ensure_directory_without_symlink(&phase_directory)?;
-    let render_directory = phase_directory.join("render-preview");
+    let store_directory = app_cache_dir.join(MEDIA_STORE_NAMESPACE);
+    ensure_directory_without_symlink(&store_directory)?;
+    // Final previews must stay inside the existing asset-protocol derived-cache scope.
+    let derived_directory = store_directory.join("derived");
+    ensure_directory_without_symlink(&derived_directory)?;
+    let render_directory = derived_directory.join("render-preview");
     ensure_directory_without_symlink(&render_directory)?;
     let job_directory = render_directory.join(job_id);
     ensure_directory_without_symlink(&job_directory)?;
-    if !job_directory.starts_with(app_cache_dir) {
+    if !job_directory.starts_with(&derived_directory) {
         return Err(VideoCommandError::invalid_render_plan(
             "preview_containment",
         ));

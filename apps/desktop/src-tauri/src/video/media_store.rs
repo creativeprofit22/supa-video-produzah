@@ -124,7 +124,7 @@ fn direct_component(component: &str) -> bool {
         && !component.contains(['/', '\\', '\0'])
 }
 
-fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
+pub(crate) fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }

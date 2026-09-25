@@ -1429,12 +1429,12 @@ pub(crate) mod tests {
     }
 
     #[cfg(unix)]
-    fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
+    pub(crate) fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, link)
     }
 
     #[cfg(windows)]
-    fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
+    pub(crate) fn create_directory_redirect(target: &Path, link: &Path) -> io::Result<()> {
         let output = std::process::Command::new("cmd.exe")
             .args(["/D", "/C", "mklink", "/J"])
             .arg(link)

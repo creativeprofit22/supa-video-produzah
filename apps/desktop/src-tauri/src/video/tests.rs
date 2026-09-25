@@ -4064,6 +4064,103 @@ fn render_output_validation_and_preview_directory_reject_unsafe_shapes() {
 }
 
 #[test]
+fn render_preview_directory_stays_inside_existing_asset_scope() {
+    let directory = tempdir().unwrap();
+    let cache = directory.path().join("cache");
+    let preview = ensure_preview_directory(&cache, RENDER_PLAN_ID).unwrap();
+    let config: Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+    assert_eq!(
+        config["app"]["security"]["assetProtocol"]["scope"],
+        serde_json::json!([format!("$APPCACHE/{MEDIA_STORE_NAMESPACE}/derived/**/*")])
+    );
+    assert_eq!(
+        preview,
+        cache
+            .join(MEDIA_STORE_NAMESPACE)
+            .join("derived")
+            .join("render-preview")
+            .join(RENDER_PLAN_ID)
+    );
+    assert!(preview.is_dir());
+    assert_eq!(
+        ensure_preview_directory(&cache, RENDER_PLAN_ID).unwrap(),
+        preview
+    );
+    assert!(!cache.join("video-phase1").exists());
+}
+
+#[test]
+fn render_preview_directory_rejects_dot_segments_and_non_directories() {
+    let directory = tempdir().unwrap();
+    for job in ["", ".", "..", "../escape", "nested/job", "nested\\job"] {
+        assert_eq!(
+            ensure_preview_directory(&directory.path().join("invalid"), job)
+                .unwrap_err()
+                .code,
+            VideoErrorCode::InvalidRenderPlan
+        );
+    }
+    assert!(!directory.path().join("invalid").exists());
+    for components in [
+        vec![],
+        vec![MEDIA_STORE_NAMESPACE],
+        vec![MEDIA_STORE_NAMESPACE, "derived"],
+        vec![MEDIA_STORE_NAMESPACE, "derived", "render-preview"],
+        vec![
+            MEDIA_STORE_NAMESPACE,
+            "derived",
+            "render-preview",
+            RENDER_PLAN_ID,
+        ],
+    ] {
+        let root = tempdir().unwrap();
+        let cache = root.path().join("cache");
+        let blocked = components
+            .iter()
+            .fold(cache.clone(), |path, part| path.join(part));
+        fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+        fs::write(&blocked, b"preserve").unwrap();
+        assert!(ensure_preview_directory(&cache, RENDER_PLAN_ID).is_err());
+        assert_eq!(fs::read(blocked).unwrap(), b"preserve");
+    }
+}
+
+#[test]
+fn render_preview_directory_rejects_directory_redirects() {
+    for components in [
+        vec![],
+        vec![MEDIA_STORE_NAMESPACE],
+        vec![MEDIA_STORE_NAMESPACE, "derived"],
+        vec![MEDIA_STORE_NAMESPACE, "derived", "render-preview"],
+        vec![
+            MEDIA_STORE_NAMESPACE,
+            "derived",
+            "render-preview",
+            RENDER_PLAN_ID,
+        ],
+    ] {
+        let root = tempdir().unwrap();
+        let cache = root.path().join("cache");
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let link = components
+            .iter()
+            .fold(cache.clone(), |path, part| path.join(part));
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        super::cache::tests::create_directory_redirect(&outside, &link)
+            .expect("directory redirect fixture");
+        assert!(super::media_store::is_reparse_or_symlink(
+            &fs::symlink_metadata(&link).unwrap()
+        ));
+        assert!(ensure_preview_directory(&cache, RENDER_PLAN_ID).is_err());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        assert!(super::media_store::is_reparse_or_symlink(
+            &fs::symlink_metadata(&link).unwrap()
+        ));
+    }
+}
+
+#[test]
 fn render_partial_workflow_precreates_cleans_and_preserves_final_no_clobber() {
     let directory = tempdir().expect("promotion workspace must be created");
     let (_, validated) = validated_render_fixture(directory.path(), true, RENDER_PLAN_ID);
