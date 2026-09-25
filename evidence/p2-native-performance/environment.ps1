@@ -1,0 +1,4 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+@{ utc = [DateTime]::UtcNow.ToString('o'); os = (Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber); cpu = (Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); gpu = (Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate); power = (powercfg /getactivescheme); webviewInstalled = @(Get-ChildItem "${env:ProgramFiles(x86)}/Microsoft/EdgeWebView/Application" -Directory | Select-Object -ExpandProperty Name); cacheCondition = 'No system cache purge, no elevation or power setting changes' } | ConvertTo-Json -Depth 4 -Compress
