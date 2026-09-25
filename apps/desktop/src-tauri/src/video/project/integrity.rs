@@ -269,7 +269,12 @@ fn valid_clip_shape(clip: &ProjectClip) -> bool {
         ClipSource::Sequence { sequence_id } => is_canonical_uuid(sequence_id),
     };
     is_canonical_uuid(&clip.id)
-        && clip.fades.is_none_or(|f| f.valid() && f.in_frames.checked_add(f.out_frames).is_some_and(|sum| project_clip_timeline_duration(clip).is_ok_and(|d| sum <= d)))
+        && clip.fades.is_none_or(|f| {
+            f.valid()
+                && f.in_frames
+                    .checked_add(f.out_frames)
+                    .is_some_and(|sum| project_clip_timeline_duration(clip).is_ok_and(|d| sum <= d))
+        })
         && source_id_valid
         && valid_time_shape(&clip.timeline_start)
         && valid_time_shape(&clip.source_in)
@@ -751,9 +756,7 @@ fn valid_command(command: &ProjectCommand) -> bool {
             is_canonical_uuid(sequence_id)
                 && is_canonical_uuid(track_id)
                 && is_canonical_uuid(clip_id)
-                && fades
-                    .as_ref()
-                    .is_none_or(|value| value.valid())
+                && fades.as_ref().is_none_or(|value| value.valid())
         }
         ProjectCommand::SetClipGain {
             sequence_id,

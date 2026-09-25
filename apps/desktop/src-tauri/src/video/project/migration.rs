@@ -57,7 +57,7 @@ pub fn migrate_v1(
                             transform: ClipTransform::default(),
                             gain_milli_decibels: 0,
                             speed: None,
-                fades: None,
+                            fades: None,
                         })
                         .collect(),
                 })

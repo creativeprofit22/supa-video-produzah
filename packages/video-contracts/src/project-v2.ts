@@ -54,7 +54,8 @@ export const projectHistoryEntryV2Schema = z
         (command) =>
           command.type !== "RestoreRippleDeletedClip" &&
           command.type !== "RestoreActiveCaptionArtifact" &&
-          command.type !== "RestoreClipSpeed" && command.type !== "RestoreClipFades",
+          command.type !== "RestoreClipSpeed" &&
+          command.type !== "RestoreClipFades",
       ),
     { message: "Private inverse commands cannot be stored as forward history" },
   );

@@ -3041,7 +3041,7 @@ fn ripple_delete_uses_exact_rational_timeline_duration() {
         transform: ClipTransform::default(),
         gain_milli_decibels: 0,
         speed: None,
-                fades: None,
+        fades: None,
     };
     *clips = vec![
         make_clip("63000000-0000-4000-8000-000000000001", 0, 0, 8),

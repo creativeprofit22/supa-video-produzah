@@ -487,7 +487,10 @@ impl MediaJobStore {
     pub(crate) fn fail_next_three_start_transitions(&self) -> Arc<tokio::sync::Notify> {
         let release = Arc::new(tokio::sync::Notify::new());
         let mut injection = self.start_transition_failures.lock().unwrap();
-        assert!(injection.is_none(), "start-transition injection already armed");
+        assert!(
+            injection.is_none(),
+            "start-transition injection already armed"
+        );
         *injection = Some(StartTransitionFailures {
             remaining: 3,
             release: release.clone(),
@@ -2459,10 +2462,23 @@ mod tests {
             ));
         }
         assert_eq!(
-            store.get_private(job.id.clone()).await.unwrap().public.state,
+            store
+                .get_private(job.id.clone())
+                .await
+                .unwrap()
+                .public
+                .state,
             MediaJobState::Queued
         );
-        assert_eq!(store.events(Some(job.id.clone()), 0, 20).await.unwrap().events.len(), 1);
+        assert_eq!(
+            store
+                .events(Some(job.id.clone()), 0, 20)
+                .await
+                .unwrap()
+                .events
+                .len(),
+            1
+        );
         release.notify_one();
         cloned
             .transition(job.id.clone(), running_transition(1_100))
@@ -2497,10 +2513,19 @@ mod tests {
                 if matches!(error.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
         ));
         assert_eq!(
-            store.get_private(job.id.clone()).await.unwrap().public.state,
+            store
+                .get_private(job.id.clone())
+                .await
+                .unwrap()
+                .public
+                .state,
             MediaJobState::Queued
         );
-        let events = store.events(Some(job.id.clone()), 0, 20).await.unwrap().events;
+        let events = store
+            .events(Some(job.id.clone()), 0, 20)
+            .await
+            .unwrap()
+            .events;
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].state, MediaJobState::Queued);
         store

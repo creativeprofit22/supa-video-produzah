@@ -73,10 +73,12 @@ export const clipTransformSchema = clipTransformGeometrySchema
   .strict();
 export type ClipTransform = z.infer<typeof clipTransformSchema>;
 
-export const clipFadesSchema = z.object({
-  inFrames: z.number().int().safe().nonnegative(),
-  outFrames: z.number().int().safe().nonnegative(),
-}).strict();
+export const clipFadesSchema = z
+  .object({
+    inFrames: z.number().int().safe().nonnegative(),
+    outFrames: z.number().int().safe().nonnegative(),
+  })
+  .strict();
 export type ClipFades = z.infer<typeof clipFadesSchema>;
 
 export const projectClipSchema = z
@@ -95,12 +97,22 @@ export const projectClipSchema = z
   .refine(
     (clip) => clip.sourceOut.value > clip.sourceIn.value,
     "Clip source range must be nonempty",
-  ).refine((clip) => {
+  )
+  .refine((clip) => {
     if (clip.fades === undefined) return true;
     try {
-      const duration = clipTimelineDuration({ in: clip.sourceIn, out: clip.sourceOut }, { numerator: clip.timelineStart.rateNumerator, denominator: clip.timelineStart.rateDenominator }, clip.speed);
+      const duration = clipTimelineDuration(
+        { in: clip.sourceIn, out: clip.sourceOut },
+        {
+          numerator: clip.timelineStart.rateNumerator,
+          denominator: clip.timelineStart.rateDenominator,
+        },
+        clip.speed,
+      );
       return BigInt(clip.fades.inFrames) + BigInt(clip.fades.outFrames) <= BigInt(duration.value);
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }, "Audio fades exceed exact clip duration");
 export type ProjectClip = z.infer<typeof projectClipSchema>;
 

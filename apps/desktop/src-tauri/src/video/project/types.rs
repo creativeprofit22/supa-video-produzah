@@ -67,9 +67,13 @@ pub struct ClipFades {
     pub out_frames: u64,
 }
 impl ClipFades {
-    pub fn valid(&self) -> bool { self.in_frames <= MAX_SAFE_INTEGER && self.out_frames <= MAX_SAFE_INTEGER }
+    pub fn valid(&self) -> bool {
+        self.in_frames <= MAX_SAFE_INTEGER && self.out_frames <= MAX_SAFE_INTEGER
+    }
 }
-fn deserialize_restored_fades<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<ClipFades>, D::Error> {
+fn deserialize_restored_fades<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<ClipFades>, D::Error> {
     Option::<ClipFades>::deserialize(d)
 }
 
@@ -115,7 +119,11 @@ pub struct ProjectClip {
         deserialize_with = "deserialize_clip_speed"
     )]
     pub speed: Option<ClipSpeed>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
     pub fades: Option<ClipFades>,
 }
 

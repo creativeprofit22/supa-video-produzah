@@ -368,7 +368,8 @@ export const commandGroupRequestSchema = z
       if (
         command.type === "RestoreRippleDeletedClip" ||
         command.type === "RestoreActiveCaptionArtifact" ||
-        command.type === "RestoreClipSpeed" || command.type === "RestoreClipFades"
+        command.type === "RestoreClipSpeed" ||
+        command.type === "RestoreClipFades"
       ) {
         context.addIssue({
           code: "custom",

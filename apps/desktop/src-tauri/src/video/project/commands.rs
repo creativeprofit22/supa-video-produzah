@@ -201,11 +201,34 @@ fn set_clip_speed(
     ))
 }
 
-fn set_clip_fades(state: &mut VideoProjectStateV2, command_id: &str, sequence_id: &str, track_id: &str, clip_id: &str, desired: Option<ClipFades>) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+fn set_clip_fades(
+    state: &mut VideoProjectStateV2,
+    command_id: &str,
+    sequence_id: &str,
+    track_id: &str,
+    clip_id: &str,
+    desired: Option<ClipFades>,
+) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
     let clip = find_clip_mut(state, sequence_id, track_id, clip_id)?;
-    if desired.is_some_and(|f| !f.valid() || f.in_frames.checked_add(f.out_frames).is_none_or(|sum| clip_duration_on_timeline(clip).map_or(true, |duration| sum > duration))) { return Err(invalid("clip_fades")); }
+    if desired.is_some_and(|f| {
+        !f.valid()
+            || f.in_frames.checked_add(f.out_frames).is_none_or(|sum| {
+                clip_duration_on_timeline(clip).map_or(true, |duration| sum > duration)
+            })
+    }) {
+        return Err(invalid("clip_fades"));
+    }
     let previous = std::mem::replace(&mut clip.fades, desired);
-    Ok((vec![ProjectCommand::RestoreClipFades { command_id: inverse_id(command_id, 0), sequence_id: sequence_id.to_owned(), track_id: track_id.to_owned(), clip_id: clip_id.to_owned(), fades: previous }], vec![clip_range(sequence_id, clip)?]))
+    Ok((
+        vec![ProjectCommand::RestoreClipFades {
+            command_id: inverse_id(command_id, 0),
+            sequence_id: sequence_id.to_owned(),
+            track_id: track_id.to_owned(),
+            clip_id: clip_id.to_owned(),
+            fades: previous,
+        }],
+        vec![clip_range(sequence_id, clip)?],
+    ))
 }
 
 fn track_range(
@@ -422,7 +445,12 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             ],
         ),
         ProjectCommand::SetClipFades { .. } | ProjectCommand::RestoreClipFades { .. } => (
-            "Updated clip fades", vec![CacheInvalidation::AudioMix, CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
+            "Updated clip fades",
+            vec![
+                CacheInvalidation::AudioMix,
+                CacheInvalidation::Preview,
+                CacheInvalidation::RenderPlan,
+            ],
         ),
         ProjectCommand::SetClipGain { .. } => (
             "Updated clip gain",
@@ -523,8 +551,16 @@ fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
             track_id,
             ..
         }
-        | ProjectCommand::SetClipFades { sequence_id, track_id, .. }
-        | ProjectCommand::RestoreClipFades { sequence_id, track_id, .. }
+        | ProjectCommand::SetClipFades {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RestoreClipFades {
+            sequence_id,
+            track_id,
+            ..
+        }
         | ProjectCommand::SetClipGain {
             sequence_id,
             track_id,
@@ -1130,8 +1166,31 @@ fn apply_one(
             speed,
             ..
         } => set_clip_speed(state, id, sequence_id, track_id, clip_id, *speed),
-        ProjectCommand::SetClipFades { sequence_id, track_id, clip_id, fades, .. } => set_clip_fades(state, id, sequence_id, track_id, clip_id, if fades.in_frames == 0 && fades.out_frames == 0 { None } else { Some(*fades) }),
-        ProjectCommand::RestoreClipFades { sequence_id, track_id, clip_id, fades, .. } => set_clip_fades(state, id, sequence_id, track_id, clip_id, *fades),
+        ProjectCommand::SetClipFades {
+            sequence_id,
+            track_id,
+            clip_id,
+            fades,
+            ..
+        } => set_clip_fades(
+            state,
+            id,
+            sequence_id,
+            track_id,
+            clip_id,
+            if fades.in_frames == 0 && fades.out_frames == 0 {
+                None
+            } else {
+                Some(*fades)
+            },
+        ),
+        ProjectCommand::RestoreClipFades {
+            sequence_id,
+            track_id,
+            clip_id,
+            fades,
+            ..
+        } => set_clip_fades(state, id, sequence_id, track_id, clip_id, *fades),
         ProjectCommand::SetClipGain {
             sequence_id,
             track_id,
