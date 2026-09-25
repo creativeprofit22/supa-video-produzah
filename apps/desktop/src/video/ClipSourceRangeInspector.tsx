@@ -62,7 +62,7 @@ export function ClipSourceRangeInspector({
   const rate = `${selection.sourceIn.rateNumerator}/${selection.sourceIn.rateDenominator}`;
   return (
     <section
-      className="panel clip-inspector-panel"
+      className="panel clip-inspector-panel clip-source-range-inspector"
       aria-label="Source range inspector"
       aria-busy={saving}
     >

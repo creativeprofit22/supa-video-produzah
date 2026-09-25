@@ -14,11 +14,13 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { seekMediaTime } from "./mediaSeek";
 import { PreviewAudioGraph } from "./preview-audio";
+import { clockLayerAtTimelineFrame, layerIsActiveAtTimelineFrame } from "./layer-clock";
+import { previewMediaWindow } from "./preview-media-window";
 
 export interface ProgramMonitorLayer {
   readonly audioOnly?: boolean;
@@ -64,6 +66,8 @@ interface ProgramMonitorProps {
   readonly trimOut: number;
   readonly playhead: number;
   readonly onPlayheadChange: (frame: number) => void;
+  /** Fires after the monitor starts or stops playing. */
+  readonly onPlayingChange?: (playing: boolean) => void;
 }
 
 function secondsForFrame(frame: number, rate: RationalRate): number {
@@ -121,24 +125,7 @@ function timelineFrameAtSeconds(
   );
 }
 
-function layerIsActiveAtTimelineFrame(layer: ProgramMonitorLayer, frame: number): boolean {
-  return layer.timelineStartFrame <= frame && frame < timelineEndFrame(layer);
-}
-
-function clockLayerAtTimelineFrame(
-  layers: readonly ProgramMonitorLayer[],
-  frame: number,
-): ProgramMonitorLayer | null {
-  // Prefer a visible active clock, but hidden/audio clips still own time.
-  const visibleLayers = layers.filter((layer) => !layer.hidden && !layer.audioOnly);
-  return (
-    visibleLayers.find((layer) => layerIsActiveAtTimelineFrame(layer, frame)) ??
-    layers.find((layer) => layerIsActiveAtTimelineFrame(layer, frame)) ??
-    layers.find((layer) => layer.timelineStartFrame >= frame) ??
-    layers.at(-1) ??
-    null
-  );
-}
+export { clockLayerAtTimelineFrame, layerIsActiveAtTimelineFrame };
 
 function supportsVideoFrameCallbacks(video: HTMLVideoElement): boolean {
   return (
@@ -181,13 +168,30 @@ function PlayableProgramMonitor({
   trimOut,
   playhead,
   onPlayheadChange,
+  onPlayingChange,
 }: ProgramMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const layerVideoRefs = useRef(new Map<string, HTMLVideoElement>());
+  const frameReadoutRef = useRef<HTMLOutputElement>(null);
   const playheadRef = useRef(playhead);
   const continuousPlayheadRef = useRef(playhead);
-  if (playheadRef.current !== playhead) continuousPlayheadRef.current = playhead;
-  playheadRef.current = playhead;
+  // During playback the parent commits the playhead only at structural changes,
+  // so the prop may lag the live clock. Adopt it only when the prop itself
+  // changes; an unrelated re-render must never rewind the live position.
+  const lastPlayheadPropRef = useRef(playhead);
+  if (lastPlayheadPropRef.current !== playhead) {
+    lastPlayheadPropRef.current = playhead;
+    playheadRef.current = playhead;
+    continuousPlayheadRef.current = playhead;
+  }
+  const reportPlayhead = useCallback(
+    (frame: number) => {
+      // The readout is written directly so it stays live without React commits.
+      if (frameReadoutRef.current !== null) frameReadoutRef.current.textContent = `Frame ${frame}`;
+      onPlayheadChange(frame);
+    },
+    [onPlayheadChange],
+  );
   const pendingVideoFrameRequestRef = useRef<PendingVideoFrameRequest | null>(null);
   const pendingAnimationRequestRef = useRef<number | null>(null);
   const frameObservationGenerationRef = useRef(0);
@@ -199,6 +203,24 @@ function PlayableProgramMonitor({
   const [previewMode, setPreviewMode] = useState<"source" | "final">("source");
   const compositionActive = previewMode === "source" && sourceLayers.length > 0;
   const primaryLayer = compositionActive ? clockLayerAtTimelineFrame(sourceLayers, playhead) : null;
+  const loadedLayers = useMemo(
+    () => previewMediaWindow(sourceLayers, playhead, rate, primaryLayer?.clipId),
+    [sourceLayers, playhead, rate, primaryLayer?.clipId],
+  );
+  const loadedLayerKey = JSON.stringify(loadedLayers.map((layer) => layer.clipId));
+  useEffect(() => {
+    const videos = [...layerVideoRefs.current.values()];
+    return () => {
+      for (const video of videos) {
+        // Passive cleanup follows DOM removal. Keep connected elements during
+        // StrictMode's effect replay and ordinary neighbour-window changes.
+        if (video.isConnected) continue;
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
+    };
+  }, [compositionActive, loadedLayerKey]);
   const timelineAudioMuted =
     previewMode === "source" &&
     (compositionActive
@@ -208,7 +230,11 @@ function PlayableProgramMonitor({
   const [buffering, setBuffering] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [pitchUnsupported, setPitchUnsupported] = useState(false);
-  const handleFollowerError = useCallback(() => setMediaError(true), []);
+  const handleFollowerError = useCallback((media: HTMLVideoElement) => {
+    // Releasing an old layer can reject its pending play promise. It must not
+    // replace the current preview with an error after a seek/window change.
+    if (media.isConnected) setMediaError(true);
+  }, []);
   const graphRef = useRef<PreviewAudioGraph | null>(null);
   const graphLifetime = useRef(0);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -241,7 +267,7 @@ function PlayableProgramMonitor({
       for (const media of layerVideoRefs.current.values()) media.pause();
       setAudioError(error instanceof Error ? error.message : String(error));
     }
-  }, [compositionActive, sourceLayers, rate]);
+  }, [compositionActive, sourceLayers, rate, loadedLayerKey]);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const selectedPath =
@@ -308,9 +334,24 @@ function PlayableProgramMonitor({
     }
   }, [finalPreviewPath]);
 
+  const playbackOutFrame = useCallback(() => {
+    const duration = videoRef.current?.duration;
+    if (
+      previewMode === "final" &&
+      duration !== undefined &&
+      Number.isFinite(duration) &&
+      duration > 0
+    ) {
+      // Final media has its own timeline, not the source trim range. Its duration
+      // is an exclusive end; tolerate floating-point noise at rational frame rates.
+      return Math.max(1, Math.ceil((duration * rate.numerator) / rate.denominator - 1e-9));
+    }
+    return activeOut;
+  }, [activeOut, previewMode, rate]);
+
   const seekTo = useCallback(
     (frame: number) => {
-      const boundedFrame = Math.max(activeIn, Math.min(frame, activeOut - 1));
+      const boundedFrame = Math.max(activeIn, Math.min(frame, playbackOutFrame() - 1));
       playheadRef.current = boundedFrame;
       continuousPlayheadRef.current = boundedFrame;
       setBuffering(false);
@@ -324,17 +365,32 @@ function PlayableProgramMonitor({
       } else if (videoRef.current !== null) {
         seekMediaTime(videoRef.current, secondsForFrame(boundedFrame, rate));
       }
-      onPlayheadChange(boundedFrame);
+      reportPlayhead(boundedFrame);
     },
-    [activeIn, activeOut, compositionActive, onPlayheadChange, rate, sourceLayers],
+    [activeIn, playbackOutFrame, compositionActive, reportPlayhead, rate, sourceLayers],
   );
   useEffect(() => {
     if (!compositionActive || playing) return;
+    // The live ref, not the prop: on stop the prop may still hold the last
+    // structural commit until the parent commits the exact frame.
+    const frame = playheadRef.current;
     for (const layer of sourceLayers) {
       const video = layerVideoRefs.current.get(layer.clipId);
-      if (video !== undefined) seekMediaTime(video, sourceSecondsAtFrame(layer, playhead, rate));
+      if (video !== undefined) seekMediaTime(video, sourceSecondsAtFrame(layer, frame, rate));
     }
   }, [compositionActive, playing, playhead, sourceLayers, rate]);
+  useLayoutEffect(() => {
+    if (playing || frameReadoutRef.current === null) return;
+    frameReadoutRef.current.textContent = `Frame ${playheadRef.current}`;
+  }, [playing, playhead]);
+  const onPlayingChangeRef = useRef(onPlayingChange);
+  onPlayingChangeRef.current = onPlayingChange;
+  const reportedPlayingRef = useRef(false);
+  useEffect(() => {
+    if (reportedPlayingRef.current === playing) return;
+    reportedPlayingRef.current = playing;
+    onPlayingChangeRef.current?.(playing);
+  }, [playing]);
 
   const seekRelative = useCallback(
     (deltaFrames: number) => seekTo(playheadRef.current + deltaFrames),
@@ -361,30 +417,32 @@ function PlayableProgramMonitor({
           }
           const target = sourceSecondsAtFrame(layer, continuousFrame, rate);
           if (Math.abs(follower.currentTime - target) > 0.08) seekMediaTime(follower, target);
-          if (!video.paused && follower.paused) void follower.play().catch(handleFollowerError);
+          if (!video.paused && follower.paused)
+            void follower.play().catch(() => handleFollowerError(follower));
         }
       }
       const primaryLayerEnded =
         compositionActive && primaryLayer !== null && frame >= timelineEndFrame(primaryLayer);
+      const playbackOut = playbackOutFrame();
       if (
-        frame >= activeOut ||
+        frame >= playbackOut ||
         (primaryLayerEnded && clockLayerAtTimelineFrame(sourceLayers, frame) === null)
       ) {
         video.pause();
-        seekTo(Math.max(activeIn, activeOut - 1));
+        seekTo(Math.max(activeIn, playbackOut - 1));
         return false;
       }
       const boundedFrame = Math.max(activeIn, frame);
       continuousPlayheadRef.current = Math.max(activeIn, continuousFrame);
       playheadRef.current = boundedFrame;
-      onPlayheadChange(boundedFrame);
+      reportPlayhead(boundedFrame);
       return !primaryLayerEnded;
     },
     [
       activeIn,
-      activeOut,
+      playbackOutFrame,
       compositionActive,
-      onPlayheadChange,
+      reportPlayhead,
       primaryLayer,
       rate,
       seekTo,
@@ -481,7 +539,7 @@ function PlayableProgramMonitor({
         );
         playheadRef.current = frame;
         continuousPlayheadRef.current = frame;
-        onPlayheadChange(frame);
+        reportPlayhead(frame);
         if (frame < primaryLayer.timelineStartFrame) request = requestAnimationFrame(tick);
         else
           void video
@@ -494,7 +552,7 @@ function PlayableProgramMonitor({
               )
                 startFrameObservation(video);
             })
-            .catch(handleFollowerError);
+            .catch(() => handleFollowerError(video));
       };
       request = requestAnimationFrame(tick);
       return () => {
@@ -512,7 +570,7 @@ function PlayableProgramMonitor({
         )
           startFrameObservation(video);
       })
-      .catch(handleFollowerError);
+      .catch(() => handleFollowerError(video));
     return cancelFrameObservation;
   }, [
     primaryLayer?.clipId,
@@ -559,6 +617,7 @@ function PlayableProgramMonitor({
       seekTo(activeIn);
     }
     await video.play().catch(() => {
+      if (video !== videoRef.current || !video.isConnected) return;
       cancelFrameObservation();
       setBuffering(false);
       setPlaying(false);
@@ -615,6 +674,14 @@ function PlayableProgramMonitor({
     setPlaying(false);
   }, [cancelFrameObservation]);
 
+  const handlePlaybackEnded = useCallback(() => {
+    const video = videoRef.current;
+    if (previewMode === "final" && video !== null) {
+      updatePlayheadAtSeconds(video, video.currentTime);
+    }
+    handlePlaybackStopped();
+  }, [handlePlaybackStopped, previewMode, updatePlayheadAtSeconds]);
+
   const handleMediaBuffering = useCallback(() => {
     setBuffering(true);
   }, []);
@@ -653,12 +720,19 @@ function PlayableProgramMonitor({
       if (video.volume !== audioSettings.volume) {
         video.volume = audioSettings.volume;
       }
-      const effectiveMuted = timelineAudioMuted || audioSettings.muted;
+      const layer = compositionActive
+        ? sourceLayers.find((item) => layerVideoRefs.current.get(item.clipId) === video)
+        : undefined;
+      const effectiveMuted =
+        timelineAudioMuted ||
+        audioSettings.muted ||
+        layer?.muted === true ||
+        layer?.hasAudio === false;
       if (video.muted !== effectiveMuted) {
         video.muted = effectiveMuted;
       }
     },
-    [timelineAudioMuted],
+    [compositionActive, sourceLayers, timelineAudioMuted],
   );
 
   useEffect(() => {
@@ -673,7 +747,15 @@ function PlayableProgramMonitor({
         }
       }
     }
-  }, [applyEffectiveAudioState, compositionActive, mediaUrl, muted, sourceLayers, volume]);
+  }, [
+    applyEffectiveAudioState,
+    compositionActive,
+    mediaUrl,
+    muted,
+    sourceLayers,
+    volume,
+    loadedLayerKey,
+  ]);
 
   useEffect(() => {
     let unsupported = false;
@@ -703,7 +785,7 @@ function PlayableProgramMonitor({
       for (const { video } of videos) video?.pause();
       setPlaying(false);
     }
-  }, [compositionActive, mediaUrl, sourceLayers, cancelFrameObservation]);
+  }, [compositionActive, mediaUrl, sourceLayers, cancelFrameObservation, loadedLayerKey]);
 
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
@@ -831,7 +913,7 @@ function PlayableProgramMonitor({
         {(mediaUrl !== null || (compositionActive && sourceLayers.length > 0)) && !mediaError ? (
           <>
             {compositionActive ? (
-              sourceLayers.map((layer) => {
+              loadedLayers.map((layer) => {
                 const isClockLayer = layer.clipId === primaryLayer?.clipId;
                 const isActiveLayer =
                   !layer.hidden &&
@@ -919,7 +1001,7 @@ function PlayableProgramMonitor({
                 onPlay={handlePlay}
                 onPlaying={handlePlaybackRecovered}
                 onPause={handlePlaybackStopped}
-                onEnded={handlePlaybackStopped}
+                onEnded={handlePlaybackEnded}
                 onWaiting={handleMediaBuffering}
                 onStalled={handleMediaBuffering}
                 onCanPlay={handlePlaybackRecovered}
@@ -1101,9 +1183,8 @@ function PlayableProgramMonitor({
             ) : null}
           </div>
         ) : null}
-        <output className="frame-readout" aria-live="off">
-          Frame {playhead}
-        </output>
+        {/* Text is written by reportPlayhead and the not-playing layout effect. */}
+        <output ref={frameReadoutRef} className="frame-readout" aria-live="off" />
       </div>
     </section>
   );

@@ -33,6 +33,7 @@ import {
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { minimumTimelineTrimStart, sourceFrameAtTimelineDelta } from "./timeline-trim-mapping";
+import { usePlaybackClockSelector, type PlaybackClock } from "./playback-clock";
 
 import {
   createTimelineMoveSnapContext,
@@ -50,6 +51,8 @@ interface MultitrackTimelineProps {
   readonly onSelectMediaClip?: (clipId: string, mode: "replace" | "toggle" | "range") => void;
   readonly previewSourceFrame: number;
   readonly timelinePlayheadFrame: number | null;
+  /** Live playback position; while playing, split and snap read it instead of the frozen props. */
+  readonly playbackClock?: PlaybackClock;
   readonly editPending: boolean;
   readonly editError: Error | null;
   readonly onSelectClip: (clipId: string) => void;
@@ -187,6 +190,7 @@ export function MultitrackTimeline({
   onSelectMediaClip,
   previewSourceFrame,
   timelinePlayheadFrame,
+  playbackClock,
   editPending,
   editError,
   onSelectClip,
@@ -289,10 +293,41 @@ export function MultitrackTimeline({
   const canMoveSelectedClip =
     canRippleDelete && selectedTimelineClip !== null && geometryViewport !== null;
   const canMoveSelectedClipBackward = canMoveSelectedClip && selectedTimelineClip.startFrame > 0;
-  const canSplit =
-    canRippleDelete &&
-    previewSourceFrame > selectedCanonicalClip.clip.sourceIn.value &&
-    previewSourceFrame < selectedCanonicalClip.clip.sourceOut.value;
+  // While playing, the playhead props are frozen by the parent; the live source
+  // and timeline frames come from the playback clock. Subscribing to a boolean
+  // keeps playback from re-rendering the timeline except when Split flips.
+  const livePreviewSourceFrame = (): number => {
+    const live = playbackClock?.read();
+    return live?.playing === true ? live.previewSourceFrame : previewSourceFrame;
+  };
+  const liveTimelinePlayheadFrame = (): number | null => {
+    const live = playbackClock?.read();
+    return live?.playing === true && live.timelineFrame !== null
+      ? live.timelineFrame
+      : timelinePlayheadFrame;
+  };
+  const splitRange =
+    selectedCanonicalClip === null
+      ? null
+      : {
+          sourceIn: selectedCanonicalClip.clip.sourceIn.value,
+          sourceOut: selectedCanonicalClip.clip.sourceOut.value,
+        };
+  const propFrameInsideSelectedClip =
+    splitRange !== null &&
+    previewSourceFrame > splitRange.sourceIn &&
+    previewSourceFrame < splitRange.sourceOut;
+  const liveFrameInsideSelectedClip = usePlaybackClockSelector(
+    playbackClock,
+    (live) =>
+      live.playing
+        ? splitRange !== null &&
+          live.previewSourceFrame > splitRange.sourceIn &&
+          live.previewSourceFrame < splitRange.sourceOut
+        : propFrameInsideSelectedClip,
+    propFrameInsideSelectedClip,
+  );
+  const canSplit = canRippleDelete && liveFrameInsideSelectedClip;
   const moveSelectedClipByFrames = (frameDelta: -1 | 1) => {
     if (
       !canMoveSelectedClip ||
@@ -309,7 +344,7 @@ export function MultitrackTimeline({
     const proposedStartFrame = selectedTimelineClip.startFrame + frameDelta;
     if (proposedStartFrame < 0) return;
     const resolution = resolveTimelineMoveSnap(
-      createTimelineMoveSnapContext(sequence, timelinePlayheadFrame),
+      createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame()),
       {
         movingClipId: selectedClipId,
         destinationTrackId: selectedCanonicalClip.trackId,
@@ -323,7 +358,7 @@ export function MultitrackTimeline({
       onMoveClip(selectedClipId, resolution.startFrame);
   };
   const splitSelectedClip = () => {
-    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, previewSourceFrame);
+    if (canSplit && selectedClipId !== null) onSplitClip(selectedClipId, livePreviewSourceFrame());
   };
   const rippleDeleteSelectedClip = () => {
     if (canRippleDelete && selectedClipId !== null) {
@@ -374,7 +409,16 @@ export function MultitrackTimeline({
     endFrameExclusive: number,
     mode: PointerMode,
   ) => {
-    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || (selectedClipIds?.length ?? 0) > 1 || editPending || selectedClipId !== clipId) return;
+    if (
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      (selectedClipIds?.length ?? 0) > 1 ||
+      editPending ||
+      selectedClipId !== clipId
+    )
+      return;
     const canonical = canonicalTimelineClip(projection, clipId);
     if (
       canonical === null ||
@@ -407,7 +451,7 @@ export function MultitrackTimeline({
       draftSourceOutFrame: canonical.clip.sourceOut.value,
       moveSnapContext:
         mode === "move" && sequence !== undefined
-          ? createTimelineMoveSnapContext(sequence, timelinePlayheadFrame)
+          ? createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame())
           : null,
       snapGuide: null,
     });
@@ -737,7 +781,8 @@ export function MultitrackTimeline({
                           thumbnailSource !== null &&
                           clip.sourceKind === "asset" &&
                           clip.assetContentIdentity === thumbnailSource.identity;
-                        const isSelected = selectedClipIds?.includes(clip.clipId) ?? selectedClipId === clip.clipId;
+                        const isSelected =
+                          selectedClipIds?.includes(clip.clipId) ?? selectedClipId === clip.clipId;
                         const isDragging = draft !== null;
                         const canonical = canonicalTimelineClip(projection, clip.clipId);
                         const trimDisabled =
@@ -781,7 +826,15 @@ export function MultitrackTimeline({
                                   : undefined
                               }
                               onClick={(event) => {
-                                if (onSelectMediaClip && clip.sourceKind === "asset") onSelectMediaClip(clip.clipId, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "replace");
+                                if (onSelectMediaClip && clip.sourceKind === "asset")
+                                  onSelectMediaClip(
+                                    clip.clipId,
+                                    event.shiftKey
+                                      ? "range"
+                                      : event.ctrlKey || event.metaKey
+                                        ? "toggle"
+                                        : "replace",
+                                  );
                                 else onSelectClip(clip.clipId);
                               }}
                               onPointerDown={(event) =>
@@ -816,7 +869,21 @@ export function MultitrackTimeline({
                                 <small>{endFrameExclusive - startFrame}f</small>
                               </span>
                             </button>
-                            {onSelectMediaClip && clip.sourceKind === "asset" ? <button type="button" aria-label={`Select ${clip.sourceLabel}`} aria-pressed={isSelected} onClick={(event) => onSelectMediaClip(clip.clipId, event.shiftKey ? "range" : "toggle")}>Select</button> : null}
+                            {onSelectMediaClip && clip.sourceKind === "asset" ? (
+                              <button
+                                type="button"
+                                aria-label={`Select ${clip.sourceLabel}`}
+                                aria-pressed={isSelected}
+                                onClick={(event) =>
+                                  onSelectMediaClip(
+                                    clip.clipId,
+                                    event.shiftKey ? "range" : "toggle",
+                                  )
+                                }
+                              >
+                                Select
+                              </button>
+                            ) : null}
                             {isSelected && (selectedClipIds?.length ?? 0) <= 1 ? (
                               <>
                                 <button

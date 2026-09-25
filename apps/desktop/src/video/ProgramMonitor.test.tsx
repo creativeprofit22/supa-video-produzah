@@ -8,7 +8,7 @@ import {
   screen,
   type RenderResult,
 } from "@testing-library/react";
-import type { ReactElement, ReactNode } from "react";
+import { StrictMode, type ReactElement, type ReactNode } from "react";
 import { DEFAULT_CLIP_TRANSFORM_GEOMETRY } from "@supa-video/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -126,6 +126,65 @@ function preparedProxyMonitor(
 }
 
 describe("ProgramMonitor", () => {
+  it("loads only nearby media and releases old sources after a distant seek", async () => {
+    const layers = Array.from({ length: 1000 }, (_, index) => ({
+      clipId: `clip-${index}`,
+      path: `/proxy-${index}.mp4`,
+      canonicalTrackIndex: 0,
+      timelineStartFrame: index * 50,
+      sourceInFrame: 0,
+      sourceOutFrame: 50,
+      ...DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+      opacityPermille: 1000,
+      hidden: false,
+      muted: false,
+      hasAudio: false,
+    }));
+    const monitor = (frame: number) => (
+      <StrictMode>
+        <ProgramMonitor
+          proxyPath={null}
+          finalPreviewPath={null}
+          hasAudio={false}
+          timelineAudioMuted={false}
+          timelineVideoHidden={false}
+          sourceLayers={layers}
+          convertCachePath={(path) => path}
+          rate={rate}
+          trimIn={0}
+          trimOut={50000}
+          playhead={frame}
+          onPlayheadChange={vi.fn()}
+        />
+      </StrictMode>
+    );
+    const view = render(monitor(0));
+    expect(view.container.querySelectorAll("video")).toHaveLength(1);
+    const first = view.container.querySelector("video")!;
+    expect(first.dataset.clipId).toBe("clip-0");
+    expect(first.getAttribute("src")).toBe("/proxy-0.mp4");
+    vi.mocked(HTMLMediaElement.prototype.load).mockClear();
+    view.rerender(monitor(1));
+    expect(view.container.querySelector("video")).toBe(first);
+    expect(HTMLMediaElement.prototype.load).not.toHaveBeenCalled();
+    view.rerender(monitor(5000));
+    expect(view.container.querySelectorAll("video").length).toBeLessThanOrEqual(3);
+    expect(view.container.querySelector('[data-clip-id="clip-100"]')).not.toBeNull();
+    expect(first.hasAttribute("src")).toBe(false);
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
+    expect(layers).toHaveLength(1000);
+    let rejectPlay!: (error: Error) => void;
+    vi.mocked(HTMLMediaElement.prototype.play).mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectPlay = reject;
+        }),
+    );
+    fireEvent.click(view.container.querySelector(".transport-play")!);
+    view.rerender(monitor(10000));
+    await act(async () => rejectPlay(new DOMException("Old media released", "AbortError")));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
   it("reports required clip audio effects when Web Audio is unavailable", () => {
     vi.stubGlobal("AudioContext", undefined);
     try {
@@ -229,6 +288,45 @@ describe("ProgramMonitor", () => {
     },
   );
 
+  it.each([
+    { numerator: 30, denominator: 1 },
+    { numerator: 30000, denominator: 1001 },
+  ])("clamps final playback to its last frame at $numerator/$denominator", (finalRate) => {
+    const onPlayheadChange = vi.fn();
+    const view = render(
+      <ProgramMonitor
+        proxyPath="/proxy.mp4"
+        finalPreviewPath="/final.mp4"
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => path}
+        rate={finalRate}
+        trimIn={10}
+        trimOut={100}
+        playhead={0}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Final" }));
+    const video = view.container.querySelector("video")!;
+    const duration = (60 * finalRate.denominator) / finalRate.numerator;
+    Object.defineProperty(video, "duration", { configurable: true, value: duration });
+    video.currentTime = duration;
+    fireEvent.timeUpdate(video);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(59);
+    expect(video.currentTime).toBeLessThan(duration);
+    // The ended event must settle the clock even without a final timeupdate.
+    onPlayheadChange.mockClear();
+    video.currentTime = duration;
+    fireEvent.ended(video);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(59);
+    expect(video.currentTime).toBeLessThan(duration);
+    fireEvent.click(screen.getByRole("button", { name: "Step forward one frame" }));
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(59);
+    expect(video.currentTime).toBeLessThan(duration);
+  });
+
   it("visibly rejects retimed playback when pitch preservation is unavailable", () => {
     Reflect.deleteProperty(HTMLMediaElement.prototype, "preservesPitch");
     const view = render(
@@ -286,6 +384,7 @@ describe("ProgramMonitor", () => {
   beforeEach(() => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -372,6 +471,10 @@ describe("ProgramMonitor", () => {
     expect(layers[0]?.style.zIndex).toBe("0");
     expect(layers[1]?.style.visibility).toBe("visible");
     expect(layers[1]?.style.zIndex).toBe("1");
+    expect(layers[1]?.muted).toBe(true);
+    fireEvent.loadedMetadata(layers[1]!);
+    expect(layers[1]?.muted).toBe(true);
+    expect(layers[0]?.muted).toBe(false);
     expect(screen.queryByText("Video track hidden")).toBeNull();
     expect(screen.getByRole("button", { name: "Mute audio" })).toHaveProperty("disabled", false);
   });
@@ -1286,6 +1389,97 @@ describe("ProgramMonitor", () => {
     expect(
       (screen.getByLabelText("Prepared source proxy") as HTMLVideoElement).currentTime,
     ).toBeCloseTo(62 / 25);
+  });
+
+  it("keeps the frame readout live during playback while the playhead prop stays fixed", () => {
+    Reflect.deleteProperty(HTMLVideoElement.prototype, "requestVideoFrameCallback");
+    Reflect.deleteProperty(HTMLVideoElement.prototype, "cancelVideoFrameCallback");
+    const onPlayheadChange = vi.fn();
+    const { container } = render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    const readout = container.querySelector(".frame-readout");
+    expect(readout?.textContent).toBe("Frame 10");
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+
+    video.currentTime = 1;
+    fireEvent.timeUpdate(video);
+    expect(onPlayheadChange).toHaveBeenLastCalledWith(25);
+    expect(readout?.textContent).toBe("Frame 25");
+
+    video.currentTime = 1.2;
+    fireEvent.timeUpdate(video);
+    expect(readout?.textContent).toBe("Frame 30");
+    expect(readout?.getAttribute("aria-live")).toBe("off");
+  });
+
+  it("does not rewind stepping when an unrelated rerender sees a stale playhead prop", () => {
+    const onPlayheadChange = vi.fn();
+    render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={50}
+        onPlayheadChange={onPlayheadChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Step forward one frame" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step forward one frame" }));
+    // An unrelated state change re-renders the monitor with the old prop (50).
+    fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+      target: { value: "0.4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Step forward one frame" }));
+
+    expect(onPlayheadChange.mock.calls.map(([frame]) => frame)).toEqual([51, 52, 53]);
+  });
+
+  it("reports playing changes to the parent", () => {
+    const onPlayingChange = vi.fn();
+    render(
+      <ProgramMonitor
+        proxyPath="/cache/proxy.mp4"
+        finalPreviewPath={null}
+        hasAudio
+        timelineAudioMuted={false}
+        timelineVideoHidden={false}
+        convertCachePath={(path) => `asset:${path}`}
+        rate={rate}
+        trimIn={10}
+        trimOut={90}
+        playhead={10}
+        onPlayheadChange={vi.fn()}
+        onPlayingChange={onPlayingChange}
+      />,
+    );
+    expect(onPlayingChange).not.toHaveBeenCalled();
+    const video = screen.getByLabelText("Prepared source proxy") as HTMLVideoElement;
+    fireEvent.play(video);
+    expect(onPlayingChange).toHaveBeenLastCalledWith(true);
+    fireEvent.pause(video);
+    expect(onPlayingChange).toHaveBeenLastCalledWith(false);
+    expect(onPlayingChange).toHaveBeenCalledTimes(2);
   });
 
   it("toggles mute while preserving the current non-zero volume", () => {

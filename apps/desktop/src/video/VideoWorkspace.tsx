@@ -12,7 +12,6 @@ import {
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
-  rescaleRationalTime,
   type ProjectClip,
   type ProjectTrack,
   type VideoClip,
@@ -21,7 +20,7 @@ import {
 } from "@supa-video/contracts";
 import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
@@ -37,11 +36,13 @@ import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
+import { ProgramMonitor, type ProgramMonitorLayer } from "./ProgramMonitor";
 import {
-  ProgramMonitor,
-  type ProgramMonitorCaption,
-  type ProgramMonitorLayer,
-} from "./ProgramMonitor";
+  activeCaptionCuesForTimelineFrame,
+  compositionTimelineBounds,
+  playbackStructureKey,
+} from "./playback-structure";
+import { createPlaybackClock } from "./playback-clock";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
@@ -137,22 +138,10 @@ export function timelineFrameForPreviewSourceFrame(
     : timelineFrameForClipSourceFrame(canonicalPreview.clip, sourceFrame);
 }
 
-export function activeCaptionCuesForTimelineFrame(
-  sequence: VideoSequenceV2 | null,
-  timelineFrame: number | null,
-): readonly ProgramMonitorCaption[] {
-  if (sequence === null || timelineFrame === null) return [];
-  return sequence.tracks.flatMap((track) => {
-    if (track.kind !== "caption" || isTrackHidden(track)) return [];
-    return track.captions.flatMap((caption) => {
-      const startFrame = rescaleRationalTime(caption.start, sequence.rate, "floor").value;
-      const endFrameExclusive = rescaleRationalTime(caption.end, sequence.rate, "ceil").value;
-      return startFrame <= timelineFrame && timelineFrame < endFrameExclusive
-        ? [{ captionId: caption.id, text: caption.text }]
-        : [];
-    });
-  });
-}
+export { activeCaptionCuesForTimelineFrame };
+
+// Keeps the export name `MultitrackTimeline` intact for the profiler transform.
+const TimelineView = memo(MultitrackTimeline);
 
 export function VideoWorkspace({
   controller,
@@ -164,6 +153,13 @@ export function VideoWorkspace({
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
+  // Live monitor position. Every report is published here; React state above
+  // commits only on seeks, structural playback changes, and when playback stops.
+  const [playbackClock] = useState(() =>
+    createPlaybackClock({ playing: false, timelineFrame: null, previewSourceFrame: 0 }),
+  );
+  const [monitorPlaying, setMonitorPlaying] = useState(false);
+  const committedStructureKey = useRef<string | null>(null);
   const [selection, setSelection] = useState<ClipSelection>({ ids: [], primary: null });
   const selectedClipId = selection.primary;
   const [selectionError, setSelectionError] = useState<string | null>(null);
@@ -228,10 +224,10 @@ export function VideoWorkspace({
       deleteFocus.current = null;
     }
   });
-  const setSelectedClipId = (id: string) => {
+  const setSelectedClipId = useCallback((id: string) => {
     setSelection({ ids: [id], primary: id });
     setSelectionError(null);
-  };
+  }, []);
   const [selectedClipOpacityDraft, setSelectedClipOpacityDraft] = useState<ClipOpacityDraft | null>(
     null,
   );
@@ -255,15 +251,68 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
-  const orderedMediaIds =
-    canonicalSequence?.tracks.flatMap((track) =>
-      track.kind === "caption"
-        ? []
-        : [...track.clips]
-            .sort((a, b) => a.timelineStart.value - b.timelineStart.value)
-            .filter((clip) => clip.source.kind === "asset")
-            .map((clip) => clip.id),
-    ) ?? [];
+  const orderedMediaIds = useMemo(
+    () =>
+      canonicalSequence?.tracks.flatMap((track) =>
+        track.kind === "caption"
+          ? []
+          : [...track.clips]
+              .sort((a, b) => a.timelineStart.value - b.timelineStart.value)
+              .filter((clip) => clip.source.kind === "asset")
+              .map((clip) => clip.id),
+      ) ?? [],
+    [canonicalSequence],
+  );
+  const selectTimelineMediaClip = useCallback(
+    (id: string, mode: Parameters<typeof selectClips>[3]) => {
+      try {
+        deleteFocus.current = null;
+        setSelection(selectClips(selection, id, orderedMediaIds, mode));
+        setSelectionError(null);
+      } catch (error) {
+        setSelectionError((error as Error).message);
+      }
+    },
+    [orderedMediaIds, selection],
+  );
+  const setTimelineTrackLocked = useCallback(
+    (trackId: string, locked: boolean) =>
+      void controller.setTimelineTrackLocked({ trackId, locked }),
+    [controller],
+  );
+  const setTimelineTrackMuted = useCallback(
+    (trackId: string, muted: boolean) => void controller.setTimelineTrackMuted({ trackId, muted }),
+    [controller],
+  );
+  const setTimelineTrackHidden = useCallback(
+    (trackId: string, hidden: boolean) =>
+      void controller.setTimelineTrackHidden({ trackId, hidden }),
+    [controller],
+  );
+  const splitTimelineClip = useCallback(
+    (clipId: string, sourceFrame: number) =>
+      void controller.splitTimelineClip({ clipId, sourceFrame }),
+    [controller],
+  );
+  const rippleDeleteTimelineClip = useCallback(
+    (clipId: string) => void controller.rippleDeleteTimelineClip({ clipId }),
+    [controller],
+  );
+  const moveTimelineClip = useCallback(
+    (clipId: string, timelineStartFrame: number) =>
+      void controller.moveTimelineClip({ clipId, timelineStartFrame }),
+    [controller],
+  );
+  const trimTimelineClip = useCallback(
+    (clipId: string, sourceInFrame: number, sourceOutFrame: number, timelineStartFrame: number) =>
+      void controller.trimTimelineClip({
+        clipId,
+        sourceInFrame,
+        sourceOutFrame,
+        timelineStartFrame,
+      }),
+    [controller],
+  );
   const bulkTargets =
     canonicalSequence?.tracks.flatMap((track) =>
       track.kind === "caption"
@@ -540,6 +589,80 @@ export function VideoWorkspace({
         : [],
     [canonicalSequence, hasVisiblePlaybackClock, timelinePlayheadFrame],
   );
+  // Timeline playhead props are frozen while playing; it reads the live frame
+  // from the playback clock for split and snap instead of re-rendering per tick.
+  const frozenTimelineFrames = useRef({ previewSourceFrame: playhead, timelinePlayheadFrame });
+  if (
+    !monitorPlaying &&
+    (frozenTimelineFrames.current.previewSourceFrame !== playhead ||
+      frozenTimelineFrames.current.timelinePlayheadFrame !== timelinePlayheadFrame)
+  )
+    frozenTimelineFrames.current = { previewSourceFrame: playhead, timelinePlayheadFrame };
+  const timelineFrames = frozenTimelineFrames.current;
+  const compositionBounds = useMemo(() => compositionTimelineBounds(sourceLayers), [sourceLayers]);
+  useEffect(() => {
+    // Keep the live clock aligned with commits made outside monitor reports
+    // (for example the trim-draft reset) so stopping never restores an old frame.
+    if (!monitorPlaying) playbackClock.publish({ previewSourceFrame: playhead });
+  }, [monitorPlaying, playbackClock, playhead]);
+  const monitorRate = sequence?.rate ?? null;
+  const commitMonitorFrame = (frame: number, force: boolean) => {
+    if (sourceLayers.length === 0) {
+      playbackClock.publish({ timelineFrame: null, previewSourceFrame: frame });
+      if (force || !playbackClock.read().playing) setPlayhead(frame);
+      return;
+    }
+    let previewSourceFrame: number | null = null;
+    if (canonicalPreview !== null && canonicalSequence !== null) {
+      const candidate =
+        canonicalPreview.clip.sourceIn.value +
+        timelineOffsetToSource(
+          createRationalTime(
+            Math.max(0, frame - canonicalPreview.clip.timelineStart.value),
+            canonicalSequence.rate,
+          ),
+          rateOf(canonicalPreview.clip.sourceIn),
+          canonicalPreview.clip.speed,
+          "floor",
+        ).value;
+      if (timelineFrameForClipSourceFrame(canonicalPreview.clip, candidate) === frame)
+        previewSourceFrame = candidate;
+    }
+    playbackClock.publish(
+      previewSourceFrame === null
+        ? { timelineFrame: frame }
+        : { timelineFrame: frame, previewSourceFrame },
+    );
+    const structureKey =
+      monitorRate === null
+        ? null
+        : playbackStructureKey(
+            frame,
+            sourceLayers,
+            monitorRate,
+            canonicalSequence,
+            compositionBounds,
+          );
+    if (
+      !force &&
+      playbackClock.read().playing &&
+      structureKey !== null &&
+      structureKey === committedStructureKey.current
+    )
+      return;
+    committedStructureKey.current = structureKey;
+    setCompositionPlayhead(frame);
+    if (previewSourceFrame !== null) setPlayhead(previewSourceFrame);
+  };
+  const handleMonitorPlayingChange = (playing: boolean) => {
+    playbackClock.publish({ playing });
+    setMonitorPlaying(playing);
+    if (playing) return;
+    // Commit the exact live frame that playback stopped on.
+    const live = playbackClock.read();
+    if (sourceLayers.length === 0) setPlayhead(live.previewSourceFrame);
+    else if (live.timelineFrame !== null) commitMonitorFrame(live.timelineFrame, true);
+  };
   const draft = controller.trimDraft;
   const durationFrames = controller.sourceFrameCount ?? 1;
   const editPending = controller.editOperation.phase === "saving";
@@ -869,31 +992,8 @@ export function VideoWorkspace({
               trimIn={draft.inFrame}
               trimOut={draft.outFrame}
               playhead={sourceLayers.length > 0 ? (timelinePlayheadFrame ?? 0) : playhead}
-              onPlayheadChange={(frame) => {
-                if (sourceLayers.length === 0) {
-                  setPlayhead(frame);
-                  return;
-                }
-                setCompositionPlayhead(frame);
-                if (canonicalPreview === null) return;
-                const previewSourceFrame =
-                  canonicalPreview.clip.sourceIn.value +
-                  timelineOffsetToSource(
-                    createRationalTime(
-                      Math.max(0, frame - canonicalPreview.clip.timelineStart.value),
-                      canonicalSequence!.rate,
-                    ),
-                    rateOf(canonicalPreview.clip.sourceIn),
-                    canonicalPreview.clip.speed,
-                    "floor",
-                  ).value;
-                if (
-                  timelineFrameForClipSourceFrame(canonicalPreview.clip, previewSourceFrame) ===
-                  frame
-                ) {
-                  setPlayhead(previewSourceFrame);
-                }
-              }}
+              onPlayheadChange={(frame) => commitMonitorFrame(frame, false)}
+              onPlayingChange={handleMonitorPlayingChange}
             />
           ) : (
             <section className="panel monitor-panel" aria-labelledby="monitor-empty-title">
@@ -912,52 +1012,28 @@ export function VideoWorkspace({
             </section>
           )}
           {controller.projection !== null && canonicalSequence !== null ? (
-            <MultitrackTimeline
+            <TimelineView
               projection={controller.projection}
               preparedAsset={controller.preparedAsset}
               convertCachePath={controller.convertCachePath}
               selectedClipId={multiSelected ? null : selectedClipId}
               selectedClipIds={selection.ids}
-              onSelectMediaClip={(id, mode) => {
-                try {
-                  deleteFocus.current = null;
-                  setSelection(selectClips(selection, id, orderedMediaIds, mode));
-                  setSelectionError(null);
-                } catch (error) {
-                  setSelectionError((error as Error).message);
-                }
-              }}
-              previewSourceFrame={playhead}
-              timelinePlayheadFrame={timelinePlayheadFrame}
+              onSelectMediaClip={selectTimelineMediaClip}
+              previewSourceFrame={timelineFrames.previewSourceFrame}
+              timelinePlayheadFrame={timelineFrames.timelinePlayheadFrame}
+              playbackClock={playbackClock}
               editPending={editPending}
               editError={
                 controller.editOperation.phase === "error" ? controller.editOperation.error : null
               }
               onSelectClip={setSelectedClipId}
-              onSetTrackLocked={(trackId, locked) =>
-                void controller.setTimelineTrackLocked({ trackId, locked })
-              }
-              onSetTrackMuted={(trackId, muted) =>
-                void controller.setTimelineTrackMuted({ trackId, muted })
-              }
-              onSetTrackHidden={(trackId, hidden) =>
-                void controller.setTimelineTrackHidden({ trackId, hidden })
-              }
-              onSplitClip={(clipId, sourceFrame) =>
-                void controller.splitTimelineClip({ clipId, sourceFrame })
-              }
-              onRippleDeleteClip={(clipId) => void controller.rippleDeleteTimelineClip({ clipId })}
-              onMoveClip={(clipId, timelineStartFrame) =>
-                void controller.moveTimelineClip({ clipId, timelineStartFrame })
-              }
-              onTrimClip={(clipId, sourceInFrame, sourceOutFrame, timelineStartFrame) =>
-                void controller.trimTimelineClip({
-                  clipId,
-                  sourceInFrame,
-                  sourceOutFrame,
-                  timelineStartFrame,
-                })
-              }
+              onSetTrackLocked={setTimelineTrackLocked}
+              onSetTrackMuted={setTimelineTrackMuted}
+              onSetTrackHidden={setTimelineTrackHidden}
+              onSplitClip={splitTimelineClip}
+              onRippleDeleteClip={rippleDeleteTimelineClip}
+              onMoveClip={moveTimelineClip}
+              onTrimClip={trimTimelineClip}
             />
           ) : null}
           {sequence !== null && clip !== undefined && draft !== null ? (

@@ -2,7 +2,7 @@
 
 import type { ProjectProjection, VideoProjectFileV1 } from "@supa-video/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { Profiler, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CommandProvider } from "../commands/CommandProvider";
@@ -509,6 +509,92 @@ describe("VideoWorkspace", () => {
         { clipId: previewClipId, opacityPermille: 425 },
         { clipId: id(36), opacityPermille: 0 },
       ],
+    });
+  });
+
+  describe("playback commit isolation", () => {
+    type MonitorProps = {
+      readonly playhead: number;
+      readonly activeCaptions: readonly { readonly captionId: string; readonly text: string }[];
+      readonly onPlayheadChange: (frame: number) => void;
+      readonly onPlayingChange: (playing: boolean) => void;
+    };
+    type TimelineProps = {
+      readonly previewSourceFrame: number;
+      readonly timelinePlayheadFrame: number | null;
+      readonly playbackClock: {
+        readonly read: () => {
+          readonly playing: boolean;
+          readonly timelineFrame: number | null;
+          readonly previewSourceFrame: number;
+        };
+      };
+    };
+    const monitor = () => captureProgramMonitorProps.mock.lastCall?.[0] as MonitorProps;
+    const timeline = () => captureTimelineProps.mock.lastCall?.[0] as TimelineProps;
+
+    function renderProfiled() {
+      const commits = { count: 0 };
+      render(
+        <Profiler id="workspace" onRender={() => (commits.count += 1)}>
+          {workspace(createController({ projection: canonicalProjection(false, false) }))}
+        </Profiler>,
+      );
+      // Seek (not playing) into the preview clip, then start playback.
+      act(() => monitor().onPlayheadChange(26));
+      act(() => monitor().onPlayingChange(true));
+      return commits;
+    }
+
+    it("does not commit the workspace or timeline for playback ticks inside a clip", () => {
+      const commits = renderProfiled();
+      const workspaceBefore = commits.count;
+      const timelineBefore = captureTimelineProps.mock.calls.length;
+
+      for (const frame of [27, 28, 29]) act(() => monitor().onPlayheadChange(frame));
+
+      expect(commits.count - workspaceBefore).toBe(0);
+      expect(captureTimelineProps.mock.calls.length - timelineBefore).toBe(0);
+      expect(timeline().previewSourceFrame).toBe(1);
+      expect(timeline().timelinePlayheadFrame).toBe(26);
+      expect(timeline().playbackClock.read()).toEqual({
+        playing: true,
+        timelineFrame: 29,
+        previewSourceFrame: 4,
+      });
+    });
+
+    it("commits once at a caption boundary and shows the exact caption", () => {
+      const commits = renderProfiled();
+      for (const frame of [27, 28, 29]) act(() => monitor().onPlayheadChange(frame));
+      const workspaceBefore = commits.count;
+      const timelineBefore = captureTimelineProps.mock.calls.length;
+      expect(monitor().activeCaptions).toEqual([{ captionId: id(32), text: "Shown cue" }]);
+
+      act(() => monitor().onPlayheadChange(30));
+
+      expect(commits.count - workspaceBefore).toBe(1);
+      expect(captureTimelineProps.mock.calls.length - timelineBefore).toBe(0);
+      expect(monitor().playhead).toBe(30);
+      expect(monitor().activeCaptions).toEqual([{ captionId: id(33), text: "Later cue" }]);
+    });
+
+    it("commits the exact live frame when playback stops", () => {
+      renderProfiled();
+      // 28 -> 31 crosses the cue boundary at 30, so 31 is the last structural commit.
+      for (const frame of [27, 28, 31, 32]) act(() => monitor().onPlayheadChange(frame));
+      expect(monitor().playhead).toBe(31);
+
+      act(() => monitor().onPlayingChange(false));
+
+      expect(monitor().playhead).toBe(32);
+      expect(timeline().previewSourceFrame).toBe(7);
+      expect(timeline().timelinePlayheadFrame).toBe(32);
+      expect(timeline().playbackClock.read()).toEqual({
+        playing: false,
+        timelineFrame: 32,
+        previewSourceFrame: 7,
+      });
     });
   });
 

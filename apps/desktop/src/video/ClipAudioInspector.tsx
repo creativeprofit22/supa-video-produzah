@@ -57,7 +57,7 @@ export function ClipAudioInspector({
     edit.fades.outFrames !== selection.fades.outFrames;
   return (
     <section
-      className="panel clip-inspector-panel"
+      className="panel clip-inspector-panel clip-audio-inspector"
       aria-label="Clip audio inspector"
       aria-busy={saving}
     >

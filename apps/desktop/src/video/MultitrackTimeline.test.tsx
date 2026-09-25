@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
 import {
+  act,
   cleanup,
   fireEvent,
   render as testingLibraryRender,
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandProvider } from "../commands/CommandProvider";
 import { testPrepared, testProbe, testSourceIdentity } from "../test-video-service";
 import { MultitrackTimeline } from "./MultitrackTimeline";
+import { createPlaybackClock } from "./playback-clock";
 
 function render(ui: ReactElement): RenderResult {
   const result = testingLibraryRender(<CommandProvider>{ui}</CommandProvider>);
@@ -303,7 +305,14 @@ describe("MultitrackTimeline", () => {
     expect(onSplitClip).toHaveBeenCalledWith(firstId, 1);
 
     const onSelectMediaClip = vi.fn();
-    rendered.rerender(<MultitrackTimeline {...props} selectedClipId={null} selectedClipIds={[firstId, id(100_001)]} onSelectMediaClip={onSelectMediaClip} />);
+    rendered.rerender(
+      <MultitrackTimeline
+        {...props}
+        selectedClipId={null}
+        selectedClipIds={[firstId, id(100_001)]}
+        onSelectMediaClip={onSelectMediaClip}
+      />,
+    );
     expect(firstClip.getAttribute("aria-pressed")).toBe("true");
     expect((split as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: /Trim start of/ })).toBeNull();
@@ -323,6 +332,42 @@ describe("MultitrackTimeline", () => {
       <MultitrackTimeline {...props} selectedClipId={firstId} previewSourceFrame={2} />,
     );
     expect((split as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("splits at the live playback frame while its playhead props stay frozen", () => {
+    const onSplitClip = vi.fn();
+    const firstId = id(100_000);
+    const playbackClock = createPlaybackClock({
+      playing: false,
+      timelineFrame: 2,
+      previewSourceFrame: 2,
+    });
+    render(
+      <MultitrackTimeline
+        {...timelineProps({
+          projection: projectionFixture({
+            name: "Live split timeline",
+            videoClipCount: 2,
+            audioClipCount: 0,
+          }),
+          selectedClipId: firstId,
+          previewSourceFrame: 2,
+          timelinePlayheadFrame: 2,
+          playbackClock,
+          onSplitClip,
+        })}
+      />,
+    );
+    const split = screen.getByRole("button", { name: "Split at playhead" }) as HTMLButtonElement;
+    expect(split.disabled).toBe(true);
+
+    act(() => playbackClock.publish({ playing: true, timelineFrame: 1, previewSourceFrame: 1 }));
+    expect(split.disabled).toBe(false);
+    fireEvent.click(split);
+    expect(onSplitClip).toHaveBeenCalledExactlyOnceWith(firstId, 1);
+
+    act(() => playbackClock.publish({ timelineFrame: 0, previewSourceFrame: 0 }));
+    expect(split.disabled).toBe(true);
   });
 
   it("ripple deletes only an eligible selected clip by button or Shift+Delete", () => {
