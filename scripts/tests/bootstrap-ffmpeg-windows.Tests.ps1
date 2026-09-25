@@ -121,6 +121,15 @@ try {
     $manifest = Read-StrictManifest $manifestPath
     Assert-True ($manifest.toolchainId -ceq "ffmpeg-8.1.2-gyan-essentials-windows-x86_64") "tracked manifest identity"
 
+    $missingRubberbandPath = Join-Path $workspace "manifest-missing-rubberband.json"
+    $missingRubberband = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $missingRubberband.targets.'x86_64-pc-windows-msvc'.requiredCapabilities.filters = @(
+        $missingRubberband.targets.'x86_64-pc-windows-msvc'.requiredCapabilities.filters |
+            Where-Object { $_ -cne "rubberband" }
+    )
+    $missingRubberband | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $missingRubberbandPath -Encoding UTF8
+    Assert-Throws { Read-StrictManifest $missingRubberbandPath | Out-Null } "rubberband is required, not optional"
+
     $unknownManifestPath = Join-Path $workspace "manifest-unknown.json"
     $unknownManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $unknownManifest | Add-Member -NotePropertyName unexpected -NotePropertyValue $true

@@ -1243,11 +1243,15 @@ fn expected_v2_filter(
                 timing.speed.numerator
             );
             let percent = timing.speed.numerator * 100 / timing.speed.denominator;
+            let tempo = format!("{}.{:02}", percent / 100, percent % 100);
+            let tempo_filter = if percent < 100 {
+                format!("rubberband=tempo={tempo}:window=short:transients=smooth")
+            } else {
+                format!("atempo={tempo}")
+            };
             audio_timing = format!(
-                "atrim=duration={},asetpts=PTS-STARTPTS,atempo={}.{:02},atrim=duration={duration}",
-                fixed_six_seconds(source_duration),
-                percent / 100,
-                percent % 100
+                "atrim=duration={},asetpts=PTS-STARTPTS,{tempo_filter},atrim=duration={duration}",
+                fixed_six_seconds(source_duration)
             );
         }
         if input.timing.is_none() && !fade_filter.is_empty() {

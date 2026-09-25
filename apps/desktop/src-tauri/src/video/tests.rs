@@ -3361,9 +3361,22 @@ fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
     let directory = tempdir().expect("speed workspace");
     let (grants, base) = granted_multitrack_render_plan(directory.path());
     for (numerator, denominator, source_frames, source_seconds, tempo) in [
-        (1, 2, 30, "1.000000", "0.50"),
-        (3, 2, 90, "3.000000", "1.50"),
-        (2, 1, 120, "4.000000", "2.00"),
+        (
+            1,
+            2,
+            30,
+            "1.000000",
+            "rubberband=tempo=0.50:window=short:transients=smooth",
+        ),
+        (
+            3,
+            4,
+            45,
+            "1.500000",
+            "rubberband=tempo=0.75:window=short:transients=smooth",
+        ),
+        (3, 2, 90, "3.000000", "atempo=1.50"),
+        (2, 1, 120, "4.000000", "atempo=2.00"),
     ] {
         let mut plan = base.clone();
         plan["videoInputs"][0]["timing"] = serde_json::json!({
@@ -3376,7 +3389,7 @@ fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
         let filter = multitrack_filter_mut(&mut plan);
         *filter = Value::String(filter.as_str().unwrap()
             .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
-            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={source_seconds},asetpts=PTS-STARTPTS,atempo={tempo},atrim=duration=2.000000")));
+            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={source_seconds},asetpts=PTS-STARTPTS,{tempo},atrim=duration=2.000000")));
         parse_and_validate_render_plan(plan.clone(), "owner", &grants).expect("exact speed plan");
         assert!(parse_and_validate_render_plan(plan.clone(), "other-owner", &grants).is_err());
         for key in ["timing", "speed"] {
@@ -3395,7 +3408,20 @@ fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
             assert!(parse_and_validate_render_plan(missing, "owner", &grants).is_err());
         }
         for (from, to) in [
-            (format!("atempo={tempo}"), "atempo=1.00".to_owned()),
+            (tempo.to_owned(), "atempo=1.00".to_owned()),
+            (
+                tempo.to_owned(),
+                "rubberband=tempo=0.50:window=long".to_owned(),
+            ),
+            (tempo.to_owned(), "atempo=0.50".to_owned()),
+            (
+                tempo.to_owned(),
+                "rubberband=tempo=0.50:window=short".to_owned(),
+            ),
+            (
+                tempo.to_owned(),
+                "rubberband=tempo=0.50:window=short:transients=crisp".to_owned(),
+            ),
             (
                 format!("setpts=PTS*{denominator}/{numerator}"),
                 "setpts=PTS".to_owned(),
@@ -5258,9 +5284,9 @@ async fn bundled_resolver_only_bounded_batch() {
 }
 
 #[cfg(target_os = "windows")]
-mod speed_export_parity;
-#[cfg(target_os = "windows")]
 mod audio_export;
+#[cfg(target_os = "windows")]
+mod speed_export_parity;
 
 #[cfg(target_os = "windows")]
 // Real-media test: requires provisioned bundled tools; no PATH or executor bypass.
@@ -5282,8 +5308,9 @@ async fn render_speed_bundled_actual_media() {
         .verified_ffprobe("speed_measurement")
         .await
         .unwrap();
-    let workspace = tempdir().unwrap();
-    let source = workspace.path().join("tone-and-testsrc.mp4");
+    let workspace = tempdir().unwrap().keep();
+    println!("SPEED_MEASUREMENT artifacts={}", workspace.display());
+    let source = workspace.join("tone-and-testsrc.mp4");
     let generated = Command::new(&ffmpeg)
         .args([
             "-hide_banner",
@@ -5319,18 +5346,29 @@ async fn render_speed_bundled_actual_media() {
         .unwrap();
     let mut failures = Vec::new();
     for (numerator, denominator, source_frames, seconds, tempo) in [
-        (1, 2, 30, "1.000000", "0.50"),
-        (1, 1, 60, "2.000000", "1.00"),
-        (3, 2, 90, "3.000000", "1.50"),
-        (2, 1, 120, "4.000000", "2.00"),
+        (
+            1,
+            2,
+            30,
+            "1.000000",
+            "rubberband=tempo=0.50:window=short:transients=smooth",
+        ),
+        (
+            3,
+            4,
+            45,
+            "1.500000",
+            "rubberband=tempo=0.75:window=short:transients=smooth",
+        ),
+        (1, 1, 60, "2.000000", "atempo=1.00"),
+        (3, 2, 90, "3.000000", "atempo=1.50"),
+        (2, 1, 120, "4.000000", "atempo=2.00"),
     ] {
         let output = grants
             .grant_destination(
                 "owner",
                 GrantCategory::Output,
-                &workspace
-                    .path()
-                    .join(format!("speed-{numerator}-{denominator}.mp4")),
+                &workspace.join(format!("speed-{numerator}-{denominator}.mp4")),
             )
             .unwrap();
         let mut plan = multitrack_render_plan_value(&source, &source, &output);
@@ -5348,14 +5386,12 @@ async fn render_speed_bundled_actual_media() {
         let filter = multitrack_filter_mut(&mut plan);
         *filter = Value::String(filter.as_str().unwrap()
             .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
-            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={seconds},asetpts=PTS-STARTPTS,atempo={tempo},atrim=duration=2.000000")));
+            .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={seconds},asetpts=PTS-STARTPTS,{tempo},atrim=duration=2.000000")));
         let validated = parse_and_validate_render_plan(plan, "owner", &grants).unwrap();
         let (request, captured) = registered_render_worker(
             validated,
             false,
-            workspace
-                .path()
-                .join(format!("cache-{numerator}-{denominator}")),
+            workspace.join(format!("cache-{numerator}-{denominator}")),
             programs.clone(),
         );
         run_render_worker(request).await;
@@ -5810,7 +5846,9 @@ pub(crate) async fn assert_render_worker_collision(programs: MediaPrograms) {
     assert!(
         !workspace
             .path()
-            .join("app-cache/video-phase1/render-preview")
+            .join("app-cache")
+            .join(MEDIA_STORE_NAMESPACE)
+            .join("derived/render-preview")
             .exists(),
         "failed promotion must not create a preview"
     );

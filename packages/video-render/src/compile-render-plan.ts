@@ -474,8 +474,13 @@ function audioTimingFilter(clip: V2Clip, duration: string): string {
   // Whole-percent speed is exactly representable with two decimal places.
   const percent = (speed.numerator * 100) / speed.denominator;
   const tempo = `${Math.floor(percent / 100)}.${String(percent % 100).padStart(2, "0")}`;
+  // atempo advances silence-to-tone boundaries when slowing down. Keep it for speedups,
+  // where the short-window rubberband path does not preserve pitch within 1%.
+  // Smooth transients avoid extra zero crossings from percussive phase resets.
+  const tempoFilter =
+    percent < 100 ? `rubberband=tempo=${tempo}:window=short:transients=smooth` : `atempo=${tempo}`;
   // Bound the tail; do not invent silence or compensate algorithm latency without media proof.
-  return `atrim=duration=${sourceDurationSeconds(clip)},asetpts=PTS-STARTPTS,atempo=${tempo},atrim=duration=${duration}`;
+  return `atrim=duration=${sourceDurationSeconds(clip)},asetpts=PTS-STARTPTS,${tempoFilter},atrim=duration=${duration}`;
 }
 
 function transformedClipFilter(inputIndex: number, clip: V2Clip, sequence: V2Sequence): string {

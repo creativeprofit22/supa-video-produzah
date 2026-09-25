@@ -405,6 +405,31 @@ describe("V2 fades export", () => {
         );
     },
   );
+  it.each([
+    [1, 2, "0.50"],
+    [3, 4, "0.75"],
+  ])("binds the exact slow tempo branch with fades: %i/%i", (numerator, denominator, tempo) => {
+    const plan = active(faded(15, 30, { speed: { numerator, denominator }, sourceOut: 105 }));
+    const exact = `rubberband=tempo=${tempo}:window=short:transients=smooth`;
+    expect(plan.argv[plan.argv.indexOf("-filter_complex") + 1]).toContain(exact);
+    expect(renderPlanV2Schema.safeParse(plan).success).toBe(true);
+    for (const replacement of [
+      `atempo=${tempo}`,
+      `rubberband=tempo=${tempo}`,
+      `rubberband=tempo=${tempo}:window=long`,
+      `rubberband=tempo=${tempo}:window=short`,
+      `rubberband=tempo=${tempo}:window=short:transients=crisp`,
+      "rubberband=tempo=1.00:window=short",
+      `${exact},adelay=10`,
+    ]) {
+      expect(
+        renderPlanV2Schema.safeParse({
+          ...plan,
+          argv: plan.argv.map((arg) => arg.replace(exact, replacement)),
+        }).success,
+      ).toBe(false);
+    }
+  });
   it("rejects invalid metadata, context and modified filter durations", () => {
     const plan = active(faded(15, 30));
     for (const fades of [
@@ -518,6 +543,7 @@ describe("V2 speed export", () => {
     });
   it.each([
     { numerator: 1, denominator: 2, frames: 180, tempo: "0.50" },
+    { numerator: 3, denominator: 4, frames: 120, tempo: "0.75" },
     { numerator: 3, denominator: 2, frames: 60, tempo: "1.50" },
     { numerator: 2, denominator: 1, frames: 45, tempo: "2.00" },
   ])(
@@ -547,8 +573,12 @@ describe("V2 speed export", () => {
       expect(filter).toContain(
         `trim=end_frame=90,setpts=PTS-STARTPTS,setpts=PTS*${denominator}/${numerator},scale=`,
       );
+      const tempoFilter =
+        numerator < denominator
+          ? `rubberband=tempo=${tempo}:window=short:transients=smooth`
+          : `atempo=${tempo}`;
       expect(filter).toContain(
-        `atrim=duration=3.003000,asetpts=PTS-STARTPTS,atempo=${tempo},atrim=duration=`,
+        `atrim=duration=3.003000,asetpts=PTS-STARTPTS,${tempoFilter},atrim=duration=`,
       );
       expect(filter).not.toContain("asetrate");
       expect(revision).toEqual(before);

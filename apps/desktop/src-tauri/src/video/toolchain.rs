@@ -842,8 +842,24 @@ fn validate_manifest(manifest: &ToolchainManifest) -> Result<(), ManifestError> 
         assert_exact_values(
             &target.required_capabilities.filters,
             &[
-                "scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "drawbox", "color",
-                "setpts", "format", "overlay", "null", "asetpts", "anull", "amix", "drawtext",
+                "scale",
+                "fps",
+                "pad",
+                "tile",
+                "setsar",
+                "zscale",
+                "tonemap",
+                "drawbox",
+                "color",
+                "setpts",
+                "format",
+                "overlay",
+                "null",
+                "asetpts",
+                "anull",
+                "amix",
+                "drawtext",
+                "rubberband",
             ],
         )
     })

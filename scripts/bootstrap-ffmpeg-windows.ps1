@@ -226,7 +226,7 @@ function Read-StrictManifest {
     $null = Assert-ExactStringSet $target.requiredCapabilities.filters @(
         "scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "drawbox",
         "color", "setpts", "format", "overlay", "null", "asetpts", "anull", "amix",
-        "drawtext"
+        "drawtext", "rubberband"
     ) "target.requiredCapabilities.filters"
 
     Assert-ExactProperties $manifest.compliance @("thirdPartyNoticesPath", "licensePaths", "providerNoticePath", "sourceOfferPath") "manifest.compliance"

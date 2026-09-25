@@ -46,8 +46,9 @@ async fn render_audio_gain_and_fades_actual_compiler_output() {
         ));
     let binary = programs.verified_ffmpeg("audio_parity").await.unwrap();
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let directory = tempdir().unwrap();
-    let input = directory.path().join("quiet-tone.mp4");
+    let directory = tempdir().unwrap().keep();
+    println!("AUDIO_EXPORT artifacts={}", directory.display());
+    let input = directory.join("quiet-tone.mp4");
     ffmpeg(
         Path::new(&binary),
         &[
@@ -88,6 +89,10 @@ async fn render_audio_gain_and_fades_actual_compiler_output() {
         (24000, false, 1, 1),
         (0, true, 1, 1),
         (6000, true, 2, 1),
+        (0, false, 1, 2),
+        (6000, true, 1, 2),
+        (0, false, 3, 4),
+        (6000, true, 3, 4),
     ]
     .into_iter()
     .enumerate()
@@ -96,7 +101,7 @@ async fn render_audio_gain_and_fades_actual_compiler_output() {
             .grant_destination(
                 "audio",
                 GrantCategory::Output,
-                &directory.path().join(format!("audio-{index}.mp4")),
+                &directory.join(format!("audio-{index}.mp4")),
             )
             .unwrap();
         let compiled = std::process::Command::new("node")
@@ -129,7 +134,7 @@ async fn render_audio_gain_and_fades_actual_compiler_output() {
         let (request, captured) = registered_render_worker(
             plan,
             false,
-            directory.path().join(format!("cache-{index}")),
+            directory.join(format!("cache-{index}")),
             programs.clone(),
         );
         run_render_worker(request).await;

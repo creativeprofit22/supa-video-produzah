@@ -189,7 +189,12 @@ export const renderPlanV2Schema = z
           let audio = "asetpts=PTS-STARTPTS";
           if (timing !== undefined) {
             const percent = (timing.speed.numerator * 100) / timing.speed.denominator;
-            audio = `atrim=duration=${seconds(timing.sourceOut.value - timing.sourceIn.value)},asetpts=PTS-STARTPTS,atempo=${Math.floor(percent / 100)}.${String(percent % 100).padStart(2, "0")},atrim=duration=${duration}`;
+            const tempo = `${Math.floor(percent / 100)}.${String(percent % 100).padStart(2, "0")}`;
+            const tempoFilter =
+              percent < 100
+                ? `rubberband=tempo=${tempo}:window=short:transients=smooth`
+                : `atempo=${tempo}`;
+            audio = `atrim=duration=${seconds(timing.sourceOut.value - timing.sourceIn.value)},asetpts=PTS-STARTPTS,${tempoFilter},atrim=duration=${duration}`;
           } else if (inFrames > 0 || outFrames > 0) {
             audio = `atrim=duration=${duration},asetpts=PTS-STARTPTS,atrim=duration=${duration}`;
           }
