@@ -4,5 +4,10 @@
     "noEmit": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "playwright.config.test.ts"]
+  "include": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "playwright.config.test.ts",
+    "visual-marker.test.ts"
+  ]
 }

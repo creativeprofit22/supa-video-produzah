@@ -10,6 +10,12 @@ import playwrightConfig, {
   browserTestServerCommand,
 } from "./playwright.config";
 
+import { parseTestPort } from "./test-port.mjs";
+import speedConfig from "./playwright.speed.config";
+import parityConfig from "./playwright.shared-parity.config";
+import audioConfig from "./playwright.program-monitor-audio.config";
+import previewAudioConfig from "./playwright.preview-audio.config";
+
 const desktopRoot = dirname(fileURLToPath(import.meta.url));
 const spawnedProcesses = new Set<ReturnType<typeof spawn>>();
 
@@ -20,9 +26,39 @@ afterEach(() => {
   spawnedProcesses.clear();
 });
 
+describe("test port validation", () => {
+  test("defaults only when the override is absent", () => {
+    expect(parseTestPort(undefined)).toBe(4173);
+  });
+  test.each(["1024", "4183", "65535", "04183"])("accepts decimal port %s", (value) => {
+    expect(parseTestPort(value)).toBe(Number(value));
+  });
+  test.each([
+    "",
+    " ",
+    "4183 ",
+    " 4183",
+    "1023",
+    "65536",
+    "-4183",
+    "+4183",
+    "4183.0",
+    "4e3",
+    "0x1057",
+    "localhost:4183",
+    "4183 --host 0.0.0.0",
+    "4183;echo bad",
+    "4183\n",
+    "999999999999999999999",
+  ])("rejects invalid override %j", (value) => {
+    expect(() => parseTestPort(value)).toThrow("SUPA_VIDEO_TEST_PORT");
+  });
+});
+
 describe("Playwright server isolation", () => {
   test("uses a dedicated strict-port Vite server that cannot be reused", () => {
-    expect(browserTestServer.port).not.toBe(1420);
+    expect(browserTestServer.host).toBe("127.0.0.1");
+    expect(browserTestServer.port).toBe(parseTestPort(process.env.SUPA_VIDEO_TEST_PORT));
     expect(browserTestServerCommand).toBe(
       `pnpm dev --host ${browserTestServer.host} --port ${browserTestServer.port} --strictPort`,
     );
@@ -33,6 +69,14 @@ describe("Playwright server isolation", () => {
       reuseExistingServer: false,
     });
   });
+
+  test.each([speedConfig, parityConfig, audioConfig, previewAudioConfig])(
+    "dedicated suites inherit the selected local strict-port server",
+    (config) => {
+      expect(config.use?.baseURL).toBe(browserTestBaseUrl);
+      expect(config.webServer).toEqual(playwrightConfig.webServer);
+    },
+  );
 
   test("fails when the dedicated browser-test port is occupied", async () => {
     const occupyingServer = createServer((_request, response) => {

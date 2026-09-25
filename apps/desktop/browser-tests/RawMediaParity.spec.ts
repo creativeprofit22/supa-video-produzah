@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { findVisualMarker } from "./visual-marker";
+
 // Diagnostic control: no React, ProgramMonitor, seeks, or retiming. The exact native
 // 1x encoded artifact passes sample/frame transient alignment in the Rust test.
 test("raw HTML video with capture graph output-clock alignment", async ({ page }, info) => {
@@ -63,7 +65,7 @@ test("raw HTML video with capture graph output-clock alignment", async ({ page }
   await expect
     .poll(() => page.locator("video").evaluate((v: HTMLVideoElement) => v.ended))
     .toBe(true);
-  const measurement = await page.evaluate(async () => {
+  const capture = await page.evaluate(async () => {
     const state = (
       window as unknown as {
         rawParity: {
@@ -90,11 +92,8 @@ test("raw HTML video with capture graph output-clock alignment", async ({ page }
         Math.abs(t.contextTime! - onset.time) < Math.abs(best.contextTime! - onset.time) ? t : best,
       );
     const audio = stamp.performanceTime! + (onset.time - stamp.contextTime!) * 1000;
-    const visual = state.frames.find((f) => f.id >= 42)!;
     const value = {
       audio,
-      visual,
-      deltaMs: audio - visual.display,
       frames: state.frames,
       baseLatency: state.context.baseLatency,
       outputLatency: state.context.outputLatency,
@@ -103,12 +102,22 @@ test("raw HTML video with capture graph output-clock alignment", async ({ page }
     await state.context.close();
     return value;
   });
+  const visual = findVisualMarker(capture.frames, 42);
+  const measurement = {
+    ...capture,
+    visual,
+    deltaMs: visual ? capture.audio - visual.display : null,
+  };
   await info.attach("raw-control.json", {
     body: JSON.stringify(measurement, null, 2),
     contentType: "application/json",
   });
   expect(
-    (Math.abs(measurement.deltaMs) / 1000) * 30,
+    visual,
+    "measurement validity: decoded visual frame 42 must be directly observed",
+  ).not.toBeNull();
+  expect(
+    (Math.abs(measurement.deltaMs ?? Infinity) / 1000) * 30,
     "unchanged one-frame output-clock gate, raw browser baseline",
   ).toBeLessThanOrEqual(1);
 });

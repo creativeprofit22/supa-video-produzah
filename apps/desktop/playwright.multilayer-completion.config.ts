@@ -2,5 +2,6 @@ import { defineConfig } from "@playwright/test";
 import config from "./playwright.config";
 export default defineConfig({
   ...config,
-  testMatch: "**/PreviewAudio.spec.ts",
+  testMatch: "**/MultilayerCompletion.spec.ts",
+  outputDir: "../../test-results/multilayer-completion",
 });

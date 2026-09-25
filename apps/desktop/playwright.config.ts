@@ -1,8 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import { testPort } from "./test-port.mjs";
 
 export const browserTestServer = {
   host: "127.0.0.1",
-  port: 4173,
+  port: testPort,
 } as const;
 
 export const browserTestBaseUrl = `http://${browserTestServer.host}:${browserTestServer.port}`;

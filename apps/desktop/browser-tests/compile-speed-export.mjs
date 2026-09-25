@@ -3,7 +3,8 @@
 import process from "node:process";
 import console from "node:console";
 import { compileActiveSequenceRenderPlan } from "../../../packages/video-render/dist/index.js";
-const [inputPath, outputPath, rn, rd, sn, sd, gain = "0", fadeIn = "0", fadeOut = "0"] = process.argv.slice(2);
+const [inputPath, outputPath, rn, rd, sn, sd, gain = "0", fadeIn = "0", fadeOut = "0"] =
+  process.argv.slice(2);
 const rate = { numerator: Number(rn), denominator: Number(rd) };
 const speed = { numerator: Number(sn), denominator: Number(sd) };
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;

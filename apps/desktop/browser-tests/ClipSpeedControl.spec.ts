@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-const evidence = "../../evidence/2026-09-14-p2-speed";
+const evidence = "../../evidence/2026-09-16-p2-editor-controls-completion";
 async function open(page: Page, state = "editable") {
   await page.goto(`/browser-tests/clip-inspector.html?speed=1&state=${state}`);
   await expect(page.getByRole("group", { name: "Speed", exact: true })).toBeVisible();
@@ -78,13 +78,16 @@ test("S9-02 invalid, inexact, locked, pending and save-error states", async ({ p
     "true",
   );
   await expect(page.getByText("Saving clip speed", { exact: true })).toBeVisible();
+  await page.clock.install({ time: new Date("2026-09-16T00:00:00Z") });
   await open(page, "error");
+  await page.clock.pauseAt(new Date("2026-09-16T01:00:00Z"));
   await input(page).fill("150");
   for (let count = 0; count < 5; count++) await page.keyboard.press("Tab");
   await expect(apply(page)).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(input(page)).toBeDisabled();
   await expect(apply(page)).toBeDisabled();
+  await page.clock.runFor(250);
   await expect(input(page)).toBeEnabled();
   await expect(input(page)).toBeFocused();
   await expect(input(page)).toHaveValue("150");

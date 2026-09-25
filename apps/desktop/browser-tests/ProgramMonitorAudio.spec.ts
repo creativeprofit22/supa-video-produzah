@@ -72,7 +72,6 @@ for (const mode of ["Raw audition", "Final"]) {
     await expect
       .poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState))
       .toBeGreaterThanOrEqual(2);
-    await page.getByRole("button", { name: "Play", exact: true }).click();
     const result = await video.evaluate(async (v: HTMLVideoElement) => {
       // Raw/final intentionally have no production effects graph. Observe their
       // real decoded PCM with one replacement audible path, never two.
@@ -85,6 +84,12 @@ for (const mode of ["Raw audition", "Final"]) {
       analyser.fftSize = 2048;
       source.connect(analyser);
       source.connect(context.destination);
+      // Establish the observer before playback; changing audio routes mid-play inserts silence.
+      const playing = new Promise<void>((resolve) =>
+        v.addEventListener("playing", () => resolve(), { once: true }),
+      );
+      document.querySelector<HTMLButtonElement>(".transport-play")!.click();
+      await playing;
       await new Promise((resolve) => setTimeout(resolve, 350));
       const start = { media: v.currentTime, wall: performance.now() };
       const samples = [];
@@ -217,7 +222,22 @@ for (const [speed, audioOnly] of [
     expect(lateIn).toBeGreaterThan(earlyIn * 2);
     expect(earlyOut).toBeGreaterThan(lateOut * 2);
     expect(summary.maxEnvelopeError).toBeLessThan(tolerance);
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    // The measured envelope can naturally reach frame 149 before this preparation action.
+    // Read and click in one browser task so an end event cannot turn a Pause lookup into a wait.
+    const alreadyPaused = await page.evaluate(() => {
+      const paused = document.querySelector("video")!.paused;
+      if (!paused) document.querySelector<HTMLButtonElement>(".transport-play")!.click();
+      return paused;
+    });
+    if (alreadyPaused) await expect(page.getByTestId("program-frame")).toHaveText("149");
+    await expect
+      .poll(() =>
+        page
+          .locator("video")
+          .first()
+          .evaluate((v: HTMLVideoElement) => v.paused),
+      )
+      .toBe(true);
     await page.getByRole("button", { name: "Reset effects", exact: true }).click();
     await page.getByRole("button", { name: "Rewind", exact: true }).click();
     await page.getByRole("button", { name: "Play", exact: true }).click();

@@ -10,9 +10,14 @@ const percent = Number(params.get("speed") ?? 100);
 const raw = params.has("raw");
 const parity = params.has("parity");
 const fractional = parity && params.has("fractional");
-const rate = fractional ? { numerator: 30000, denominator: 1001 } : { numerator: 30, denominator: 1 };
+const rate = fractional
+  ? { numerator: 30000, denominator: 1001 }
+  : { numerator: 30, denominator: 1 };
 const speed = percent === 50 ? [1, 2] : percent === 150 ? [3, 2] : [percent / 100, 1];
-const stem = `/browser-tests/speed-parity-${rate.numerator}-${rate.denominator}`;
+// Fixed synthetic source switch for passive completion capture only; ordinary parity is unchanged.
+const stem = params.has("completion")
+  ? `/browser-tests/completion-media/${params.get("completion") === "slow-onset" ? "slow-onset/" : ""}single-flash-${rate.numerator}-${rate.denominator}`
+  : `/browser-tests/speed-parity-${rate.numerator}-${rate.denominator}`;
 const media = parity ? `${stem}.mp4` : "/browser-tests/speed-media.mp4";
 const finalMedia = parity ? `${stem}-${speed[0]}-${speed[1]}.mp4` : media;
 const duration = parity ? 60 : 18000 / percent;
@@ -23,7 +28,7 @@ const layers: ProgramMonitorLayer[] = [
     canonicalTrackIndex: 0,
     timelineStartFrame: 0,
     sourceInFrame: 30,
-    sourceOutFrame: parity ? 30 + 60 * percent / 100 : 210,
+    sourceOutFrame: parity ? 30 + (60 * percent) / 100 : 210,
     timelineDurationFrames: duration,
     sourceRate: rate,
     speed: { numerator: percent, denominator: 100 },
@@ -49,7 +54,17 @@ function Fixture() {
         </h1>
         <output data-testid="program-frame">{playhead}</output>
         <button onClick={() => setPlayhead(30)}>Seek program 1s</button>
-        {parity && <label>Parity frame<input data-testid="parity-seek" type="number" value={playhead} onChange={(event) => setPlayhead(Number(event.target.value))} /></label>}
+        {parity && (
+          <label>
+            Parity frame
+            <input
+              data-testid="parity-seek"
+              type="number"
+              value={playhead}
+              onChange={(event) => setPlayhead(Number(event.target.value))}
+            />
+          </label>
+        )}
         <button onClick={() => setPlayhead(duration - 15)}>Seek near end</button>
         <ProgramMonitor
           proxyPath={media}

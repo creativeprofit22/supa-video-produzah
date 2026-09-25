@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { assertForcedTextContrast, forcedTextContrast } from "./forced-colors-contrast";
 async function snapshot(page: Page) {
   return page.evaluate(() =>
     (
@@ -198,7 +199,160 @@ test("populated 320px at 200% text, long labels, keyboard focus and scoped axe",
   const axe = await new AxeBuilder({ page }).include('[aria-label="Editing controls"]').analyze();
   expect(axe.violations).toEqual([]);
   await page.screenshot({
-    path: "../../evidence/2026-09-14-p2-editor-controls/workspace-320-text200.png",
+    path: "../../evidence/2026-09-16-p2-editor-controls-completion/workspace-320-text200.png",
     fullPage: true,
   });
+  const bulk = page.getByRole("region", { name: "Multiple clip controls", exact: true });
+  expect(await bulk.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await bulk.screenshot({
+    path: "../../evidence/2026-09-16-p2-editor-controls-completion/bulk-text-200.png",
+  });
 });
+
+for (const mode of ["desktop", "text-200", "forced-colors-rtl"] as const) {
+  test(`completion keyboard audio/source names, Reset, errors and focus: ${mode}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: mode === "desktop" ? 1440 : 320, height: 1000 });
+    if (mode === "forced-colors-rtl")
+      await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+    await initialize(page);
+    if (mode === "text-200")
+      await page.evaluate(() => {
+        const elements = [
+          document.documentElement,
+          ...document.querySelectorAll<HTMLElement>("body *"),
+        ];
+        const sizes = elements.map((element) => parseFloat(getComputedStyle(element).fontSize));
+        elements.forEach((element, index) => {
+          element.style.fontSize = `${sizes[index]! * 2}px`;
+        });
+      });
+    if (mode === "forced-colors-rtl")
+      await page.evaluate(() => {
+        document.documentElement.dir = "rtl";
+      });
+    // Initialization selects synthetic media; all control navigation below is sequential keyboard input.
+    const tabTo = async (target: ReturnType<Page["getByRole"]>) => {
+      for (let count = 0; count < 100; count++) {
+        await page.keyboard.press("Tab");
+        if (await target.evaluate((element) => element === document.activeElement)) break;
+      }
+      await expect(target).toBeFocused();
+      const outline = await target.evaluate((element) => getComputedStyle(element).outlineStyle);
+      expect(outline).not.toBe("none");
+    };
+    const type = async (value: string) => {
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type(value);
+    };
+    const audio = page.getByRole("region", { name: "Clip audio inspector", exact: true });
+    const gain = audio.getByRole("spinbutton", { name: "Volume (dB)", exact: true });
+    const applyAudio = audio.getByRole("button", { name: "Apply audio", exact: true });
+    const baseline = await snapshot(page);
+    await tabTo(gain);
+    await type("25");
+    await expect(audio.getByRole("alert")).toContainText("Volume must be");
+    await expect(applyAudio).toBeDisabled();
+    expect((await snapshot(page)).revision).toBe(baseline.revision);
+    await type("-6");
+    await page.keyboard.press("Tab");
+    await expect(
+      audio.getByRole("spinbutton", { name: "Fade in (sequence frames)", exact: true }),
+    ).toBeFocused();
+    await type("2");
+    await page.keyboard.press("Tab");
+    await expect(
+      audio.getByRole("spinbutton", { name: "Fade out (sequence frames)", exact: true }),
+    ).toBeFocused();
+    await type("3");
+    await tabTo(applyAudio);
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await snapshot(page)).revision).toBe(baseline.revision + 1);
+    await expect(gain).toBeFocused();
+    await tabTo(audio.getByRole("button", { name: "Reset audio", exact: true }));
+    await page.keyboard.press("Space");
+    await expect(gain).toHaveValue("0");
+    expect((await snapshot(page)).revision).toBe(baseline.revision + 1);
+    await page.keyboard.press("Tab");
+    await expect(applyAudio).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await snapshot(page)).revision).toBe(baseline.revision + 2);
+    await expect(gain).toBeFocused();
+
+    const source = page.getByRole("region", { name: "Source range inspector", exact: true });
+    const sourceIn = source.getByRole("spinbutton", { name: /^Source in/ });
+    const applySource = source.getByRole("button", { name: "Apply source range", exact: true });
+    await tabTo(sourceIn);
+    await type("-1");
+    await expect(sourceIn).toHaveAttribute("aria-invalid", "true");
+    await expect(sourceIn).toHaveAttribute("aria-describedby", "source-range-status");
+    await expect(source.getByRole("status")).not.toHaveText(
+      "Timeline start and later clips stay in place.",
+    );
+    await expect(applySource).toBeDisabled();
+    await type("5");
+    await tabTo(source.getByRole("button", { name: "Reset draft", exact: true }));
+    await page.keyboard.press("Space");
+    await expect(sourceIn).toHaveValue("0");
+    expect((await snapshot(page)).revision).toBe(baseline.revision + 2);
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(sourceIn).toBeFocused();
+    await type("5");
+    await tabTo(applySource);
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await snapshot(page)).revision).toBe(baseline.revision + 3);
+    await expect(sourceIn).toBeFocused();
+    await expect(sourceIn).toHaveValue("5");
+    await expect(applySource).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    const scan = new AxeBuilder({ page }).include('[aria-label="Editing controls"]');
+    if (mode === "forced-colors-rtl") {
+      // Separately authorized replacement for axe's unforced WebKit fill measurement.
+      // All other scanner rules remain active; normal modes retain axe contrast too.
+      scan.disableRules(["color-contrast"]);
+      await assertForcedTextContrast(page, '[aria-label="Editing controls"]');
+      await page.evaluate(() => {
+        const control = document.createElement("p");
+        control.id = "contrast-negative-control";
+        control.textContent = "Deliberately insufficient contrast";
+        control.style.cssText =
+          "forced-color-adjust:none;color:#eeeeee;background:#ffffff;font-size:16px;font-weight:400";
+        document.body.append(control);
+      });
+      try {
+        const bad = await forcedTextContrast(page, "#contrast-negative-control");
+        expect(bad).toHaveLength(1);
+        expect(bad[0]!.required).toBe(4.5);
+        expect(bad[0]!.ratio).toBeLessThan(4.5);
+        await expect(
+          assertForcedTextContrast(page, "#contrast-negative-control"),
+        ).rejects.toThrow();
+      } finally {
+        await page.locator("#contrast-negative-control").evaluate((element) => element.remove());
+      }
+    }
+    expect((await scan.analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: `../../evidence/2026-09-16-p2-editor-controls-completion/controls-${mode}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
+    for (const [name, region] of [
+      ["audio", audio],
+      ["source", source],
+    ] as const) {
+      expect(
+        await region.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        `${name} panel must not clip its contents`,
+      ).toBe(true);
+      await region.screenshot({
+        path: `../../evidence/2026-09-16-p2-editor-controls-completion/${name}-${mode}.png`,
+        animations: "disabled",
+      });
+    }
+  });
+}
