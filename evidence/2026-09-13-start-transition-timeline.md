@@ -25,23 +25,23 @@ The instrumented two-file patch (including pre-existing dirty edits) is retained
 
 Times are elapsed since the fixture's writer lock was already held and just before scheduler start. Checkpoint start was 0.0000635s. Values come from the log, not assumed timer durations.
 
-| Event | Start | End | Observed interval / result |
-| --- | --- | --- | --- |
-| Database read 1 | 0.0005967s | 0.0684866s | 67.890ms, success |
-| Transition attempt 1 | 0.0686884s | 2.6161852s | 2.547497s, error |
-| Injected 10ms retry sleep | 2.6175452s | 2.6175706s | 25.4 microseconds |
-| Database read 2 | 2.6550839s | 2.6577127s | 2.629ms, success |
-| Transition attempt 2 | 2.6738830s | 6.3581214s | 3.684238s, error |
-| Injected 50ms retry sleep | 6.3592512s | 6.3592735s | 22.3 microseconds |
-| Database read 3 | 6.3593364s | 7.3615710s | 1.002235s, success |
-| Transition attempt 3 | 7.3617082s | 12.4093675s | 5.047659s, error |
-| Original checkpoint expires | — | 10.0002682s | Err(Elapsed), sleeps=[10ms, 50ms] |
-| Injected 100ms retry sleep | 12.4098682s | 12.4098891s | 20.9 microseconds |
-| Next transition attempt starts | 12.4134526s | — | Already retrying again with writer still held |
-| Diagnostic observation sees third sleep | — | 12.5884840s | sleeps=3, worker_starts=0 |
-| Observation ends and writer release begins | — | 12.6348331s | Observation Ok; original checkpoint still Err |
-| Original failed result asserted | — | after release | Panic at instrumented scheduler.rs:1511:24: Err(Elapsed) |
-| Next transition's blocking work finishes | — | 12.6930857s | success after lock release; not full job completion proof |
+| Event                                      | Start       | End           | Observed interval / result                                |
+| ------------------------------------------ | ----------- | ------------- | --------------------------------------------------------- |
+| Database read 1                            | 0.0005967s  | 0.0684866s    | 67.890ms, success                                         |
+| Transition attempt 1                       | 0.0686884s  | 2.6161852s    | 2.547497s, error                                          |
+| Injected 10ms retry sleep                  | 2.6175452s  | 2.6175706s    | 25.4 microseconds                                         |
+| Database read 2                            | 2.6550839s  | 2.6577127s    | 2.629ms, success                                          |
+| Transition attempt 2                       | 2.6738830s  | 6.3581214s    | 3.684238s, error                                          |
+| Injected 50ms retry sleep                  | 6.3592512s  | 6.3592735s    | 22.3 microseconds                                         |
+| Database read 3                            | 6.3593364s  | 7.3615710s    | 1.002235s, success                                        |
+| Transition attempt 3                       | 7.3617082s  | 12.4093675s   | 5.047659s, error                                          |
+| Original checkpoint expires                | —           | 10.0002682s   | Err(Elapsed), sleeps=[10ms, 50ms]                         |
+| Injected 100ms retry sleep                 | 12.4098682s | 12.4098891s   | 20.9 microseconds                                         |
+| Next transition attempt starts             | 12.4134526s | —             | Already retrying again with writer still held             |
+| Diagnostic observation sees third sleep    | —           | 12.5884840s   | sleeps=3, worker_starts=0                                 |
+| Observation ends and writer release begins | —           | 12.6348331s   | Observation Ok; original checkpoint still Err             |
+| Original failed result asserted            | —           | after release | Panic at instrumented scheduler.rs:1511:24: Err(Elapsed)  |
+| Next transition's blocking work finishes   | —           | 12.6930857s   | success after lock release; not full job completion proof |
 
 The third-attempt interval straddles the checkpoint expiry; table rows are grouped by operation, not strictly sorted by end timestamp. Observation samples from 10.276604s through 12.3186552s continued to report two sleeps and zero worker starts.
 

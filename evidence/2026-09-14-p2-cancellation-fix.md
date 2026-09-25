@@ -14,23 +14,23 @@ Baseline inspection found 12 modified tracked files and 13 untracked evidence fi
 
 All source paths below are relative to `apps/desktop/src-tauri/src/video/`:
 
-| File | B: original and restored SHA-256 |
-| --- | --- |
+| File                | B: original and restored SHA-256                                   |
+| ------------------- | ------------------------------------------------------------------ |
 | `jobs/scheduler.rs` | `644a36463da82746864bff1a3276b98a3168898b96723b9f3f68388515bb9e79` |
-| `jobs/store.rs` | `0895b06f663bfb4273f98d34ea17f5739b618ee23a2bc1cd588735c4f2f8a353` |
-| `jobs/mod.rs` | `0583e10de2ae215976e69d27669619065d4f958dbbbe05d17dbec074aac1b2fd` |
-| `process.rs` | `f8f8c76dc3cd7ac455bb2c8e315a041aeddc7f4c62672fe63dc23d1ed849f38b` |
-| `tests.rs` | `d6bcb71236d71466a787a84e5c6c3c65824783c86a186479a83801f97154af1e` |
+| `jobs/store.rs`     | `0895b06f663bfb4273f98d34ea17f5739b618ee23a2bc1cd588735c4f2f8a353` |
+| `jobs/mod.rs`       | `0583e10de2ae215976e69d27669619065d4f958dbbbe05d17dbec074aac1b2fd` |
+| `process.rs`        | `f8f8c76dc3cd7ac455bb2c8e315a041aeddc7f4c62672fe63dc23d1ed849f38b` |
+| `tests.rs`          | `d6bcb71236d71466a787a84e5c6c3c65824783c86a186479a83801f97154af1e` |
 
 Snapshot I, used for compilation and all five focused executions:
 
-| File | I: instrumented SHA-256 |
-| --- | --- |
+| File                | I: instrumented SHA-256                                            |
+| ------------------- | ------------------------------------------------------------------ |
 | `jobs/scheduler.rs` | `5c985095abceada22993151ac0fff0aebb3ff011f664c210725ca1dd69ce5daa` |
-| `jobs/store.rs` | `4bf3f4aa4ea7fa82190dd89e80438f12c6ead4d8f3847a31130aa5685c27242e` |
-| `jobs/mod.rs` | Same as B; never edited |
-| `process.rs` | `12a2e978eeffcdc509a43bc85111e169cbde509c21a18512f7a14252b70438a8` |
-| `tests.rs` | `2b4995016a01ad0a2f344f39e01bde8821e8417c57e0c356be2ffe9931f7722b` |
+| `jobs/store.rs`     | `4bf3f4aa4ea7fa82190dd89e80438f12c6ead4d8f3847a31130aa5685c27242e` |
+| `jobs/mod.rs`       | Same as B; never edited                                            |
+| `process.rs`        | `12a2e978eeffcdc509a43bc85111e169cbde509c21a18512f7a14252b70438a8` |
+| `tests.rs`          | `2b4995016a01ad0a2f344f39e01bde8821e8417c57e0c356be2ffe9931f7722b` |
 
 Snapshot F, used for the optional full diagnostic: same as I except `jobs/scheduler.rs` = `fab3b8f097390901f39c27683a86fe410105631be35d6b91cd5386d90d458568` and `tests.rs` = its B hash. The three added diagnostic test cases were removed before that run, rather than ignoring tests or filtering existing failures. Untriggered gate/delay branches remained temporarily in the diagnostic implementation; the original retry test selected ungated mode.
 
@@ -70,15 +70,15 @@ Focused invocations appended the exact test name below and `-- --exact --nocaptu
 
 Foreground logs are local under `C:/Users/SPARTAN PC/.gg/foreground/<execution-id>.log`.
 
-| Run | Snapshot | Suffix / exact test name | Executed result | Exit | Execution ID |
-| --- | --- | --- | --- | --- | --- |
-| Compile-only 1 | I | `--no-run` | All test binaries built; no tests executed | 0 | `dd1a663d-28b1-48b2-a593-d7cd43001a91` |
-| Focused 1 | I | `video::jobs::scheduler::tests::p2_retry_gate_budget_sensitivity` | 0 passed, 1 deliberately failed; 2.19 s | 101 | `cf8af13a-488e-4810-b6b3-c8958119a08c` |
-| Focused 2 | I | `video::jobs::scheduler::tests::cancellation_interrupts_each_automatic_retry_delay_without_requeue` | 1 passed; all three retries | 0 | `35c59536-1814-40e4-a74f-f1637eae9775` |
-| Focused 3 | I | `video::jobs::scheduler::tests::p2_retry_held_read_connection_comparison` | 1 passed; all three retries | 0 | `5337ac24-fa29-452a-974a-6d28cbbca231` |
-| Focused 4 | I | `video::tests::p2_supervisor_startup_budget_sensitivity` | 0 passed, 1 deliberately failed after real cleanup; 7.41 s | 101 | `8991e839-0e14-4732-b362-36450b734f2a` |
-| Focused 5 | I | `video::tests::supervisor_timeout_terminates_grandchild_and_releases_inherited_pipes` | 1 passed; 5.80 s | 0 | `e1e99d43-f418-4575-897d-07bfa8802f87` |
-| Optional instrumented full | F | `-- --nocapture --test-threads=32` | 327 library entries selected: 307 executed, **306 passed, 1 failed, 20 pre-existing ignored**, none filtered; 70.91 s library time | 101 | `4662d3c9-5159-4dbf-b158-23af16012908` |
+| Run                        | Snapshot | Suffix / exact test name                                                                            | Executed result                                                                                                                    | Exit | Execution ID                           |
+| -------------------------- | -------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---- | -------------------------------------- |
+| Compile-only 1             | I        | `--no-run`                                                                                          | All test binaries built; no tests executed                                                                                         | 0    | `dd1a663d-28b1-48b2-a593-d7cd43001a91` |
+| Focused 1                  | I        | `video::jobs::scheduler::tests::p2_retry_gate_budget_sensitivity`                                   | 0 passed, 1 deliberately failed; 2.19 s                                                                                            | 101  | `cf8af13a-488e-4810-b6b3-c8958119a08c` |
+| Focused 2                  | I        | `video::jobs::scheduler::tests::cancellation_interrupts_each_automatic_retry_delay_without_requeue` | 1 passed; all three retries                                                                                                        | 0    | `35c59536-1814-40e4-a74f-f1637eae9775` |
+| Focused 3                  | I        | `video::jobs::scheduler::tests::p2_retry_held_read_connection_comparison`                           | 1 passed; all three retries                                                                                                        | 0    | `5337ac24-fa29-452a-974a-6d28cbbca231` |
+| Focused 4                  | I        | `video::tests::p2_supervisor_startup_budget_sensitivity`                                            | 0 passed, 1 deliberately failed after real cleanup; 7.41 s                                                                         | 101  | `8991e839-0e14-4732-b362-36450b734f2a` |
+| Focused 5                  | I        | `video::tests::supervisor_timeout_terminates_grandchild_and_releases_inherited_pipes`               | 1 passed; 5.80 s                                                                                                                   | 0    | `e1e99d43-f418-4575-897d-07bfa8802f87` |
+| Optional instrumented full | F        | `-- --nocapture --test-threads=32`                                                                  | 327 library entries selected: 307 executed, **306 passed, 1 failed, 20 pre-existing ignored**, none filtered; 70.91 s library time | 101  | `4662d3c9-5159-4dbf-b158-23af16012908` |
 
 The full library failure prevented main/integration/doc-test execution; this is **not** a 307+5 passing suite. The nonfailing linker-message warning remained visible.
 
@@ -96,14 +96,14 @@ There was no justified correction, so the plan's conditional final uninstrumente
 
 ### Controlled supervisor results — RUNTIME
 
-| Boundary | Synthetic startup red | Original focused control | Parallel target, process ID 24 |
-| --- | ---: | ---: | ---: |
-| Native spawn entry | 0.170 ms | 0.106 ms | 0.046 ms |
-| Native spawn return | 1,605.356 ms, includes intentional 1,600 ms delay | 4.738 ms | 2.976 ms |
-| Wrapper return | 1,629.520 ms | 31.401 ms | 134.047 ms |
-| Execution timeout observed | 3,136.408 ms | 1,535.002 ms | 1,643.083 ms |
-| Kill/wait returned | 3,138.145 ms | 1,536.789 ms | 1,648.574 ms |
-| Both pipe joins completed | 3,138.169 ms | 1,536.805 ms | 1,648.608 ms |
+| Boundary                   |                             Synthetic startup red | Original focused control | Parallel target, process ID 24 |
+| -------------------------- | ------------------------------------------------: | -----------------------: | -----------------------------: |
+| Native spawn entry         |                                          0.170 ms |                 0.106 ms |                       0.046 ms |
+| Native spawn return        | 1,605.356 ms, includes intentional 1,600 ms delay |                 4.738 ms |                       2.976 ms |
+| Wrapper return             |                                      1,629.520 ms |                31.401 ms |                     134.047 ms |
+| Execution timeout observed |                                      3,136.408 ms |             1,535.002 ms |                   1,643.083 ms |
+| Kill/wait returned         |                                      3,138.145 ms |             1,536.789 ms |                   1,648.574 ms |
+| Both pipe joins completed  |                                      3,138.169 ms |             1,536.805 ms |                   1,648.608 ms |
 
 Synthetic outer expiration was observed at approximately 3,012.362 ms from its own start. Its Timeout, grandchild-readiness and descendant-termination assertions passed before the deliberate watchdog assertion failed. The original focused and parallel timeout fixtures passed, including inherited-pipe release and descendant checks. This is a useful differential, not evidence that historical Windows cleanup failures were caused by slow native spawn or wrapper startup.
 

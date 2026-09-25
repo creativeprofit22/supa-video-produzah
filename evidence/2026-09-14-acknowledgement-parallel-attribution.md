@@ -15,10 +15,10 @@ cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.
 cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture --test-threads=32
 ```
 
-| Arm | Profile | Cargo build/preparation duration | Library execution duration | Acknowledgement p95 | Independent exit | Library result |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| Isolated, 1 thread | test, unoptimized + debuginfo | 49.35 s | 1.09 s | 14.1110 ms | 0 | 1 passed, 326 filtered out |
-| Full, 32 threads | test, unoptimized + debuginfo | 0.73 s | 77.02 s | 76.7411 ms | 101 | 306 passed, 1 failed, 20 ignored |
+| Arm                | Profile                       | Cargo build/preparation duration | Library execution duration | Acknowledgement p95 | Independent exit | Library result                   |
+| ------------------ | ----------------------------- | -------------------------------: | -------------------------: | ------------------: | ---------------: | -------------------------------- |
+| Isolated, 1 thread | test, unoptimized + debuginfo |                          49.35 s |                     1.09 s |          14.1110 ms |                0 | 1 passed, 326 filtered out       |
+| Full, 32 threads   | test, unoptimized + debuginfo |                           0.73 s |                    77.02 s |          76.7411 ms |              101 | 306 passed, 1 failed, 20 ignored |
 
 Cargo's `Finished` duration includes build/preparation, not acknowledgement time. The isolated invocation also reached main (0 tests) and security integration (0 tests, 5 filtered out), both successful. The full invocation stopped after the failed library target; later integration/doc targets were not verified. The full command's foreground wall duration was 77.941 s.
 
@@ -54,19 +54,19 @@ The isolated arm calibrates directly measured observer cost, not total causal ob
 
 All time values below are milliseconds. Group p95 uses nearest rank `ceil(0.95*n)-1`; the all-command row remains the original sorted index 94. Four-sample checkpoint p95 equals maximum and should not be treated as a stable distribution estimate.
 
-| Arm / group | n | Median | p95 | Maximum | Calls >=300 ms | Calls >300 ms | Total wall | Total CPU |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Isolated / all | 100 | 9.61535 | 14.1110 | 30.4634 | 0 | 0 | 1047.0966 | 921.8750 |
-| Isolated / checkpoint | 4 | 28.67790 | 30.4634 | 30.4634 | 0 | 0 | 109.4675 | 109.3750 |
-| Isolated / noncheckpoint | 96 | 9.56905 | 12.9930 | 14.5543 | 0 | 0 | 937.6291 | 812.5000 |
-| Parallel / all | 100 | 17.73030 | 76.7411 | 1101.3994 | 3 | 3 | 4794.6703 | 1531.2500 |
-| Parallel / checkpoint | 4 | 46.03815 | 56.9249 | 56.9249 | 0 | 0 | 174.7868 | 125.0000 |
-| Parallel / noncheckpoint | 96 | 17.52785 | 162.9112 | 1101.3994 | 3 | 3 | 4619.8835 | 1406.2500 |
+| Arm / group              |   n |   Median |      p95 |   Maximum | Calls >=300 ms | Calls >300 ms | Total wall | Total CPU |
+| ------------------------ | --: | -------: | -------: | --------: | -------------: | ------------: | ---------: | --------: |
+| Isolated / all           | 100 |  9.61535 |  14.1110 |   30.4634 |              0 |             0 |  1047.0966 |  921.8750 |
+| Isolated / checkpoint    |   4 | 28.67790 |  30.4634 |   30.4634 |              0 |             0 |   109.4675 |  109.3750 |
+| Isolated / noncheckpoint |  96 |  9.56905 |  12.9930 |   14.5543 |              0 |             0 |   937.6291 |  812.5000 |
+| Parallel / all           | 100 | 17.73030 |  76.7411 | 1101.3994 |              3 |             3 |  4794.6703 | 1531.2500 |
+| Parallel / checkpoint    |   4 | 46.03815 |  56.9249 |   56.9249 |              0 |             0 |   174.7868 |  125.0000 |
+| Parallel / noncheckpoint |  96 | 17.52785 | 162.9112 | 1101.3994 |              3 |             3 |  4619.8835 | 1406.2500 |
 
-| Arm | Observer total | Observer median/call | Observer max/call | Residual total | Residual min/max per call | Sum stage CPU |
-| --- | ---: | ---: | ---: | ---: | --- | ---: |
-| Isolated | 1.8267 | 0.01645 | 0.0568 | 0.2646 | 0.0016 / 0.0126 | 921.8750 |
-| Parallel | 4.2045 | 0.03150 | 0.8330 | 0.3829 | 0.0019 / 0.0088 | 1531.2500 |
+| Arm      | Observer total | Observer median/call | Observer max/call | Residual total | Residual min/max per call | Sum stage CPU |
+| -------- | -------------: | -------------------: | ----------------: | -------------: | ------------------------- | ------------: |
+| Isolated |         1.8267 |              0.01645 |            0.0568 |         0.2646 | 0.0016 / 0.0126           |      921.8750 |
+| Parallel |         4.2045 |              0.03150 |            0.8330 |         0.3829 | 0.0019 / 0.0088           |     1531.2500 |
 
 Directly measured observer time is about 0.174% / 0.088% of aggregate outer wall, respectively. It is small relative to the observed tails; this does not prove total observer impact is negligible. No samples or stages had unavailable CPU, and stage CPU sums equal outer CPU sums in these captures.
 
@@ -74,97 +74,97 @@ Directly measured observer time is about 0.174% / 0.088% of aggregate outer wall
 
 Each cell is **wall / CPU ms**, not wall-minus-CPU. `*` marks a checkpoint. Zero snapshot values in ordinary calls mean not executed. Each column is one command; outer wall/CPU is the total and must not be added to the stage rows.
 
-| Stage | Record 25* | Record 100* | Record 75* | Record 50* | Record 54 | Record 77 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| outer wall/CPU | 30.4634/31.2500 | 30.2137/31.2500 | 27.1421/31.2500 | 21.6483/15.6250 | 14.5543/15.6250 | 14.1110/15.6250 |
-| request_validation | 0.3403/0.0000 | 0.1086/0.0000 | 0.1248/0.0000 | 0.0976/0.0000 | 0.2066/0.0000 | 0.1075/0.0000 |
-| lookup_lock | 0.0161/0.0000 | 0.0065/0.0000 | 0.0114/0.0000 | 0.0056/0.0000 | 0.0152/0.0000 | 0.0059/0.0000 |
-| payload_hash_paths | 0.4126/0.0000 | 0.1073/15.6250 | 0.1081/0.0000 | 0.0947/0.0000 | 0.1833/0.0000 | 0.1129/0.0000 |
-| transition | 4.8858/0.0000 | 2.9686/0.0000 | 2.5390/15.6250 | 2.1002/0.0000 | 3.4920/15.6250 | 3.4265/0.0000 |
-| source_resolution_grants | 0.5559/0.0000 | 0.2205/0.0000 | 0.2065/0.0000 | 0.2471/0.0000 | 0.2599/0.0000 | 0.2910/0.0000 |
-| record_result_preparation | 6.2991/15.6250 | 2.3508/0.0000 | 2.5560/0.0000 | 2.6380/0.0000 | 4.2103/0.0000 | 4.5452/15.6250 |
-| append_entry | 0.0238/0.0000 | 0.0101/0.0000 | 0.0165/0.0000 | 0.0142/0.0000 | 0.0207/0.0000 | 0.0203/0.0000 |
-| journal_hash_serialize | 4.7593/0.0000 | 2.5712/0.0000 | 2.4457/0.0000 | 2.3873/0.0000 | 4.1243/0.0000 | 3.9177/0.0000 |
-| journal_metadata_open | 0.2417/0.0000 | 0.1017/0.0000 | 0.0826/0.0000 | 0.1032/0.0000 | 0.1083/0.0000 | 0.1200/0.0000 |
-| journal_write_flush | 0.1581/0.0000 | 0.0886/0.0000 | 0.0804/0.0000 | 0.0833/0.0000 | 0.1257/0.0000 | 0.0892/0.0000 |
-| journal_sync_all | 1.5969/0.0000 | 2.0833/0.0000 | 1.2220/0.0000 | 1.1962/0.0000 | 1.4130/0.0000 | 1.2684/0.0000 |
-| append_return | 0.1024/0.0000 | 0.0487/0.0000 | 0.0429/0.0000 | 0.0825/15.6250 | 0.0921/0.0000 | 0.0502/0.0000 |
-| session_update | 0.0725/0.0000 | 0.1119/0.0000 | 0.0871/0.0000 | 0.0632/0.0000 | 0.1711/0.0000 | 0.0911/0.0000 |
-| checkpoint_return_or_skip | 0.0185/0.0000 | 0.1341/0.0000 | 0.0445/0.0000 | 0.0407/0.0000 | 0.0002/0.0000 | 0.0001/0.0000 |
-| projection_result | 0.0002/0.0000 | 0.0007/0.0000 | 0.0003/0.0000 | 0.0002/0.0000 | 0.0005/0.0000 | 0.0002/0.0000 |
-| finish_return | 0.0580/0.0000 | 0.0885/0.0000 | 0.0355/0.0000 | 0.0363/0.0000 | 0.0587/0.0000 | 0.0198/0.0000 |
-| idempotency_result | 0.0243/0.0000 | 0.0567/0.0000 | 0.0190/0.0000 | 0.0204/0.0000 | 0.0385/0.0000 | 0.0200/0.0000 |
-| checkpoint_entry | 0.0244/0.0000 | 0.0027/0.0000 | 0.0025/0.0000 | 0.0024/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_preparation | 5.5814/15.6250 | 12.3120/15.6250 | 11.1747/15.6250 | 6.3922/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_directory | 0.2562/0.0000 | 0.3222/0.0000 | 0.2051/0.0000 | 0.2141/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_create_temp | 0.4706/0.0000 | 0.4450/0.0000 | 0.3558/0.0000 | 0.3483/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_write_flush | 0.1882/0.0000 | 0.2503/0.0000 | 0.1736/0.0000 | 0.1748/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_sync_all | 2.8514/0.0000 | 3.8630/0.0000 | 4.0625/0.0000 | 3.5860/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_read_previous | 0.1694/0.0000 | 0.2121/0.0000 | 0.1879/0.0000 | 0.1785/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_promote_previous | 0.6811/0.0000 | 0.7468/0.0000 | 0.6124/0.0000 | 0.8760/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| snapshot_promote_main_parent | 0.6158/0.0000 | 0.9599/0.0000 | 0.7083/0.0000 | 0.6179/0.0000 | 0.0000/0.0000 | 0.0000/0.0000 |
-| observer wall only | 0.0568 | 0.0367 | 0.0345 | 0.0447 | 0.0296 | 0.0231 |
-| residual wall only | 0.0026 | 0.0052 | 0.0025 | 0.0027 | 0.0043 | 0.0019 |
+| Stage                        |      Record 25* |     Record 100* |      Record 75* |      Record 50* |       Record 54 |       Record 77 |
+| ---------------------------- | --------------: | --------------: | --------------: | --------------: | --------------: | --------------: |
+| outer wall/CPU               | 30.4634/31.2500 | 30.2137/31.2500 | 27.1421/31.2500 | 21.6483/15.6250 | 14.5543/15.6250 | 14.1110/15.6250 |
+| request_validation           |   0.3403/0.0000 |   0.1086/0.0000 |   0.1248/0.0000 |   0.0976/0.0000 |   0.2066/0.0000 |   0.1075/0.0000 |
+| lookup_lock                  |   0.0161/0.0000 |   0.0065/0.0000 |   0.0114/0.0000 |   0.0056/0.0000 |   0.0152/0.0000 |   0.0059/0.0000 |
+| payload_hash_paths           |   0.4126/0.0000 |  0.1073/15.6250 |   0.1081/0.0000 |   0.0947/0.0000 |   0.1833/0.0000 |   0.1129/0.0000 |
+| transition                   |   4.8858/0.0000 |   2.9686/0.0000 |  2.5390/15.6250 |   2.1002/0.0000 |  3.4920/15.6250 |   3.4265/0.0000 |
+| source_resolution_grants     |   0.5559/0.0000 |   0.2205/0.0000 |   0.2065/0.0000 |   0.2471/0.0000 |   0.2599/0.0000 |   0.2910/0.0000 |
+| record_result_preparation    |  6.2991/15.6250 |   2.3508/0.0000 |   2.5560/0.0000 |   2.6380/0.0000 |   4.2103/0.0000 |  4.5452/15.6250 |
+| append_entry                 |   0.0238/0.0000 |   0.0101/0.0000 |   0.0165/0.0000 |   0.0142/0.0000 |   0.0207/0.0000 |   0.0203/0.0000 |
+| journal_hash_serialize       |   4.7593/0.0000 |   2.5712/0.0000 |   2.4457/0.0000 |   2.3873/0.0000 |   4.1243/0.0000 |   3.9177/0.0000 |
+| journal_metadata_open        |   0.2417/0.0000 |   0.1017/0.0000 |   0.0826/0.0000 |   0.1032/0.0000 |   0.1083/0.0000 |   0.1200/0.0000 |
+| journal_write_flush          |   0.1581/0.0000 |   0.0886/0.0000 |   0.0804/0.0000 |   0.0833/0.0000 |   0.1257/0.0000 |   0.0892/0.0000 |
+| journal_sync_all             |   1.5969/0.0000 |   2.0833/0.0000 |   1.2220/0.0000 |   1.1962/0.0000 |   1.4130/0.0000 |   1.2684/0.0000 |
+| append_return                |   0.1024/0.0000 |   0.0487/0.0000 |   0.0429/0.0000 |  0.0825/15.6250 |   0.0921/0.0000 |   0.0502/0.0000 |
+| session_update               |   0.0725/0.0000 |   0.1119/0.0000 |   0.0871/0.0000 |   0.0632/0.0000 |   0.1711/0.0000 |   0.0911/0.0000 |
+| checkpoint_return_or_skip    |   0.0185/0.0000 |   0.1341/0.0000 |   0.0445/0.0000 |   0.0407/0.0000 |   0.0002/0.0000 |   0.0001/0.0000 |
+| projection_result            |   0.0002/0.0000 |   0.0007/0.0000 |   0.0003/0.0000 |   0.0002/0.0000 |   0.0005/0.0000 |   0.0002/0.0000 |
+| finish_return                |   0.0580/0.0000 |   0.0885/0.0000 |   0.0355/0.0000 |   0.0363/0.0000 |   0.0587/0.0000 |   0.0198/0.0000 |
+| idempotency_result           |   0.0243/0.0000 |   0.0567/0.0000 |   0.0190/0.0000 |   0.0204/0.0000 |   0.0385/0.0000 |   0.0200/0.0000 |
+| checkpoint_entry             |   0.0244/0.0000 |   0.0027/0.0000 |   0.0025/0.0000 |   0.0024/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_preparation         |  5.5814/15.6250 | 12.3120/15.6250 | 11.1747/15.6250 |   6.3922/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_directory           |   0.2562/0.0000 |   0.3222/0.0000 |   0.2051/0.0000 |   0.2141/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_create_temp         |   0.4706/0.0000 |   0.4450/0.0000 |   0.3558/0.0000 |   0.3483/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_write_flush         |   0.1882/0.0000 |   0.2503/0.0000 |   0.1736/0.0000 |   0.1748/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_sync_all            |   2.8514/0.0000 |   3.8630/0.0000 |   4.0625/0.0000 |   3.5860/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_read_previous       |   0.1694/0.0000 |   0.2121/0.0000 |   0.1879/0.0000 |   0.1785/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_promote_previous    |   0.6811/0.0000 |   0.7468/0.0000 |   0.6124/0.0000 |   0.8760/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| snapshot_promote_main_parent |   0.6158/0.0000 |   0.9599/0.0000 |   0.7083/0.0000 |   0.6179/0.0000 |   0.0000/0.0000 |   0.0000/0.0000 |
+| observer wall only           |          0.0568 |          0.0367 |          0.0345 |          0.0447 |          0.0296 |          0.0231 |
+| residual wall only           |          0.0026 |          0.0052 |          0.0025 |          0.0027 |          0.0043 |          0.0019 |
 
 ## Slowest six — parallel
 
 Same exclusive wall/CPU units. All six are noncheckpoint commands; no checkpoint/snapshot stages executed in these columns, so those rows are omitted rather than represented as measured zero-duration operations.
 
-| Stage | Record 8 | Record 11 | Record 9 | Record 10 | Record 7 | Record 20 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| outer wall/CPU | 1101.3994/15.6250 | 1048.0283/15.6250 | 339.6043/0.0000 | 175.2986/0.0000 | 162.9112/15.6250 | 76.7411/15.6250 |
-| request_validation | 0.1659/0.0000 | 0.1975/0.0000 | 0.1517/0.0000 | 0.1740/0.0000 | 0.1599/0.0000 | 0.1579/0.0000 |
-| lookup_lock | 0.0039/0.0000 | 0.0108/0.0000 | 0.0048/0.0000 | 0.0085/0.0000 | 0.0129/0.0000 | 0.0092/0.0000 |
-| payload_hash_paths | 0.1606/0.0000 | 0.1618/0.0000 | 0.1531/0.0000 | 0.1541/0.0000 | 0.1626/0.0000 | 0.1643/0.0000 |
-| transition | 1.5554/15.6250 | 1.8635/0.0000 | 1.3705/0.0000 | 1.7468/0.0000 | 1.5917/0.0000 | 4.1898/0.0000 |
-| source_resolution_grants | 0.2021/0.0000 | 0.2760/0.0000 | 40.0850/0.0000 | 0.4176/0.0000 | 0.2594/0.0000 | 10.3054/0.0000 |
-| record_result_preparation | 3.9043/0.0000 | 4.0744/0.0000 | 4.1421/0.0000 | 4.2521/0.0000 | 4.5129/0.0000 | 5.1595/15.6250 |
-| append_entry | 0.0173/0.0000 | 0.0179/0.0000 | 0.0181/0.0000 | 0.0350/0.0000 | 0.0181/0.0000 | 0.0243/0.0000 |
-| journal_hash_serialize | 3.9256/0.0000 | 4.1620/15.6250 | 2.8612/0.0000 | 3.6164/0.0000 | 5.0964/15.6250 | 4.2406/0.0000 |
-| journal_metadata_open | 126.1480/0.0000 | 0.1349/0.0000 | 75.0071/0.0000 | 81.1349/0.0000 | 36.9817/0.0000 | 47.1204/0.0000 |
-| journal_write_flush | 0.0994/0.0000 | 0.0885/0.0000 | 1.6061/0.0000 | 0.1139/0.0000 | 0.0734/0.0000 | 0.1408/0.0000 |
-| journal_sync_all | 672.6444/0.0000 | 308.2177/0.0000 | 120.2943/0.0000 | 63.6970/0.0000 | 75.4640/0.0000 | 4.5952/0.0000 |
-| append_return | 292.4318/0.0000 | 728.6773/0.0000 | 93.7824/0.0000 | 19.7913/0.0000 | 38.4172/0.0000 | 0.4349/0.0000 |
-| session_update | 0.0320/0.0000 | 0.0385/0.0000 | 0.0326/0.0000 | 0.0393/0.0000 | 0.0308/0.0000 | 0.0818/0.0000 |
-| checkpoint_return_or_skip | 0.0001/0.0000 | 0.0006/0.0000 | 0.0001/0.0000 | 0.0003/0.0000 | 0.0001/0.0000 | 0.0008/0.0000 |
-| projection_result | 0.0002/0.0000 | 0.0001/0.0000 | 0.0001/0.0000 | 0.0003/0.0000 | 0.0010/0.0000 | 0.0003/0.0000 |
-| finish_return | 0.0383/0.0000 | 0.0506/0.0000 | 0.0335/0.0000 | 0.0431/0.0000 | 0.0653/0.0000 | 0.0553/0.0000 |
-| idempotency_result | 0.0265/0.0000 | 0.0222/0.0000 | 0.0226/0.0000 | 0.0368/0.0000 | 0.0305/0.0000 | 0.0231/0.0000 |
-| observer wall only | 0.0409 | 0.0313 | 0.0363 | 0.0331 | 0.0304 | 0.0333 |
-| residual wall only | 0.0027 | 0.0027 | 0.0027 | 0.0041 | 0.0029 | 0.0042 |
+| Stage                     |          Record 8 |         Record 11 |        Record 9 |       Record 10 |         Record 7 |       Record 20 |
+| ------------------------- | ----------------: | ----------------: | --------------: | --------------: | ---------------: | --------------: |
+| outer wall/CPU            | 1101.3994/15.6250 | 1048.0283/15.6250 | 339.6043/0.0000 | 175.2986/0.0000 | 162.9112/15.6250 | 76.7411/15.6250 |
+| request_validation        |     0.1659/0.0000 |     0.1975/0.0000 |   0.1517/0.0000 |   0.1740/0.0000 |    0.1599/0.0000 |   0.1579/0.0000 |
+| lookup_lock               |     0.0039/0.0000 |     0.0108/0.0000 |   0.0048/0.0000 |   0.0085/0.0000 |    0.0129/0.0000 |   0.0092/0.0000 |
+| payload_hash_paths        |     0.1606/0.0000 |     0.1618/0.0000 |   0.1531/0.0000 |   0.1541/0.0000 |    0.1626/0.0000 |   0.1643/0.0000 |
+| transition                |    1.5554/15.6250 |     1.8635/0.0000 |   1.3705/0.0000 |   1.7468/0.0000 |    1.5917/0.0000 |   4.1898/0.0000 |
+| source_resolution_grants  |     0.2021/0.0000 |     0.2760/0.0000 |  40.0850/0.0000 |   0.4176/0.0000 |    0.2594/0.0000 |  10.3054/0.0000 |
+| record_result_preparation |     3.9043/0.0000 |     4.0744/0.0000 |   4.1421/0.0000 |   4.2521/0.0000 |    4.5129/0.0000 |  5.1595/15.6250 |
+| append_entry              |     0.0173/0.0000 |     0.0179/0.0000 |   0.0181/0.0000 |   0.0350/0.0000 |    0.0181/0.0000 |   0.0243/0.0000 |
+| journal_hash_serialize    |     3.9256/0.0000 |    4.1620/15.6250 |   2.8612/0.0000 |   3.6164/0.0000 |   5.0964/15.6250 |   4.2406/0.0000 |
+| journal_metadata_open     |   126.1480/0.0000 |     0.1349/0.0000 |  75.0071/0.0000 |  81.1349/0.0000 |   36.9817/0.0000 |  47.1204/0.0000 |
+| journal_write_flush       |     0.0994/0.0000 |     0.0885/0.0000 |   1.6061/0.0000 |   0.1139/0.0000 |    0.0734/0.0000 |   0.1408/0.0000 |
+| journal_sync_all          |   672.6444/0.0000 |   308.2177/0.0000 | 120.2943/0.0000 |  63.6970/0.0000 |   75.4640/0.0000 |   4.5952/0.0000 |
+| append_return             |   292.4318/0.0000 |   728.6773/0.0000 |  93.7824/0.0000 |  19.7913/0.0000 |   38.4172/0.0000 |   0.4349/0.0000 |
+| session_update            |     0.0320/0.0000 |     0.0385/0.0000 |   0.0326/0.0000 |   0.0393/0.0000 |    0.0308/0.0000 |   0.0818/0.0000 |
+| checkpoint_return_or_skip |     0.0001/0.0000 |     0.0006/0.0000 |   0.0001/0.0000 |   0.0003/0.0000 |    0.0001/0.0000 |   0.0008/0.0000 |
+| projection_result         |     0.0002/0.0000 |     0.0001/0.0000 |   0.0001/0.0000 |   0.0003/0.0000 |    0.0010/0.0000 |   0.0003/0.0000 |
+| finish_return             |     0.0383/0.0000 |     0.0506/0.0000 |   0.0335/0.0000 |   0.0431/0.0000 |    0.0653/0.0000 |   0.0553/0.0000 |
+| idempotency_result        |     0.0265/0.0000 |     0.0222/0.0000 |   0.0226/0.0000 |   0.0368/0.0000 |    0.0305/0.0000 |   0.0231/0.0000 |
+| observer wall only        |            0.0409 |            0.0313 |          0.0363 |          0.0331 |           0.0304 |          0.0333 |
+| residual wall only        |            0.0027 |            0.0027 |          0.0027 |          0.0041 |           0.0029 |          0.0042 |
 
 ## Aggregate stage wall / CPU ms — all 100 calls
 
 Repeated checkpoint I/O stages are summed. Each stage row is exclusive; these totals exclude observer wall and residual wall.
 
-| Stage | Isolated | Parallel |
-| --- | ---: | ---: |
-| request_validation | 12.0422/0.0000 | 24.4536/31.2500 |
-| lookup_lock | 0.7848/0.0000 | 1.0969/0.0000 |
-| payload_hash_paths | 11.3940/31.2500 | 18.9062/0.0000 |
-| transition | 211.7283/187.5000 | 400.6118/234.3750 |
-| source_resolution_grants | 22.8601/31.2500 | 152.6376/46.8750 |
-| record_result_preparation | 278.4431/312.5000 | 459.4918/437.5000 |
-| append_entry | 1.4937/0.0000 | 2.1004/15.6250 |
-| journal_hash_serialize | 265.7026/250.0000 | 440.7767/593.7500 |
-| journal_metadata_open | 11.4117/15.6250 | 399.2719/15.6250 |
-| journal_write_flush | 9.5896/0.0000 | 23.8239/15.6250 |
-| journal_sync_all | 140.4436/15.6250 | 1521.4683/46.8750 |
-| append_return | 6.5889/15.6250 | 1214.4094/0.0000 |
-| session_update | 7.6572/15.6250 | 17.1262/15.6250 |
-| checkpoint_return_or_skip | 0.2482/0.0000 | 3.9438/0.0000 |
-| projection_result | 0.0441/0.0000 | 0.0392/0.0000 |
-| finish_return | 2.7020/0.0000 | 5.7162/15.6250 |
-| idempotency_result | 2.0457/0.0000 | 3.5281/0.0000 |
-| checkpoint_entry | 0.0320/0.0000 | 0.0169/0.0000 |
-| snapshot_preparation | 35.4603/46.8750 | 52.1206/46.8750 |
-| snapshot_directory | 0.9976/0.0000 | 1.4572/0.0000 |
-| snapshot_create_temp | 1.6197/0.0000 | 5.0314/15.6250 |
-| snapshot_write_flush | 0.7869/0.0000 | 1.5748/0.0000 |
-| snapshot_sync_all | 14.3629/0.0000 | 22.3876/0.0000 |
-| snapshot_read_previous | 0.7479/0.0000 | 1.6011/0.0000 |
-| snapshot_promote_previous | 2.9163/0.0000 | 5.3529/0.0000 |
-| snapshot_promote_main_parent | 2.9019/0.0000 | 11.1384/0.0000 |
+| Stage                        |          Isolated |          Parallel |
+| ---------------------------- | ----------------: | ----------------: |
+| request_validation           |    12.0422/0.0000 |   24.4536/31.2500 |
+| lookup_lock                  |     0.7848/0.0000 |     1.0969/0.0000 |
+| payload_hash_paths           |   11.3940/31.2500 |    18.9062/0.0000 |
+| transition                   | 211.7283/187.5000 | 400.6118/234.3750 |
+| source_resolution_grants     |   22.8601/31.2500 |  152.6376/46.8750 |
+| record_result_preparation    | 278.4431/312.5000 | 459.4918/437.5000 |
+| append_entry                 |     1.4937/0.0000 |    2.1004/15.6250 |
+| journal_hash_serialize       | 265.7026/250.0000 | 440.7767/593.7500 |
+| journal_metadata_open        |   11.4117/15.6250 |  399.2719/15.6250 |
+| journal_write_flush          |     9.5896/0.0000 |   23.8239/15.6250 |
+| journal_sync_all             |  140.4436/15.6250 | 1521.4683/46.8750 |
+| append_return                |    6.5889/15.6250 |  1214.4094/0.0000 |
+| session_update               |    7.6572/15.6250 |   17.1262/15.6250 |
+| checkpoint_return_or_skip    |     0.2482/0.0000 |     3.9438/0.0000 |
+| projection_result            |     0.0441/0.0000 |     0.0392/0.0000 |
+| finish_return                |     2.7020/0.0000 |    5.7162/15.6250 |
+| idempotency_result           |     2.0457/0.0000 |     3.5281/0.0000 |
+| checkpoint_entry             |     0.0320/0.0000 |     0.0169/0.0000 |
+| snapshot_preparation         |   35.4603/46.8750 |   52.1206/46.8750 |
+| snapshot_directory           |     0.9976/0.0000 |     1.4572/0.0000 |
+| snapshot_create_temp         |     1.6197/0.0000 |    5.0314/15.6250 |
+| snapshot_write_flush         |     0.7869/0.0000 |     1.5748/0.0000 |
+| snapshot_sync_all            |    14.3629/0.0000 |    22.3876/0.0000 |
+| snapshot_read_previous       |     0.7479/0.0000 |     1.6011/0.0000 |
+| snapshot_promote_previous    |     2.9163/0.0000 |     5.3529/0.0000 |
+| snapshot_promote_main_parent |     2.9019/0.0000 |    11.1384/0.0000 |
 
 ## Interpretation: supported observations, not a proven historical cause
 
@@ -193,12 +193,12 @@ Initial working-tree inspection showed all five prospective existing project fil
 
 HEAD at baseline: `b21a303c51c258d3aa63fa51217bcbb4508fef0f`. Baseline bytes (base64), hashes, and HEAD were captured before source edits in `C:/Users/SPARTAN PC/.gg/identities/com.ggcoder.local-fork/tool-output/2026-09-14/bash-0a363fc2568c.txt`. Initial status and empty prospective-file diff are retained in foreground execution `50b54824-833e-4505-95bb-200fec07654e`. Paths below are relative to `apps/desktop/src-tauri/src/video/project/`.
 
-| File | Baseline SHA-256 |
-| --- | --- |
-| mod.rs | 10b11131e4be39b9275db646e9b37698916975ca627b338dd2d8ba6fa3e64e1a |
-| tests.rs | 100aa507a72f43dcfe509e49575629e40b35150b1a4740f6ebbddc803f466b90 |
-| service.rs | 0d26a34d6c5cc757a55e6163a62cb106a299dd1d48195d7caa3a93ded37e5f42 |
-| journal.rs | 7aa2bac531ce4a10bd592c6dbc602f217653c86923aa70c786d5d0da3abe7edb |
+| File        | Baseline SHA-256                                                 |
+| ----------- | ---------------------------------------------------------------- |
+| mod.rs      | 10b11131e4be39b9275db646e9b37698916975ca627b338dd2d8ba6fa3e64e1a |
+| tests.rs    | 100aa507a72f43dcfe509e49575629e40b35150b1a4740f6ebbddc803f466b90 |
+| service.rs  | 0d26a34d6c5cc757a55e6163a62cb106a299dd1d48195d7caa3a93ded37e5f42 |
+| journal.rs  | 7aa2bac531ce4a10bd592c6dbc602f217653c86923aa70c786d5d0da3abe7edb |
 | snapshot.rs | 9bea91bc9a73451123d934608c62269beec3113c41b200c7b8ffdf6fa6a22c80 |
 
 Instrumented helper SHA-256: `c7b783c8c4830e5ab20e3279b5cd92262e37ad6ee88f7d09a9907eee4542e6f1`. Pre-run and post-pair hashes match for all five source files plus helper, establishing identical instrumentation across the pair.

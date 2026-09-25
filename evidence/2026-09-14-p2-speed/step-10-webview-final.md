@@ -16,12 +16,12 @@ Launched the same previously compiled isolated `apps/desktop/src-tauri/target/de
 
 Same seek assertion, Play gesture, 350ms onset exclusion, approximately 1s sample, actual decoded audio through AudioContext FFT32768, and requestVideoFrameCallback count as prior run. Criteria unchanged: exact playbackRate; preservesPitch; absolute media multiplier error <0.08; pitch error <1%; signal >−60dB; >10 decoded callbacks; seek assertion at two decimal places (prior documented 0.01s). Separate program elapsed error threshold remains strictly <2/30s. Script exit code checks media gates; the clock booleans below were also explicitly inspected.
 
-| Speed | Source seek s | Media/wall | Pitch Hz | Peak dB | Callbacks | Program elapsed error s | Media/pitch | Clock |
-|---|---:|---:|---:|---:|---:|---:|---|---|
-| 50% | 1.500001 | 0.500040857 | 1000.488281 | −46.07214 | 19 | +0.029833333 | PASS | PASS |
-| 100% | 2.000001 | 1.003977840 | 1000.488281 | −46.09525 | 40 | −0.001800000 | PASS | PASS |
-| 150% | 2.500001 | 1.500919712 | 1000.488281 | −46.11284 | 42 | −0.001400000 | PASS | PASS |
-| 200% | 3.000001 | 1.998600979 | 1000.488281 | −46.11264 | 78 | −0.000700000 | PASS | PASS |
+| Speed | Source seek s |  Media/wall |    Pitch Hz |   Peak dB | Callbacks | Program elapsed error s | Media/pitch | Clock |
+| ----- | ------------: | ----------: | ----------: | --------: | --------: | ----------------------: | ----------- | ----- |
+| 50%   |      1.500001 | 0.500040857 | 1000.488281 | −46.07214 |        19 |            +0.029833333 | PASS        | PASS  |
+| 100%  |      2.000001 | 1.003977840 | 1000.488281 | −46.09525 |        40 |            −0.001800000 | PASS        | PASS  |
+| 150%  |      2.500001 | 1.500919712 | 1000.488281 | −46.11284 |        42 |            −0.001400000 | PASS        | PASS  |
+| 200%  |      3.000001 | 1.998600979 | 1000.488281 | −46.11264 |        78 |            −0.000700000 | PASS        | PASS  |
 
 All audio contexts running, sample rate 48000Hz, user activation true, preservesPitch true. Full raw start/end/runtime records: `webview-final/webview-measurements.json`. Actual WebView viewport screenshots after pressing Pause: `webview-final/webview-{50,100,150,200}.png`. These are not OS window-chrome screenshots, PCM recordings, or synchronous decoded-pixel identity assertions.
 

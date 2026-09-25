@@ -74,11 +74,11 @@ The historical default-parallel desktop worker-startup failure remains **unresol
 Reconciliation progress saved at Notes revision 163. All five sequential `roadmap_checkpoint` calls returned `committed` using the unchanged approved plan hash and exact IDs:
 
 | Step | Expected revision | Committed revision |
-| --- | --- | --- |
-| 1 | 163 | 164 |
-| 2 | 164 | 165 |
-| 3 | 165 | 166 |
-| 4 | 166 | 167 |
-| 5 | 167 | 168 |
+| ---- | ----------------- | ------------------ |
+| 1    | 163               | 164                |
+| 2    | 164               | 165                |
+| 3    | 165               | 166                |
+| 4    | 166               | 167                |
+| 5    | 167               | 168                |
 
 The earlier `step-order-invalid` refusal remains historical in step-5-consumer-audit.md; it was resolved through authorized criterion reconciliation and normal ordered checkpoints, not an ownership takeover, plan rewrite or fencing bypass. **Canonical steps 1–5 are checkpointed.** Stopped before step 6; speed and phase remain in-progress.

@@ -20,12 +20,12 @@ Execution `922341e3-6ebb-4c2f-a490-04100276ed88`, direct foreground exit **101**
 
 Supervisor measurements, log lines 312–359:
 
-| Stage | Elapsed |
-| --- | --- |
-| Native spawn entered | 7 microseconds |
-| Native spawn returned | 4.4712ms |
-| Wrappers returned | 184.853ms |
-| Outer result | 1.9195085s; `Ok(Err(Timeout { operation: "helper_tree_timeout" }))` |
+| Stage                 | Elapsed                                                             |
+| --------------------- | ------------------------------------------------------------------- |
+| Native spawn entered  | 7 microseconds                                                      |
+| Native spawn returned | 4.4712ms                                                            |
+| Wrappers returned     | 184.853ms                                                           |
+| Outer result          | 1.9195085s; `Ok(Err(Timeout { operation: "helper_tree_timeout" }))` |
 
 The native spawn call took about 4.46ms; the interval after native spawn through wrapper return took about 180.38ms. This interval includes wrapper work, scheduling and logging, so it must not be attributed exclusively to the thread snapshot. The supervisor timeout test passed, including readiness and descendant assertions. This is not a failing-stage trace and does not explain the historical outer watchdog failure.
 

@@ -28,11 +28,11 @@ Full command:
 cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 ```
 
-| Run | Execution ID | Independent Cargo exit | Result |
-| --- | --- | --- | --- |
-| Baseline, unchanged sources | `766a04a2-52d3-4a75-913c-c86d96193ce8` | 0 | 304 library tests passed, 20 pre-existing ignored; 5 security integration tests passed. Library duration 94.93s. |
-| Temporary stage timing, otherwise same command | `8ad1e56f-0564-4a7a-b96f-b5f4a1222eb3` | 0 | 304 library tests passed, 20 pre-existing ignored; 5 security integration tests passed. Library duration 113.10s. |
-| Restored original source, focused test | `660f55ce-4985-40ff-9917-49f8691c41aa` | 0 | 1 selected library test passed, 323 filtered, 0 ignored. Test duration 5.80s includes the post-run descendant-survival observation. |
+| Run                                            | Execution ID                           | Independent Cargo exit | Result                                                                                                                              |
+| ---------------------------------------------- | -------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline, unchanged sources                    | `766a04a2-52d3-4a75-913c-c86d96193ce8` | 0                      | 304 library tests passed, 20 pre-existing ignored; 5 security integration tests passed. Library duration 94.93s.                    |
+| Temporary stage timing, otherwise same command | `8ad1e56f-0564-4a7a-b96f-b5f4a1222eb3` | 0                      | 304 library tests passed, 20 pre-existing ignored; 5 security integration tests passed. Library duration 113.10s.                   |
+| Restored original source, focused test         | `660f55ce-4985-40ff-9917-49f8691c41aa` | 0                      | 1 selected library test passed, 323 filtered, 0 ignored. Test duration 5.80s includes the post-run descendant-survival observation. |
 
 Restored focused command:
 
@@ -48,15 +48,15 @@ Instrumented source changed only test compilation: log monotonic elapsed time ar
 
 From execution `8ad1e56f-0564-4a7a-b96f-b5f4a1222eb3`, log lines 333–388:
 
-| Stage | Elapsed from supervisor spawn instrumentation |
-| --- | --- |
-| Spawn entered | 1.3 microseconds |
-| Spawn returned | 894.3118ms |
-| Reader setup complete | 894.3782ms |
-| Execution timeout selected | 2.3956998s |
-| Termination/reaping complete | 2.405114s |
-| Stdout join complete | 2.40518s |
-| Stderr join complete | 2.40524s |
+| Stage                        | Elapsed from supervisor spawn instrumentation |
+| ---------------------------- | --------------------------------------------- |
+| Spawn entered                | 1.3 microseconds                              |
+| Spawn returned               | 894.3118ms                                    |
+| Reader setup complete        | 894.3782ms                                    |
+| Execution timeout selected   | 2.3956998s                                    |
+| Termination/reaping complete | 2.405114s                                     |
+| Stdout join complete         | 2.40518s                                      |
+| Stderr join complete         | 2.40524s                                      |
 
 Outer measurement: `2.4054829s`, result `Ok(Err(Timeout { operation: "helper_tree_timeout" }))`. The test subsequently passed its readiness and descendant-survival assertions.
 

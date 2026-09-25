@@ -18,13 +18,13 @@ cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.
 
 Execution `5e34e76e-ef13-47bd-8df1-5735a84d1991`, independent exit **101**, 0 passed / 1 failed / 0 ignored; test duration 0.75s.
 
-| Stage | Wall elapsed |
-| --- | --- |
-| Write gate reached | 7.062ms |
-| 80ms controlled hold observed, API stopped being polled | 91.9253ms |
-| Fixture database read complete | 96.7812ms |
-| Gate released after injected fixture delay | 698.229ms |
-| Caller returned `Err(Elapsed(()))` | 698.2873ms |
+| Stage                                                   | Wall elapsed |
+| ------------------------------------------------------- | ------------ |
+| Write gate reached                                      | 7.062ms      |
+| 80ms controlled hold observed, API stopped being polled | 91.9253ms    |
+| Fixture database read complete                          | 96.7812ms    |
+| Gate released after injected fixture delay              | 698.229ms    |
+| Caller returned `Err(Elapsed(()))`                      | 698.2873ms   |
 
 Approximately 601.45ms was consumed between the completed fixture read and gate release. The expired caller returned approximately 0.058ms after release: this controlled failure happened before post-gate durable work or acknowledgement could account for the budget. It demonstrates the fixture scheduling defect without requiring an intermittent OS slowdown.
 
@@ -71,11 +71,11 @@ Final command, executed three times separately with default parallelism and no t
 cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 ```
 
-| Execution ID | Independent exit | Library result | Integration result | Library duration |
-| --- | --- | --- | --- | --- |
-| `4cfe0090-987b-4590-9016-16402da947de` | 0 | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed | 73.28s |
-| `522105cf-4090-4638-bc2c-4939469d0e40` | 0 | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed | 92.47s |
-| `df04499f-0ce5-4fc6-8844-86476629c76d` | 0 | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed | 81.82s |
+| Execution ID                           | Independent exit | Library result                                | Integration result | Library duration |
+| -------------------------------------- | ---------------- | --------------------------------------------- | ------------------ | ---------------- |
+| `4cfe0090-987b-4590-9016-16402da947de` | 0                | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed           | 73.28s           |
+| `522105cf-4090-4638-bc2c-4939469d0e40` | 0                | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed           | 92.47s           |
+| `df04499f-0ce5-4fc6-8844-86476629c76d` | 0                | 305 passed, 0 failed, 20 pre-existing ignored | 5 passed           | 81.82s           |
 
 Each foreground command had a 600000ms external command budget. No test deadline was raised. `git diff --check` ran independently as `581c2193-26c3-4895-aef7-109b1f238e33`, exit **0**. Complete sanitized logs remain at host `.gg/foreground/<execution-ID>.log`.
 

@@ -23,11 +23,11 @@ Plan ID: `33333333-3333-4333-8333-333333333333`; revision ID: `44444444-4444-444
 Bundled ffprobe `-count_frames`: all outputs exactly **60 frames, 30/1 fps, video duration 2.000000 s**, video/audio stream start 0.000000 s. Audio decoded from the actual encoded MP4 to mono float32 PCM at 48 kHz. Positive zero-crossing frequency measured after excluding 250 ms at each end. Pitch gate is ±1%; audio stream-duration gate is ±one output frame (33.333 ms), not sample-exact equality.
 
 | Speed | Audio stream seconds | Decoded PCM samples | Measured Hz | Pitch/duration |
-|---|---:|---:|---:|---|
-| 50% | 1.980000 | 95232 | 999.340175 | pass/pass |
-| 100% | 1.999000 | 96256 | 1000.456716 | pass/pass |
-| 150% | 2.000000 | 96256 | 1000.456716 | pass/pass |
-| 200% | 1.999000 | 96256 | 999.792402 | pass/pass |
+| ----- | -------------------: | ------------------: | ----------: | -------------- |
+| 50%   |             1.980000 |               95232 |  999.340175 | pass/pass      |
+| 100%  |             1.999000 |               96256 | 1000.456716 | pass/pass      |
+| 150%  |             2.000000 |               96256 | 1000.456716 | pass/pass      |
+| 200%  |             1.999000 |               96256 |  999.792402 | pass/pass      |
 
 Decoded sample counts include AAC tail/frame padding and are recorded, not equated with container stream duration. No new alignment policy or production filter change made. The 50% output is 20 ms short but within the declared one-frame gate for this fixture. These results do not disprove the earlier synthetic-filter deficit evidence for other durations/content.
 

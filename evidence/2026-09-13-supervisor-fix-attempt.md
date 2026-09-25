@@ -24,11 +24,11 @@ cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.
 
 Each command ran directly in foreground, with a 600000ms command budget; the actual 3-second supervisor test watchdog and 1500ms process timeout were unchanged.
 
-| Execution ID | Independent exit | Result |
-| --- | --- | --- |
-| `c64a00e6-1f1c-4c0d-8a99-ab54fb44676e` | 0 | 304 library passed, 20 existing ignored; 5 integration passed |
-| `d179f8d3-7558-42d7-a582-cf9038852716` | 101 | 303 library passed, 1 failed, 20 existing ignored; stopped before integration suite |
-| `ad65e48c-a501-46e4-8d57-5238e57c208a` | 0 | 304 library passed, 20 existing ignored; 5 integration passed |
+| Execution ID                           | Independent exit | Result                                                                              |
+| -------------------------------------- | ---------------- | ----------------------------------------------------------------------------------- |
+| `c64a00e6-1f1c-4c0d-8a99-ab54fb44676e` | 0                | 304 library passed, 20 existing ignored; 5 integration passed                       |
+| `d179f8d3-7558-42d7-a582-cf9038852716` | 101              | 303 library passed, 1 failed, 20 existing ignored; stopped before integration suite |
+| `ad65e48c-a501-46e4-8d57-5238e57c208a` | 0                | 304 library passed, 20 existing ignored; 5 integration passed                       |
 
 After restoring the source:
 
@@ -45,10 +45,10 @@ Complete sanitized logs: host `.gg/foreground/<execution-ID>.log`.
 Elapsed times are from immediately before wrapped spawn, except the final outer result measured by the test.
 
 | Execution | Spawn returned | Execution timeout selected | Termination/reaping complete | Stdout joined | Stderr joined | Outer result returned |
-| --- | --- | --- | --- | --- | --- | --- |
-| c64a00e6 | 0.2180873s | 1.7350024s | 1.7384913s | 1.7385364s | 1.738569s | 1.7388334s |
-| d179f8d3 | 1.2782914s | 2.7918981s | 2.800042s | 2.8000963s | 2.8001164s | 2.8002999s |
-| ad65e48c | 0.8234564s | 2.3577325s | 2.4038008s | 2.424079s | 2.4241197s | 2.4242963s |
+| --------- | -------------- | -------------------------- | ---------------------------- | ------------- | ------------- | --------------------- |
+| c64a00e6  | 0.2180873s     | 1.7350024s                 | 1.7384913s                   | 1.7385364s    | 1.738569s     | 1.7388334s            |
+| d179f8d3  | 1.2782914s     | 2.7918981s                 | 2.800042s                    | 2.8000963s    | 2.8001164s    | 2.8002999s            |
+| ad65e48c  | 0.8234564s     | 2.3577325s                 | 2.4038008s                   | 2.424079s     | 2.4241197s    | 2.4242963s            |
 
 All three outer results were `Ok(Err(Timeout { operation: "helper_tree_timeout" }))`; the supervisor timeout test passed. Startup delay remains a plausible contributor to the original three-second outer watchdog failure, not an established explanation. No failing supervisor stage trace was captured. Passing reruns do not erase the failure in `supervisor-timeout-unresolved.md`.
 

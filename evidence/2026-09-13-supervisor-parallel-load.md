@@ -26,15 +26,15 @@ Execution `109969f8-d609-4928-b282-57ed29e7113c`, independent exit **101**: 294 
 
 The supervisor timeout test failed at **grandchild readiness**, not at the original outer timeout:
 
-| Stage | Elapsed |
-| --- | --- |
-| Spawn return | 372.574ms |
-| Reader setup complete | 372.6374ms |
-| Execution timeout selected | 1.8789635s |
-| Termination/reaping complete | 1.9336351s |
-| Stdout join complete | 1.9390672s |
-| Stderr join complete | 1.9391207s |
-| Outer return | 1.9393226s; `Ok(Err(Timeout { operation: "helper_tree_timeout" }))` |
+| Stage                        | Elapsed                                                             |
+| ---------------------------- | ------------------------------------------------------------------- |
+| Spawn return                 | 372.574ms                                                           |
+| Reader setup complete        | 372.6374ms                                                          |
+| Execution timeout selected   | 1.8789635s                                                          |
+| Termination/reaping complete | 1.9336351s                                                          |
+| Stdout join complete         | 1.9390672s                                                          |
+| Stderr join complete         | 1.9391207s                                                          |
+| Outer return                 | 1.9393226s; `Ok(Err(Timeout { operation: "helper_tree_timeout" }))` |
 
 Preserved failure: `grandchild must start before timeout termination`. The cancellation supervisor test also failed readiness: `grandchild must start before cancellation`. Neither supplies evidence that descendant pipes remained open, that a descendant survived termination, or that the original three-second watchdog failure was reproduced. The readiness assertions correctly prevent counting these as successful descendant-termination verification.
 

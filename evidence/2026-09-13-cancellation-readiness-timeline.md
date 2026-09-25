@@ -23,23 +23,23 @@ The original one-second readiness and idle deadlines and all assertions stayed u
 
 Origin is immediately before scheduler start, after the target job was submitted. Times below are milliseconds from that origin.
 
-| Event | Elapsed ms | Result |
-| --- | ---: | --- |
-| First readiness poll begins | 0.0569 | read sequence 28 |
-| First poll database operation | 0.1566–21.4979 | Queued |
-| Dispatch selected | 0.1616 | permit/work selected |
-| Execute entered | 0.8137 | scheduler begins work |
-| Scheduler's prerequisite read | 0.8774–28.3196 | seq 29, Queued |
-| Scheduler observes prerequisite read | 28.9633 | Queued |
-| Running transition submitted | 28.9841 | real database transition |
-| Running transition database work | 29.1083–98.8618 | Ok(Running) |
-| Second readiness poll database work | 29.0193–68.3738 | seq 34, Queued |
-| Third readiness poll database work | 84.8736–132.6152 | seq 35, Running |
-| Scheduler observes transition result | 99.7939 | Ok(Running) |
-| Actual worker entry | 99.8421 | worker future polled |
-| Test observes persisted Running | 133.2131 | readiness poll completes |
-| Readiness result | 133.2417 | Ok(()) |
-| Final persisted-state check | 384.3547–394.8302 | seq 48, Cancelled |
+| Event                                |        Elapsed ms | Result                   |
+| ------------------------------------ | ----------------: | ------------------------ |
+| First readiness poll begins          |            0.0569 | read sequence 28         |
+| First poll database operation        |    0.1566–21.4979 | Queued                   |
+| Dispatch selected                    |            0.1616 | permit/work selected     |
+| Execute entered                      |            0.8137 | scheduler begins work    |
+| Scheduler's prerequisite read        |    0.8774–28.3196 | seq 29, Queued           |
+| Scheduler observes prerequisite read |           28.9633 | Queued                   |
+| Running transition submitted         |           28.9841 | real database transition |
+| Running transition database work     |   29.1083–98.8618 | Ok(Running)              |
+| Second readiness poll database work  |   29.0193–68.3738 | seq 34, Queued           |
+| Third readiness poll database work   |  84.8736–132.6152 | seq 35, Running          |
+| Scheduler observes transition result |           99.7939 | Ok(Running)              |
+| Actual worker entry                  |           99.8421 | worker future polled     |
+| Test observes persisted Running      |          133.2131 | readiness poll completes |
+| Readiness result                     |          133.2417 | Ok(())                   |
+| Final persisted-state check          | 384.3547–394.8302 | seq 48, Cancelled        |
 
 These intervals overlap; they must not be summed as independent sequential costs. The Running transition spent approximately **69.754ms** inside its blocking database operation, with about **0.124ms** submission-to-start and **0.932ms** return-to-caller observation. Its prerequisite read spent **27.442ms** inside the database operation. Dispatch and task start were under one millisecond. The final polling read observed persisted Running about **34.351ms after worker entry**.
 

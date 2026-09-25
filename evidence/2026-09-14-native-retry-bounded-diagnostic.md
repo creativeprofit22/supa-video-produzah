@@ -82,10 +82,10 @@ One tag, `[DBG-native-93bd]`, covered test-only buffers capped at 4,096 records 
 Offsets below are milliseconds from each iteration's trace-buffer creation; iterations exercise the original 1/5/30-second injected delays.
 
 | Injected delay | Readiness begins | Retrying transition submitted | Blocking entry | Sync return after connection close | Transition await returns | Sleep constructed | Readiness satisfied |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 s | 0.055 | 86.947 | 86.972 | 161.573 | 161.867 | 161.875 | 180.572 |
-| 5 s | 0.044 | 104.319 | 104.357 | 135.926 | 136.000 | 136.011 | 208.183 |
-| 30 s | 0.040 | 104.499 | 104.621 | 167.593 | 167.686 | 167.694 | 181.340 |
+| -------------- | ---------------: | ----------------------------: | -------------: | ---------------------------------: | -----------------------: | ----------------: | ------------------: |
+| 1 s            |            0.055 |                        86.947 |         86.972 |                            161.573 |                  161.867 |           161.875 |             180.572 |
+| 5 s            |            0.044 |                       104.319 |        104.357 |                            135.926 |                  136.000 |           136.011 |             208.183 |
+| 30 s           |            0.040 |                       104.499 |        104.621 |                            167.593 |                  167.686 |           167.694 |             181.340 |
 
 Readiness elapsed approximately 180.517, 208.139, and 181.300 ms, all below the unchanged two-second deadline. Retrying-transition submission-to-blocking-entry took 0.025, 0.038, and 0.122 ms. Blocking operation wall times were 74.601, 31.569, and 62.972 ms.
 
@@ -99,12 +99,12 @@ The original test reported debug p95 **268.8893 ms**, below the unchanged **300 
 
 The outer diagnostic markers reconstruct 100 complete seven-stage call sequences with monotonic offsets. Their p95 is 268.890 ms, slightly wider than the original measurement. Four individual outer intervals exceed 300 ms:
 
-| Zero-based call | Total ms | Before append | Hash/serialize | Metadata/open | Write/flush | Sync | After sync through execute return |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 60 | 833.618 | 7.785 | 3.893 | 0.194 | 57.317 | 20.279 | 744.150 |
-| 61 | 1004.335 | 267.145 | 3.750 | 183.574 | 0.264 | 548.742 | 0.860 |
-| 62 | 1094.578 | 841.383 | 3.704 | 149.491 | 0.129 | 83.447 | 16.424 |
-| 63 | 1534.500 | 151.636 | 3.854 | 64.244 | 645.711 | 634.926 | 34.129 |
+| Zero-based call | Total ms | Before append | Hash/serialize | Metadata/open | Write/flush |    Sync | After sync through execute return |
+| --------------- | -------: | ------------: | -------------: | ------------: | ----------: | ------: | --------------------------------: |
+| 60              |  833.618 |         7.785 |          3.893 |         0.194 |      57.317 |  20.279 |                           744.150 |
+| 61              | 1004.335 |       267.145 |          3.750 |       183.574 |       0.264 | 548.742 |                             0.860 |
+| 62              | 1094.578 |       841.383 |          3.704 |       149.491 |       0.129 |  83.447 |                            16.424 |
+| 63              | 1534.500 |       151.636 |          3.854 |        64.244 |     645.711 | 634.926 |                            34.129 |
 
 These stages contain wall-clock tails in multiple places. The last column includes file close and subsequent service work, not only append return. No OS trace distinguishes storage latency from scheduling/host delays. Individual slow calls do not fail a p95 contract. No sync, replay/hash-chain, or durable-before-acknowledgement behavior was changed.
 
@@ -116,13 +116,13 @@ The existing `supervisor_timeout_terminates_grandchild_and_releases_inherited_pi
 
 One observed supervisor timeline, consistent with the 1,500 ms execution timer, records:
 
-| Stage | Offset ms |
-| --- | ---: |
-| Supervisor entry | 0.014 |
-| Spawn returns | 397.487 |
-| Execution timer created | 397.531 |
-| Execution deadline fires | 1908.848 |
-| Timeout settlement returns | 1987.347 |
+| Stage                      | Offset ms |
+| -------------------------- | --------: |
+| Supervisor entry           |     0.014 |
+| Spawn returns              |   397.487 |
+| Execution timer created    |   397.531 |
+| Execution deadline fires   |  1908.848 |
+| Timeout settlement returns |  1987.347 |
 
 This demonstrates successful progress in this run, not the cause of the historical watchdog failure. Separate settlement buffers record kill/wait and both pipe-join boundaries, but lack identifiers for exact cross-buffer pairing. No process-ownership rewrite or supervisor fix was made.
 
@@ -130,15 +130,15 @@ This demonstrates successful progress in this run, not the cause of the historic
 
 Temporary additions were reversed with targeted edits, not a worktree reset. Before and after SHA-256 values match:
 
-| File (under `apps/desktop/src-tauri/`) | Baseline = restored SHA-256 |
-| --- | --- |
-| `src/video/jobs/scheduler.rs` | `644a36463da82746864bff1a3276b98a3168898b96723b9f3f68388515bb9e79` |
-| `src/video/jobs/store.rs` | `0895b06f663bfb4273f98d34ea17f5739b618ee23a2bc1cd588735c4f2f8a353` |
-| `src/video/process.rs` | `f8f8c76dc3cd7ac455bb2c8e315a041aeddc7f4c62672fe63dc23d1ed849f38b` |
-| `src/video/project/journal.rs` | `7aa2bac531ce4a10bd592c6dbc602f217653c86923aa70c786d5d0da3abe7edb` |
-| `src/video/project/tests.rs` | `100aa507a72f43dcfe509e49575629e40b35150b1a4740f6ebbddc803f466b90` |
-| `src/video/jobs/mod.rs` (not edited) | `0583e10de2ae215976e69d27669619065d4f958dbbbe05d17dbec074aac1b2fd` |
-| `Cargo.toml` (not edited) | `96da3a4c6998477fdd124e35fc3031bf2a02694daf3b0846fbe6c80ae9de1e40` |
+| File (under `apps/desktop/src-tauri/`) | Baseline = restored SHA-256                                        |
+| -------------------------------------- | ------------------------------------------------------------------ |
+| `src/video/jobs/scheduler.rs`          | `644a36463da82746864bff1a3276b98a3168898b96723b9f3f68388515bb9e79` |
+| `src/video/jobs/store.rs`              | `0895b06f663bfb4273f98d34ea17f5739b618ee23a2bc1cd588735c4f2f8a353` |
+| `src/video/process.rs`                 | `f8f8c76dc3cd7ac455bb2c8e315a041aeddc7f4c62672fe63dc23d1ed849f38b` |
+| `src/video/project/journal.rs`         | `7aa2bac531ce4a10bd592c6dbc602f217653c86923aa70c786d5d0da3abe7edb` |
+| `src/video/project/tests.rs`           | `100aa507a72f43dcfe509e49575629e40b35150b1a4740f6ebbddc803f466b90` |
+| `src/video/jobs/mod.rs` (not edited)   | `0583e10de2ae215976e69d27669619065d4f958dbbbe05d17dbec074aac1b2fd` |
+| `Cargo.toml` (not edited)              | `96da3a4c6998477fdd124e35fc3031bf2a02694daf3b0846fbe6c80ae9de1e40` |
 
 - Full relevant Cargo/scheduler/store/process diff equals the captured initial diff, programmatically checked with exit 0 (`279fd508-9058-4ac5-a9db-b543948ae505.log`).
 - Journal, project tests, and process remain without a git diff.
@@ -149,11 +149,11 @@ Temporary additions were reversed with targeted edits, not a worktree reset. Bef
 
 ## Primary log hashes
 
-| Log | SHA-256 |
-| --- | --- |
-| Focused baseline | `9073be0977037a16e16c28aa41e41a4e599d5adef4eece7af6ec616ba520f834` |
+| Log                        | SHA-256                                                            |
+| -------------------------- | ------------------------------------------------------------------ |
+| Focused baseline           | `9073be0977037a16e16c28aa41e41a4e599d5adef4eece7af6ec616ba520f834` |
 | Diagnostic compile failure | `a00249ca420167fa37a61472f31f2a678e6f37cfe4cda93dd46d220c9c98e0e7` |
-| Authorized replacement | `81b372a66db1456722029c9d4b25f9bb3991c7405a3f4adea8087e49bfbe5b91` |
+| Authorized replacement     | `81b372a66db1456722029c9d4b25f9bb3991c7405a3f4adea8087e49bfbe5b91` |
 
 ## Stop boundary
 

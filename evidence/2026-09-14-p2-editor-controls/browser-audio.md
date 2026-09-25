@@ -24,20 +24,20 @@ Settled 2048-sample PCM windows are read every approximately 20 ms after onset/c
 
 ## Numeric results (final run)
 
-| Case | -6 dB ratio | +6 dB ratio | Reset ratio | Fade-in early / late | Fade-out early / late | Maximum envelope error | Windows |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Video 1x | 0.5011872053 | 1.9952622657 | 1.000000 | 0.274698 / 0.760105 | 0.788112 / 0.302127 | 0.00139223 | 137 |
-| Video 2x | 0.5011872053 | 1.9953625232 | 1.000000 | 0.280447 / 0.770330 | 0.782704 / 0.298111 | 0.00650964 | 135 |
-| Audio-only layer 1x | 0.5011872053 | 1.9952622658 | 1.000000 | 0.277667 / 0.767104 | 0.783208 / 0.301105 | 0.00263661 | 137 |
+| Case                |  -6 dB ratio |  +6 dB ratio | Reset ratio | Fade-in early / late | Fade-out early / late | Maximum envelope error | Windows |
+| ------------------- | -----------: | -----------: | ----------: | -------------------: | --------------------: | ---------------------: | ------: |
+| Video 1x            | 0.5011872053 | 1.9952622657 |    1.000000 |  0.274698 / 0.760105 |   0.788112 / 0.302127 |             0.00139223 |     137 |
+| Video 2x            | 0.5011872053 | 1.9953625232 |    1.000000 |  0.280447 / 0.770330 |   0.782704 / 0.298111 |             0.00650964 |     135 |
+| Audio-only layer 1x | 0.5011872053 | 1.9952622658 |    1.000000 |  0.277667 / 0.767104 |   0.783208 / 0.301105 |             0.00263661 |     137 |
 
 Targets: -6 dB = 0.5011872336; +6 dB = 1.9952623150. All comfortably within 3%. Reset is measured both after gain changes and after the fade pass.
 
 Fades are two-second linear-amplitude ramps on a five-second output timeline, at 30 fps, tested at normal and 2x source speed. Each actual PCM window is compared with the actual media-clock position converted to output time, corrected to the analyser-window midpoint. Expected linear-window RMS is sqrt(midpointAmplitude² + windowSeconds²/48). Maximum allowed amplitude error is 0.0216667: one sequence frame at ramp slope 0.5/second plus 0.005 PCM/window allowance. All sampled interior ramp windows pass, not merely early/late averages. Actual AudioContext and media timestamps are retained.
 
 | Reset then mode switch (initial speed metadata 2x) | Unity PCM ratio | Measured media/wall rate | Element playbackRate |
-|---|---:|---:|---:|
-| Raw audition | 0.9997558105 | 0.9965742759 | 1 |
-| Final | 0.9998232350 | 1.0012078346 | 1 |
+| -------------------------------------------------- | --------------: | -----------------------: | -------------------: |
+| Raw audition                                       |    0.9997558105 |             0.9965742759 |                    1 |
+| Final                                              |    0.9998232350 |             1.0012078346 |                    1 |
 
 Raw/final have no production effects graph. For these separate checks a native source replaces direct element output with exactly one source -> destination connection plus an unconnected analyser tap. Their PCM is compared against the composition's actual pre-gain baseline. Unity PCM rules out residual/double processing after reset; measured clocks and playbackRate establish 1x playback.
 

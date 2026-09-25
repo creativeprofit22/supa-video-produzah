@@ -8,3 +8,6 @@ pnpm-lock.yaml
 *.mp4
 .gg
 ROADMAP.md
+# Immutable generated capture/media evidence; keep recorded bytes and hashes intact.
+evidence/2026-09-16-p2-editor-controls-completion/capture-*/
+apps/desktop/browser-tests/completion-media/

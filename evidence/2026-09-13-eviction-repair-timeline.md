@@ -25,24 +25,24 @@ Full diagnostic patch: `02517c25-c687-415b-bfe5-c9ef3e3e581e.log`, from direct `
 
 Elapsed time starts after the fixture acquired its existing writer transaction, immediately before spawning the eviction worker.
 
-| Event | Elapsed |
-| --- | --- |
-| Original receive begins, limit=10s | 0.0000619s |
-| Eviction begins | 0.0014439s |
-| Eviction connection open/configuration | 0.0039366–0.0255551s, success |
-| Eviction immediate transaction requested | 0.0257149s |
-| Eviction transaction acquisition returns error | 5.8200357s |
-| Eviction error propagates after guards unwind | 5.9117881s |
-| Repair begins | 5.9122888s |
-| Repair connection open/configuration | 5.9123085–5.9158527s, success |
-| Repair immediate transaction requested | 5.9158890s |
-| Repair transaction acquisition returns error | 8.7228436s |
-| Repair error propagates | 8.7234219s |
-| Worker produces its result | 8.7234842s |
-| Original receive returns Ok(Err(...)); writer release begins | 8.7236764s |
-| Writer release complete; join begins | 8.7237592s |
-| Join returns the retained worker result | 8.7237775s |
-| Post-release state inspected | 8.7238611s |
+| Event                                                        | Elapsed                       |
+| ------------------------------------------------------------ | ----------------------------- |
+| Original receive begins, limit=10s                           | 0.0000619s                    |
+| Eviction begins                                              | 0.0014439s                    |
+| Eviction connection open/configuration                       | 0.0039366–0.0255551s, success |
+| Eviction immediate transaction requested                     | 0.0257149s                    |
+| Eviction transaction acquisition returns error               | 5.8200357s                    |
+| Eviction error propagates after guards unwind                | 5.9117881s                    |
+| Repair begins                                                | 5.9122888s                    |
+| Repair connection open/configuration                         | 5.9123085–5.9158527s, success |
+| Repair immediate transaction requested                       | 5.9158890s                    |
+| Repair transaction acquisition returns error                 | 8.7228436s                    |
+| Repair error propagates                                      | 8.7234219s                    |
+| Worker produces its result                                   | 8.7234842s                    |
+| Original receive returns Ok(Err(...)); writer release begins | 8.7236764s                    |
+| Writer release complete; join begins                         | 8.7237592s                    |
+| Join returns the retained worker result                      | 8.7237775s                    |
+| Post-release state inspected                                 | 8.7238611s                    |
 
 Both immediate-transaction acquisitions returned the actual SQLite error:
 

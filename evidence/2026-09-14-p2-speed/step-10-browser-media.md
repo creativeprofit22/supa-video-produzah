@@ -17,12 +17,12 @@ apps/desktop/src-tauri/media-toolchain/bin/x86_64-pc-windows-msvc/ffmpeg.exe -hi
 
 Source trim is [1,7) seconds; timeline starts at zero, lasts 12/6/4/3 seconds. Seek to program 1 s asserted actual source time 1.5/2/2.5/3 s within 0.01 s. Media runs through production Play/Pause buttons. Measured currentTime and performance.now over approximately 1 s after 350 ms onset exclusion. Live WebAudio MediaElementSource → AnalyserNode → destination captures the actual decoded rate-adjusted audio; no microphone or fake oscillator. FFT size 32768, peak search, signal > −60 dB, pitch tolerance **1%**. This is spectral output observation, not a saved PCM waveform or hardware-loopback recording.
 
-| Speed | Media delta / wall delta | Program delta / wall seconds | Decoded callbacks | Peak Hz | Result |
-|---|---|---|---|---|---|
-| 50% | 0.520000 / 1.047000 | 1.000000 / 1.047000 | 21 | 1000.48828125 | pass |
-| 100% | 1.010667 / 1.012200 | 0.933333 / 1.012200 | 40 | 1000.48828125 | **clock failure** |
-| 150% | 1.500000 / 1.002500 | 1.033333 / 1.002500 | 48 | 1000.48828125 | pass |
-| 200% | 2.021511 / 1.004500 | 1.000000 / 1.004500 | 80 | 1000.48828125 | pass |
+| Speed | Media delta / wall delta | Program delta / wall seconds | Decoded callbacks | Peak Hz       | Result            |
+| ----- | ------------------------ | ---------------------------- | ----------------- | ------------- | ----------------- |
+| 50%   | 0.520000 / 1.047000      | 1.000000 / 1.047000          | 21                | 1000.48828125 | pass              |
+| 100%  | 1.010667 / 1.012200      | 0.933333 / 1.012200          | 40                | 1000.48828125 | **clock failure** |
+| 150%  | 1.500000 / 1.002500      | 1.033333 / 1.002500          | 48                | 1000.48828125 | pass              |
+| 200%  | 2.021511 / 1.004500      | 1.000000 / 1.004500          | 80                | 1000.48828125 | pass              |
 
 Every measurement recorded requested playbackRate and preservesPitch=true, and a real non-silent ~1000 Hz peak (about −46 dB). The 100% test stops before its pitch assertion but the captured value is retained; do not count downstream assertions as executed.
 

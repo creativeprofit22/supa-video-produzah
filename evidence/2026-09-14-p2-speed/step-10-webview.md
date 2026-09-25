@@ -17,12 +17,12 @@ Executed `node evidence/2026-09-14-p2-speed/webview-probe.cjs` once (exit 0, 10.
 
 Uses the existing real ProgramMonitor fixture and fixed H264/AAC 10s, 1000Hz asset from `step-10-browser-media.md`. Clicks production Play after seeking program 1s. Real AudioContext resumed after gesture; MediaElementSource → FFT32768 analyser → destination. Excludes 350ms onset; samples currentTime/performance.now for about 1s. No mock clock/media/oscillator. All audio contexts running and userActivation=true, sample rate 48000Hz; preservesPitch=true at all speeds. This is a spectral observation of actual decoded output, not hardware-loopback or saved PCM.
 
-| Speed | Actual rate | Source seek s | Media/wall ratio | Peak Hz / dB | Decoded callbacks | Program elapsed error s | Media/pitch |
-|---|---:|---:|---:|---|---:|---:|---|
-| 50% | 0.5 | 1.5 | 0.500108146 | 1000.488281 / −46.0724 | 20 | **−0.107900** | pass |
-| 100% | 1 | 2 | 0.998302885 | 1000.488281 / −46.0952 | 42 | −0.001700 | pass |
-| 150% | 1.5 | 2.5 | 1.500261738 | 1000.488281 / −46.1144 | 55 | −0.001000 | pass |
-| 200% | 2 | 3 | 1.998686838 | 1000.488281 / −46.1120 | 77 | −0.001400 | pass |
+| Speed | Actual rate | Source seek s | Media/wall ratio | Peak Hz / dB           | Decoded callbacks | Program elapsed error s | Media/pitch |
+| ----- | ----------: | ------------: | ---------------: | ---------------------- | ----------------: | ----------------------: | ----------- |
+| 50%   |         0.5 |           1.5 |      0.500108146 | 1000.488281 / −46.0724 |                20 |           **−0.107900** | pass        |
+| 100%  |           1 |             2 |      0.998302885 | 1000.488281 / −46.0952 |                42 |               −0.001700 | pass        |
+| 150%  |         1.5 |           2.5 |      1.500261738 | 1000.488281 / −46.1144 |                55 |               −0.001000 | pass        |
+| 200%  |           2 |             3 |      1.998686838 | 1000.488281 / −46.1120 |                77 |               −0.001400 | pass        |
 
 Criteria preserved from browser handoff: absolute media multiplier error <0.08; pitch relative error <1%; signal >−60dB; >10 decoded callbacks; actual seek within 0.01s. Program elapsed observation threshold <2/30s: **50% fails**, others pass. 50% DOM program frame changed 40→67 during 1.0079 wall seconds; source time changed 1.656045→2.160104. No retries or tolerance changes. Diagnosis belongs to parent clock investigation; this does not establish that DOM snapshots are synchronous displayed pixel identity.
 
