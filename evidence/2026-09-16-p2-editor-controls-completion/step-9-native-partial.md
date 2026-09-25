@@ -1,0 +1,23 @@
+# Step 9 — independent native attempt, incomplete
+
+User explicitly authorized deferring steps 6–8 and timing-dependent step 9 work, continuing independent native interaction/persistence and final verification outside original strict ordering. No audio capture was attempted.
+
+## Isolation and actual runtime
+
+Built with process-scoped `TAURI_CONFIG` identifier `com.supavideo.editor-controls-completion-20260916`, dev URL `http://localhost:1420`, unchanged CSP/capabilities, `cargo build --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml`. Execution `a165f1d8-79d7-4082-8811-5ee91cca448c` exit 0. Native launches use a fresh temporary WebView profile and existing reviewed owned-process launcher/job object (unchanged 120-second lease). CDP browser arguments bind debugging to 127.0.0.1:9226; Vite binds 127.0.0.1:1420. Actual WebView reported **Edg/153.0.4234.32**, not the older version in September 14 evidence. Native application served the production root, not a fixture; `__TAURI_INTERNALS__.invoke` exists.
+
+The tooling catalog provided no GUI automation integration. Used installed Windows UI Automation/Win32 only for the exact owned process and the real native picker. No backend replacement/mock grants. Test paths limited to fresh `supa-controls-native-*` temporary directories and the one synthetic source asset. Driver verifies owned PID + creation time, filename readback before submit, and closed/empty job evidence. Future runs now refuse an ordinary binary unless the isolated identifier is present in the compiled DLL. No user project was opened.
+
+## Observed attempts, failures retained
+
+- Initial launcher `83b3f6de-c30c-416c-9cc3-1e5311f09404` rejected insufficient argument count (exit 1 wrapper / 2 launcher). No app started. Corrected by supplying a harmless explicit proof flag, not altering launcher bounds.
+- Actual owned launch `8a9e9288-e18b-4165-bc92-aeb81f521d02`: native root PID 25912, isolated profile `supa-controls-native-e6Uh4r`; production startup and New-project click observed in `eff4cbb4-0c54-4940-9878-3a4836998a1d`. UI Automation inspection found the Spanish native save picker, but its filename control exposes no ValuePattern. Exploratory command `3b3caf37-3a45-41e8-ba47-5ed987d168a2` printed a misleading success line after nonterminating PowerShell errors; this is explicitly **not** a successful submit. `216d358b-c501-4a7f-9e3c-c0a509fd4e18` still showed no project. The guarded reusable helper uses terminating errors and exact filename readback instead. Managed cleanup reported closed/empty and rootExit=0.
+- `0417dd3c-a973-46c9-9641-a5875815f1e2`: guard failed to locate dialog because it is a descendant, not a top-level UIA child. Corrected traversal while retaining process ownership.
+- `4f75677a-0457-4983-af36-e41274fcfd82`: filename readback guard rejected and did not submit. Diagnosis: cross-process `GetWindowText` cannot read edit-control contents. Microsoft documentation was searched and fetched at https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowtextw; it prescribes WM_GETTEXT. Changed to timeout-bounded WM_GETTEXT, keeping exact readback comparison.
+- `27a5a139-f5ce-400b-b231-30a3023bac22`: real owned dialog accepted the disposable path; production app displayed **acceptance / Revision 0 / Saved**. Next Choose-video operation failed its unchanged 10-second automation bound while media tools still displayed Checking. No source import, speed/gain/source-range, history, lock, reopen, multiselect or native playback assertions were reached. This is incomplete native verification, not proof of a product data-loss defect. No startup/performance budget increased or control disabled to proceed. Owned cleanup executed in finally and retained logs in that disposable directory.
+
+## Cleanup
+
+Vite task `a74c7e92-c6bc-492e-b1db-14189e87e298` stopped through managed cleanup. All native attempts ended through owned job cleanup. Ordinary debug binary rebuilt with unset TAURI_CONFIG, `2b6729ba-6a14-4dc4-bb29-1171fb641302`, exit 0. `f3d3e0c9-ab54-40b5-8430-4569b2aa9395`, exit 0: no listeners on 1420/9226, and both exe/DLL lack isolated identifier. Ordinary app was not launched against user data. Disposable test directories retained, no destructive cleanup.
+
+Step 9 remains incomplete. The scripted assertions after the failing Choose-video precondition are unexecuted intentions, not evidence. Human keyboard and native assistive-technology passes are likewise unverified. A bounded human pass still requires a running isolated prepared project; do not ask the user to substitute their real project. Step 10 independent commands proceed under explicit deviation authorization, without implying step 9 completion.

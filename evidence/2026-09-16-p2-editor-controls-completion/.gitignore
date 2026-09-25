@@ -1,0 +1,5 @@
+# Local generated captures; retain curated Markdown evidence only.
+*.png
+*.json
+*.exe
+capture-*/
