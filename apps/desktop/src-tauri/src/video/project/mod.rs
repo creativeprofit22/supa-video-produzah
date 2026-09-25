@@ -17,6 +17,8 @@ mod audio_edit_tests;
 #[cfg(test)]
 mod clip_speed_compatibility_tests;
 #[cfg(test)]
+mod editor_controls_persistence_tests;
+#[cfg(test)]
 mod speed_contract_tests;
 #[cfg(test)]
 mod speed_edit_tests;
