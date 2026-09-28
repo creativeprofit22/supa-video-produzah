@@ -5,6 +5,8 @@ import { clipSpeedSchema } from "./clip-timing.js";
 import {
   clipTransformSchema,
   clipFadesSchema,
+  sequenceLoudnessTargetSchema,
+  trackAudioRoleSchema,
   projectCaptionSchema,
   projectClipSchema,
   projectMarkerSchema,
@@ -210,6 +212,42 @@ export const restoreClipFadesCommandSchemaV2 = z
   })
   .strict();
 
+export const setTrackAudioRoleCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetTrackAudioRole"),
+    ...commandId,
+    ...target,
+    role: trackAudioRoleSchema,
+  })
+  .strict();
+
+export const restoreTrackAudioRoleCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreTrackAudioRole"),
+    ...commandId,
+    ...target,
+    role: trackAudioRoleSchema.nullable(),
+  })
+  .strict();
+
+export const setSequenceLoudnessTargetCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetSequenceLoudnessTarget"),
+    ...commandId,
+    sequenceId: projectUuidSchema,
+    target: sequenceLoudnessTargetSchema,
+  })
+  .strict();
+
+export const restoreSequenceLoudnessTargetCommandSchemaV2 = z
+  .object({
+    type: z.literal("RestoreSequenceLoudnessTarget"),
+    ...commandId,
+    sequenceId: projectUuidSchema,
+    target: sequenceLoudnessTargetSchema.nullable(),
+  })
+  .strict();
+
 export const setClipGainCommandSchemaV2 = z
   .object({
     type: z.literal("SetClipGain"),
@@ -344,6 +382,10 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   setClipFadesCommandSchemaV2,
   restoreClipFadesCommandSchemaV2,
   restoreClipSpeedCommandSchemaV2,
+  setTrackAudioRoleCommandSchemaV2,
+  restoreTrackAudioRoleCommandSchemaV2,
+  setSequenceLoudnessTargetCommandSchemaV2,
+  restoreSequenceLoudnessTargetCommandSchemaV2,
   addMarkerCommandSchemaV2,
   removeMarkerCommandSchemaV2,
   addCaptionCommandSchemaV2,

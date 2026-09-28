@@ -332,6 +332,7 @@ fn valid_sequence_shape(sequence: &VideoSequenceV2) -> bool {
         && (1..=768_000).contains(&sequence.audio_sample_rate)
         && sequence.tracks.len() <= MAX_TRACKS
         && sequence.markers.len() <= MAX_MARKERS
+        && sequence.loudness_target.is_none_or(|target| target.valid())
         && sequence.tracks.iter().all(valid_track_shape)
         && sequence.markers.iter().all(valid_marker_shape)
 }
@@ -603,7 +604,27 @@ fn valid_command(command: &ProjectCommand) -> bool {
             sequence_id,
             track_id,
             ..
+        }
+        | ProjectCommand::SetTrackAudioRole {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RestoreTrackAudioRole {
+            sequence_id,
+            track_id,
+            ..
         } => is_canonical_uuid(sequence_id) && is_canonical_uuid(track_id),
+        ProjectCommand::SetSequenceLoudnessTarget {
+            sequence_id,
+            target,
+            ..
+        } => is_canonical_uuid(sequence_id) && target.valid(),
+        ProjectCommand::RestoreSequenceLoudnessTarget {
+            sequence_id,
+            target,
+            ..
+        } => is_canonical_uuid(sequence_id) && target.is_none_or(|value| value.valid()),
         ProjectCommand::InsertClip {
             sequence_id,
             track_id,

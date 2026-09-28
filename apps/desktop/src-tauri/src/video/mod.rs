@@ -1,6 +1,7 @@
 pub(crate) mod asr_ipc;
 mod asr_runtime;
 mod asr_settings;
+pub(crate) mod audio_mix;
 pub(crate) mod cache;
 #[allow(dead_code)]
 mod caption;

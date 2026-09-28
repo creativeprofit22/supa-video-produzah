@@ -3047,3 +3047,80 @@ video {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Audio panel */
+.audio-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.audio-fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0 0;
+  border: 0;
+}
+
+.audio-fieldset legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.audio-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audio-row span {
+  overflow-wrap: anywhere;
+}
+
+.audio-row select {
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.audio-report {
+  display: grid;
+  gap: 6px;
+}
+
+.audio-report-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.audio-report-list dt {
+  color: var(--muted, #6b7280);
+}
+
+.audio-report-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+@container (max-width: 22rem) {
+  .audio-report-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.audio-report {
+  container-type: inline-size;
+}
+
+.audio-findings {
+  margin: 0;
+  padding-left: 1.2em;
+}

@@ -5304,6 +5304,8 @@ async fn bundled_resolver_only_bounded_batch() {
 #[cfg(target_os = "windows")]
 mod audio_export;
 #[cfg(target_os = "windows")]
+mod audio_mix_export;
+#[cfg(target_os = "windows")]
 mod speed_export_parity;
 
 #[cfg(target_os = "windows")]

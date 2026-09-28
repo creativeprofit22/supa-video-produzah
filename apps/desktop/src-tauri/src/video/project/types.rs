@@ -77,6 +77,19 @@ fn deserialize_restored_fades<'de, D: serde::Deserializer<'de>>(
     Option::<ClipFades>::deserialize(d)
 }
 
+// A present-but-null value is required so a restore can clear the field.
+fn deserialize_restored_role<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<TrackAudioRole>, D::Error> {
+    Option::<TrackAudioRole>::deserialize(d)
+}
+
+fn deserialize_restored_loudness<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<SequenceLoudnessTarget>, D::Error> {
+    Option::<SequenceLoudnessTarget>::deserialize(d)
+}
+
 fn deserialize_restored_speed<'de, D>(deserializer: D) -> Result<Option<ClipSpeed>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -178,6 +191,13 @@ pub enum ProjectTrack {
         #[serde(default, skip_serializing_if = "is_false")]
         hidden: bool,
         clips: Vec<ProjectClip>,
+        #[serde(
+            default,
+            rename = "audioRole",
+            deserialize_with = "deserialize_optional_non_null",
+            skip_serializing_if = "Option::is_none"
+        )]
+        audio_role: Option<TrackAudioRole>,
     },
     Audio {
         id: String,
@@ -187,6 +207,13 @@ pub enum ProjectTrack {
         #[serde(default, skip_serializing_if = "is_false")]
         muted: bool,
         clips: Vec<ProjectClip>,
+        #[serde(
+            default,
+            rename = "audioRole",
+            deserialize_with = "deserialize_optional_non_null",
+            skip_serializing_if = "Option::is_none"
+        )]
+        audio_role: Option<TrackAudioRole>,
     },
     Caption {
         id: String,
@@ -287,6 +314,38 @@ pub struct VideoSequenceV2 {
     pub audio_sample_rate: u64,
     pub tracks: Vec<ProjectTrack>,
     pub markers: Vec<ProjectMarker>,
+    /// Absent = legacy sequence: no ducking, cleanup or loudness normalization.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub loudness_target: Option<SequenceLoudnessTarget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackAudioRole {
+    Dialogue,
+    Music,
+    Sfx,
+}
+
+/// Final-mix loudness policy. Integrated loudness is one of three delivery
+/// targets; the true-peak ceiling is fixed at -1 dBTP in this version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SequenceLoudnessTarget {
+    pub integrated_lufs: i64,
+    pub true_peak_ceiling_dbtp: i64,
+    pub ducking: bool,
+    pub dialogue_cleanup: bool,
+}
+
+impl SequenceLoudnessTarget {
+    pub fn valid(&self) -> bool {
+        matches!(self.integrated_lufs, -14 | -16 | -23) && self.true_peak_ceiling_dbtp == -1
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -556,6 +615,40 @@ pub enum ProjectCommand {
         #[serde(deserialize_with = "deserialize_restored_fades")]
         fades: Option<ClipFades>,
     },
+    SetTrackAudioRole {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        role: TrackAudioRole,
+    },
+    RestoreTrackAudioRole {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(deserialize_with = "deserialize_restored_role")]
+        role: Option<TrackAudioRole>,
+    },
+    SetSequenceLoudnessTarget {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        target: SequenceLoudnessTarget,
+    },
+    RestoreSequenceLoudnessTarget {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(deserialize_with = "deserialize_restored_loudness")]
+        target: Option<SequenceLoudnessTarget>,
+    },
     SetClipGain {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -675,6 +768,10 @@ impl ProjectCommand {
             | Self::SetClipGain { command_id, .. }
             | Self::SetClipFades { command_id, .. }
             | Self::RestoreClipFades { command_id, .. }
+            | Self::SetTrackAudioRole { command_id, .. }
+            | Self::RestoreTrackAudioRole { command_id, .. }
+            | Self::SetSequenceLoudnessTarget { command_id, .. }
+            | Self::RestoreSequenceLoudnessTarget { command_id, .. }
             | Self::SetClipSpeed { command_id, .. }
             | Self::RestoreClipSpeed { command_id, .. }
             | Self::AddMarker { command_id, .. }
@@ -695,6 +792,8 @@ impl ProjectCommand {
                 | Self::RestoreActiveCaptionArtifact { .. }
                 | Self::RestoreClipSpeed { .. }
                 | Self::RestoreClipFades { .. }
+                | Self::RestoreTrackAudioRole { .. }
+                | Self::RestoreSequenceLoudnessTarget { .. }
         )
     }
 }

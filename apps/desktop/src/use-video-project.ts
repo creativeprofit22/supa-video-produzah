@@ -21,6 +21,8 @@ import {
   type ProjectProjection,
   type RecoveryReport,
   type RenderPlan,
+  type SequenceLoudnessTarget,
+  type TrackAudioRole,
   type VerifiedRenderOutput,
   type VideoProjectFileV1,
   type VideoSourceRecord,
@@ -79,6 +81,7 @@ export type TimelineEditOperation =
   | "transcript-edit"
   | "generate-captions"
   | "caption-edit"
+  | "audio-mix"
   | "clip-speed"
   | "clip-audio"
   | "clip-opacity"
@@ -1824,6 +1827,37 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [executeTimelineCommandGroup],
   );
+  const setTrackAudioRole = useCallback(
+    async (trackId: string, role: TrackAudioRole): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
+      if (
+        base === null ||
+        sequence === null ||
+        track === undefined ||
+        track.kind === "caption" ||
+        track.audioRole === role ||
+        editOperationPendingRef.current
+      )
+        return false;
+      return executeTimelineCommandGroup(base, "audio-mix", [
+        { type: "SetTrackAudioRole", commandId: newId(), sequenceId: sequence.id, trackId, role },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
+  const setSequenceLoudnessTarget = useCallback(
+    async (target: SequenceLoudnessTarget): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      if (base === null || sequence === null || editOperationPendingRef.current) return false;
+      return executeTimelineCommandGroup(base, "audio-mix", [
+        { type: "SetSequenceLoudnessTarget", commandId: newId(), sequenceId: sequence.id, target },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
   const setTimelineTrackHidden = useCallback(
     async ({ trackId, hidden }: SetTimelineTrackHiddenInput): Promise<boolean> => {
       const base = stateRef.current.projection;
@@ -2062,6 +2096,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     applyTranscriptEditProposal,
     generateCaptionsFromTranscript,
     applyCaptionArtifactEdit,
+    setTrackAudioRole,
+    setSequenceLoudnessTarget,
     setTimelineClipSpeed,
     editTimelineClips,
     setTimelineClipAudio,

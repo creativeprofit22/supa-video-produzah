@@ -3,7 +3,12 @@ import { z } from "zod";
 import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { videoCommandErrorSchema } from "./errors.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
-import { clipFadesSchema, clipTransformGeometrySchema } from "./project-v2-entities.js";
+import {
+  clipFadesSchema,
+  clipTransformGeometrySchema,
+  sequenceLoudnessTargetSchema,
+  trackAudioRoleSchema,
+} from "./project-v2-entities.js";
 import {
   rationalRateSchema,
   rationalTimeSchema,
@@ -196,6 +201,7 @@ export const renderVideoInputV2Schema = z
     hidden: z.boolean(),
     muted: z.boolean(),
     hasAudio: z.boolean(),
+    audioRole: trackAudioRoleSchema.optional(),
   })
   .strict();
 
@@ -210,6 +216,8 @@ export const renderPlanV2Schema = z
     inputPathsByAssetId: z.record(projectUuidSchema, pathSchema),
     videoInputs: z.array(renderVideoInputV2Schema).min(1).max(1_000),
     captions: z.array(renderCaptionInputV2Schema).max(100_000).optional(),
+    /** Present when the sequence has a loudness target (two-pass loudnorm). */
+    audioMix: sequenceLoudnessTargetSchema.optional(),
     outputPath: pathSchema,
     expected: renderExpectationSchema,
     argv: z.array(argumentSchema).min(1).max(10_000),
@@ -333,11 +341,39 @@ export const videoRenderStartedSchema = z.object(renderEventIdentityShape).stric
 
 export type VideoRenderStarted = z.infer<typeof videoRenderStartedSchema>;
 
+const finiteDbSchema = z.number().finite().min(-200).max(200);
+
+/** Post-render loudness verification (native `audio_mix::LoudnessReport`). */
+export const loudnessReportSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    targetIntegratedLufs: z.union([z.literal(-14), z.literal(-16), z.literal(-23)]),
+    truePeakCeilingDbtp: z.literal(-1),
+    toleranceLu: z.number().finite().positive().max(10),
+    normalizationMode: z.enum(["measured", "dynamic", "none"]),
+    normalizationReason: z
+      .string()
+      .regex(/^[a-z_]{1,64}$/u)
+      .optional(),
+    measuredInputLufs: finiteDbSchema.optional(),
+    outputIntegratedLufs: finiteDbSchema.optional(),
+    outputTruePeakDbtp: finiteDbSchema.optional(),
+    outputLoudnessRangeLu: z.number().finite().min(0).max(200).optional(),
+    sourceClippedSamples: safeNonNegativeIntegerSchema,
+    ducking: z.boolean(),
+    dialogueCleanup: z.boolean(),
+    passed: z.boolean(),
+    findings: z.array(z.string().regex(/^[a-z_]{1,64}$/u)).max(32),
+  })
+  .strict();
+export type LoudnessReport = z.infer<typeof loudnessReportSchema>;
+
 export const verifiedRenderOutputSchema = z
   .object({
     outputPath: pathSchema,
     previewPath: pathSchema,
     probe: mediaProbeSchema,
+    loudnessReport: loudnessReportSchema.optional(),
   })
   .strict();
 

@@ -60,6 +60,7 @@ pub fn migrate_v1(
                             fades: None,
                         })
                         .collect(),
+                    audio_role: None,
                 })
                 .collect();
             VideoSequenceV2 {
@@ -71,6 +72,7 @@ pub fn migrate_v1(
                 audio_sample_rate: sequence.audio_sample_rate,
                 tracks,
                 markers: vec![],
+                loudness_target: None,
             }
         })
         .into_iter()

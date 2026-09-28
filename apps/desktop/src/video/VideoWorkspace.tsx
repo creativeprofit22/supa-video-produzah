@@ -46,6 +46,7 @@ import { createPlaybackClock } from "./playback-clock";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
+import { AudioPanel, loudnessReportFrom } from "./AudioPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
 import { TranscriptPanel, type TranscriptTarget } from "./TranscriptPanel";
 import { tauriTranscriptionBackend, type TranscriptionBackend } from "../asr-ipc";
@@ -1275,6 +1276,19 @@ export function VideoWorkspace({
                     language: "en",
                   })
             }
+          />
+          <AudioPanel
+            sequence={canonicalSequence}
+            disabled={editPending}
+            lastReport={
+              controller.render.phase === "completed"
+                ? loudnessReportFrom(controller.render.output)
+                : controller.render.phase === "failed"
+                  ? loudnessReportFrom(controller.render.error)
+                  : null
+            }
+            onSetRole={controller.setTrackAudioRole}
+            onSetTarget={controller.setSequenceLoudnessTarget}
           />
           <CaptionsPanel
             projection={controller.projection}

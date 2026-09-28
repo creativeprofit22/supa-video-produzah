@@ -932,6 +932,7 @@ fn indexed_removal_fixture() -> VideoProjectStateV2 {
         locked: false,
         muted: false,
         clips: vec![],
+        audio_role: None,
     });
 
     let mut first_sequence = original_sequence.clone();
@@ -1286,6 +1287,7 @@ fn set_clip_transform_rejects_invalid_locked_and_non_video_targets() {
         locked,
         muted,
         clips,
+        audio_role: None,
     });
     let non_video_error = apply_group(
         &audio_state,
@@ -1561,6 +1563,7 @@ fn set_clip_opacity_rejects_range_locked_and_non_video_targets() {
         locked,
         muted,
         clips,
+        audio_role: None,
     });
     let non_video_error = apply_group(
         &audio_state,
@@ -2128,6 +2131,7 @@ fn set_track_hidden_executes_with_exact_inverse_metadata_and_rejects_audio() {
             locked,
             muted,
             clips,
+            audio_role: None,
         },
     );
     let error = apply_group(
@@ -2352,6 +2356,7 @@ fn audio_visibility_rejection_is_atomic_across_service_and_persistence() {
             locked,
             muted,
             clips,
+            audio_role: None,
         },
     );
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
@@ -2683,6 +2688,7 @@ fn set_track_muted_supports_audio_tracks_and_exact_unmute_summary() {
             locked,
             muted,
             clips,
+            audio_role: None,
         },
     );
     assert_eq!(
@@ -4391,6 +4397,7 @@ fn caption_project_fixture() -> VideoProjectSnapshotV2 {
                 active_caption_artifact: None,
             }],
             markers: vec![],
+            loudness_target: None,
         });
     snapshot.state.active_sequence_id = Some(CAPTION_SEQUENCE_ID.to_owned());
     snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();
@@ -4772,6 +4779,7 @@ fn caption_artifact_rejection_matrix_is_atomic() {
                     muted: false,
                     hidden: false,
                     clips: vec![],
+                    audio_role: None,
                 });
         }
         snapshot.revision.state_hash = state_hash(&snapshot.state).unwrap();

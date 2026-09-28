@@ -1287,18 +1287,26 @@ fn expected_v2_filter(
         base = output;
     }
     parts.push(format!("[{base}]null[vout]"));
-    if audible.len() == 1 {
-        parts.push(format!("[a{}]anull[aout]", audible[0]));
-    } else if audible.len() > 1 {
-        let labels = audible
+    debug_assert_eq!(
+        audible,
+        super::audio_mix::audible_inputs(&plan.video_inputs)
             .iter()
-            .map(|index| format!("[a{index}]"))
-            .collect::<String>();
-        parts.push(format!(
-            "{labels}amix=inputs={}:duration=longest:normalize=0[aout]",
-            audible.len(),
-        ));
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>()
+    );
+    if plan.audio_mix.is_some_and(|mix| !mix.valid())
+        || (plan.audio_mix.is_some() && audible.is_empty())
+    {
+        return Err(VideoCommandError::invalid_render_plan("audio_mix"));
     }
+    parts.extend(
+        super::audio_mix::audio_mix_filters(
+            &super::audio_mix::audible_inputs(&plan.video_inputs),
+            plan.audio_mix.as_ref(),
+            &duration,
+        )
+        .map_err(VideoCommandError::invalid_render_plan)?,
+    );
     Ok(parts.join(";"))
 }
 
@@ -1480,8 +1488,23 @@ async fn execute_render_worker(
     request: &RenderWorkerRequest,
 ) -> Result<VerifiedRenderOutput, VideoCommandError> {
     let partial_path = partial_render_path(&request.validated)?;
+    let mut arguments = render_execution_arguments(&request.validated, &partial_path)?;
+    // Two-pass loudness: measure the exact mix first, then substitute the
+    // pass-2 node. The report records which mode actually ran.
+    let loudness = match request.validated.plan.audio_mix() {
+        Some(mix) => {
+            let pass = measure_mix_loudness(request, &arguments, &mix).await?;
+            arguments = super::audio_mix::with_loudnorm_node(
+                &arguments,
+                &mix,
+                &super::audio_mix::pass_two_loudnorm(&mix, pass.mode, pass.measurement.as_ref()),
+            )
+            .ok_or_else(|| VideoCommandError::invalid_render_plan("audio_mix"))?;
+            Some((mix, pass))
+        }
+        None => None,
+    };
     let partial = create_owned_partial(&partial_path)?;
-    let arguments = render_execution_arguments(&request.validated, &partial_path)?;
     let progress = Arc::new(Mutex::new(RenderProgress::new(
         request.validated.duration_microseconds,
     )));
@@ -1525,6 +1548,16 @@ async fn execute_render_worker(
     )
     .await?;
     validate_render_output(&partial_path, &inspected, &request.validated)?;
+    let loudness_report = match loudness {
+        Some((mix, pass)) => {
+            let report = verify_output_loudness(request, &partial_path, &mix, pass).await?;
+            if !report.passed {
+                return Err(loudness_validation_failed(&report));
+            }
+            Some(Box::new(report))
+        }
+        None => None,
+    };
     if !request.overwrite && request.validated.output_path.exists() {
         return Err(VideoCommandError::output_exists("promote_render"));
     }
@@ -1548,7 +1581,105 @@ async fn execute_render_worker(
         output_path: request.validated.output_path.to_string_lossy().into_owned(),
         preview_path: preview_path.to_string_lossy().into_owned(),
         probe: preview_probe.probe,
+        loudness_report,
     })
+}
+
+struct MixMeasurement {
+    mode: super::audio_mix::NormalizationMode,
+    reason: Option<&'static str>,
+    measurement: Option<super::audio_mix::LoudnormMeasurement>,
+    clipped_samples: Option<u64>,
+}
+
+async fn run_audio_analysis(
+    request: &RenderWorkerRequest,
+    arguments: Vec<String>,
+    operation: &'static str,
+) -> Result<String, VideoCommandError> {
+    let output = super::process::run_supervised(
+        ProcessSpec {
+            program: request.programs.verified_ffmpeg(operation).await?,
+            args: arguments.into_iter().map(OsString::from).collect(),
+            current_dir: None,
+            operation,
+            timeout: RENDER_TIMEOUT,
+            stdout_limit: RENDER_PROGRESS_RECORD_LIMIT,
+            stderr_tail_limit: RENDER_STDERR_TAIL_LIMIT,
+        },
+        request.cancellation.clone(),
+    )
+    .await
+    .map_err(map_render_process_failure)?;
+    Ok(String::from_utf8_lossy(&output.stderr_tail).into_owned())
+}
+
+async fn measure_mix_loudness(
+    request: &RenderWorkerRequest,
+    arguments: &[String],
+    mix: &super::project::types::SequenceLoudnessTarget,
+) -> Result<MixMeasurement, VideoCommandError> {
+    let pass_one = super::audio_mix::measurement_arguments(arguments, mix)
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("audio_mix"))?;
+    let stderr = run_audio_analysis(request, pass_one, "measure_loudness").await?;
+    let measurement = super::audio_mix::parse_loudnorm_measurement(&stderr);
+    let (mode, reason) = super::audio_mix::normalization_decision(measurement.as_ref(), mix);
+    Ok(MixMeasurement {
+        mode,
+        reason,
+        measurement,
+        clipped_samples: super::audio_mix::parse_clipped_samples(&stderr),
+    })
+}
+
+async fn verify_output_loudness(
+    request: &RenderWorkerRequest,
+    output: &Path,
+    mix: &super::project::types::SequenceLoudnessTarget,
+    pass: MixMeasurement,
+) -> Result<super::audio_mix::LoudnessReport, VideoCommandError> {
+    let path = output
+        .to_str()
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("partial_path_encoding"))?;
+    let arguments = [
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "info",
+        "-i",
+        path,
+        "-map",
+        "0:a:0",
+        "-af",
+        "ebur128=peak=true",
+        "-f",
+        "null",
+        "-",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let stderr = run_audio_analysis(request, arguments, "verify_loudness").await?;
+    let summary = super::audio_mix::parse_ebur128_summary(&stderr);
+    Ok(super::audio_mix::build_loudness_report(
+        mix,
+        pass.mode,
+        pass.reason,
+        pass.measurement.as_ref(),
+        summary.as_ref(),
+        pass.clipped_samples,
+    ))
+}
+
+fn loudness_validation_failed(report: &super::audio_mix::LoudnessReport) -> VideoCommandError {
+    VideoCommandError::new(
+        VideoErrorCode::InvalidMedia,
+        "The export did not meet its loudness target",
+        serde_json::json!({
+            "operation": "verify_loudness",
+            "category": "loudness_out_of_tolerance",
+            "report": report,
+        }),
+    )
 }
 
 fn remove_owned_render_partial(plan: &RenderPlan) -> Result<(), VideoCommandError> {

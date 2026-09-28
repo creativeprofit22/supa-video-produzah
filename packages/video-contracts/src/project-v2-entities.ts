@@ -139,6 +139,21 @@ export const projectCaptionSchema = z
 export type ProjectCaption = z.infer<typeof projectCaptionSchema>;
 
 const trackBase = { id: projectUuidSchema, name: nonBlankSchema, locked: z.boolean().optional() };
+/** Mix role of a track's audio. Absent = legacy: no ducking or cleanup. */
+export const trackAudioRoleSchema = z.enum(["dialogue", "music", "sfx"]);
+export type TrackAudioRole = z.infer<typeof trackAudioRoleSchema>;
+
+/** Final-mix loudness policy; absent = legacy (no normalization). */
+export const sequenceLoudnessTargetSchema = z
+  .object({
+    integratedLufs: z.union([z.literal(-14), z.literal(-16), z.literal(-23)]),
+    truePeakCeilingDbtp: z.literal(-1),
+    ducking: z.boolean(),
+    dialogueCleanup: z.boolean(),
+  })
+  .strict();
+export type SequenceLoudnessTarget = z.infer<typeof sequenceLoudnessTargetSchema>;
+
 export const projectTrackSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -147,6 +162,7 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
       muted: z.boolean().optional(),
       hidden: z.boolean().optional(),
       clips: z.array(projectClipSchema).max(100_000),
+      audioRole: trackAudioRoleSchema.optional(),
     })
     .strict(),
   z
@@ -155,6 +171,7 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
       kind: z.literal("audio"),
       muted: z.boolean().optional(),
       clips: z.array(projectClipSchema).max(100_000),
+      audioRole: trackAudioRoleSchema.optional(),
     })
     .strict(),
   z
@@ -202,6 +219,7 @@ export const videoSequenceV2Schema = z
     audioSampleRate: safePositiveIntegerSchema.max(768_000),
     tracks: z.array(projectTrackSchema).max(10_000),
     markers: z.array(projectMarkerSchema).max(100_000),
+    loudnessTarget: sequenceLoudnessTargetSchema.optional(),
   })
   .strict();
 export type VideoSequenceV2 = z.infer<typeof videoSequenceV2Schema>;

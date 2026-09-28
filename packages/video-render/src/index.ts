@@ -6,3 +6,4 @@ export {
   type CompileActiveSequenceRenderPlanInput,
   type CompileSingleClipRenderPlanInput,
 } from "./compile-render-plan.js";
+export * from "./audio-mix.js";

@@ -437,7 +437,9 @@ export function createMockVideoService(
             item.type === "RestoreRippleDeletedClip" ||
             item.type === "RestoreActiveCaptionArtifact" ||
             item.type === "RestoreClipSpeed" ||
-            item.type === "RestoreClipFades",
+            item.type === "RestoreClipFades" ||
+            item.type === "RestoreTrackAudioRole" ||
+            item.type === "RestoreSequenceLoudnessTarget",
         )
       ) {
         throw historyError("invalid_command", "private_inverse");
@@ -528,6 +530,19 @@ export function createMockVideoService(
           for (const invalidation of ["timeline", "preview", "captions", "render_plan"] as const) {
             if (!cacheInvalidations.includes(invalidation)) cacheInvalidations.push(invalidation);
           }
+        } else if (item.type === "SetTrackAudioRole") {
+          const track = next.state.sequences
+            .find(({ id }) => id === item.sequenceId)
+            ?.tracks.find(({ id }) => id === item.trackId);
+          if (!track) throw commandError("unknown_track");
+          if (track.kind === "caption") throw commandError("non_audio_track");
+          track.audioRole = item.role;
+          addCacheInvalidations(cacheInvalidations, ["audio_mix", "render_plan"]);
+        } else if (item.type === "SetSequenceLoudnessTarget") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (!sequence) throw commandError("unknown_sequence");
+          sequence.loudnessTarget = item.target;
+          addCacheInvalidations(cacheInvalidations, ["audio_mix", "render_plan"]);
         } else if (item.type === "SetClipGain" || item.type === "SetClipFades") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
           const track = sequence?.tracks.find(({ id }) => id === item.trackId);

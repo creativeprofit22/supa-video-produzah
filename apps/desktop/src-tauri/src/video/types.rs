@@ -501,6 +501,12 @@ pub struct RenderVideoInputV2 {
     pub hidden: bool,
     pub muted: bool,
     pub has_audio: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub audio_role: Option<super::project::types::TrackAudioRole>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -547,6 +553,12 @@ pub struct RenderPlanV2 {
     pub video_inputs: Vec<RenderVideoInputV2>,
     #[serde(default)]
     pub captions: Vec<RenderCaptionInput>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub audio_mix: Option<super::project::types::SequenceLoudnessTarget>,
     pub output_path: String,
     #[serde(deserialize_with = "deserialize_render_expectation_v2")]
     pub expected: RenderExpectation,
@@ -597,6 +609,13 @@ impl RenderPlan {
             Self::V2(plan) => &plan.argv,
         }
     }
+    /// The sequence loudness target, when the final mix is normalized.
+    pub fn audio_mix(&self) -> Option<super::project::types::SequenceLoudnessTarget> {
+        match self {
+            Self::V1(_) => None,
+            Self::V2(plan) => plan.audio_mix,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -613,6 +632,8 @@ pub struct VerifiedRenderOutput {
     pub output_path: String,
     pub preview_path: String,
     pub probe: MediaProbe,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loudness_report: Option<Box<super::audio_mix::LoudnessReport>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

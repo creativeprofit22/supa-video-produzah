@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use super::types::{SequenceLoudnessTarget, TrackAudioRole};
 use super::{
     clip_speed::{find_speed_target, validate_retimed_context},
     clip_timing::{
@@ -444,6 +445,17 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
                 CacheInvalidation::RenderPlan,
             ],
         ),
+        ProjectCommand::SetTrackAudioRole { .. } | ProjectCommand::RestoreTrackAudioRole { .. } => {
+            (
+                "Updated track audio role",
+                vec![CacheInvalidation::AudioMix, CacheInvalidation::RenderPlan],
+            )
+        }
+        ProjectCommand::SetSequenceLoudnessTarget { .. }
+        | ProjectCommand::RestoreSequenceLoudnessTarget { .. } => (
+            "Updated loudness target",
+            vec![CacheInvalidation::AudioMix, CacheInvalidation::RenderPlan],
+        ),
         ProjectCommand::SetClipFades { .. } | ProjectCommand::RestoreClipFades { .. } => (
             "Updated clip fades",
             vec![
@@ -492,6 +504,60 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             ],
         ),
     }
+}
+
+/// Audio roles are an audio-mix property of video (embedded audio) and audio
+/// tracks; caption tracks have none.
+fn set_track_audio_role(
+    state: &mut VideoProjectStateV2,
+    command_id: &str,
+    sequence_id: &str,
+    track_id: &str,
+    desired: Option<TrackAudioRole>,
+) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    let track = find_track_mut(state, sequence_id, track_id)?;
+    let affected_ranges = track_range(sequence_id, track)?;
+    let slot = match track {
+        ProjectTrack::Video { audio_role, .. } | ProjectTrack::Audio { audio_role, .. } => {
+            audio_role
+        }
+        ProjectTrack::Caption { .. } => return Err(invalid("non_audio_track")),
+    };
+    let previous = std::mem::replace(slot, desired);
+    Ok((
+        vec![ProjectCommand::RestoreTrackAudioRole {
+            command_id: inverse_id(command_id, 0),
+            sequence_id: sequence_id.to_owned(),
+            track_id: track_id.to_owned(),
+            role: previous,
+        }],
+        affected_ranges,
+    ))
+}
+
+fn set_sequence_loudness_target(
+    state: &mut VideoProjectStateV2,
+    command_id: &str,
+    sequence_id: &str,
+    desired: Option<SequenceLoudnessTarget>,
+) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    if desired.is_some_and(|target| !target.valid()) {
+        return Err(invalid("loudness_target"));
+    }
+    let sequence = state
+        .sequences
+        .iter_mut()
+        .find(|sequence| sequence.id == sequence_id)
+        .ok_or_else(|| invalid("unknown_sequence"))?;
+    let previous = std::mem::replace(&mut sequence.loudness_target, desired);
+    Ok((
+        vec![ProjectCommand::RestoreSequenceLoudnessTarget {
+            command_id: inverse_id(command_id, 0),
+            sequence_id: sequence_id.to_owned(),
+            target: previous,
+        }],
+        vec![],
+    ))
 }
 
 fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
@@ -764,6 +830,28 @@ fn apply_one(
                 vec![],
             ))
         }
+        ProjectCommand::SetTrackAudioRole {
+            sequence_id,
+            track_id,
+            role,
+            ..
+        } => set_track_audio_role(state, id, sequence_id, track_id, Some(*role)),
+        ProjectCommand::RestoreTrackAudioRole {
+            sequence_id,
+            track_id,
+            role,
+            ..
+        } => set_track_audio_role(state, id, sequence_id, track_id, *role),
+        ProjectCommand::SetSequenceLoudnessTarget {
+            sequence_id,
+            target,
+            ..
+        } => set_sequence_loudness_target(state, id, sequence_id, Some(*target)),
+        ProjectCommand::RestoreSequenceLoudnessTarget {
+            sequence_id,
+            target,
+            ..
+        } => set_sequence_loudness_target(state, id, sequence_id, *target),
         ProjectCommand::SetTrackMuted {
             sequence_id,
             track_id,

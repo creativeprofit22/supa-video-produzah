@@ -168,3 +168,156 @@ fn audio_fades_reject_public_inverse_and_invalid_envelopes_without_mutation() {
     assert_eq!(applied.new_revision.number, 1);
     service.close("audio", &original.id).unwrap();
 }
+
+fn role(snapshot: &VideoProjectSnapshotV2, role: super::types::TrackAudioRole) -> ProjectCommand {
+    ProjectCommand::SetTrackAudioRole {
+        command_id: "71000000-0000-4000-8000-000000000001".into(),
+        sequence_id: snapshot.state.sequences[0].id.clone(),
+        track_id: snapshot.state.sequences[0].tracks[0].id().into(),
+        role,
+    }
+}
+
+fn loudness(snapshot: &VideoProjectSnapshotV2, lufs: i64) -> ProjectCommand {
+    ProjectCommand::SetSequenceLoudnessTarget {
+        command_id: "71000000-0000-4000-8000-000000000002".into(),
+        sequence_id: snapshot.state.sequences[0].id.clone(),
+        target: super::types::SequenceLoudnessTarget {
+            integrated_lufs: lufs,
+            true_peak_ceiling_dbtp: -1,
+            ducking: true,
+            dialogue_cleanup: true,
+        },
+    }
+}
+
+#[test]
+fn audio_role_and_loudness_target_persist_undo_redo_and_recover_from_journal() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("mix.svpvideo");
+    let grants = VideoPathGrants::default();
+    let original = fixture();
+    // Legacy state serializes without the new optional fields, so hashes are unchanged.
+    let legacy = String::from_utf8(canonical_bytes(&original).unwrap()).unwrap();
+    assert!(!legacy.contains("audioRole") && !legacy.contains("loudnessTarget"));
+    fs::write(&path, canonical_bytes(&original).unwrap()).unwrap();
+
+    let edit = request(
+        &original,
+        970,
+        vec![
+            role(&original, super::types::TrackAudioRole::Dialogue),
+            loudness(&original, -16),
+        ],
+    );
+    let result = {
+        let service = VideoProjectService::default();
+        service.open("mix", &path, &grants).unwrap();
+        service.execute("mix", edit.clone(), &grants).unwrap()
+    }; // Journal-only close.
+    let applied = serde_json::to_value(&result.projection.state).unwrap();
+    assert_eq!(
+        applied["sequences"][0]["tracks"][0]["audioRole"],
+        "dialogue"
+    );
+    assert_eq!(
+        applied["sequences"][0]["loudnessTarget"]["integratedLufs"],
+        -16
+    );
+
+    let reopened = VideoProjectService::default();
+    let recovered = reopened.open("mix", &path, &grants).unwrap();
+    assert_eq!(recovered.projection.state, result.projection.state);
+    let undone = reopened
+        .undo(
+            "mix",
+            &original.id,
+            1,
+            "71000000-0000-4000-8000-000000000003",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(
+        undone.projection.state, original.state,
+        "one undo clears both fields"
+    );
+    assert_eq!(undone.state_hash, original.revision.state_hash);
+    let redone = reopened
+        .redo(
+            "mix",
+            &original.id,
+            2,
+            "71000000-0000-4000-8000-000000000004",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(redone.projection.state, result.projection.state);
+    reopened.close("mix", &original.id).unwrap();
+
+    let checkpointed = VideoProjectService::default();
+    let reopened = checkpointed.open("mix", &path, &grants).unwrap();
+    assert_eq!(reopened.projection.state, result.projection.state);
+    checkpointed.close("mix", &original.id).unwrap();
+}
+
+#[test]
+fn audio_mix_commands_reject_invalid_targets_and_public_inverses_without_mutation() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("mix.svpvideo");
+    let original = fixture();
+    fs::write(&path, canonical_bytes(&original).unwrap()).unwrap();
+    let grants = VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    service.open("mix", &path, &grants).unwrap();
+    for lufs in [-15, 0, -24] {
+        assert!(service
+            .execute(
+                "mix",
+                request(&original, 980, vec![loudness(&original, lufs)]),
+                &grants
+            )
+            .is_err());
+    }
+    let mut bad_peak = serde_json::to_value(loudness(&original, -14)).unwrap();
+    bad_peak["target"]["truePeakCeilingDbtp"] = serde_json::json!(0);
+    let bad_peak: ProjectCommand = serde_json::from_value(bad_peak).unwrap();
+    assert!(service
+        .execute("mix", request(&original, 981, vec![bad_peak]), &grants)
+        .is_err());
+    for inverse in [
+        serde_json::json!({
+            "type": "RestoreTrackAudioRole",
+            "commandId": "71000000-0000-4000-8000-000000000010",
+            "sequenceId": original.state.sequences[0].id,
+            "trackId": original.state.sequences[0].tracks[0].id(),
+            "role": null,
+        }),
+        serde_json::json!({
+            "type": "RestoreSequenceLoudnessTarget",
+            "commandId": "71000000-0000-4000-8000-000000000011",
+            "sequenceId": original.state.sequences[0].id,
+            "target": null,
+        }),
+    ] {
+        let inverse: ProjectCommand = serde_json::from_value(inverse).unwrap();
+        assert!(service
+            .execute("mix", request(&original, 982, vec![inverse]), &grants)
+            .is_err());
+    }
+    let applied = service
+        .execute(
+            "mix",
+            request(
+                &original,
+                983,
+                vec![role(&original, super::types::TrackAudioRole::Music)],
+            ),
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(
+        applied.new_revision.number, 1,
+        "rejections never advanced the revision"
+    );
+    service.close("mix", &original.id).unwrap();
+}

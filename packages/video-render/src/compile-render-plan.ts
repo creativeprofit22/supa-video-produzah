@@ -25,6 +25,7 @@ import {
   videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 
+import { AudioMixPlanError, audioMixFilters, type AudibleInput } from "./audio-mix.js";
 import {
   CaptionRenderStyleError,
   artifactRenderCaptions,
@@ -728,6 +729,7 @@ export function compileActiveSequenceRenderPlan(
       hidden: isTrackHidden(track),
       muted: isTrackMuted(track),
       hasAudio: asset.probe.audio !== null,
+      ...(track.audioRole === undefined ? {} : { audioRole: track.audioRole }),
     }));
     const captions = trackRenderCaptions(sequence.tracks, sequence);
     const filterParts = [
@@ -735,6 +737,7 @@ export function compileActiveSequenceRenderPlan(
     ];
     const visibleTrackIndices: number[] = [];
     const audibleTrackIndices: number[] = [];
+    const audibleInputs: AudibleInput[] = [];
     clips.forEach(({ track, clip, asset }, trackIndex) => {
       if (!isTrackHidden(track)) {
         filterParts.push(transformedClipFilter(trackIndex, clip, sequence));
@@ -745,6 +748,10 @@ export function compileActiveSequenceRenderPlan(
           `[${trackIndex}:a:0]${audioTimingFilter(clip, duration)}${audioGainFilter(clip)}${audioFadeFilter(clip, sequence, durationFrames)}[a${trackIndex}]`,
         );
         audibleTrackIndices.push(trackIndex);
+        audibleInputs.push({
+          index: trackIndex,
+          role: track.audioRole,
+        });
       }
     });
 
@@ -764,12 +771,12 @@ export function compileActiveSequenceRenderPlan(
     });
     filterParts.push(`[${baseLabel}]null[vout]`);
 
-    if (audibleTrackIndices.length === 1) {
-      filterParts.push(`[a${audibleTrackIndices[0]}]anull[aout]`);
-    } else if (audibleTrackIndices.length > 1) {
-      filterParts.push(
-        `${audibleTrackIndices.map((index) => `[a${index}]`).join("")}amix=inputs=${audibleTrackIndices.length}:duration=longest:normalize=0[aout]`,
-      );
+    const audioMix = sequence.loudnessTarget;
+    try {
+      filterParts.push(...audioMixFilters(audibleInputs, audioMix, duration));
+    } catch (error) {
+      if (error instanceof AudioMixPlanError) invalidRenderPlan(error.message);
+      throw error;
     }
 
     const argv = [
@@ -814,6 +821,7 @@ export function compileActiveSequenceRenderPlan(
       inputPathsByAssetId,
       videoInputs,
       captions,
+      ...(audioMix === undefined || audibleInputs.length === 0 ? {} : { audioMix }),
       outputPath: input.outputPath,
       expected: {
         durationFrames,
