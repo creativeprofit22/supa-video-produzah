@@ -3,9 +3,10 @@ import projectConfig from "../../eslint.config.js";
 export default [
   ...projectConfig,
   // Generated bundles/captures are not authored source; retain all project rules.
-  { ignores: ["evidence/p2-native-performance/runs/**"] },
+  // Patterns here resolve relative to this directory, not the repository root.
+  { ignores: ["runs/**"] },
   {
-    files: ["evidence/p2-native-performance/*.jsx"],
+    files: ["*.jsx"],
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
   },
 ];

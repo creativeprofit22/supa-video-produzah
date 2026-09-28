@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import console from "node:console";
+import process from "node:process";
 
 // Offline arithmetic only. Never pass capture directories to this driver.
 const LABEL = "SYNTHETIC — NOT CAPTURE OR ACCEPTANCE EVIDENCE";
