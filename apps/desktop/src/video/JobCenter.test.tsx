@@ -449,4 +449,31 @@ describe("JobCenter", () => {
     const item = screen.getByRole("article", { name: "Build preview proxy" });
     expect(within(item).getByText("Repair the bundled media tools, then retry.")).toBeTruthy();
   });
+
+  it.each([
+    ["transcribing", 7, "transcribing", "7 of 31 items"],
+    ["identifying_speakers", 30, "identifying speakers", "30 of 31 items"],
+  ])(
+    "shows a long transcription's %s step and piece count",
+    (stage, completed, stageText, progressText) => {
+      const transcription = job({
+        id: "70000000-0000-4000-8000-000000000092",
+        kind: "transcription",
+        state: "running",
+        stage,
+        progress: { completed, total: 31, unit: "items" },
+        summary: "Transcribe interview",
+        startedAt: later,
+        updatedAt: later,
+      });
+      render(<JobCenter controller={controller({ jobs: [transcription] })} onClose={vi.fn()} />);
+
+      const item = screen.getByRole("article", { name: "Transcribe interview" });
+      expect(within(item).getByText(stageText)).toBeTruthy();
+      expect(within(item).getByText(progressText)).toBeTruthy();
+      expect(
+        within(item).getByRole("progressbar", { name: `Transcribe interview: ${progressText}` }),
+      ).toBeTruthy();
+    },
+  );
 });

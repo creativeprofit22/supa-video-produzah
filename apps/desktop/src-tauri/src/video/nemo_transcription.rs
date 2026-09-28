@@ -86,6 +86,35 @@ pub(crate) struct NemoTranscriptionInput<'a> {
     pub(crate) app_cache_root: &'a Path,
 }
 
+/// What a running transcription is doing, reported between runtime processes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TranscriptionStage {
+    PreparingAudio,
+    Transcribing,
+    IdentifyingSpeakers,
+}
+
+impl TranscriptionStage {
+    /// The media-job stage code shown in the Job Center.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::PreparingAudio => "preparing_audio",
+            Self::Transcribing => "transcribing",
+            Self::IdentifyingSpeakers => "identifying_speakers",
+        }
+    }
+}
+
+/// Progress through one transcription. Each piece is one step, and the
+/// whole-file speaker pass (when on) is one more, so `total` is known once the
+/// pieces are planned. It is 0 while audio is still being prepared.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TranscriptionProgress {
+    pub(crate) stage: TranscriptionStage,
+    pub(crate) completed: u64,
+    pub(crate) total: u64,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct VerifiedNemoFile {
     pub(crate) path: PathBuf,
@@ -166,6 +195,7 @@ pub(crate) async fn transcribe_nemo_cuda(
     nemo: VerifiedNemoRuntime,
     cancellation: ProcessCancellation,
     cache: &MediaCacheService,
+    on_progress: &(dyn Fn(TranscriptionProgress) + Sync),
 ) -> Result<PublishedTranscriptArtifact, VideoCommandError> {
     let diarization = validate_configuration(input.configuration, input.source_duration_us, &nemo)?;
     validate_source_path(input.source_path)?;
@@ -202,6 +232,11 @@ pub(crate) async fn transcribe_nemo_cuda(
     }
     drop(existing_guard);
 
+    on_progress(TranscriptionProgress {
+        stage: TranscriptionStage::PreparingAudio,
+        completed: 0,
+        total: 0,
+    });
     nemo.verify_again()?;
     let temporary = TempDirBuilder::new()
         .prefix(".nemo-transcribe-")
@@ -220,6 +255,14 @@ pub(crate) async fn transcribe_nemo_cuda(
     let sample_count = pcm_sample_count(layout, samples_for_duration(input.source_duration_us))?;
     let ranges = plan_pieces_from_wav(&wav_path, layout, sample_count)?;
     let pieces = place_ranges(ranges, input.source_duration_us)?;
+    let piece_count = pieces.len() as u64;
+    let total_steps = piece_count + u64::from(diarization != Diarization::Off);
+    let transcribing = |completed: u64| TranscriptionProgress {
+        stage: TranscriptionStage::Transcribing,
+        completed,
+        total: total_steps,
+    };
+    on_progress(transcribing(0));
 
     let mut chunks = Vec::with_capacity(pieces.len());
     for piece in &pieces {
@@ -240,6 +283,7 @@ pub(crate) async fn transcribe_nemo_cuda(
         chunks.push(parse_nemo_chunk(&output.stdout, piece)?);
         fs::remove_file(&piece_path)
             .map_err(|_| VideoCommandError::project_io(OPERATION, "temporary_audio"))?;
+        on_progress(transcribing(chunks.len() as u64));
     }
     if chunks.iter().all(|chunk| chunk.words.is_empty()) {
         // The whole file has no speech: today's no-speech result.
@@ -250,6 +294,11 @@ pub(crate) async fn transcribe_nemo_cuda(
         if cancellation.is_cancelled() {
             return Err(VideoCommandError::process_cancelled(OPERATION, "nemo"));
         }
+        on_progress(TranscriptionProgress {
+            stage: TranscriptionStage::IdentifyingSpeakers,
+            completed: piece_count,
+            total: total_steps,
+        });
         nemo.verify_again()?;
         let segments_path = temporary.path().join("speakers.json");
         let output = run_nemo_diarize(&nemo, &wav_path, &segments_path, cancellation).await?;

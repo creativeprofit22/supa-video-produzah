@@ -31,11 +31,13 @@ use super::{
             MediaJobProgressUnit, MediaJobRecoveryAction, MediaJobState, MAX_PUBLIC_JOBS,
         },
         scheduler::{MediaJobWorker, MediaWorkerFuture, MediaWorkerOutcome, SchedulerResource},
-        store::{parse_timestamp_millis, MediaStateStoreError, NewMediaJob},
+        store::{parse_timestamp_millis, MediaJobStore, MediaStateStoreError, NewMediaJob},
         MediaJobService,
     },
     media_store::{ingest_source_guarded, IngestedSource},
-    nemo_transcription::{transcribe_nemo_cuda, NemoTranscriptionInput, VerifiedNemoRuntime},
+    nemo_transcription::{
+        transcribe_nemo_cuda, NemoTranscriptionInput, TranscriptionProgress, VerifiedNemoRuntime,
+    },
     probe::probe_trusted_media_with_program,
     process::ProcessCancellation,
     transcript::AsrConfigurationV1,
@@ -406,6 +408,7 @@ pub(crate) async fn start_transcription(
         programs: context.programs,
         app_cache_root: context.app_cache_root,
         cache: context.jobs.cache().clone(),
+        store: context.jobs.store().clone(),
     });
     let state = if enqueued.job.state == MediaJobState::Queued && !enqueued.reused {
         context
@@ -449,6 +452,45 @@ fn stage_progress(completed: u64) -> MediaJobProgress {
     }
 }
 
+/// Pieces and the speaker pass are counted as items. Before the pieces are
+/// planned the step count is unknown, so the job keeps its single-stage shape.
+fn job_progress(progress: TranscriptionProgress) -> MediaJobProgress {
+    if progress.total == 0 {
+        return stage_progress(0);
+    }
+    MediaJobProgress {
+        completed: progress.completed,
+        total: progress.total,
+        unit: MediaJobProgressUnit::Items,
+    }
+}
+
+/// Writes runner progress to the job one update at a time, in order. Only the
+/// newest update is kept while a write is in flight, so a slow store never
+/// holds up transcription. The task ends once the sender is dropped.
+fn spawn_progress_writer(
+    store: MediaJobStore,
+    job_id: String,
+    mut updates: tokio::sync::watch::Receiver<Option<TranscriptionProgress>>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        while updates.changed().await.is_ok() {
+            let Some(progress) = *updates.borrow_and_update() else {
+                continue;
+            };
+            // Progress is advisory: a failed write must not fail the job.
+            let _ = store
+                .record_progress(
+                    job_id.clone(),
+                    progress.stage.code().to_owned(),
+                    job_progress(progress),
+                    current_timestamp_millis(),
+                )
+                .await;
+        }
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Worker
 // ---------------------------------------------------------------------------
@@ -461,6 +503,7 @@ struct TranscriptionWorker {
     programs: MediaPrograms,
     app_cache_root: PathBuf,
     cache: MediaCacheService,
+    store: MediaJobStore,
 }
 
 #[cfg(test)]
@@ -471,7 +514,7 @@ pub(crate) fn transcription_worker_for_test(
     runtime: VerifiedNemoRuntime,
     programs: MediaPrograms,
     app_cache_root: PathBuf,
-    cache: MediaCacheService,
+    jobs: &MediaJobService,
 ) -> Arc<dyn MediaJobWorker> {
     Arc::new(TranscriptionWorker {
         source,
@@ -480,12 +523,13 @@ pub(crate) fn transcription_worker_for_test(
         runtime,
         programs,
         app_cache_root,
-        cache,
+        cache: jobs.cache().clone(),
+        store: jobs.store().clone(),
     })
 }
 
 impl MediaJobWorker for TranscriptionWorker {
-    fn run(&self, _job_id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
+    fn run(&self, job_id: String, cancellation: ProcessCancellation) -> MediaWorkerFuture {
         let source_path = self.source.object_path.clone();
         let identity = self.source.identity.clone();
         let fingerprint = self.source.fingerprint.clone();
@@ -495,7 +539,13 @@ impl MediaJobWorker for TranscriptionWorker {
         let programs = self.programs.clone();
         let app_cache_root = self.app_cache_root.clone();
         let cache = self.cache.clone();
+        let store = self.store.clone();
         Box::pin(async move {
+            let (progress_sender, progress_updates) = tokio::sync::watch::channel(None);
+            let progress_writer = spawn_progress_writer(store, job_id, progress_updates);
+            let on_progress = |progress: TranscriptionProgress| {
+                progress_sender.send_replace(Some(progress));
+            };
             let outcome = async {
                 let ffmpeg = programs.verified_ffmpeg("transcription_audio").await?;
                 transcribe_nemo_cuda(
@@ -511,10 +561,15 @@ impl MediaJobWorker for TranscriptionWorker {
                     runtime,
                     cancellation,
                     &cache,
+                    &on_progress,
                 )
                 .await
             }
             .await;
+            // Let the last progress write land before the scheduler settles
+            // the job, so it cannot overwrite the final state.
+            drop(progress_sender);
+            let _ = progress_writer.await;
             match outcome {
                 Ok(published) => MediaWorkerOutcome::Complete {
                     result: serde_json::to_value(TranscriptionJobResult {

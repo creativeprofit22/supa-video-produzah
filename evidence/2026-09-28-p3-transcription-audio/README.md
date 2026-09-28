@@ -105,8 +105,11 @@ on `main` at the time of writing.
   6,149 MB for 5 min, 6,144 MB for 50 min and 5,892 MB for 2 h, against 7,165 MB before for 5 min. The
   50-minute run missed its 6,000 MB target by 144 MB: two pieces went over, while the desktop's own use moved
   between 1.6 and 2.0 GB. Recorded rather than tuned, by user decision.
-- **No progress inside a long transcription:** the job shows one stage, and a 2-hour file takes about
-  20 minutes.
+- **Progress inside a long transcription** (resolved; see `15-long-file-transcription.md`, "Progress inside one
+  transcription"). The job now reports audio preparation, each piece ("n of m items") and the speaker pass,
+  without touching a pending cancel. This was proven on a real 5-minute run.
+- **Runtime re-check before every piece:** about 8 s per piece (1.9 GB re-hashed), roughly 4 of the 20 minutes
+  on a 2-hour file. A cheaper check needs a user decision.
 - **Accuracy coverage is narrow:** one clean two-speaker studio recording. Overlapping speech, 3–4 speakers and
   noisy rooms were not measured.
 

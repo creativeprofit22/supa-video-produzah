@@ -6670,6 +6670,7 @@ async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_au
         runtime.clone(),
         ProcessCancellation::new(),
         jobs.cache(),
+        &|_| {},
     )
     .await
     .expect("NeMo runner must publish");
@@ -6706,6 +6707,7 @@ async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_au
         runtime,
         ProcessCancellation::new(),
         jobs.cache(),
+        &|_| {},
     )
     .await
     .expect("identical NeMo runner request must reuse");
@@ -6778,7 +6780,7 @@ async fn transcription_job_fixture() -> TranscriptionJobFixture {
             OsString::from("ffprobe"),
         ),
         cache_root.clone(),
-        jobs.cache().clone(),
+        &jobs,
     );
     TranscriptionJobFixture {
         _workspace: workspace,
@@ -6894,6 +6896,170 @@ async fn transcription_job_completes_on_gpu_slot_with_artifact_key_result() {
             .is_err(),
         "another window must not read the result"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_reports_each_step_and_ends_on_its_final_state() {
+    let fixture = transcription_job_fixture().await;
+    let id = submit_transcription_job(&fixture, "transcribe-progress").await;
+    let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+    assert_eq!(job.state, MediaJobState::Complete);
+    assert_eq!(job.stage, "complete");
+    let events = fixture
+        .jobs
+        .store()
+        .events(Some(id), 0, 100)
+        .await
+        .expect("job events must load")
+        .events;
+    let progress: Vec<_> = events
+        .iter()
+        .filter(|event| event.event_type == MediaJobEventType::Progress)
+        .map(|event| {
+            (
+                event.stage.as_str(),
+                event.progress.completed,
+                event.progress.total,
+                event.progress.unit,
+            )
+        })
+        .collect();
+    // The fixture is one short piece with speakers off. Updates are coalesced,
+    // so only the last one is guaranteed; every one is a running step.
+    assert!(events
+        .iter()
+        .filter(|event| event.event_type == MediaJobEventType::Progress)
+        .all(|event| event.state == MediaJobState::Running));
+    assert_eq!(
+        progress.last().copied(),
+        Some(("transcribing", 1, 1, MediaJobProgressUnit::Items))
+    );
+    // Every progress write lands before the job settles.
+    let last = events.last().expect("job must have events");
+    assert_eq!(last.state, MediaJobState::Complete);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn job_progress_writes_never_touch_a_cancel_or_a_settled_job() {
+    let workspace = tempdir().expect("progress workspace must be created");
+    let jobs = MediaJobService::initialize(
+        workspace.path().join("local-data"),
+        workspace.path().join("app-cache"),
+    )
+    .await
+    .expect("progress media jobs must initialize");
+    let store = jobs.store();
+    let job = store
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::Transcription,
+            parent_id: None,
+            dedupe_key: "progress-guard".to_owned(),
+            project_id: None,
+            asset_id: None,
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 1,
+                unit: MediaJobProgressUnit::Stages,
+            },
+            max_attempts: 1,
+            summary: "Progress guard".to_owned(),
+            private_payload: serde_json::json!({}),
+            created_at_ms: current_timestamp_millis(),
+        })
+        .await
+        .expect("progress job must enqueue")
+        .job;
+    let piece = |completed| MediaJobProgress {
+        completed,
+        total: 4,
+        unit: MediaJobProgressUnit::Items,
+    };
+
+    // Queued: not running yet, so nothing changes.
+    let queued = store
+        .record_progress(
+            job.id.clone(),
+            "transcribing".to_owned(),
+            piece(1),
+            current_timestamp_millis(),
+        )
+        .await
+        .expect("progress on a queued job must not fail");
+    assert_eq!(queued.stage, "queued");
+
+    let transition = |state, stage: &str, cancellation_requested| MediaJobTransition {
+        state,
+        stage: stage.to_owned(),
+        progress: job.progress.clone(),
+        attempt: None,
+        error: None,
+        retry_at_ms: None,
+        result: None,
+        cancellation_requested,
+        event_type: MediaJobEventType::StateChanged,
+        message: None,
+        occurred_at_ms: current_timestamp_millis(),
+    };
+    store
+        .transition(
+            job.id.clone(),
+            transition(MediaJobState::Running, "running", false),
+        )
+        .await
+        .expect("job must start");
+    let running = store
+        .record_progress(
+            job.id.clone(),
+            "transcribing".to_owned(),
+            piece(2),
+            current_timestamp_millis(),
+        )
+        .await
+        .expect("progress on a running job must record");
+    assert_eq!(running.stage, "transcribing");
+    assert_eq!(running.progress, piece(2));
+    assert!(!running.cancellation_requested);
+
+    // A pending cancel must survive a later progress write.
+    store
+        .request_cancellation(job.id.clone(), current_timestamp_millis())
+        .await
+        .expect("cancel must record");
+    let cancelling = store
+        .record_progress(
+            job.id.clone(),
+            "identifying_speakers".to_owned(),
+            piece(3),
+            current_timestamp_millis(),
+        )
+        .await
+        .expect("progress on a cancelling job must not fail");
+    assert!(cancelling.cancellation_requested);
+    assert_eq!(cancelling.stage, "transcribing");
+    assert_eq!(cancelling.progress, piece(2));
+
+    store
+        .transition(
+            job.id.clone(),
+            transition(MediaJobState::Cancelled, "cancelled", true),
+        )
+        .await
+        .expect("job must settle");
+    let settled = store
+        .record_progress(
+            job.id.clone(),
+            "transcribing".to_owned(),
+            piece(4),
+            current_timestamp_millis(),
+        )
+        .await
+        .expect("progress on a settled job must not fail");
+    assert_eq!(settled.state, MediaJobState::Cancelled);
+    assert_eq!(settled.stage, "cancelled");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7179,6 +7345,25 @@ async fn run_diarized_for(
     source_duration_us: u64,
     cancellation: ProcessCancellation,
 ) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
+    run_diarized_reporting(
+        fixture,
+        configuration,
+        with_diarizer,
+        source_duration_us,
+        cancellation,
+        &|_| {},
+    )
+    .await
+}
+
+async fn run_diarized_reporting(
+    fixture: &DiarizedRunnerFixture,
+    configuration: &AsrConfigurationV1,
+    with_diarizer: bool,
+    source_duration_us: u64,
+    cancellation: ProcessCancellation,
+    on_progress: &(dyn Fn(super::nemo_transcription::TranscriptionProgress) + Sync),
+) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
     let runtime = VerifiedNemoRuntime::new(
         fixture.executable.clone(),
         fixture.runtime_directory.clone(),
@@ -7206,6 +7391,7 @@ async fn run_diarized_for(
         runtime,
         cancellation,
         jobs.cache(),
+        on_progress,
     )
     .await
 }
@@ -7299,15 +7485,36 @@ async fn nemo_runner_transcribes_a_long_file_in_bounded_pieces_on_one_timeline()
     .is_err());
     assert_eq!(helper_count(&fixture.cache_root, "ffmpeg-count"), 0);
 
-    let published = run_diarized_for(
+    let reported = std::sync::Mutex::new(Vec::new());
+    let published = run_diarized_reporting(
         &fixture,
         &configuration,
         true,
         600_000_000,
         ProcessCancellation::new(),
+        &|progress| reported.lock().unwrap().push(progress),
     )
     .await
     .expect("a long file must publish");
+    // Three pieces plus the speaker pass: each piece is reported as it
+    // finishes, then the speaker pass as it starts.
+    let reported: Vec<_> = reported
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|progress| (progress.stage.code(), progress.completed, progress.total))
+        .collect();
+    assert_eq!(
+        reported,
+        [
+            ("preparing_audio", 0, 0),
+            ("transcribing", 0, 4),
+            ("transcribing", 1, 4),
+            ("transcribing", 2, 4),
+            ("transcribing", 3, 4),
+            ("identifying_speakers", 3, 4),
+        ]
+    );
     assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 3);
     assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 1);
     let chunks: Vec<_> = published
@@ -7588,6 +7795,7 @@ async fn nemo_cuda_transcription_runner_cancelled_request_launches_nothing_and_l
         runtime,
         cancellation,
         jobs.cache(),
+        &|_| {},
     )
     .await
     .expect_err("pre-cancelled NeMo runner must fail");

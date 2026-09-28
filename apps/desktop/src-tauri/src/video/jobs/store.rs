@@ -679,6 +679,30 @@ impl MediaJobStore {
         Ok(job)
     }
 
+    /// Records the stage and progress of a running job and nothing else.
+    /// Unlike [`Self::transition`] it never touches state, errors or the
+    /// cancellation flag, so it cannot race a user's cancel. A job that is no
+    /// longer running, or is being cancelled, is left unchanged.
+    pub(crate) async fn record_progress(
+        &self,
+        job_id: String,
+        stage: String,
+        progress: MediaJobProgress,
+        occurred_at_ms: i64,
+    ) -> Result<MediaJobRecord, MediaStateStoreError> {
+        let event_job_id = job_id.clone();
+        let state = self.state.clone();
+        let (job, recorded) = tauri::async_runtime::spawn_blocking(move || {
+            record_progress_sync(&state, &job_id, &stage, &progress, occurred_at_ms)
+        })
+        .await
+        .map_err(|_| MediaStateStoreError::WorkerStopped)??;
+        if recorded {
+            self.emit_latest(&event_job_id).await;
+        }
+        Ok(job)
+    }
+
     pub(crate) async fn request_cancellation(
         &self,
         job_id: String,
@@ -1264,6 +1288,53 @@ fn transition_sync(
     enforce_retention(&transaction, transition.occurred_at_ms)?;
     transaction.commit()?;
     Ok(updated)
+}
+
+fn record_progress_sync(
+    state: &MediaStateStore,
+    job_id: &str,
+    stage: &str,
+    progress: &MediaJobProgress,
+    occurred_at_ms: i64,
+) -> Result<(MediaJobRecord, bool), MediaStateStoreError> {
+    progress.validate()?;
+    if occurred_at_ms < 0 {
+        return Err(MediaStateStoreError::InvalidTransition);
+    }
+    let mut connection = state.open_connection()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::NotFound)?;
+    if current.state != MediaJobState::Running || current.cancellation_requested {
+        return Ok((current, false));
+    }
+    let now = occurred_at_ms.max(parse_timestamp_millis(&current.updated_at)?);
+    transaction.execute(
+        "UPDATE media_jobs SET
+            stage = ?2, progress_completed = ?3, progress_total = ?4, progress_unit = ?5,
+            updated_at_ms = ?6
+         WHERE id = ?1",
+        params![
+            job_id,
+            stage,
+            sql_i64(progress.completed)?,
+            sql_i64(progress.total)?,
+            enum_string(progress.unit)?,
+            now,
+        ],
+    )?;
+    let updated = load_job(&transaction, job_id)?.ok_or(MediaStateStoreError::CorruptRecord)?;
+    updated.validate()?;
+    insert_event(
+        &transaction,
+        &updated,
+        MediaJobEventType::Progress,
+        None,
+        None,
+        now,
+    )?;
+    enforce_retention(&transaction, now)?;
+    transaction.commit()?;
+    Ok((updated, true))
 }
 
 fn list_sync(

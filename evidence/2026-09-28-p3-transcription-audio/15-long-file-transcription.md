@@ -136,8 +136,38 @@ Production runs were started with `SUPA_VIDEO_REAL_ASR_PROOF=1`, `SUPA_VIDEO_REA
 All output went to `E:\nemo-runtime\proof\long-files\prod\` (`clip5`, `long50`, `long2h` with `.json`, `.csv`,
 `.summary.json`, `.score.json`, `.test.log`, and the failed first attempts).
 
+## Progress inside one transcription (follow-up, after `1e42f8f`)
+
+The job now reports each step through the normal media-job stage and progress fields, which the Job Center
+and the transcript panel already show:
+
+| Stage code | Progress |
+|---|---|
+| `preparing_audio` | 0 of 1 stages (piece count not known yet) |
+| `transcribing` | pieces done of (pieces + 1 speaker pass) items; pieces only when speakers are off |
+| `identifying_speakers` | pieces of (pieces + 1) items, reported as the speaker pass starts |
+
+Then the job ends on `complete` as before.
+
+- **Cancel is safe.** Progress uses its own store write (`record_progress`). It changes only the stage and
+  progress, and does nothing when the job is no longer running or a cancel is pending. The ordinary
+  `transition` write would have cleared a pending cancel.
+- **Ordered, never blocking.** The runner hands updates to one writer task, which keeps only the newest update.
+  A slow database therefore never holds up NeMo. Some steps can be merged, but the last one always lands, and
+  the worker waits for it before the job settles, so a late progress write cannot overwrite the final state.
+- **Tests.** `nemo_runner_splits_a_long_file_into_bounded_pieces_and_diarizes_the_whole_file` checks the full
+  sequence for 3 pieces plus speakers. `job_progress_writes_never_touch_a_cancel_or_a_settled_job` covers
+  queued, running, cancel-pending and settled jobs. `transcription_job_reports_each_step_and_ends_on_its_final_state`
+  covers the job path. The Job Center test renders "transcribing" / "7 of 31 items" and "identifying speakers".
+- **Real run** (`progress-5min`, 5-min source, RTX 8 GB): the test passed with WER 0.041 and 99.4 % speakers,
+  unchanged. Peak total GPU memory was 5,754 MB; the desktop's own use varies between runs. The job took 80 s.
+  The progress events it recorded were `preparing_audio` 0/1, then `transcribing` 0/3 at +9 s and 1/3 at +36 s,
+  then `identifying_speakers` 2/3 at +48 s. The second piece's 2/3 update was merged into the speaker step,
+  as designed. The GPU proof now fails if no piece progress is recorded, and it writes the events to
+  `progressEvents` in its JSON.
+
 ## Follow-ups (not done here)
 
-- The job shows one stage, so a 20-minute job gives no progress within it.
+- ~~The job shows one stage, so a 20-minute job gives no progress within it.~~ Closed above.
 - Re-verifying the runtime before every piece costs about 8 s each in a debug build. Checking a cheaper
   identity between pieces would need its own decision, because it trades away a check the plan requires.

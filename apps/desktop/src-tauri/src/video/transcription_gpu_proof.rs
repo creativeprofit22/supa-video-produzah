@@ -10,7 +10,9 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Duration, time::Instant};
 
 use super::*;
-use crate::video::{grants::GrantCategory, nemo_transcription::REAL_ASR_PROOF_ENV};
+use crate::video::{
+    grants::GrantCategory, jobs::model::MediaJobEventType, nemo_transcription::REAL_ASR_PROOF_ENV,
+};
 
 const GOLD: &str = "And so my fellow Americans ask not what your country can do for you \
                     ask what you can do for your country.";
@@ -156,6 +158,43 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
     );
     assert_eq!(job.kind, MediaJobKind::Transcription);
 
+    // The progress the Job Center saw while the job ran.
+    let mut progress_events = Vec::new();
+    let mut after = 0;
+    loop {
+        let page = jobs
+            .store()
+            .events(Some(started.job_id.clone()), after, 100)
+            .await
+            .unwrap();
+        progress_events.extend(
+            page.events
+                .iter()
+                .filter(|event| event.event_type == MediaJobEventType::Progress)
+                .map(|event| {
+                    serde_json::json!({
+                        "stage": event.stage,
+                        "completed": event.progress.completed,
+                        "total": event.progress.total,
+                        "unit": event.progress.unit,
+                        "at": event.created_at,
+                    })
+                }),
+        );
+        after = page.latest_event_id;
+        if !page.has_more {
+            break;
+        }
+    }
+    let piece_count = u64::try_from(
+        progress_events
+            .iter()
+            .filter(|event| event["stage"] == "transcribing" && event["completed"] != 0)
+            .count(),
+    )
+    .unwrap();
+    assert!(piece_count > 0, "no piece progress was recorded");
+
     let result = transcription_result(&jobs, "main", &started.job_id)
         .await
         .unwrap();
@@ -255,6 +294,7 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         },
         "runtimeVerifyMs": runtime_verify_ms,
         "jobWallClockMs": job_wall_clock_ms,
+        "progressEvents": progress_events,
         "sourceDurationUs": artifact.source_duration_us,
         "transcriptKey": result.transcript_key,
         "wordCount": artifact.words.len(),
