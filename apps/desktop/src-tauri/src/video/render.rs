@@ -1035,6 +1035,16 @@ fn caption_drawtext_filter(caption: &RenderCaptionInput) -> String {
     )
 }
 
+/// Export keyframe spacing: a full frame every 2 seconds, in whole frames at the sequence rate,
+/// rounded half up. Must match `keyframeIntervalFrames` in `compile-render-plan.ts` exactly.
+const KEYFRAME_INTERVAL_SECONDS: u128 = 2;
+fn keyframe_interval_frames(rate: &super::types::RationalRate) -> String {
+    let numerator = u128::from(rate.numerator);
+    let denominator = u128::from(rate.denominator).max(1);
+    let frames = (2 * KEYFRAME_INTERVAL_SECONDS * numerator + denominator) / (2 * denominator);
+    frames.max(1).to_string()
+}
+
 fn expected_render_arguments_v1(plan: &RenderPlanV1, duration_microseconds: u64) -> Vec<String> {
     let expected = &plan.expected;
     let source_in = plan
@@ -1086,6 +1096,8 @@ fn expected_render_arguments_v1(plan: &RenderPlanV1, duration_microseconds: u64)
         "libx264".to_owned(),
         "-pix_fmt".to_owned(),
         "yuv420p".to_owned(),
+        "-g".to_owned(),
+        keyframe_interval_frames(&expected.rate),
     ]);
     if expected.audio {
         arguments.extend([
@@ -1380,6 +1392,8 @@ fn expected_render_arguments_v2(
         "libx264".to_owned(),
         "-pix_fmt".to_owned(),
         "yuv420p".to_owned(),
+        "-g".to_owned(),
+        keyframe_interval_frames(&plan.expected.rate),
     ]);
     if audible {
         arguments.extend([

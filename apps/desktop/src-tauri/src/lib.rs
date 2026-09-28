@@ -940,7 +940,7 @@ mod tests {
                 "-hide_banner", "-nostdin", "-loglevel", "warning", "-progress", "pipe:1",
                 "-nostats", "-i", input, "-ss", "0.000000", "-t", "2.000000", "-map",
                 "0:v:0", "-map", "0:a:0", "-vf", filter, "-c:v", "libx264", "-pix_fmt",
-                "yuv420p", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", destination
+                "yuv420p", "-g", "60", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", destination
             ]
         });
         let render_error = get_ipc_response(
@@ -1716,7 +1716,7 @@ mod tests {
                 "-hide_banner", "-nostdin", "-loglevel", "warning", "-progress", "pipe:1",
                 "-nostats", "-i", input, "-ss", "0.000000", "-t", "2.000000", "-map",
                 "0:v:0", "-map", "0:a:0", "-vf", filter, "-c:v", "libx264", "-pix_fmt",
-                "yuv420p", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", output
+                "yuv420p", "-g", "60", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", output
             ]
         })
     }

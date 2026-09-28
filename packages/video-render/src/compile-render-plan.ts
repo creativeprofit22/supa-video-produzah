@@ -86,6 +86,17 @@ function ratesMatch(left: RationalRate, right: RationalRate): boolean {
   return left.numerator === right.numerator && left.denominator === right.denominator;
 }
 
+// Export keyframe spacing: a full frame every 2 seconds, in whole frames at the sequence rate,
+// rounded half up. Bounds seek cost in the delivered file. Mirrored exactly by the native
+// argv validator (render.rs `keyframe_interval_frames`).
+const KEYFRAME_INTERVAL_SECONDS = 2n;
+function keyframeIntervalFrames(rate: RationalRate): string {
+  const numerator = BigInt(rate.numerator),
+    denominator = BigInt(rate.denominator);
+  const frames = (2n * KEYFRAME_INTERVAL_SECONDS * numerator + denominator) / (2n * denominator);
+  return String(frames > 0n ? frames : 1n);
+}
+
 function timeUsesRate(time: RationalTime, rate: RationalRate): boolean {
   return time.rateNumerator === rate.numerator && time.rateDenominator === rate.denominator;
 }
@@ -368,6 +379,8 @@ function compileValidatedPlan(
     "libx264",
     "-pix_fmt",
     "yuv420p",
+    "-g",
+    keyframeIntervalFrames(sequence.rate),
     ...(hasAudio ? ["-c:a", "aac", "-ar", "48000"] : []),
     "-movflags",
     "+faststart",
@@ -788,6 +801,8 @@ export function compileActiveSequenceRenderPlan(
       "libx264",
       "-pix_fmt",
       "yuv420p",
+      "-g",
+      keyframeIntervalFrames(sequence.rate),
       ...(audibleTrackIndices.length > 0 ? ["-c:a", "aac", "-ar", "48000"] : []),
       "-movflags",
       "+faststart",

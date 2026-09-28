@@ -2705,6 +2705,8 @@ fn render_plan_value_for_profile(
         "libx264".to_owned(),
         "-pix_fmt".to_owned(),
         "yuv420p".to_owned(),
+        "-g".to_owned(),
+        two_second_keyframe_frames(rate_numerator, rate_denominator),
     ]);
     if audio {
         argv.extend([
@@ -2795,7 +2797,7 @@ fn multitrack_render_plan_value(top: &Path, bottom: &Path, output: &Path) -> Val
             "-ss", "0.000000", "-t", "2.000000", "-i", top,
             "-ss", "1.000000", "-t", "2.000000", "-i", bottom,
             "-filter_complex", filter, "-map", "[vout]", "-map", "[aout]", "-t", "2.000000",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-ar", "48000",
             "-movflags", "+faststart", output
         ]
     })
@@ -3839,6 +3841,8 @@ fn render_execution_argv_exactly_overwrites_only_the_owned_partial() {
             "libx264".to_owned(),
             "-pix_fmt".to_owned(),
             "yuv420p".to_owned(),
+            "-g".to_owned(),
+            "60".to_owned(),
         ]);
         if audio {
             expected.extend([
@@ -5041,11 +5045,23 @@ fn render_caption_boundary_matrix_validates_exact_v1_v2_plans_without_tools() {
     }
 }
 
+// Independent oracle for the export keyframe interval: 2 s at the sequence rate, rounded to the
+// nearest whole frame. Deliberately floating-point, unlike the integer production helper.
+fn two_second_keyframe_frames(rate_numerator: u64, rate_denominator: u64) -> String {
+    ((2.0 * rate_numerator as f64 / rate_denominator as f64).round() as u64)
+        .max(1)
+        .to_string()
+}
+
 fn caption_boundary_plan(mut plan: Value, version: u64, captions: Vec<Value>) -> Value {
     let duration = plan["argv"][12].as_str().unwrap().to_owned();
     let rate = format!(
         "{}/{}",
         plan["expected"]["rate"]["numerator"], plan["expected"]["rate"]["denominator"]
+    );
+    let keyframes = two_second_keyframe_frames(
+        plan["expected"]["rate"]["numerator"].as_u64().unwrap(),
+        plan["expected"]["rate"]["denominator"].as_u64().unwrap(),
     );
     if version == 2 {
         let input = plan["inputPath"].clone();
@@ -5086,6 +5102,8 @@ fn caption_boundary_plan(mut plan: Value, version: u64, captions: Vec<Value>) ->
             "libx264",
             "-pix_fmt",
             "yuv420p",
+            "-g",
+            keyframes,
             "-movflags",
             "+faststart",
             output

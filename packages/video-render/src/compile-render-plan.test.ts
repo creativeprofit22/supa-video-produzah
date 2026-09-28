@@ -63,6 +63,8 @@ const avArgv = [
   "libx264",
   "-pix_fmt",
   "yuv420p",
+  "-g",
+  "60",
   "-c:a",
   "aac",
   "-ar",
@@ -94,6 +96,8 @@ const videoOnlyArgv = [
   "libx264",
   "-pix_fmt",
   "yuv420p",
+  "-g",
+  "60",
   "-movflags",
   "+faststart",
   outputPath,
@@ -738,6 +742,23 @@ describe("compileSingleClipRenderPlan", () => {
 
     expect(plan.argv).toEqual(videoOnlyArgv);
     expect(plan.expected).toEqual(expectedMetadata(false));
+  });
+
+  it.each([
+    [24, 1, "48"],
+    [24_000, 1_001, "48"],
+    [25, 1, "50"],
+    [30, 1, "60"],
+    [30_000, 1_001, "60"],
+    [60, 1, "120"],
+  ])("places a keyframe every 2 s at %i/%i fps (-g %s)", (numerator, denominator, frames) => {
+    const plan = compile(
+      makeRevision({ rate: createRationalRate(numerator, denominator), sourceIn: 0, sourceOut: 1 }),
+    );
+    const index = plan.argv.indexOf("-g");
+
+    expect(index).toBeGreaterThan(plan.argv.indexOf("libx264"));
+    expect(plan.argv[index + 1]).toBe(frames);
   });
 
   it("formats integer and NTSC-rate boundaries as fixed six-place seconds", () => {
