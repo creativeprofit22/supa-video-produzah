@@ -30,3 +30,7 @@ Logs: `C:/Users/SPARTAN PC/.gg/foreground/<ID>.log`.
 - `836199a3-974f-4a67-ada3-97a529c73b79`: explicit UTF-8 host inventory, exit 0.
 
 See [test accounting](ignored-tests.md), [platform matrix](platform-matrix.md), [harness status](harness-status.md) and [results](results.md). Historical ledgers and ROADMAP.md remain unchanged. Existing application changes remain untouched; only the two explicitly approved bootstrap script/test files changed outside this new evidence directory.
+
+## 2026-09-27 close-out
+
+New files: [closeout-2026-09-27.md](closeout-2026-09-27.md) (ledger and native-preview decision), [final-seek-diagnosis.md](final-seek-diagnosis.md), `final-seek-diagnosis.mjs`, `assemble-installer.mjs`, `cpu-log.ps1` and `visible-drop-attribution.test.mjs`. `browser-observer.mjs`, `metrics.mjs`, `measure-page.mjs`, `summarize-commit-isolation.mjs` and `native-baseline.mjs` were extended. Current status: [results.md](results.md) and [platform-matrix.md](platform-matrix.md). Harness tests need `P2_LAUNCHER_RECEIPT=runs/launcher-6bddff38882644cfb9a5ee567098e082/receipt.json` and `P2_MEDIA_RECEIPT=runs/media-9f3WSn/receipt.json`. The older launcher `e8f949c5…` no longer starts from Node.

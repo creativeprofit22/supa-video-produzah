@@ -98,3 +98,11 @@ Checks: 899 application tests, typecheck, and 12/12 harness tests pass. Details:
 The playback change did not measurably slow browser seeks. An old-vs-new, reference-only browser A/B (`qdMqUj` old, `8ikoWz` new; cleanup confirmed) shows the old build itself reproduces the higher seek times today (Final p95 442/509 ms against 428/444 ms on 2026-09-20). Three of four rows have no difference, and 30/1 Final is borderline (+68 ms, CI [0, 171]) while also confounded by higher background load during the new run. No fix made. Details: the follow-up section of [playback-commit-isolation-report.md](playback-commit-isolation-report.md).
 
 Swapped-order repeat (new `a9mZSY` first, old `QNObhX` second, equal load 29.7%/29.6%, cleanup confirmed): three rows show no difference in either order. 30/1 Final is higher on the new build in both pairs (+48 ms p95, CI [−68, 165]; pooled +76, CI [−2, 111]), but it is not significant, and the same path at 29.97 is flat. Result: no measurable regression, and the 30/1 Final tail is not fully settled. No fix made.
+
+## 2026-09-27 — close-out: visible drops, Final-seek cause, installer runtime
+
+- **Visible-layer drops:** the observer now attributes decoder counters to visible, hidden/preloaded and fully covered layers. Fresh native matrices (`aFZeg2`, `i49MoU`, `FiGn9e`; cleanup confirmed) show **0 % visible drops** everywhere. The earlier large drop totals came from layers the viewer does not see.
+- **Final seek:** p95 ~276–291 ms is explained by the export's 8.3-s keyframe interval (r ≈ 0.99). A native compositor would not fix it. The miss is accepted and documented; the export was not changed.
+- **Installer:** an offline MSI (unsigned) was administratively extracted, not installed. Its executable passed the full native baseline, and its export was byte-identical to the release build's.
+- **Native-preview decision:** defer, with measured justification.
+- No app code changed. Nothing was committed or installed. Details: [closeout-2026-09-27.md](closeout-2026-09-27.md).
