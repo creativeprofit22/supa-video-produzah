@@ -1,0 +1,4115 @@
+{
+  "cudaProof": "runner rejects runs without stderr 'Using GPU backend: CUDA0'; the job completed",
+  "distinctSpeakers": [
+    "speaker_1",
+    "speaker_2"
+  ],
+  "engineVersion": "5be7bfb104802131e61fe679b3f1401b27270216",
+  "gold": "Carlos, thank you so much for being on Houston We Have a Podcast. First, we’d like to know how you got here. Can you tell us a little bit about yourself and what you do here at NASA? Sure, it’s a pleasure to be here with you guys today. So, I’ve always been really inspired by exploration, and pushing the limits, doing things that nobody else has done. So, for example, the first people that went to Everest, the first set of explorers that got into a pyramid after you know many many years of not knowing where the things were, things like that have always inspired me. Therefore, space exploration it kind of meets all of that criteria. It pushes the limits in every angle, technology, science, and then it by default, pretty much every time you go to space, you’re you’re seeing new things, and not a lot of people have done that. And there’s many places where nobody has gone. So, I always was inspired by doing things like that, and NASA embodies all of those things. The the work at NASA, it’s all about exploration and doing things that nobody else has done. The near impossible. So growing up, I always had my eye- Grew up in Spain, you know, very distant, but I always had my eye on how can I get involved in something like that, and when I grow up, NASA really was the name of the game, so… still is, but now there’s more possibilities to do things in different countries in partnership with NASA. Back then, that was not really a thing, so. I did, you know, I set a course to did everything I could from from early on, even high school, to do get closer to the action, get closer to NASA, the United States, study university here, something that would lead me to eventually being able to be part of it. So yeah, I came to the states to study space sciences and electrical engineering, and then I did it in school that was pretty close to the Kennedy Space Center, Florida Institute of Technology, Florida Tech, and right after I graduated, happened to be the very beginning of assembling the International Space Station. So, I came into NASA as a flight controller for ISS. So, long journey, but you know that’s what it takes to realize your dreams. That’s fantastic. And you’ve been charged with quite a big task. There was something called ignition that happened earlier this year. Where did this come from? The NASA Administrator Jared Isaacman has charged you with quite a big workload. Yeah, ignition, I think, was really a different name for transformation, and it is transforming the way NASA does business. And going from doing multiple things that are all good in summation, but perhaps diluted the key objectives that the agency should be setting out to do, which is things nobody else can do. So Ignition was an exercise of looking at what are those key initiatives that exemplify what we should be after, like accelerating going back to the Moon, building a Moon Base, making sure that we can stay in low Earth orbit on permanent presence even after the space station. Going to Mars and what it takes to do that, including nuclear technologies that may unlock that capability, like nuclear propulsion, and continuing to do science that nobody else can do, because it’s in places where nobody can reach other planets, solar system, beyond. So Ignition was about realigning the agency to be able to focus on these things, and not like break all boundaries. Not it’s not about human spaceflight, science mission directorate, technology. It’s not about any- It’s about all of it. So every aspect of it align to achieve these key objectives, and I think that’s what allows us to do the things that nobody else can. If we see the big picture, we can accomplish the unaccomplished. So, tell us a little bit about why NASA is going back to the Moon. I feel like it’s almost an obligation for humanity to continue exploring space, and we have been gifted another celestial body that’s only 3, 4, 5 days away. That, but getting there, it has a lot of the characteristics that we have to master to be able to live and work in other celestial bodies, and it also has secrets about how our solar system was formed and the Earth-Moon system. So it kind of embodies and contains all of these objectives from the technology you need to advance to be able to work and live there. The signs that you can unlock by exploring it, and then because we haven’t really explored it fully, we’ve spent about 80 hours working on the surface of the moon total in the history of humanity. Only a handful of humans, and because of that, going back there and having seen other humans there-men, women, different ethnicities-I think it can unlock a tsunami of inspiration across the world. So it has all of those components. So it is a perfect mission for NASA to because it’s still almost science fiction to operate on the moon. We did Apollo, but not really on long duration missions. It is the near impossible, and it is gonna reap many benefits on technology back on Earth, the science that we’re gonna be able to unlock, and the inspiration that will fuel a new generation of engineers, scientists, teachers. So, for all of those reasons, it’s past time that we go back and we set up permanent presence. I couldn’t agree more. And we’re not, like you said, continuing those short visits like we did during Apollo. It’s a little bit different now, and we’re doing this Moon Base. So tell us a little bit about what is different now to make that sustained presence possible. I think the key objective of what we did in the past through Apollo was to get to the Moon. Getting to the Moon is step one, the price of admission for what we want to do now. So it’s a completely different mindset. Even though one of the key initiatives is to be able to develop the systems to enable us to do that and get back there Is really step one. That’s what we’re on right now. Being able to set up an infrastructure that enables long duration missions and permanent presence, and the capability to do the things we want to do there. Like go to the areas, perhaps, where there’s permanently shadowed regions, or where we may find water that has been there for billions of years, setting up that capability-it’s all new. It it is it is a big step forward from just getting to the Moon, so it’s a huge challenge, but it’s the right time to go after it. And you mentioned the the South Pole with some of its its geographic and its resource features, but why are we looking at the South Pole for the Moon Base? Good question. It’s going to be very hard to go there and operate there, but it does have very- It has a lot of characteristics that make it a good destination for, especially for setting up in Moon Base and thinking of permanent present. One, it that those permanently shadowed regions which are created by the fact that the sun is only rises very few degrees off of the horizon, so any deep craters will just because of the shadows of the craters and any feature geological features there are gonna get permanently shadowed areas, and because there’s no atmosphere, there’s volatiles there that have been there since potentially when the Moon was formed. So just like we do today for climate science, we go to the poles and we dig and get a lot of ice, and it tells us kind of the history of the environment through many 1000s of years. Imagine getting that picture with volatiles that were there when the Earth-Moon system was formed. It will give us a picture of kind of the history of the solar system that we don’t know today. So, going after those things in the South Pole is very important. But also the the illumination, which in many aspects is hard because of this low, you know, inclination of the sun. It’s we don’t you don’t get the straight 14 days of shadow and straight 14 days of sun. So we will get, we will have the challenge of the shadows, but we we will have more consistent illumination in some areas that have the right elevation. So we want you know we want to have a base where for 14 days out of the month is complete darkness. So that was another interesting feature that makes the South Pole attractive, but it really is about the destination and what you want to do there, and science is a big driver. So you mentioned science. You talked a little bit about some of the tech and the exploration activities. Is this primarily about the science, the exploration, the technology, or is it about preparing for Mars? Well, all of that helps you prepare for Mars. So yeah, we’re absolutely gonna use it as a proving ground. When I talked earlier about being gifted a celestial body that is so close to us, it allows us to be able to learn and test things, develop the know-how to operate in a different celestial body planet, but very close to Earth. Right. Just like we have learned a tremendous amount of things in low Earth orbit, we’re still learning. We actually, I think, we’re still ahead of us is unlocking mass production capability of things you can only do in microgravity, and that’s still ahead of us. I think operating in a different planet, in this case our satellite, will teach us a lot about how to use the technology we have today, the things that we need new, and it will definitely be the stepping stone we need before we send humans to Mars, which is much farther away, much more complex, to operate and maintain human presence, and be able to bring him back if needed from such a distance without having really tested the technology and matured it, and kind of make it part of what we know how to do on the Moon. Any data is good data. Absolutely. So I have to say I have to give a little shout out. The Moon Base program is led here out of the Johnson Space Center in Houston, and I want to learn a little bit about the overall goal for the Moon Base. So we, our goal is to set up the infrastructure to enable humans to be operating on the surface of the moon on a permanent basis, and not give it up. Like we went there 50 years ago, for many reasons we focused on low Earth orbit and other goals. You know, scientific missions that have taught us a lot about the solar system, other planets, but we never went back. We want to set up an infrastructure that enables sustained human presence, so we can keep exploring, learning, and then take the next step to Mars. And to do that, we’re going to do it in in three phases. The first phase is going to be all about learning. We’re not going to focus on specific things of what we think the final product is going to be, but it’s all going to be about being able to get to the Moon reliably, meaning different vendors to have multiple successful missions, about getting the ground truth data of operating on the surface, like what are really the illumination conditions that we have to deal with? Can we chase the light? Can we survive the night? All of those things are important to learn. Micrometeorites. What’s the environment that- do we need to protect the habitation modules and the astronauts from that, or is that a rare occurrence? The radiation. How do we operate with the regolith? Can we, you know, is it going to be hard to traverse in those regions of the South Pole, different from where we went to in Apollo? So all of those things just get ground truth data, so we can then tweak and modify and create new technology to deal with it. And the last part is testing that technology. So if we know we need power systems and a power grid, you know, laying out cables potentially, we can do that on the ground, but also doing it with the exact conditions may be necessary, or testing out solar masts or different mobility systems that will ensure that we can move from like landing site to habitation center reliably and back and forth. Those that- can we manipulate the surface to to build walls or berms or things like that. So all of that is in phase one. And then once we’ve gone through that in the ’28-‘29 time frame, then we’ll be able to start setting up the permanent infrastructure. As you’re talking about this one, I’m thinking about the Moon Base. I’m picturing futuristic looking buildings, a launch and landing pad potentially a bunch of rovers driving around, but what will the early days of the Moon Base actually look like? And what are the some of the first things that we’re going to need? Yeah, think about hundreds of square miles where we have different assets doing those objectives that I talked about. Multiple landers in different places of the moon, gathering data about what’s happening there. Definitely, mobility systems that can allow us to go from one place to another. Eventually, we’ll want the astronauts to be able to go to these areas where there’s a lot of scientific objectives. Potentially, we’re going to have some drones that will be able to deploy the land. You know, they’ll get deployed close to the Moon, land themselves, and then hop to different places of the Moon. So maybe hard to reach areas like a crater ridge, that’s in a place that we can even access with rovers, or getting into craters, or even sending them and checking out the path that the astronauts will traverse in a future excursion. And then of course we’ll we’ll wanna set up infrastructure elements in different places. So in the first phase, you’re just gonna see many assets in many different places. Some of them may not even work anymore because they were there to survive, you know, a short stint. Gather key data, and then other assets, we definitely want them to survive the night, so we can continuously gather information. So it will be kind of like an area of different robotic equipment. Some of it working, some of it not, and then we’ll graduate to where you start seeing infrastructure like power towers and cables and some habitation elements. Got it. And right now, when you’re saying surviving the night, just connecting the dots, the two-week period or the 14 days that you mentioned-that’s one lunar night. Is that right? In the South Pole, it’s going to be more potentially hours. More hours. It’s surviving the shadow really more than the night. Got it. Because the sun will be lurking. There are periods when there might be complete darkness in some areas, unless you’re very elevated. But that’s what. That’s why. Again, we were talking about this earlier. Why we’re going to South Pole? Because it it won’t be that you know black and white, 14 days of of no sun. It will be a lot of shadowy time frames that we need to be able to survive, and that may include several days, but not quite 14. So, or or being able to survive night may mean. Just having the capability to survive a few hours of shadow and be able to move to where the sun is, so it will be a combination of all of those things. Along with the temperatures and everything that comes with it. But we, for those of you listening, we NASA has some really cool visualizations. If you’re interested in seeing what the South Pole, the lighting looks like in that area. Let’s talk about the human presence on the Moon. Do we expect a continuous human presence, or will there be times without humans? And what sorts of activities will be going on when the people aren’t there? So, at the very beginning, we’re going to send a lot of robotic missions. There’ll be one, hopefully, one this year, and multiple next year, different places of the Moon, many of them around the South Pole, and those will be purely robotic missions. Again, some of them will have rovers, other ones will just have experiments on the landers. Some of them will be the drones that we deploy, and they hop around into different places. And then in 2028 we’ll have Artemis IV, so that will be our first chance to have the crew interact with potential Moon Base elements like the Lunar Terrain Vehicles. So we we’re going to deploy the Lunar Terrain Vehicles well before the crew gets there. They will operate autonomously, and then, if everything aligns, they will meet the crew around the landing site. So, and then approach the spacecraft once it has landed to give them a mobility asset. So, I’ll be the first time that we interact with them. And then at some point after Artemis V. We hope to do missions twice a year with humans. So yeah, those missions for a few years during Phase Two will be they will come to sites where there’s Moon Base elements there, potentially infrastructure that they can help tweak or build themselves. But most of the year, there will be multiple missions where the crew is not there, and then eventually we’ll have habitation elements that will enable the crew to stay on the Moon longer than what they can with just their landers. So we’ll start with the pressurized rover, and then different habitation elements that will enable them to stay there up to 30 days, and then beyond that, to eventually be able to do crew rotations twice a year and and maintain permanent presence. Awesome. So I heard phase one, several robotic landings, over 20. Phase two, humans start coming, more elements are getting to the Moon. And then phase three is your pressurized rover and more regular twice a year trips. Is that how we’re breaking it out? Pretty close. So phase one there will be multiple robotic missions and one Artemis IV human landing with some limited interaction, especially with the LTV. Phase two, there will continue to be multiple robotic missions to start setting up the infrastructure, and we expect several human missions at least once a year, graduating to twice a year, where the astronauts, the Artemis astronauts, will interact with the Moon Base elements, which are going to be mostly part of the infrastructure, and in at the end of phase two, we expect to have the pressurized rover there, so they will be able to stay for a little bit longer duration at that point. We’ll have the logistics to outfit the rover and all that stuff. And then phase three is when we start doing the longer duration missions because we’ll have several habitation components that allow two to four astronauts to do some longer stays, graduating to hopefully permanent. You’re talking about the habitation aspects, and I’m very interested to understand what the biggest engineering challenge is in simply having a place to live. Well, it starts with getting there. And and then be able to go from your landing site to where you have your habitation cluster, which could be a mile or longer. Because anything without an atmosphere, when the spacecraft land, the engines are operating and they’re blasting regularly all over the place. So we figured you’ll have to be at least a mile away from that site. So it starts with landing successfully and being able to hop on your transportation vehicle, lunar terrain vehicle, and go to the site where you’ve put the clusters of habitation. To establish that infrastructure. Imagine that you know when you’re on the sun, you are experiencing you know close to 200 degrees Fahrenheit. In the shade it plummets to minus close to minus 200, and in areas where they don’t see a lot of sun or no sun, it could be much colder than that. Too cold. Yeah. So any systems from structure, electronics, anything like that, just does not survive those temperatures. So we need to start with being able to power and heat those elements, even through the shadows, which means you need to be able to generate power and store it for that. Or have some elements with nuclear capability that, where you have radiative and conductive heat that you can route through your different systems and and keep at least keep them alive, hibernating until the sun comes back. But then you know once you get there, you have to for for just like we’ve learned in space station. If you’re gonna have a habitation module with humans, humans take a lot to maintain alive. So a little high maintenance. Yeah, like the air, oxygen, nitrogen, water… All the high maintenance things we need. Yeah, food, yes, clothing, waste, all of those things. We’re gonna have to have a pretty strong logistic supply to the habitation elements, and then you have to protect them from the environment you have there. Not we know radiation, it’s a big deal because you’re outside of the Van Allen belts, but micrometeorites are, you know, significantly a very big potential hazard, and we have to evaluate what the environment of that is there. In low Earth orbit, you know, when you run into something that it’s also there, like debris from other spacecraft or whatever, it’s like you may have an impact of 20 kilometers per second. When you’re talking about micrometeorites in space, it’s like 50 kilometers. So very powerful. So if the environment is pretty active, like the Artemis II crew observed six or seven while in a four-hour traverse of the far side. So, what is it like? And then, you know, the the regolith is pretty toxic because it has not been weathered. So, imagine the astronauts coming out of their habitation module and operating, working on the Moon, getting pretty dusty like we saw in Apollo, and then getting back in the habitation. How do you prevent contamination of everything? And and the the machines that we’re using in our robotic systems, how do we prevent that dust from getting into the mechanisms and all of that? It’s hard. Then you have the communications part. When you’re on Earth, you we take it for granted that we have permanent cellular communications because there’s satellites, cell towers. We have GPS tells us where we are exactly anywhere in the world. Exactly. There’s none of that on the Moon, so we have to establish constellations of satellites to provide communications. So you don’t need direct to Earth in the South Pole. That’s also very hard because wherever you are, you’re pretty much looking horizontally, and you have to, you know, if there’s any ridges or tall areas, like for example Mons Mouton, which is a pretty high plateau, is like six kilometers high. If you’re in Shackleton Crater, you know, it goes two two and a half kilometers deep, so you’re gonna run into things like Mons Mouton to get that prevent you from having direct line sight towards many times while the Earth is in in the horizon. So you’re gonna have to we’re gonna have to deploy constellations of satellites, for navigation too, and then on the surface. So you got to put all of that together every step of the way to keep the crew alive and operating, and keep the systems from freezing and stop functioning. So many follow-up questions for you. I want us to break it down a little bit. So I want to go into some specifics on a few things. What kind of materials are already on the Moon that we can utilize for the Moon Base. You mean like native materials, like regolith? Yes. Well, we have picked up that there’s water on the Moon. We just don’t know in what state. It’s not like we. I mean, we would love to find like a block of ice in one of these permanently shadowed regions, but most likely is very intermixed with the normal regolith. So we’re gonna have to find greater accumulations of it and see if we can process it. All of it, by the way, technologies will eventually need for Mars. When we know for a fact we’re gonna have to develop some of the stuff we need from things that are on the ground on Mars. Potentially propellant and things like that. So we can test some of those technologies to try to process, like find water and make things out of it. We also think that. We would love to be able to use regolith to do some 3d printing of structures on the Moon. Cool. Yeah. We could also we may be experimenting. There’s companies that are already experimenting with using lasers to modify the regolith. Perhaps we could pave a little bit of a road using that technique, Have a smooth road instead of a bumpy terrain. Yes, potentially. That would be so great for the LTVs. Or even you know, I mentioned a road that’s you know a a big expanse of area. But what about maybe just smoothing an area to put a hab on it, so we can dock things to it easier. It’s not on even ground. And also using the regolith to actually like 3d print walls or berms that we can use near the landing site area, so they don’t have to be so far or around a nuclear reactor to protect the humans from radiation in the systems. So yeah, all of those things we want to do, and then potentially there could be things that we actually want to mine, like helium-3, or we we know some of that stuff is there. The question is going to be, can we find that in quantities, and can we develop the technologies with where it’s where it’s efficient to mine it, you know, better than what we could do on Earth, where there might be less quantities but easier to get to. So all of those things, it’s all about going there and learning. We can theorize about it, but unless you go there and you’re operating and actually trying things out, we’ll never know. That’s true. Tell us a little bit about the power solutions. You talked about some of the opportunities we have there with surviving the night and the different nuclear capabilities we could potentially have. Tell us about what what power solutions look like on the lunar surface. So power is going to be the name of the game for early infrastructure, and what originally is going to be a lot of solar, and because of the South Pole and the low angle that the sun rises to, it’s very likely to be solar towers. So and we want to have enough batteries there so we can use those systems even when the shadows come there. So number one is determining how tall they need to be, how effective they are, and then how what’s the right combination of mass to deploy that, have enough batteries to be able to have a permanent power energy source for all the assets that may be around. And then beyond that, we want to put things such as the other assets can come in and charge or hibernate, and ideally we’d like to make it wireless charging, because any other type of connector with all the dust and stuff eventually may may be an issue. Yeah. So you can imagine we were trying to develop the standards such as any power station that we put in there, any asset could use. International rovers, our own different made by different vendors, so they can come there and allow them to recharge or even survive the night, so that’ll be the the first part that we work on. But eventually, we’d like to utilize nuclear technology, even starting with RHUs, the Radioisotope Heating Units that may allow systems to survive, graduate into RTGs, and then eventually, we definitely want to have go from nuclear generators to that can convert the radiation into heat, electricity to eventually having a nuclear reactor that can scale up to like 100 kilowatts to maintain, you know, not only habitation elements which may require less than that, but also if we’re doing ISRU, 3d manufacturing, any type of that, that was going to require a lot of power. So those nuclear reactors in phase three, or you know, at the end of phase two, may unlock being able to do much more higher scale things. Kind of having like an industrial area in the Moon Base. I want to take a moment and fangirl for a second. You are the right person for this job. The the way that you’ve broken this out for us has has been extremely helpful, and I want to go back to the needy humans. So astronauts on the Moon will require so many supplies, from food to water and oxygen, as we talked about some tools to do that ISRU or to collect samples to bring back, and then obviously some of the science experiments we talked about earlier. So, how much cargo can we anticipate getting delivered, and how often? We’re trying to figure that out now. We know it’s going to be pretty significant, especially when we’re doing long duration missions. Every block of like 30 days is going to require a good amount of logistics missions to maintain, and it all depends on how capable are the landers. So we are looking at today the the robotic landers that. We’re operating mostly are in the 500 kilogram payload capacity. There’s some that have scaled up to like three metric tons, 3,000 ish kilograms. We want to, and that’s part of the technology development we want to do. We want to scale those up to more like five to eight metric tons. Got it. Even just for the robotic landers. Eventually, we also want to have the heavy class, Right. Which will also probably be a derivation of what is taking the crew there. But you know, anywhere from 15 to 100 metric tons that would be a game changer. But at the beginning, we want to in you know one of the objectives of phase one is number one learn how to land on the Moon, take those systems and be able to duplicate them, build to print, see how quickly we can do it so we can increase the cadence of missions, even if it’s the lower mass class, the 500 kilograms, and then we want to take that and evaluate what it takes to scale that from 500 to like three to five metric tons, and not lose the reliability that we’ve already gained by doing multiple missions. So there’s a couple companies already that provide that. That’s what’s going to deliver the LTV Blue Origin Mark One, for example. The Astrobotic is perhaps doing a mission next year that will deliver the flip rover, also a pretty capable lander in the higher class mass. So we we’re definitely going to work with the vendors to do that scale up. And so if we had five metric ton landers, you know the logistics missions will be easier. But it’s not just taking stuff there. Again, we’re going to land somewhere far from relatively far from the- We’re gonna have to develop the transportation systems that will take the cargo and potentially standardized pallets that will take that cargo from landing site to where it’s needed, and we are starting the development and the design of those things now, which we hope to deploy at the beginning of phase two. So these increased landings will get larger in scope and size, and then the humans are coming down. So there’s going to be a lot going on. It’s going to be a busy moon base. Oh, it’s going to be insane. It’s I mean we’re when we talk about like mission control, for example, it’s going to be unlike anything we’ve ever done, we’ve done robotic like rovers on Mars that have been operating for many years. We’ve done human missions, of course, including lunar landings. We operate space station, but imagine all the assets coming together on one location that you have to basically orchestrate. I can’t! Robotic- like constellations of satellites… Right? Robotic rovers moving stuff around, potentially cargo, humans either landing or operating in the habitation modules, drones flying overhead, like all of that stuff needs to be orchestrated. So we’re thinking about the concept of the Moon Base Command Center here in Houston, so we’re going to evolve Mission Control to to do that too. So cool! So in every area you can think of, we it’s there’s something new, which is good. I mean, at the end of this exercise, we will have achieved the near impossible. We’ll be much more capable and ready to take the next step. NASA is definitely good at achieving the near impossible, and we have a lot of partners in this endeavor as well. We have some international partners, and we also have commercial partners joining in too. So, how is everyone coming together and participating in this? I’ll start with the commercial partners. A big part of Ignition Day was to declare how we were gonna execute this transformation of the agency and send a kind of a demand signal to industry of all the things that are coming because we know we can’t do this alone, and we know to achieve multiple robotic missions in the next three years, you know, 10s potentially. We need industry to be ready to produce those assets. We’re going to build things here at NASA, but a lot of the things we’re going to build together with industry. So, a company that can make a lander a year needs to make three or four. So Ignition Day was about sending that demand signal and basically saying we’re gonna need this stuff, you need to scale up. And we have we saw that from day one. The day after Ignition Day, Blue Origin was kind of redoing the layup of all their production facilities to be able to make more Mark One landers, Astrobotic, Firefly, Intuitive Machines, to just to name a few, were basically thinking about how can we triple the size of clean room area so they can have three landers in production instead of one. Other companies that have not even don’t even have contracts yet with us. Just there’s so many that are looking at this vision and this demand signal we send and saying we want to participate. We have technology. We’re scaling up to do that, and by the way, we’re going to be a partner with them. If we’re looking across NASA experts, facilities, anything we can enable, you know, supply chain, anything we can help to enable them to scale up that production is is very important. So it’s been very thrilling to see them respond and immediately become part of our vision, and they’re a huge part of it. And then there’s international partners, which equally, you know, since the very beginning, of course, we were partnering with them in different projects. Some of them changed; we had to get through that. But right now, of course, they want to see their astronauts on the lunar surface. Of course, they want to be doing groundbreaking innovation and having their industry developing new technology that will be leading in the world. So we’re talking to them about what makes sense to do, what we need, and what they’re good at doing. And I think pretty soon we’ll be able we’ll be announcing pretty big contributions from our international partners, and there’s going to be big contributions from our traditional allies. We’re talking about Europe, Canada, Japan, United Arab Emirates, but I think we’re going to get new entrants of people that have the industrial capacity, and are wanting to participate with big elements like a habitation module or a constellation of satellites or things like that. But beyond that, because we’re going to be taking so many landers to the Moon, I think we’re going to have opportunities for smaller countries that are also Artemis Accord signatories or perhaps their universities, to be able to do smaller payloads that now can go to the Moon, which is incredible. Like a lot of people do CubeSats, which is incredible experience for students in the university, for example, or smaller companies. But now we can actually put stuff on the surface of the Moon, so that whole that’s a huge opportunity that we were yet to explore and and fully exploit. Excellent. You mentioned a lot of innovation from the industry side as well as the international partners. So, how do these organizations or these countries propose these new technologies or science at the moon. How does that work? We’re trying to put different mechanisms to get those ideas right off the bat. After an incident, we put a request for information, in which we said, “Hey, we’re doing this Moon Base. What are your ideas? What What do you think we should be doing? We have processed that our architecture team is evaluating what’s needed, matching up to technology gaps, and now we’re starting to put ways in which we can actually contract that work. So we’re contracting launchers, we’re contracting for landers, and now we have a broad area announcement out for Moon Base, which is really asking for ideas on specific areas like power, things like that. You know, surface mobility, habitation, and companies will be able to say, “Hey, you think you could develop? You need to develop this small piece or this whole system?” and we’re going to evaluate those proposals and and basically some of them will fund a lot of the stuff. Also, we’ll do in-house because NASA has a lot of production and engineering capability, but a lot of it will come from those type of ideas. And then with international partners, we’re trying to incentivize them that they can, you know, companies abroad can partner with our U.S. companies, and as long as it’s more than 50% we contract directly with them as a domestic company, but then they can go to their space agencies and anybody that has signed Artemis Accords, for example, we already have a line of communication, so they can kind of call us and put proposals together, talk to us, big or small, and we’re we’re definitely interested. So lots of ways to innovate and be part of the Moon Base. Absolutely, we. This is a big endeavor. This is a generational program, and Moonbase. It’s it’s NASA. It’s industries. Our international partners and these people that have great ideas on how humanity should establish permanent presence, and we want to hear their ideas. I definitely think we’re in an exciting era of space exploration right now. I wanted to know a little bit about how we are repurposing some of the Gateway components to help us at the Moon Base. So yeah, there’s we’ve put a lot of thought into what we could use and what place forward. To begin with, we’re using the Power and Propulsion Element to be that component for the SR-1 spacecraft that is going to Mars. So that was an immediate win where we could use all the capabilities from PPE, including the electric propulsion thrusters, and match them with just change the purpose of it. Match them with a nuclear reactor, so we can test out nuclear propulsion technology. Then we actually recently we announced a deal with Northrop Grumman, who was making the the Halo module for Gateway, the Habitation and Logistic Outpost, and we’re going to be working with them to take in some of the hardware, like in power and avionics, and repurposing that to do a tech demonstration of power and avionics on the Moon. So we will give them a ride, and they’re going to develop three types of systems to show how we can survive the night and how we can produce effective power and avionic systems for the infrastructure that we need. So we’re using a lot of the expertise that we gain through Gateway and working with them to continue that partnership. And then we’re working with some, you know, Gateway, a lot of it was international partner contributions, so we’re pretty much talking to all of those partners on how we can repurpose. Like with Canada, they were doing the robotic arm for Gateway. How can we take that technology and basically have a robing arm on the moon on a rover that can go to different places, and so anyway, there’s a lot of those examples that we’re working on. So, for all of the people here on Earth, what do you think is the most exciting part of the Moon Base? I cannot wait until we start going to the Moon often, and every asset that we put there, whether it’s a lander, a rover, or a drone, or a lunar terrain vehicle, is gonna have killer cameras that is gonna take us and the public along with the mission. From landing to deployment of the assets to roving around on the surface of the Moon, so I cannot wait to show- to see myself and show the public what it really is to live and operate on the south pole of the Moon. I think I was going to be super excited, and I think just like we saw with Apollo, we’re going to see once we start going, which we’re working on it right now, missions this year and next year. Once we start doing that, I think everybody will see the growth of knowledge exponentially. We’ll- once we get the reliability where we can put things reliably on the surface, we’ll start seeing how we’re growing the capability to operate there, learning new things, and then scaling up stuff. the The next generation of lunar terrain vehicles much more capable. New power systems that can generate more power. Rovers that last for months, you know, through the lunar nights and shadows. And then us starting to get to places we have never seen before. Which ties back to the first question you asked me: Where do I come from? This is exactly what I wanted to be doing, just pushing the capabilities of humanity and showing the world things that we have never seen. So that is what I’m most excited about, and I think what when we start showing some of that, the the interest is going to be incredible. Just like we saw with Artemis II, the world stopped to watch humans observe the far side of the moon, and I think we’re gonna trigger that again. Your enthusiasm is contagious. I must note that, and I will also say that this is going to be a very exciting time as a communicator. You mentioned the killer cameras. I can’t wait to see what we’re able to capture and how we see the Moon Base coming together. Me too. It’s going to be a lot of fun. Is there anything else that you’d like to share with us? I wanted to kind of speak to any students or people early in their career. If you’re interested in space exploration, I don’t think there’s a better time to get involved. As a matter of fact, when I came from Spain, going into space station was a dream because, like, all of a sudden I was in mission control, sending commands as a 20-something year old to the space station with astronauts in EVAs, that was amazing. But I always thought, man, this is so cool. But man, if I had just been born in that small window of time that the Apollo guys were, they got to go to the Moon and explore. Like why? Like it’s you know, I was jealous too. Fast forward, and I’m looking in the mirror now and seeing myself through those people. So there’s no better time to get involved. Whether you’re middle school, high school, college, or early in your career, this is a new NASA, new era of space exploration. So you will have the opportunity to get involved in this country or others even, and just you know, join the team. Follow us while you’re still training, and then join the team and participate in making history. I love that. Carlos, thank you so much for being here. Thank you. Thanks for sticking around. I hope you learned something new today. You can check out the latest from around the agency at NASA.gov , and you can find out more about the Moon Base at moonbase.nasa.gov . Our full collection of episodes and all of the other wonderful NASA podcasts can be found at nasa.gov/podcasts . On social media we are on the NASA Johnson Space Center pages of Facebook , X , and Instagram . If you have any questions or suggestions for future episodes, email us at nasa-houstonpodcast@mail.nasa.gov . This interview was recorded on August 14, 2026.",
+  "job": {
+    "attempt": 1,
+    "id": "09f655cc-392e-4551-82fa-37412e6991f5",
+    "maxAttempts": 2,
+    "state": "complete"
+  },
+  "jobWallClockMs": 77855,
+  "labelledWordCount": 678,
+  "manifestSha256": "8a412ac96a98d75ae19ba5c6cdc7dff9af2e83f4ffc4f43134e01e6c4ae65806",
+  "missingSpeakerWordCount": 0,
+  "modelId": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+  "modelRevision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+  "path": "consent -> pinned manifest verify -> authorized ingest/probe -> durable transcription job (Gpu slot) -> FFmpeg 16 kHz mono WAV -> NeMo-Speech.cpp cuda:0 -> managed transcript artifact -> owner-scoped result read",
+  "providerSettings": {
+    "device": "cuda:0",
+    "diarizer_sha256": "17ebac6c710753039820d7ec3580865fa29f29ccc2ca75ed69a7b21f1146579b",
+    "gguf_sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae",
+    "quantization": "q8_0",
+    "runtime_manifest_sha256": "8a412ac96a98d75ae19ba5c6cdc7dff9af2e83f4ffc4f43134e01e6c4ae65806",
+    "runtime_sha256": "4b1434ee5b4d099646df0392fc3c4e7fb397a12bc4c3b2adc48739bd03c92bf0"
+  },
+  "runtimeVerifyMs": 17521,
+  "secondStart": {
+    "elapsedMs": 8859,
+    "state": "complete",
+    "transcriptKey": "a014975cd38aed2dc9c45672b149639399664d19bfed9c91c16b33ef030f6fd2"
+  },
+  "sourceDurationUs": 298966667,
+  "speakerDiarizationMode": "optional",
+  "test": "real_nemo_cuda_transcription_through_production_job_path",
+  "text": "Carlos, thank you so much for being on Houston Meap podcast. First, we'd like to know how you got here. Can you tell us a little bit about yourself and what you do here at NASA? Sure it's a pleasure to be here with you guys today. So I've always been really inspired by exploration and pushing the limits. Doing things that nobody else has done so, for example, the first people that went to Everest the first set of explorers that got into a pyramid after many, many years of not knowing where the things were things like that have always inspired me therefore space exploration it kind of meets all of that criteria it pushes the limits in every angle technology, science, and then by default pretty much every time you go to space you're seeing new things and not a lot of people have done that and there's many places where nobody has gone. So I always was inspired by doing things like that, and NASA embodies all of those things they they work at NASA it's all about exploration and doing things that nobody else has done the near impossible. So growing up I always had my eye grow up in Spain very distant, but I always have my eye on how can I get involved in something like that, and when I grow up, NASA really was the name of the game, so it still is, but now there's more possibilities to do things in different countries in partnership with NASA back then that was not really a thing I did you know I set a course to did everything I could from early on even high school to do get closer to the action get closer to NASA, the United States, study university here something that would uh lead me to eventually being able to be part of it. So yeah, I came to the States to study space sciences and electrical engineering and then I did it in school that was pretty close to the Kennedy Space Center, Florida Institute of Technology, Florida Tech and right after I graduated happened to be the very beginning of assembling the international space station, so I came into NASA as a flight controller for ISS, so long journey, but you know that's what it takes to realize your dreams. That's fantastic, and you've been charged with quite a big task. There was something called ignition that happened earlier this year. Where did this come from? The NASA administrator Jared Isaacman has charged you with quite a big workload Yeah ignition I think was really a different name for transformation and uh it is transforming the way Nasa does business and uh going from doing multiple things that are all good in summation, but perhaps diluted the key objectives that the agency should be setting out to do, which is things nobody else can do. So ignitia was an exercise of looking at what are those key initiatives that exemplify what we should be after, like accelerating going back to the moon, building a moon base. Making sure that we can stay in lowerth orbit on permanent presence even after the space station going to Mars and what it takes to do that, including nuclear technologies that may unlock that capability like nuclear propulsion and continuing to do science that nobody else can do because it's in places where nobody can reach other planets, solar system beyond. So ignition was about realigning the agency to be able to focus on these things and not like break all boundaries it's not about human space flight science mission director and technology it's not about all of it, right? So every aspect of it align to achieve these key objectives, and I think that's what allows us to do the things that nobody else can if we see the big picture, we can accomplish the unaccomplished. So tell us a little bit about why NASA is going back to the Moon. I feel like it's almost an obligation.",
+  "transcriptKey": "a014975cd38aed2dc9c45672b149639399664d19bfed9c91c16b33ef030f6fd2",
+  "wer": 0.916829109811566,
+  "werThreshold": null,
+  "wordCount": 678,
+  "words": [
+    {
+      "endUs": 880000,
+      "speaker": "speaker_1",
+      "startUs": 320000,
+      "text": "Carlos,"
+    },
+    {
+      "endUs": 960000,
+      "speaker": "speaker_1",
+      "startUs": 880000,
+      "text": "thank"
+    },
+    {
+      "endUs": 1040000,
+      "speaker": "speaker_1",
+      "startUs": 960000,
+      "text": "you"
+    },
+    {
+      "endUs": 1120000,
+      "speaker": "speaker_1",
+      "startUs": 1040000,
+      "text": "so"
+    },
+    {
+      "endUs": 1160000,
+      "speaker": "speaker_1",
+      "startUs": 1120000,
+      "text": "much"
+    },
+    {
+      "endUs": 1200000,
+      "speaker": "speaker_1",
+      "startUs": 1160000,
+      "text": "for"
+    },
+    {
+      "endUs": 1360000,
+      "speaker": "speaker_1",
+      "startUs": 1200000,
+      "text": "being"
+    },
+    {
+      "endUs": 1520000,
+      "speaker": "speaker_1",
+      "startUs": 1440000,
+      "text": "on"
+    },
+    {
+      "endUs": 2000000,
+      "speaker": "speaker_1",
+      "startUs": 1680000,
+      "text": "Houston"
+    },
+    {
+      "endUs": 2480000,
+      "speaker": "speaker_1",
+      "startUs": 2160000,
+      "text": "Meap"
+    },
+    {
+      "endUs": 3600000,
+      "speaker": "speaker_1",
+      "startUs": 2480000,
+      "text": "podcast."
+    },
+    {
+      "endUs": 3920000,
+      "speaker": "speaker_1",
+      "startUs": 3680000,
+      "text": "First,"
+    },
+    {
+      "endUs": 4160000,
+      "speaker": "speaker_1",
+      "startUs": 3920000,
+      "text": "we'd"
+    },
+    {
+      "endUs": 4240000,
+      "speaker": "speaker_1",
+      "startUs": 4160000,
+      "text": "like"
+    },
+    {
+      "endUs": 4320000,
+      "speaker": "speaker_1",
+      "startUs": 4240000,
+      "text": "to"
+    },
+    {
+      "endUs": 4400000,
+      "speaker": "speaker_1",
+      "startUs": 4320000,
+      "text": "know"
+    },
+    {
+      "endUs": 4560000,
+      "speaker": "speaker_1",
+      "startUs": 4480000,
+      "text": "how"
+    },
+    {
+      "endUs": 4640000,
+      "speaker": "speaker_1",
+      "startUs": 4560000,
+      "text": "you"
+    },
+    {
+      "endUs": 4880000,
+      "speaker": "speaker_1",
+      "startUs": 4800000,
+      "text": "got"
+    },
+    {
+      "endUs": 5200000,
+      "speaker": "speaker_1",
+      "startUs": 4960000,
+      "text": "here."
+    },
+    {
+      "endUs": 5440000,
+      "speaker": "speaker_1",
+      "startUs": 5360000,
+      "text": "Can"
+    },
+    {
+      "endUs": 5520000,
+      "speaker": "speaker_1",
+      "startUs": 5440000,
+      "text": "you"
+    },
+    {
+      "endUs": 5600000,
+      "speaker": "speaker_1",
+      "startUs": 5520000,
+      "text": "tell"
+    },
+    {
+      "endUs": 5680000,
+      "speaker": "speaker_1",
+      "startUs": 5600000,
+      "text": "us"
+    },
+    {
+      "endUs": 5840000,
+      "speaker": "speaker_1",
+      "startUs": 5760000,
+      "text": "a"
+    },
+    {
+      "endUs": 5920000,
+      "speaker": "speaker_1",
+      "startUs": 5840000,
+      "text": "little"
+    },
+    {
+      "endUs": 6000000,
+      "speaker": "speaker_1",
+      "startUs": 5920000,
+      "text": "bit"
+    },
+    {
+      "endUs": 6160000,
+      "speaker": "speaker_1",
+      "startUs": 6080000,
+      "text": "about"
+    },
+    {
+      "endUs": 6560000,
+      "speaker": "speaker_1",
+      "startUs": 6240000,
+      "text": "yourself"
+    },
+    {
+      "endUs": 6880000,
+      "speaker": "speaker_1",
+      "startUs": 6800000,
+      "text": "and"
+    },
+    {
+      "endUs": 7040000,
+      "speaker": "speaker_1",
+      "startUs": 6960000,
+      "text": "what"
+    },
+    {
+      "endUs": 7120000,
+      "speaker": "speaker_1",
+      "startUs": 7040000,
+      "text": "you"
+    },
+    {
+      "endUs": 7360000,
+      "speaker": "speaker_1",
+      "startUs": 7280000,
+      "text": "do"
+    },
+    {
+      "endUs": 7520000,
+      "speaker": "speaker_1",
+      "startUs": 7440000,
+      "text": "here"
+    },
+    {
+      "endUs": 7760000,
+      "speaker": "speaker_1",
+      "startUs": 7680000,
+      "text": "at"
+    },
+    {
+      "endUs": 8720000,
+      "speaker": "speaker_2",
+      "startUs": 7760000,
+      "text": "NASA?"
+    },
+    {
+      "endUs": 8960000,
+      "speaker": "speaker_2",
+      "startUs": 8800000,
+      "text": "Sure"
+    },
+    {
+      "endUs": 10080000,
+      "speaker": "speaker_2",
+      "startUs": 9920000,
+      "text": "it's"
+    },
+    {
+      "endUs": 10320000,
+      "speaker": "speaker_2",
+      "startUs": 10240000,
+      "text": "a"
+    },
+    {
+      "endUs": 10480000,
+      "speaker": "speaker_2",
+      "startUs": 10320000,
+      "text": "pleasure"
+    },
+    {
+      "endUs": 10640000,
+      "speaker": "speaker_2",
+      "startUs": 10560000,
+      "text": "to"
+    },
+    {
+      "endUs": 10720000,
+      "speaker": "speaker_2",
+      "startUs": 10640000,
+      "text": "be"
+    },
+    {
+      "endUs": 10960000,
+      "speaker": "speaker_2",
+      "startUs": 10880000,
+      "text": "here"
+    },
+    {
+      "endUs": 11200000,
+      "speaker": "speaker_2",
+      "startUs": 11120000,
+      "text": "with"
+    },
+    {
+      "endUs": 11360000,
+      "speaker": "speaker_2",
+      "startUs": 11280000,
+      "text": "you"
+    },
+    {
+      "endUs": 11440000,
+      "speaker": "speaker_2",
+      "startUs": 11360000,
+      "text": "guys"
+    },
+    {
+      "endUs": 13120000,
+      "speaker": "speaker_2",
+      "startUs": 11680000,
+      "text": "today."
+    },
+    {
+      "endUs": 13200000,
+      "speaker": "speaker_2",
+      "startUs": 13120000,
+      "text": "So"
+    },
+    {
+      "endUs": 13840000,
+      "speaker": "speaker_2",
+      "startUs": 13760000,
+      "text": "I've"
+    },
+    {
+      "endUs": 14000000,
+      "speaker": "speaker_2",
+      "startUs": 13840000,
+      "text": "always"
+    },
+    {
+      "endUs": 14160000,
+      "speaker": "speaker_2",
+      "startUs": 14080000,
+      "text": "been"
+    },
+    {
+      "endUs": 15440000,
+      "speaker": "speaker_2",
+      "startUs": 15360000,
+      "text": "really"
+    },
+    {
+      "endUs": 16480000,
+      "speaker": "speaker_2",
+      "startUs": 16000000,
+      "text": "inspired"
+    },
+    {
+      "endUs": 16720000,
+      "speaker": "speaker_2",
+      "startUs": 16640000,
+      "text": "by"
+    },
+    {
+      "endUs": 17440000,
+      "speaker": "speaker_2",
+      "startUs": 17040000,
+      "text": "exploration"
+    },
+    {
+      "endUs": 18640000,
+      "speaker": "speaker_2",
+      "startUs": 18560000,
+      "text": "and"
+    },
+    {
+      "endUs": 19040000,
+      "speaker": "speaker_2",
+      "startUs": 18800000,
+      "text": "pushing"
+    },
+    {
+      "endUs": 19200000,
+      "speaker": "speaker_2",
+      "startUs": 19120000,
+      "text": "the"
+    },
+    {
+      "endUs": 19520000,
+      "speaker": "speaker_2",
+      "startUs": 19200000,
+      "text": "limits."
+    },
+    {
+      "endUs": 20080000,
+      "speaker": "speaker_2",
+      "startUs": 19920000,
+      "text": "Doing"
+    },
+    {
+      "endUs": 20400000,
+      "speaker": "speaker_2",
+      "startUs": 20240000,
+      "text": "things"
+    },
+    {
+      "endUs": 20560000,
+      "speaker": "speaker_2",
+      "startUs": 20480000,
+      "text": "that"
+    },
+    {
+      "endUs": 21040000,
+      "speaker": "speaker_2",
+      "startUs": 20800000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 21200000,
+      "speaker": "speaker_2",
+      "startUs": 21120000,
+      "text": "else"
+    },
+    {
+      "endUs": 21920000,
+      "speaker": "speaker_2",
+      "startUs": 21840000,
+      "text": "has"
+    },
+    {
+      "endUs": 22240000,
+      "speaker": "speaker_2",
+      "startUs": 22160000,
+      "text": "done"
+    },
+    {
+      "endUs": 23120000,
+      "speaker": "speaker_2",
+      "startUs": 22800000,
+      "text": "so,"
+    },
+    {
+      "endUs": 23200000,
+      "speaker": "speaker_2",
+      "startUs": 23120000,
+      "text": "for"
+    },
+    {
+      "endUs": 24960000,
+      "speaker": "speaker_2",
+      "startUs": 23200000,
+      "text": "example,"
+    },
+    {
+      "endUs": 25040000,
+      "speaker": "speaker_2",
+      "startUs": 24960000,
+      "text": "the"
+    },
+    {
+      "endUs": 25120000,
+      "speaker": "speaker_2",
+      "startUs": 25040000,
+      "text": "first"
+    },
+    {
+      "endUs": 25360000,
+      "speaker": "speaker_2",
+      "startUs": 25280000,
+      "text": "people"
+    },
+    {
+      "endUs": 25600000,
+      "speaker": "speaker_2",
+      "startUs": 25520000,
+      "text": "that"
+    },
+    {
+      "endUs": 25760000,
+      "speaker": "speaker_2",
+      "startUs": 25680000,
+      "text": "went"
+    },
+    {
+      "endUs": 26080000,
+      "speaker": "speaker_2",
+      "startUs": 26000000,
+      "text": "to"
+    },
+    {
+      "endUs": 26560000,
+      "speaker": "speaker_2",
+      "startUs": 26240000,
+      "text": "Everest"
+    },
+    {
+      "endUs": 28640000,
+      "speaker": "speaker_2",
+      "startUs": 28560000,
+      "text": "the"
+    },
+    {
+      "endUs": 28720000,
+      "speaker": "speaker_2",
+      "startUs": 28640000,
+      "text": "first"
+    },
+    {
+      "endUs": 28880000,
+      "speaker": "speaker_2",
+      "startUs": 28800000,
+      "text": "set"
+    },
+    {
+      "endUs": 29040000,
+      "speaker": "speaker_2",
+      "startUs": 28960000,
+      "text": "of"
+    },
+    {
+      "endUs": 29600000,
+      "speaker": "speaker_2",
+      "startUs": 29120000,
+      "text": "explorers"
+    },
+    {
+      "endUs": 29760000,
+      "speaker": "speaker_2",
+      "startUs": 29680000,
+      "text": "that"
+    },
+    {
+      "endUs": 30000000,
+      "speaker": "speaker_2",
+      "startUs": 29920000,
+      "text": "got"
+    },
+    {
+      "endUs": 30240000,
+      "speaker": "speaker_2",
+      "startUs": 30080000,
+      "text": "into"
+    },
+    {
+      "endUs": 30480000,
+      "speaker": "speaker_2",
+      "startUs": 30400000,
+      "text": "a"
+    },
+    {
+      "endUs": 30720000,
+      "speaker": "speaker_2",
+      "startUs": 30480000,
+      "text": "pyramid"
+    },
+    {
+      "endUs": 31840000,
+      "speaker": "speaker_2",
+      "startUs": 31760000,
+      "text": "after"
+    },
+    {
+      "endUs": 32960000,
+      "speaker": "speaker_2",
+      "startUs": 32640000,
+      "text": "many,"
+    },
+    {
+      "endUs": 33120000,
+      "speaker": "speaker_2",
+      "startUs": 32960000,
+      "text": "many"
+    },
+    {
+      "endUs": 33360000,
+      "speaker": "speaker_2",
+      "startUs": 33200000,
+      "text": "years"
+    },
+    {
+      "endUs": 33680000,
+      "speaker": "speaker_2",
+      "startUs": 33600000,
+      "text": "of"
+    },
+    {
+      "endUs": 34640000,
+      "speaker": "speaker_2",
+      "startUs": 34560000,
+      "text": "not"
+    },
+    {
+      "endUs": 34960000,
+      "speaker": "speaker_2",
+      "startUs": 34720000,
+      "text": "knowing"
+    },
+    {
+      "endUs": 35600000,
+      "speaker": "speaker_2",
+      "startUs": 35520000,
+      "text": "where"
+    },
+    {
+      "endUs": 36560000,
+      "speaker": "speaker_2",
+      "startUs": 36480000,
+      "text": "the"
+    },
+    {
+      "endUs": 36800000,
+      "speaker": "speaker_2",
+      "startUs": 36640000,
+      "text": "things"
+    },
+    {
+      "endUs": 36960000,
+      "speaker": "speaker_2",
+      "startUs": 36880000,
+      "text": "were"
+    },
+    {
+      "endUs": 38240000,
+      "speaker": "speaker_2",
+      "startUs": 38080000,
+      "text": "things"
+    },
+    {
+      "endUs": 38320000,
+      "speaker": "speaker_2",
+      "startUs": 38240000,
+      "text": "like"
+    },
+    {
+      "endUs": 38560000,
+      "speaker": "speaker_2",
+      "startUs": 38480000,
+      "text": "that"
+    },
+    {
+      "endUs": 39280000,
+      "speaker": "speaker_2",
+      "startUs": 39200000,
+      "text": "have"
+    },
+    {
+      "endUs": 39600000,
+      "speaker": "speaker_2",
+      "startUs": 39440000,
+      "text": "always"
+    },
+    {
+      "endUs": 40560000,
+      "speaker": "speaker_2",
+      "startUs": 40080000,
+      "text": "inspired"
+    },
+    {
+      "endUs": 40720000,
+      "speaker": "speaker_2",
+      "startUs": 40640000,
+      "text": "me"
+    },
+    {
+      "endUs": 42640000,
+      "speaker": "speaker_2",
+      "startUs": 42320000,
+      "text": "therefore"
+    },
+    {
+      "endUs": 43040000,
+      "speaker": "speaker_2",
+      "startUs": 42880000,
+      "text": "space"
+    },
+    {
+      "endUs": 43440000,
+      "speaker": "speaker_2",
+      "startUs": 43120000,
+      "text": "exploration"
+    },
+    {
+      "endUs": 44000000,
+      "speaker": "speaker_2",
+      "startUs": 43920000,
+      "text": "it"
+    },
+    {
+      "endUs": 44400000,
+      "speaker": "speaker_2",
+      "startUs": 44320000,
+      "text": "kind"
+    },
+    {
+      "endUs": 44480000,
+      "speaker": "speaker_2",
+      "startUs": 44400000,
+      "text": "of"
+    },
+    {
+      "endUs": 45040000,
+      "speaker": "speaker_2",
+      "startUs": 44800000,
+      "text": "meets"
+    },
+    {
+      "endUs": 45200000,
+      "speaker": "speaker_2",
+      "startUs": 45120000,
+      "text": "all"
+    },
+    {
+      "endUs": 45280000,
+      "speaker": "speaker_2",
+      "startUs": 45200000,
+      "text": "of"
+    },
+    {
+      "endUs": 45360000,
+      "speaker": "speaker_2",
+      "startUs": 45280000,
+      "text": "that"
+    },
+    {
+      "endUs": 45840000,
+      "speaker": "speaker_2",
+      "startUs": 45440000,
+      "text": "criteria"
+    },
+    {
+      "endUs": 47120000,
+      "speaker": "speaker_2",
+      "startUs": 47040000,
+      "text": "it"
+    },
+    {
+      "endUs": 47280000,
+      "speaker": "speaker_2",
+      "startUs": 47120000,
+      "text": "pushes"
+    },
+    {
+      "endUs": 47440000,
+      "speaker": "speaker_2",
+      "startUs": 47360000,
+      "text": "the"
+    },
+    {
+      "endUs": 47840000,
+      "speaker": "speaker_2",
+      "startUs": 47520000,
+      "text": "limits"
+    },
+    {
+      "endUs": 48400000,
+      "speaker": "speaker_2",
+      "startUs": 48320000,
+      "text": "in"
+    },
+    {
+      "endUs": 48800000,
+      "speaker": "speaker_2",
+      "startUs": 48480000,
+      "text": "every"
+    },
+    {
+      "endUs": 49520000,
+      "speaker": "speaker_2",
+      "startUs": 49360000,
+      "text": "angle"
+    },
+    {
+      "endUs": 51920000,
+      "speaker": "speaker_2",
+      "startUs": 50240000,
+      "text": "technology,"
+    },
+    {
+      "endUs": 54080000,
+      "speaker": "speaker_2",
+      "startUs": 52000000,
+      "text": "science,"
+    },
+    {
+      "endUs": 54160000,
+      "speaker": "speaker_2",
+      "startUs": 54080000,
+      "text": "and"
+    },
+    {
+      "endUs": 54240000,
+      "speaker": "speaker_2",
+      "startUs": 54160000,
+      "text": "then"
+    },
+    {
+      "endUs": 55520000,
+      "speaker": "speaker_2",
+      "startUs": 55440000,
+      "text": "by"
+    },
+    {
+      "endUs": 55760000,
+      "speaker": "speaker_2",
+      "startUs": 55520000,
+      "text": "default"
+    },
+    {
+      "endUs": 56400000,
+      "speaker": "speaker_2",
+      "startUs": 56240000,
+      "text": "pretty"
+    },
+    {
+      "endUs": 56480000,
+      "speaker": "speaker_2",
+      "startUs": 56400000,
+      "text": "much"
+    },
+    {
+      "endUs": 57360000,
+      "speaker": "speaker_2",
+      "startUs": 57040000,
+      "text": "every"
+    },
+    {
+      "endUs": 57440000,
+      "speaker": "speaker_2",
+      "startUs": 57360000,
+      "text": "time"
+    },
+    {
+      "endUs": 57680000,
+      "speaker": "speaker_2",
+      "startUs": 57600000,
+      "text": "you"
+    },
+    {
+      "endUs": 58000000,
+      "speaker": "speaker_2",
+      "startUs": 57920000,
+      "text": "go"
+    },
+    {
+      "endUs": 58080000,
+      "speaker": "speaker_2",
+      "startUs": 58000000,
+      "text": "to"
+    },
+    {
+      "endUs": 58240000,
+      "speaker": "speaker_2",
+      "startUs": 58080000,
+      "text": "space"
+    },
+    {
+      "endUs": 60560000,
+      "speaker": "speaker_2",
+      "startUs": 60480000,
+      "text": "you're"
+    },
+    {
+      "endUs": 60960000,
+      "speaker": "speaker_2",
+      "startUs": 60640000,
+      "text": "seeing"
+    },
+    {
+      "endUs": 61040000,
+      "speaker": "speaker_2",
+      "startUs": 60960000,
+      "text": "new"
+    },
+    {
+      "endUs": 61280000,
+      "speaker": "speaker_2",
+      "startUs": 61120000,
+      "text": "things"
+    },
+    {
+      "endUs": 62160000,
+      "speaker": "speaker_2",
+      "startUs": 62080000,
+      "text": "and"
+    },
+    {
+      "endUs": 62560000,
+      "speaker": "speaker_2",
+      "startUs": 62480000,
+      "text": "not"
+    },
+    {
+      "endUs": 62640000,
+      "speaker": "speaker_2",
+      "startUs": 62560000,
+      "text": "a"
+    },
+    {
+      "endUs": 62720000,
+      "speaker": "speaker_2",
+      "startUs": 62640000,
+      "text": "lot"
+    },
+    {
+      "endUs": 62800000,
+      "speaker": "speaker_2",
+      "startUs": 62720000,
+      "text": "of"
+    },
+    {
+      "endUs": 62880000,
+      "speaker": "speaker_2",
+      "startUs": 62800000,
+      "text": "people"
+    },
+    {
+      "endUs": 63120000,
+      "speaker": "speaker_2",
+      "startUs": 63040000,
+      "text": "have"
+    },
+    {
+      "endUs": 63440000,
+      "speaker": "speaker_2",
+      "startUs": 63360000,
+      "text": "done"
+    },
+    {
+      "endUs": 63600000,
+      "speaker": "speaker_2",
+      "startUs": 63520000,
+      "text": "that"
+    },
+    {
+      "endUs": 65040000,
+      "speaker": "speaker_2",
+      "startUs": 64960000,
+      "text": "and"
+    },
+    {
+      "endUs": 65200000,
+      "speaker": "speaker_2",
+      "startUs": 65040000,
+      "text": "there's"
+    },
+    {
+      "endUs": 65360000,
+      "speaker": "speaker_2",
+      "startUs": 65200000,
+      "text": "many"
+    },
+    {
+      "endUs": 65600000,
+      "speaker": "speaker_2",
+      "startUs": 65440000,
+      "text": "places"
+    },
+    {
+      "endUs": 66000000,
+      "speaker": "speaker_2",
+      "startUs": 65920000,
+      "text": "where"
+    },
+    {
+      "endUs": 66400000,
+      "speaker": "speaker_2",
+      "startUs": 66240000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 66560000,
+      "speaker": "speaker_2",
+      "startUs": 66480000,
+      "text": "has"
+    },
+    {
+      "endUs": 68160000,
+      "speaker": "speaker_2",
+      "startUs": 66640000,
+      "text": "gone."
+    },
+    {
+      "endUs": 68240000,
+      "speaker": "speaker_2",
+      "startUs": 68160000,
+      "text": "So"
+    },
+    {
+      "endUs": 68400000,
+      "speaker": "speaker_2",
+      "startUs": 68320000,
+      "text": "I"
+    },
+    {
+      "endUs": 68640000,
+      "speaker": "speaker_2",
+      "startUs": 68480000,
+      "text": "always"
+    },
+    {
+      "endUs": 68880000,
+      "speaker": "speaker_2",
+      "startUs": 68800000,
+      "text": "was"
+    },
+    {
+      "endUs": 69520000,
+      "speaker": "speaker_2",
+      "startUs": 69280000,
+      "text": "inspired"
+    },
+    {
+      "endUs": 69680000,
+      "speaker": "speaker_2",
+      "startUs": 69600000,
+      "text": "by"
+    },
+    {
+      "endUs": 70000000,
+      "speaker": "speaker_2",
+      "startUs": 69840000,
+      "text": "doing"
+    },
+    {
+      "endUs": 70240000,
+      "speaker": "speaker_2",
+      "startUs": 70080000,
+      "text": "things"
+    },
+    {
+      "endUs": 70400000,
+      "speaker": "speaker_2",
+      "startUs": 70320000,
+      "text": "like"
+    },
+    {
+      "endUs": 71120000,
+      "speaker": "speaker_2",
+      "startUs": 70480000,
+      "text": "that,"
+    },
+    {
+      "endUs": 71200000,
+      "speaker": "speaker_2",
+      "startUs": 71120000,
+      "text": "and"
+    },
+    {
+      "endUs": 71520000,
+      "speaker": "speaker_2",
+      "startUs": 71360000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 72160000,
+      "speaker": "speaker_2",
+      "startUs": 71760000,
+      "text": "embodies"
+    },
+    {
+      "endUs": 73520000,
+      "speaker": "speaker_2",
+      "startUs": 73440000,
+      "text": "all"
+    },
+    {
+      "endUs": 73600000,
+      "speaker": "speaker_2",
+      "startUs": 73520000,
+      "text": "of"
+    },
+    {
+      "endUs": 73680000,
+      "speaker": "speaker_2",
+      "startUs": 73600000,
+      "text": "those"
+    },
+    {
+      "endUs": 73920000,
+      "speaker": "speaker_2",
+      "startUs": 73760000,
+      "text": "things"
+    },
+    {
+      "endUs": 75280000,
+      "speaker": "speaker_2",
+      "startUs": 75200000,
+      "text": "they"
+    },
+    {
+      "endUs": 76000000,
+      "speaker": "speaker_2",
+      "startUs": 75920000,
+      "text": "they"
+    },
+    {
+      "endUs": 76400000,
+      "speaker": "speaker_2",
+      "startUs": 76320000,
+      "text": "work"
+    },
+    {
+      "endUs": 76560000,
+      "speaker": "speaker_2",
+      "startUs": 76480000,
+      "text": "at"
+    },
+    {
+      "endUs": 76880000,
+      "speaker": "speaker_2",
+      "startUs": 76640000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 77280000,
+      "speaker": "speaker_2",
+      "startUs": 77120000,
+      "text": "it's"
+    },
+    {
+      "endUs": 77360000,
+      "speaker": "speaker_2",
+      "startUs": 77280000,
+      "text": "all"
+    },
+    {
+      "endUs": 77520000,
+      "speaker": "speaker_2",
+      "startUs": 77440000,
+      "text": "about"
+    },
+    {
+      "endUs": 78160000,
+      "speaker": "speaker_2",
+      "startUs": 77760000,
+      "text": "exploration"
+    },
+    {
+      "endUs": 79440000,
+      "speaker": "speaker_2",
+      "startUs": 79360000,
+      "text": "and"
+    },
+    {
+      "endUs": 79680000,
+      "speaker": "speaker_2",
+      "startUs": 79520000,
+      "text": "doing"
+    },
+    {
+      "endUs": 79840000,
+      "speaker": "speaker_2",
+      "startUs": 79680000,
+      "text": "things"
+    },
+    {
+      "endUs": 80160000,
+      "speaker": "speaker_2",
+      "startUs": 80080000,
+      "text": "that"
+    },
+    {
+      "endUs": 80800000,
+      "speaker": "speaker_2",
+      "startUs": 80640000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 80960000,
+      "speaker": "speaker_2",
+      "startUs": 80880000,
+      "text": "else"
+    },
+    {
+      "endUs": 81200000,
+      "speaker": "speaker_2",
+      "startUs": 81120000,
+      "text": "has"
+    },
+    {
+      "endUs": 81440000,
+      "speaker": "speaker_2",
+      "startUs": 81360000,
+      "text": "done"
+    },
+    {
+      "endUs": 82960000,
+      "speaker": "speaker_2",
+      "startUs": 82880000,
+      "text": "the"
+    },
+    {
+      "endUs": 83200000,
+      "speaker": "speaker_2",
+      "startUs": 83040000,
+      "text": "near"
+    },
+    {
+      "endUs": 84800000,
+      "speaker": "speaker_2",
+      "startUs": 83360000,
+      "text": "impossible."
+    },
+    {
+      "endUs": 84880000,
+      "speaker": "speaker_2",
+      "startUs": 84800000,
+      "text": "So"
+    },
+    {
+      "endUs": 86000000,
+      "speaker": "speaker_2",
+      "startUs": 85760000,
+      "text": "growing"
+    },
+    {
+      "endUs": 86080000,
+      "speaker": "speaker_2",
+      "startUs": 86000000,
+      "text": "up"
+    },
+    {
+      "endUs": 87440000,
+      "speaker": "speaker_2",
+      "startUs": 87360000,
+      "text": "I"
+    },
+    {
+      "endUs": 87680000,
+      "speaker": "speaker_2",
+      "startUs": 87520000,
+      "text": "always"
+    },
+    {
+      "endUs": 88080000,
+      "speaker": "speaker_2",
+      "startUs": 88000000,
+      "text": "had"
+    },
+    {
+      "endUs": 88400000,
+      "speaker": "speaker_2",
+      "startUs": 88320000,
+      "text": "my"
+    },
+    {
+      "endUs": 88720000,
+      "speaker": "speaker_2",
+      "startUs": 88640000,
+      "text": "eye"
+    },
+    {
+      "endUs": 88960000,
+      "speaker": "speaker_2",
+      "startUs": 88880000,
+      "text": "grow"
+    },
+    {
+      "endUs": 89120000,
+      "speaker": "speaker_2",
+      "startUs": 89040000,
+      "text": "up"
+    },
+    {
+      "endUs": 89360000,
+      "speaker": "speaker_2",
+      "startUs": 89280000,
+      "text": "in"
+    },
+    {
+      "endUs": 89520000,
+      "speaker": "speaker_2",
+      "startUs": 89360000,
+      "text": "Spain"
+    },
+    {
+      "endUs": 90800000,
+      "speaker": "speaker_2",
+      "startUs": 90720000,
+      "text": "very"
+    },
+    {
+      "endUs": 92480000,
+      "speaker": "speaker_2",
+      "startUs": 91200000,
+      "text": "distant,"
+    },
+    {
+      "endUs": 92560000,
+      "speaker": "speaker_2",
+      "startUs": 92480000,
+      "text": "but"
+    },
+    {
+      "endUs": 92720000,
+      "speaker": "speaker_2",
+      "startUs": 92640000,
+      "text": "I"
+    },
+    {
+      "endUs": 92880000,
+      "speaker": "speaker_2",
+      "startUs": 92720000,
+      "text": "always"
+    },
+    {
+      "endUs": 93200000,
+      "speaker": "speaker_2",
+      "startUs": 93120000,
+      "text": "have"
+    },
+    {
+      "endUs": 93360000,
+      "speaker": "speaker_2",
+      "startUs": 93280000,
+      "text": "my"
+    },
+    {
+      "endUs": 93600000,
+      "speaker": "speaker_2",
+      "startUs": 93520000,
+      "text": "eye"
+    },
+    {
+      "endUs": 93840000,
+      "speaker": "speaker_2",
+      "startUs": 93760000,
+      "text": "on"
+    },
+    {
+      "endUs": 94240000,
+      "speaker": "speaker_2",
+      "startUs": 94160000,
+      "text": "how"
+    },
+    {
+      "endUs": 94320000,
+      "speaker": "speaker_2",
+      "startUs": 94240000,
+      "text": "can"
+    },
+    {
+      "endUs": 94400000,
+      "speaker": "speaker_2",
+      "startUs": 94320000,
+      "text": "I"
+    },
+    {
+      "endUs": 94560000,
+      "speaker": "speaker_2",
+      "startUs": 94480000,
+      "text": "get"
+    },
+    {
+      "endUs": 95200000,
+      "speaker": "speaker_2",
+      "startUs": 94800000,
+      "text": "involved"
+    },
+    {
+      "endUs": 95440000,
+      "speaker": "speaker_2",
+      "startUs": 95360000,
+      "text": "in"
+    },
+    {
+      "endUs": 95600000,
+      "speaker": "speaker_2",
+      "startUs": 95440000,
+      "text": "something"
+    },
+    {
+      "endUs": 95760000,
+      "speaker": "speaker_2",
+      "startUs": 95680000,
+      "text": "like"
+    },
+    {
+      "endUs": 96960000,
+      "speaker": "speaker_2",
+      "startUs": 95760000,
+      "text": "that,"
+    },
+    {
+      "endUs": 97040000,
+      "speaker": "speaker_2",
+      "startUs": 96960000,
+      "text": "and"
+    },
+    {
+      "endUs": 97200000,
+      "speaker": "speaker_2",
+      "startUs": 97120000,
+      "text": "when"
+    },
+    {
+      "endUs": 97440000,
+      "speaker": "speaker_2",
+      "startUs": 97360000,
+      "text": "I"
+    },
+    {
+      "endUs": 97520000,
+      "speaker": "speaker_2",
+      "startUs": 97440000,
+      "text": "grow"
+    },
+    {
+      "endUs": 97840000,
+      "speaker": "speaker_2",
+      "startUs": 97520000,
+      "text": "up,"
+    },
+    {
+      "endUs": 98240000,
+      "speaker": "speaker_2",
+      "startUs": 97920000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 98400000,
+      "speaker": "speaker_2",
+      "startUs": 98320000,
+      "text": "really"
+    },
+    {
+      "endUs": 98640000,
+      "speaker": "speaker_2",
+      "startUs": 98560000,
+      "text": "was"
+    },
+    {
+      "endUs": 98720000,
+      "speaker": "speaker_2",
+      "startUs": 98640000,
+      "text": "the"
+    },
+    {
+      "endUs": 98880000,
+      "speaker": "speaker_2",
+      "startUs": 98800000,
+      "text": "name"
+    },
+    {
+      "endUs": 99040000,
+      "speaker": "speaker_2",
+      "startUs": 98960000,
+      "text": "of"
+    },
+    {
+      "endUs": 99120000,
+      "speaker": "speaker_2",
+      "startUs": 99040000,
+      "text": "the"
+    },
+    {
+      "endUs": 100480000,
+      "speaker": "speaker_2",
+      "startUs": 99120000,
+      "text": "game,"
+    },
+    {
+      "endUs": 100560000,
+      "speaker": "speaker_2",
+      "startUs": 100480000,
+      "text": "so"
+    },
+    {
+      "endUs": 100880000,
+      "speaker": "speaker_2",
+      "startUs": 100800000,
+      "text": "it"
+    },
+    {
+      "endUs": 100960000,
+      "speaker": "speaker_2",
+      "startUs": 100880000,
+      "text": "still"
+    },
+    {
+      "endUs": 101760000,
+      "speaker": "speaker_2",
+      "startUs": 100960000,
+      "text": "is,"
+    },
+    {
+      "endUs": 101840000,
+      "speaker": "speaker_2",
+      "startUs": 101760000,
+      "text": "but"
+    },
+    {
+      "endUs": 102000000,
+      "speaker": "speaker_2",
+      "startUs": 101920000,
+      "text": "now"
+    },
+    {
+      "endUs": 102640000,
+      "speaker": "speaker_2",
+      "startUs": 102400000,
+      "text": "there's"
+    },
+    {
+      "endUs": 103040000,
+      "speaker": "speaker_2",
+      "startUs": 102960000,
+      "text": "more"
+    },
+    {
+      "endUs": 103840000,
+      "speaker": "speaker_2",
+      "startUs": 103360000,
+      "text": "possibilities"
+    },
+    {
+      "endUs": 104080000,
+      "speaker": "speaker_2",
+      "startUs": 104000000,
+      "text": "to"
+    },
+    {
+      "endUs": 104160000,
+      "speaker": "speaker_2",
+      "startUs": 104080000,
+      "text": "do"
+    },
+    {
+      "endUs": 104480000,
+      "speaker": "speaker_2",
+      "startUs": 104320000,
+      "text": "things"
+    },
+    {
+      "endUs": 104800000,
+      "speaker": "speaker_2",
+      "startUs": 104720000,
+      "text": "in"
+    },
+    {
+      "endUs": 105120000,
+      "speaker": "speaker_2",
+      "startUs": 104960000,
+      "text": "different"
+    },
+    {
+      "endUs": 105440000,
+      "speaker": "speaker_2",
+      "startUs": 105200000,
+      "text": "countries"
+    },
+    {
+      "endUs": 106480000,
+      "speaker": "speaker_2",
+      "startUs": 106400000,
+      "text": "in"
+    },
+    {
+      "endUs": 106720000,
+      "speaker": "speaker_2",
+      "startUs": 106480000,
+      "text": "partnership"
+    },
+    {
+      "endUs": 106960000,
+      "speaker": "speaker_2",
+      "startUs": 106880000,
+      "text": "with"
+    },
+    {
+      "endUs": 107440000,
+      "speaker": "speaker_2",
+      "startUs": 107120000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 107680000,
+      "speaker": "speaker_2",
+      "startUs": 107600000,
+      "text": "back"
+    },
+    {
+      "endUs": 107840000,
+      "speaker": "speaker_2",
+      "startUs": 107760000,
+      "text": "then"
+    },
+    {
+      "endUs": 108640000,
+      "speaker": "speaker_2",
+      "startUs": 108560000,
+      "text": "that"
+    },
+    {
+      "endUs": 108720000,
+      "speaker": "speaker_2",
+      "startUs": 108640000,
+      "text": "was"
+    },
+    {
+      "endUs": 108880000,
+      "speaker": "speaker_2",
+      "startUs": 108800000,
+      "text": "not"
+    },
+    {
+      "endUs": 108960000,
+      "speaker": "speaker_2",
+      "startUs": 108880000,
+      "text": "really"
+    },
+    {
+      "endUs": 109280000,
+      "speaker": "speaker_2",
+      "startUs": 109200000,
+      "text": "a"
+    },
+    {
+      "endUs": 109440000,
+      "speaker": "speaker_2",
+      "startUs": 109360000,
+      "text": "thing"
+    },
+    {
+      "endUs": 112160000,
+      "speaker": "speaker_2",
+      "startUs": 112080000,
+      "text": "I"
+    },
+    {
+      "endUs": 112480000,
+      "speaker": "speaker_2",
+      "startUs": 112400000,
+      "text": "did"
+    },
+    {
+      "endUs": 112880000,
+      "speaker": "speaker_2",
+      "startUs": 112800000,
+      "text": "you"
+    },
+    {
+      "endUs": 112960000,
+      "speaker": "speaker_2",
+      "startUs": 112880000,
+      "text": "know"
+    },
+    {
+      "endUs": 113120000,
+      "speaker": "speaker_2",
+      "startUs": 113040000,
+      "text": "I"
+    },
+    {
+      "endUs": 113360000,
+      "speaker": "speaker_2",
+      "startUs": 113280000,
+      "text": "set"
+    },
+    {
+      "endUs": 113680000,
+      "speaker": "speaker_2",
+      "startUs": 113600000,
+      "text": "a"
+    },
+    {
+      "endUs": 113920000,
+      "speaker": "speaker_2",
+      "startUs": 113680000,
+      "text": "course"
+    },
+    {
+      "endUs": 114000000,
+      "speaker": "speaker_2",
+      "startUs": 113920000,
+      "text": "to"
+    },
+    {
+      "endUs": 114560000,
+      "speaker": "speaker_2",
+      "startUs": 114400000,
+      "text": "did"
+    },
+    {
+      "endUs": 114800000,
+      "speaker": "speaker_2",
+      "startUs": 114640000,
+      "text": "everything"
+    },
+    {
+      "endUs": 114880000,
+      "speaker": "speaker_2",
+      "startUs": 114800000,
+      "text": "I"
+    },
+    {
+      "endUs": 115040000,
+      "speaker": "speaker_2",
+      "startUs": 114960000,
+      "text": "could"
+    },
+    {
+      "endUs": 115920000,
+      "speaker": "speaker_2",
+      "startUs": 115840000,
+      "text": "from"
+    },
+    {
+      "endUs": 116640000,
+      "speaker": "speaker_2",
+      "startUs": 116480000,
+      "text": "early"
+    },
+    {
+      "endUs": 116880000,
+      "speaker": "speaker_2",
+      "startUs": 116800000,
+      "text": "on"
+    },
+    {
+      "endUs": 117280000,
+      "speaker": "speaker_2",
+      "startUs": 117200000,
+      "text": "even"
+    },
+    {
+      "endUs": 118320000,
+      "speaker": "speaker_2",
+      "startUs": 118160000,
+      "text": "high"
+    },
+    {
+      "endUs": 118560000,
+      "speaker": "speaker_2",
+      "startUs": 118400000,
+      "text": "school"
+    },
+    {
+      "endUs": 119520000,
+      "speaker": "speaker_2",
+      "startUs": 119440000,
+      "text": "to"
+    },
+    {
+      "endUs": 119840000,
+      "speaker": "speaker_2",
+      "startUs": 119760000,
+      "text": "do"
+    },
+    {
+      "endUs": 120400000,
+      "speaker": "speaker_2",
+      "startUs": 120320000,
+      "text": "get"
+    },
+    {
+      "endUs": 120800000,
+      "speaker": "speaker_2",
+      "startUs": 120560000,
+      "text": "closer"
+    },
+    {
+      "endUs": 120960000,
+      "speaker": "speaker_2",
+      "startUs": 120880000,
+      "text": "to"
+    },
+    {
+      "endUs": 121120000,
+      "speaker": "speaker_2",
+      "startUs": 121040000,
+      "text": "the"
+    },
+    {
+      "endUs": 121440000,
+      "speaker": "speaker_2",
+      "startUs": 121280000,
+      "text": "action"
+    },
+    {
+      "endUs": 121920000,
+      "speaker": "speaker_2",
+      "startUs": 121840000,
+      "text": "get"
+    },
+    {
+      "endUs": 122160000,
+      "speaker": "speaker_2",
+      "startUs": 122000000,
+      "text": "closer"
+    },
+    {
+      "endUs": 122320000,
+      "speaker": "speaker_2",
+      "startUs": 122240000,
+      "text": "to"
+    },
+    {
+      "endUs": 123200000,
+      "speaker": "speaker_2",
+      "startUs": 122560000,
+      "text": "NASA,"
+    },
+    {
+      "endUs": 123280000,
+      "speaker": "speaker_2",
+      "startUs": 123200000,
+      "text": "the"
+    },
+    {
+      "endUs": 123440000,
+      "speaker": "speaker_2",
+      "startUs": 123280000,
+      "text": "United"
+    },
+    {
+      "endUs": 125200000,
+      "speaker": "speaker_2",
+      "startUs": 123520000,
+      "text": "States,"
+    },
+    {
+      "endUs": 125440000,
+      "speaker": "speaker_2",
+      "startUs": 125200000,
+      "text": "study"
+    },
+    {
+      "endUs": 126320000,
+      "speaker": "speaker_2",
+      "startUs": 126080000,
+      "text": "university"
+    },
+    {
+      "endUs": 126560000,
+      "speaker": "speaker_2",
+      "startUs": 126480000,
+      "text": "here"
+    },
+    {
+      "endUs": 127840000,
+      "speaker": "speaker_2",
+      "startUs": 127680000,
+      "text": "something"
+    },
+    {
+      "endUs": 127920000,
+      "speaker": "speaker_2",
+      "startUs": 127840000,
+      "text": "that"
+    },
+    {
+      "endUs": 128080000,
+      "speaker": "speaker_2",
+      "startUs": 128000000,
+      "text": "would"
+    },
+    {
+      "endUs": 128560000,
+      "speaker": "speaker_2",
+      "startUs": 128480000,
+      "text": "uh"
+    },
+    {
+      "endUs": 128880000,
+      "speaker": "speaker_2",
+      "startUs": 128720000,
+      "text": "lead"
+    },
+    {
+      "endUs": 128960000,
+      "speaker": "speaker_2",
+      "startUs": 128880000,
+      "text": "me"
+    },
+    {
+      "endUs": 129120000,
+      "speaker": "speaker_2",
+      "startUs": 129040000,
+      "text": "to"
+    },
+    {
+      "endUs": 130160000,
+      "speaker": "speaker_2",
+      "startUs": 129920000,
+      "text": "eventually"
+    },
+    {
+      "endUs": 130720000,
+      "speaker": "speaker_2",
+      "startUs": 130560000,
+      "text": "being"
+    },
+    {
+      "endUs": 130800000,
+      "speaker": "speaker_2",
+      "startUs": 130720000,
+      "text": "able"
+    },
+    {
+      "endUs": 130880000,
+      "speaker": "speaker_2",
+      "startUs": 130800000,
+      "text": "to"
+    },
+    {
+      "endUs": 130960000,
+      "speaker": "speaker_2",
+      "startUs": 130880000,
+      "text": "be"
+    },
+    {
+      "endUs": 131120000,
+      "speaker": "speaker_2",
+      "startUs": 131040000,
+      "text": "part"
+    },
+    {
+      "endUs": 131280000,
+      "speaker": "speaker_2",
+      "startUs": 131200000,
+      "text": "of"
+    },
+    {
+      "endUs": 131520000,
+      "speaker": "speaker_2",
+      "startUs": 131360000,
+      "text": "it."
+    },
+    {
+      "endUs": 132560000,
+      "speaker": "speaker_2",
+      "startUs": 132480000,
+      "text": "So"
+    },
+    {
+      "endUs": 132800000,
+      "speaker": "speaker_2",
+      "startUs": 132640000,
+      "text": "yeah,"
+    },
+    {
+      "endUs": 132880000,
+      "speaker": "speaker_2",
+      "startUs": 132800000,
+      "text": "I"
+    },
+    {
+      "endUs": 133120000,
+      "speaker": "speaker_2",
+      "startUs": 132960000,
+      "text": "came"
+    },
+    {
+      "endUs": 133200000,
+      "speaker": "speaker_2",
+      "startUs": 133120000,
+      "text": "to"
+    },
+    {
+      "endUs": 133280000,
+      "speaker": "speaker_2",
+      "startUs": 133200000,
+      "text": "the"
+    },
+    {
+      "endUs": 133680000,
+      "speaker": "speaker_2",
+      "startUs": 133520000,
+      "text": "States"
+    },
+    {
+      "endUs": 133840000,
+      "speaker": "speaker_2",
+      "startUs": 133760000,
+      "text": "to"
+    },
+    {
+      "endUs": 134240000,
+      "speaker": "speaker_2",
+      "startUs": 134080000,
+      "text": "study"
+    },
+    {
+      "endUs": 134880000,
+      "speaker": "speaker_2",
+      "startUs": 134720000,
+      "text": "space"
+    },
+    {
+      "endUs": 135280000,
+      "speaker": "speaker_2",
+      "startUs": 134960000,
+      "text": "sciences"
+    },
+    {
+      "endUs": 135440000,
+      "speaker": "speaker_2",
+      "startUs": 135360000,
+      "text": "and"
+    },
+    {
+      "endUs": 136000000,
+      "speaker": "speaker_2",
+      "startUs": 135680000,
+      "text": "electrical"
+    },
+    {
+      "endUs": 136240000,
+      "speaker": "speaker_2",
+      "startUs": 136000000,
+      "text": "engineering"
+    },
+    {
+      "endUs": 137680000,
+      "speaker": "speaker_2",
+      "startUs": 137600000,
+      "text": "and"
+    },
+    {
+      "endUs": 137840000,
+      "speaker": "speaker_2",
+      "startUs": 137760000,
+      "text": "then"
+    },
+    {
+      "endUs": 139040000,
+      "speaker": "speaker_2",
+      "startUs": 138960000,
+      "text": "I"
+    },
+    {
+      "endUs": 139120000,
+      "speaker": "speaker_2",
+      "startUs": 139040000,
+      "text": "did"
+    },
+    {
+      "endUs": 139280000,
+      "speaker": "speaker_2",
+      "startUs": 139200000,
+      "text": "it"
+    },
+    {
+      "endUs": 139440000,
+      "speaker": "speaker_2",
+      "startUs": 139360000,
+      "text": "in"
+    },
+    {
+      "endUs": 139840000,
+      "speaker": "speaker_2",
+      "startUs": 139680000,
+      "text": "school"
+    },
+    {
+      "endUs": 140080000,
+      "speaker": "speaker_2",
+      "startUs": 140000000,
+      "text": "that"
+    },
+    {
+      "endUs": 140240000,
+      "speaker": "speaker_2",
+      "startUs": 140160000,
+      "text": "was"
+    },
+    {
+      "endUs": 140400000,
+      "speaker": "speaker_2",
+      "startUs": 140240000,
+      "text": "pretty"
+    },
+    {
+      "endUs": 140560000,
+      "speaker": "speaker_2",
+      "startUs": 140400000,
+      "text": "close"
+    },
+    {
+      "endUs": 140640000,
+      "speaker": "speaker_2",
+      "startUs": 140560000,
+      "text": "to"
+    },
+    {
+      "endUs": 140880000,
+      "speaker": "speaker_2",
+      "startUs": 140800000,
+      "text": "the"
+    },
+    {
+      "endUs": 141200000,
+      "speaker": "speaker_2",
+      "startUs": 140880000,
+      "text": "Kennedy"
+    },
+    {
+      "endUs": 141440000,
+      "speaker": "speaker_2",
+      "startUs": 141280000,
+      "text": "Space"
+    },
+    {
+      "endUs": 142160000,
+      "speaker": "speaker_2",
+      "startUs": 141440000,
+      "text": "Center,"
+    },
+    {
+      "endUs": 142640000,
+      "speaker": "speaker_2",
+      "startUs": 142400000,
+      "text": "Florida"
+    },
+    {
+      "endUs": 143040000,
+      "speaker": "speaker_2",
+      "startUs": 142800000,
+      "text": "Institute"
+    },
+    {
+      "endUs": 143120000,
+      "speaker": "speaker_2",
+      "startUs": 143040000,
+      "text": "of"
+    },
+    {
+      "endUs": 143680000,
+      "speaker": "speaker_2",
+      "startUs": 143200000,
+      "text": "Technology,"
+    },
+    {
+      "endUs": 144000000,
+      "speaker": "speaker_2",
+      "startUs": 143680000,
+      "text": "Florida"
+    },
+    {
+      "endUs": 144480000,
+      "speaker": "speaker_2",
+      "startUs": 144240000,
+      "text": "Tech"
+    },
+    {
+      "endUs": 146000000,
+      "speaker": "speaker_2",
+      "startUs": 145920000,
+      "text": "and"
+    },
+    {
+      "endUs": 146480000,
+      "speaker": "speaker_2",
+      "startUs": 146400000,
+      "text": "right"
+    },
+    {
+      "endUs": 146720000,
+      "speaker": "speaker_2",
+      "startUs": 146640000,
+      "text": "after"
+    },
+    {
+      "endUs": 146880000,
+      "speaker": "speaker_2",
+      "startUs": 146800000,
+      "text": "I"
+    },
+    {
+      "endUs": 147360000,
+      "speaker": "speaker_2",
+      "startUs": 146960000,
+      "text": "graduated"
+    },
+    {
+      "endUs": 148640000,
+      "speaker": "speaker_2",
+      "startUs": 148240000,
+      "text": "happened"
+    },
+    {
+      "endUs": 148800000,
+      "speaker": "speaker_2",
+      "startUs": 148720000,
+      "text": "to"
+    },
+    {
+      "endUs": 148960000,
+      "speaker": "speaker_2",
+      "startUs": 148880000,
+      "text": "be"
+    },
+    {
+      "endUs": 149840000,
+      "speaker": "speaker_2",
+      "startUs": 149760000,
+      "text": "the"
+    },
+    {
+      "endUs": 150000000,
+      "speaker": "speaker_2",
+      "startUs": 149920000,
+      "text": "very"
+    },
+    {
+      "endUs": 150320000,
+      "speaker": "speaker_2",
+      "startUs": 150080000,
+      "text": "beginning"
+    },
+    {
+      "endUs": 150800000,
+      "speaker": "speaker_2",
+      "startUs": 150720000,
+      "text": "of"
+    },
+    {
+      "endUs": 152560000,
+      "speaker": "speaker_2",
+      "startUs": 152160000,
+      "text": "assembling"
+    },
+    {
+      "endUs": 152720000,
+      "speaker": "speaker_2",
+      "startUs": 152640000,
+      "text": "the"
+    },
+    {
+      "endUs": 153120000,
+      "speaker": "speaker_2",
+      "startUs": 152720000,
+      "text": "international"
+    },
+    {
+      "endUs": 153440000,
+      "speaker": "speaker_2",
+      "startUs": 153280000,
+      "text": "space"
+    },
+    {
+      "endUs": 154560000,
+      "speaker": "speaker_2",
+      "startUs": 153520000,
+      "text": "station,"
+    },
+    {
+      "endUs": 154640000,
+      "speaker": "speaker_2",
+      "startUs": 154560000,
+      "text": "so"
+    },
+    {
+      "endUs": 154880000,
+      "speaker": "speaker_2",
+      "startUs": 154800000,
+      "text": "I"
+    },
+    {
+      "endUs": 155120000,
+      "speaker": "speaker_2",
+      "startUs": 154960000,
+      "text": "came"
+    },
+    {
+      "endUs": 155360000,
+      "speaker": "speaker_2",
+      "startUs": 155120000,
+      "text": "into"
+    },
+    {
+      "endUs": 155760000,
+      "speaker": "speaker_2",
+      "startUs": 155520000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 155920000,
+      "speaker": "speaker_2",
+      "startUs": 155840000,
+      "text": "as"
+    },
+    {
+      "endUs": 156160000,
+      "speaker": "speaker_2",
+      "startUs": 156080000,
+      "text": "a"
+    },
+    {
+      "endUs": 156320000,
+      "speaker": "speaker_2",
+      "startUs": 156240000,
+      "text": "flight"
+    },
+    {
+      "endUs": 156640000,
+      "speaker": "speaker_2",
+      "startUs": 156400000,
+      "text": "controller"
+    },
+    {
+      "endUs": 157280000,
+      "speaker": "speaker_2",
+      "startUs": 157200000,
+      "text": "for"
+    },
+    {
+      "endUs": 158720000,
+      "speaker": "speaker_2",
+      "startUs": 157760000,
+      "text": "ISS,"
+    },
+    {
+      "endUs": 158800000,
+      "speaker": "speaker_2",
+      "startUs": 158720000,
+      "text": "so"
+    },
+    {
+      "endUs": 160160000,
+      "speaker": "speaker_2",
+      "startUs": 160000000,
+      "text": "long"
+    },
+    {
+      "endUs": 161280000,
+      "speaker": "speaker_2",
+      "startUs": 160160000,
+      "text": "journey,"
+    },
+    {
+      "endUs": 161360000,
+      "speaker": "speaker_2",
+      "startUs": 161280000,
+      "text": "but"
+    },
+    {
+      "endUs": 161440000,
+      "speaker": "speaker_2",
+      "startUs": 161360000,
+      "text": "you"
+    },
+    {
+      "endUs": 161520000,
+      "speaker": "speaker_2",
+      "startUs": 161440000,
+      "text": "know"
+    },
+    {
+      "endUs": 161760000,
+      "speaker": "speaker_2",
+      "startUs": 161600000,
+      "text": "that's"
+    },
+    {
+      "endUs": 162000000,
+      "speaker": "speaker_2",
+      "startUs": 161920000,
+      "text": "what"
+    },
+    {
+      "endUs": 162080000,
+      "speaker": "speaker_2",
+      "startUs": 162000000,
+      "text": "it"
+    },
+    {
+      "endUs": 162240000,
+      "speaker": "speaker_2",
+      "startUs": 162080000,
+      "text": "takes"
+    },
+    {
+      "endUs": 162320000,
+      "speaker": "speaker_2",
+      "startUs": 162240000,
+      "text": "to"
+    },
+    {
+      "endUs": 162720000,
+      "speaker": "speaker_2",
+      "startUs": 162560000,
+      "text": "realize"
+    },
+    {
+      "endUs": 162960000,
+      "speaker": "speaker_2",
+      "startUs": 162880000,
+      "text": "your"
+    },
+    {
+      "endUs": 164400000,
+      "speaker": "speaker_1",
+      "startUs": 163040000,
+      "text": "dreams."
+    },
+    {
+      "endUs": 164640000,
+      "speaker": "speaker_1",
+      "startUs": 164400000,
+      "text": "That's"
+    },
+    {
+      "endUs": 165440000,
+      "speaker": "speaker_1",
+      "startUs": 164720000,
+      "text": "fantastic,"
+    },
+    {
+      "endUs": 165520000,
+      "speaker": "speaker_1",
+      "startUs": 165440000,
+      "text": "and"
+    },
+    {
+      "endUs": 165680000,
+      "speaker": "speaker_1",
+      "startUs": 165520000,
+      "text": "you've"
+    },
+    {
+      "endUs": 165760000,
+      "speaker": "speaker_1",
+      "startUs": 165680000,
+      "text": "been"
+    },
+    {
+      "endUs": 166000000,
+      "speaker": "speaker_1",
+      "startUs": 165840000,
+      "text": "charged"
+    },
+    {
+      "endUs": 166240000,
+      "speaker": "speaker_1",
+      "startUs": 166160000,
+      "text": "with"
+    },
+    {
+      "endUs": 166720000,
+      "speaker": "speaker_1",
+      "startUs": 166480000,
+      "text": "quite"
+    },
+    {
+      "endUs": 166880000,
+      "speaker": "speaker_1",
+      "startUs": 166800000,
+      "text": "a"
+    },
+    {
+      "endUs": 167120000,
+      "speaker": "speaker_1",
+      "startUs": 167040000,
+      "text": "big"
+    },
+    {
+      "endUs": 167760000,
+      "speaker": "speaker_1",
+      "startUs": 167360000,
+      "text": "task."
+    },
+    {
+      "endUs": 167840000,
+      "speaker": "speaker_1",
+      "startUs": 167760000,
+      "text": "There"
+    },
+    {
+      "endUs": 168000000,
+      "speaker": "speaker_1",
+      "startUs": 167920000,
+      "text": "was"
+    },
+    {
+      "endUs": 168160000,
+      "speaker": "speaker_1",
+      "startUs": 168000000,
+      "text": "something"
+    },
+    {
+      "endUs": 168400000,
+      "speaker": "speaker_1",
+      "startUs": 168160000,
+      "text": "called"
+    },
+    {
+      "endUs": 169040000,
+      "speaker": "speaker_1",
+      "startUs": 168640000,
+      "text": "ignition"
+    },
+    {
+      "endUs": 169200000,
+      "speaker": "speaker_1",
+      "startUs": 169120000,
+      "text": "that"
+    },
+    {
+      "endUs": 169440000,
+      "speaker": "speaker_1",
+      "startUs": 169280000,
+      "text": "happened"
+    },
+    {
+      "endUs": 169760000,
+      "speaker": "speaker_1",
+      "startUs": 169600000,
+      "text": "earlier"
+    },
+    {
+      "endUs": 170000000,
+      "speaker": "speaker_1",
+      "startUs": 169920000,
+      "text": "this"
+    },
+    {
+      "endUs": 171280000,
+      "speaker": "speaker_1",
+      "startUs": 170080000,
+      "text": "year."
+    },
+    {
+      "endUs": 171360000,
+      "speaker": "speaker_1",
+      "startUs": 171280000,
+      "text": "Where"
+    },
+    {
+      "endUs": 171520000,
+      "speaker": "speaker_1",
+      "startUs": 171440000,
+      "text": "did"
+    },
+    {
+      "endUs": 171680000,
+      "speaker": "speaker_1",
+      "startUs": 171600000,
+      "text": "this"
+    },
+    {
+      "endUs": 171840000,
+      "speaker": "speaker_1",
+      "startUs": 171760000,
+      "text": "come"
+    },
+    {
+      "endUs": 172560000,
+      "speaker": "speaker_1",
+      "startUs": 171920000,
+      "text": "from?"
+    },
+    {
+      "endUs": 172640000,
+      "speaker": "speaker_1",
+      "startUs": 172560000,
+      "text": "The"
+    },
+    {
+      "endUs": 173040000,
+      "speaker": "speaker_1",
+      "startUs": 172800000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 173760000,
+      "speaker": "speaker_1",
+      "startUs": 173200000,
+      "text": "administrator"
+    },
+    {
+      "endUs": 174160000,
+      "speaker": "speaker_1",
+      "startUs": 173840000,
+      "text": "Jared"
+    },
+    {
+      "endUs": 174560000,
+      "speaker": "speaker_1",
+      "startUs": 174240000,
+      "text": "Isaacman"
+    },
+    {
+      "endUs": 174800000,
+      "speaker": "speaker_1",
+      "startUs": 174720000,
+      "text": "has"
+    },
+    {
+      "endUs": 174960000,
+      "speaker": "speaker_1",
+      "startUs": 174800000,
+      "text": "charged"
+    },
+    {
+      "endUs": 175120000,
+      "speaker": "speaker_1",
+      "startUs": 175040000,
+      "text": "you"
+    },
+    {
+      "endUs": 175360000,
+      "speaker": "speaker_1",
+      "startUs": 175280000,
+      "text": "with"
+    },
+    {
+      "endUs": 175840000,
+      "speaker": "speaker_1",
+      "startUs": 175680000,
+      "text": "quite"
+    },
+    {
+      "endUs": 176400000,
+      "speaker": "speaker_1",
+      "startUs": 176320000,
+      "text": "a"
+    },
+    {
+      "endUs": 176480000,
+      "speaker": "speaker_1",
+      "startUs": 176400000,
+      "text": "big"
+    },
+    {
+      "endUs": 177200000,
+      "speaker": "speaker_1",
+      "startUs": 176720000,
+      "text": "workload"
+    },
+    {
+      "endUs": 178640000,
+      "speaker": "speaker_2",
+      "startUs": 178560000,
+      "text": "Yeah"
+    },
+    {
+      "endUs": 179760000,
+      "speaker": "speaker_2",
+      "startUs": 179280000,
+      "text": "ignition"
+    },
+    {
+      "endUs": 181200000,
+      "speaker": "speaker_2",
+      "startUs": 181120000,
+      "text": "I"
+    },
+    {
+      "endUs": 181280000,
+      "speaker": "speaker_2",
+      "startUs": 181200000,
+      "text": "think"
+    },
+    {
+      "endUs": 181520000,
+      "speaker": "speaker_2",
+      "startUs": 181440000,
+      "text": "was"
+    },
+    {
+      "endUs": 182480000,
+      "speaker": "speaker_2",
+      "startUs": 182400000,
+      "text": "really"
+    },
+    {
+      "endUs": 183760000,
+      "speaker": "speaker_2",
+      "startUs": 183680000,
+      "text": "a"
+    },
+    {
+      "endUs": 184080000,
+      "speaker": "speaker_2",
+      "startUs": 183840000,
+      "text": "different"
+    },
+    {
+      "endUs": 184240000,
+      "speaker": "speaker_2",
+      "startUs": 184160000,
+      "text": "name"
+    },
+    {
+      "endUs": 184400000,
+      "speaker": "speaker_2",
+      "startUs": 184320000,
+      "text": "for"
+    },
+    {
+      "endUs": 184880000,
+      "speaker": "speaker_2",
+      "startUs": 184640000,
+      "text": "transformation"
+    },
+    {
+      "endUs": 186960000,
+      "speaker": "speaker_2",
+      "startUs": 186880000,
+      "text": "and"
+    },
+    {
+      "endUs": 187120000,
+      "speaker": "speaker_2",
+      "startUs": 187040000,
+      "text": "uh"
+    },
+    {
+      "endUs": 188240000,
+      "speaker": "speaker_2",
+      "startUs": 188160000,
+      "text": "it"
+    },
+    {
+      "endUs": 188560000,
+      "speaker": "speaker_2",
+      "startUs": 188480000,
+      "text": "is"
+    },
+    {
+      "endUs": 189360000,
+      "speaker": "speaker_2",
+      "startUs": 188640000,
+      "text": "transforming"
+    },
+    {
+      "endUs": 189680000,
+      "speaker": "speaker_2",
+      "startUs": 189600000,
+      "text": "the"
+    },
+    {
+      "endUs": 189920000,
+      "speaker": "speaker_2",
+      "startUs": 189840000,
+      "text": "way"
+    },
+    {
+      "endUs": 190560000,
+      "speaker": "speaker_2",
+      "startUs": 190400000,
+      "text": "Nasa"
+    },
+    {
+      "endUs": 190880000,
+      "speaker": "speaker_2",
+      "startUs": 190720000,
+      "text": "does"
+    },
+    {
+      "endUs": 191200000,
+      "speaker": "speaker_2",
+      "startUs": 190960000,
+      "text": "business"
+    },
+    {
+      "endUs": 193360000,
+      "speaker": "speaker_2",
+      "startUs": 193280000,
+      "text": "and"
+    },
+    {
+      "endUs": 193520000,
+      "speaker": "speaker_2",
+      "startUs": 193440000,
+      "text": "uh"
+    },
+    {
+      "endUs": 193920000,
+      "speaker": "speaker_2",
+      "startUs": 193680000,
+      "text": "going"
+    },
+    {
+      "endUs": 194000000,
+      "speaker": "speaker_2",
+      "startUs": 193920000,
+      "text": "from"
+    },
+    {
+      "endUs": 195680000,
+      "speaker": "speaker_2",
+      "startUs": 195520000,
+      "text": "doing"
+    },
+    {
+      "endUs": 196960000,
+      "speaker": "speaker_2",
+      "startUs": 196800000,
+      "text": "multiple"
+    },
+    {
+      "endUs": 197280000,
+      "speaker": "speaker_2",
+      "startUs": 197120000,
+      "text": "things"
+    },
+    {
+      "endUs": 197520000,
+      "speaker": "speaker_2",
+      "startUs": 197440000,
+      "text": "that"
+    },
+    {
+      "endUs": 197840000,
+      "speaker": "speaker_2",
+      "startUs": 197760000,
+      "text": "are"
+    },
+    {
+      "endUs": 197920000,
+      "speaker": "speaker_2",
+      "startUs": 197840000,
+      "text": "all"
+    },
+    {
+      "endUs": 198080000,
+      "speaker": "speaker_2",
+      "startUs": 198000000,
+      "text": "good"
+    },
+    {
+      "endUs": 198800000,
+      "speaker": "speaker_2",
+      "startUs": 198720000,
+      "text": "in"
+    },
+    {
+      "endUs": 200320000,
+      "speaker": "speaker_2",
+      "startUs": 199040000,
+      "text": "summation,"
+    },
+    {
+      "endUs": 200400000,
+      "speaker": "speaker_2",
+      "startUs": 200320000,
+      "text": "but"
+    },
+    {
+      "endUs": 202000000,
+      "speaker": "speaker_2",
+      "startUs": 201760000,
+      "text": "perhaps"
+    },
+    {
+      "endUs": 202800000,
+      "speaker": "speaker_2",
+      "startUs": 202320000,
+      "text": "diluted"
+    },
+    {
+      "endUs": 204400000,
+      "speaker": "speaker_2",
+      "startUs": 204320000,
+      "text": "the"
+    },
+    {
+      "endUs": 204640000,
+      "speaker": "speaker_2",
+      "startUs": 204560000,
+      "text": "key"
+    },
+    {
+      "endUs": 205040000,
+      "speaker": "speaker_2",
+      "startUs": 204720000,
+      "text": "objectives"
+    },
+    {
+      "endUs": 205200000,
+      "speaker": "speaker_2",
+      "startUs": 205120000,
+      "text": "that"
+    },
+    {
+      "endUs": 205840000,
+      "speaker": "speaker_2",
+      "startUs": 205760000,
+      "text": "the"
+    },
+    {
+      "endUs": 206320000,
+      "speaker": "speaker_2",
+      "startUs": 205840000,
+      "text": "agency"
+    },
+    {
+      "endUs": 206480000,
+      "speaker": "speaker_2",
+      "startUs": 206400000,
+      "text": "should"
+    },
+    {
+      "endUs": 206640000,
+      "speaker": "speaker_2",
+      "startUs": 206560000,
+      "text": "be"
+    },
+    {
+      "endUs": 207280000,
+      "speaker": "speaker_2",
+      "startUs": 207040000,
+      "text": "setting"
+    },
+    {
+      "endUs": 207360000,
+      "speaker": "speaker_2",
+      "startUs": 207280000,
+      "text": "out"
+    },
+    {
+      "endUs": 207520000,
+      "speaker": "speaker_2",
+      "startUs": 207440000,
+      "text": "to"
+    },
+    {
+      "endUs": 207840000,
+      "speaker": "speaker_2",
+      "startUs": 207520000,
+      "text": "do,"
+    },
+    {
+      "endUs": 207920000,
+      "speaker": "speaker_2",
+      "startUs": 207840000,
+      "text": "which"
+    },
+    {
+      "endUs": 208000000,
+      "speaker": "speaker_2",
+      "startUs": 207920000,
+      "text": "is"
+    },
+    {
+      "endUs": 209120000,
+      "speaker": "speaker_2",
+      "startUs": 208960000,
+      "text": "things"
+    },
+    {
+      "endUs": 209280000,
+      "speaker": "speaker_2",
+      "startUs": 209120000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 209360000,
+      "speaker": "speaker_2",
+      "startUs": 209280000,
+      "text": "else"
+    },
+    {
+      "endUs": 209600000,
+      "speaker": "speaker_2",
+      "startUs": 209520000,
+      "text": "can"
+    },
+    {
+      "endUs": 211520000,
+      "speaker": "speaker_2",
+      "startUs": 209680000,
+      "text": "do."
+    },
+    {
+      "endUs": 211600000,
+      "speaker": "speaker_2",
+      "startUs": 211520000,
+      "text": "So"
+    },
+    {
+      "endUs": 213120000,
+      "speaker": "speaker_2",
+      "startUs": 212640000,
+      "text": "ignitia"
+    },
+    {
+      "endUs": 213200000,
+      "speaker": "speaker_2",
+      "startUs": 213120000,
+      "text": "was"
+    },
+    {
+      "endUs": 213520000,
+      "speaker": "speaker_2",
+      "startUs": 213440000,
+      "text": "an"
+    },
+    {
+      "endUs": 213840000,
+      "speaker": "speaker_2",
+      "startUs": 213520000,
+      "text": "exercise"
+    },
+    {
+      "endUs": 214000000,
+      "speaker": "speaker_2",
+      "startUs": 213920000,
+      "text": "of"
+    },
+    {
+      "endUs": 215200000,
+      "speaker": "speaker_2",
+      "startUs": 215040000,
+      "text": "looking"
+    },
+    {
+      "endUs": 215520000,
+      "speaker": "speaker_2",
+      "startUs": 215440000,
+      "text": "at"
+    },
+    {
+      "endUs": 215760000,
+      "speaker": "speaker_2",
+      "startUs": 215680000,
+      "text": "what"
+    },
+    {
+      "endUs": 216080000,
+      "speaker": "speaker_2",
+      "startUs": 216000000,
+      "text": "are"
+    },
+    {
+      "endUs": 216320000,
+      "speaker": "speaker_2",
+      "startUs": 216240000,
+      "text": "those"
+    },
+    {
+      "endUs": 216800000,
+      "speaker": "speaker_2",
+      "startUs": 216640000,
+      "text": "key"
+    },
+    {
+      "endUs": 218000000,
+      "speaker": "speaker_2",
+      "startUs": 217600000,
+      "text": "initiatives"
+    },
+    {
+      "endUs": 218960000,
+      "speaker": "speaker_2",
+      "startUs": 218880000,
+      "text": "that"
+    },
+    {
+      "endUs": 220800000,
+      "speaker": "speaker_2",
+      "startUs": 220480000,
+      "text": "exemplify"
+    },
+    {
+      "endUs": 221040000,
+      "speaker": "speaker_2",
+      "startUs": 220960000,
+      "text": "what"
+    },
+    {
+      "endUs": 221280000,
+      "speaker": "speaker_2",
+      "startUs": 221200000,
+      "text": "we"
+    },
+    {
+      "endUs": 221360000,
+      "speaker": "speaker_2",
+      "startUs": 221280000,
+      "text": "should"
+    },
+    {
+      "endUs": 221520000,
+      "speaker": "speaker_2",
+      "startUs": 221440000,
+      "text": "be"
+    },
+    {
+      "endUs": 222400000,
+      "speaker": "speaker_2",
+      "startUs": 221680000,
+      "text": "after,"
+    },
+    {
+      "endUs": 222480000,
+      "speaker": "speaker_2",
+      "startUs": 222400000,
+      "text": "like"
+    },
+    {
+      "endUs": 224720000,
+      "speaker": "speaker_2",
+      "startUs": 224160000,
+      "text": "accelerating"
+    },
+    {
+      "endUs": 224960000,
+      "speaker": "speaker_2",
+      "startUs": 224800000,
+      "text": "going"
+    },
+    {
+      "endUs": 225040000,
+      "speaker": "speaker_2",
+      "startUs": 224960000,
+      "text": "back"
+    },
+    {
+      "endUs": 225120000,
+      "speaker": "speaker_2",
+      "startUs": 225040000,
+      "text": "to"
+    },
+    {
+      "endUs": 225360000,
+      "speaker": "speaker_2",
+      "startUs": 225280000,
+      "text": "the"
+    },
+    {
+      "endUs": 226880000,
+      "speaker": "speaker_2",
+      "startUs": 225360000,
+      "text": "moon,"
+    },
+    {
+      "endUs": 227120000,
+      "speaker": "speaker_2",
+      "startUs": 226880000,
+      "text": "building"
+    },
+    {
+      "endUs": 227200000,
+      "speaker": "speaker_2",
+      "startUs": 227120000,
+      "text": "a"
+    },
+    {
+      "endUs": 227440000,
+      "speaker": "speaker_2",
+      "startUs": 227280000,
+      "text": "moon"
+    },
+    {
+      "endUs": 227840000,
+      "speaker": "speaker_2",
+      "startUs": 227520000,
+      "text": "base."
+    },
+    {
+      "endUs": 229280000,
+      "speaker": "speaker_2",
+      "startUs": 229120000,
+      "text": "Making"
+    },
+    {
+      "endUs": 229440000,
+      "speaker": "speaker_2",
+      "startUs": 229360000,
+      "text": "sure"
+    },
+    {
+      "endUs": 229600000,
+      "speaker": "speaker_2",
+      "startUs": 229520000,
+      "text": "that"
+    },
+    {
+      "endUs": 229840000,
+      "speaker": "speaker_2",
+      "startUs": 229760000,
+      "text": "we"
+    },
+    {
+      "endUs": 229920000,
+      "speaker": "speaker_2",
+      "startUs": 229840000,
+      "text": "can"
+    },
+    {
+      "endUs": 230560000,
+      "speaker": "speaker_2",
+      "startUs": 230480000,
+      "text": "stay"
+    },
+    {
+      "endUs": 231440000,
+      "speaker": "speaker_2",
+      "startUs": 231360000,
+      "text": "in"
+    },
+    {
+      "endUs": 231840000,
+      "speaker": "speaker_2",
+      "startUs": 231440000,
+      "text": "lowerth"
+    },
+    {
+      "endUs": 232080000,
+      "speaker": "speaker_2",
+      "startUs": 231840000,
+      "text": "orbit"
+    },
+    {
+      "endUs": 233040000,
+      "speaker": "speaker_2",
+      "startUs": 232960000,
+      "text": "on"
+    },
+    {
+      "endUs": 233200000,
+      "speaker": "speaker_2",
+      "startUs": 233040000,
+      "text": "permanent"
+    },
+    {
+      "endUs": 234560000,
+      "speaker": "speaker_2",
+      "startUs": 234240000,
+      "text": "presence"
+    },
+    {
+      "endUs": 235680000,
+      "speaker": "speaker_2",
+      "startUs": 235600000,
+      "text": "even"
+    },
+    {
+      "endUs": 235840000,
+      "speaker": "speaker_2",
+      "startUs": 235760000,
+      "text": "after"
+    },
+    {
+      "endUs": 236240000,
+      "speaker": "speaker_2",
+      "startUs": 236160000,
+      "text": "the"
+    },
+    {
+      "endUs": 236400000,
+      "speaker": "speaker_2",
+      "startUs": 236240000,
+      "text": "space"
+    },
+    {
+      "endUs": 236480000,
+      "speaker": "speaker_2",
+      "startUs": 236400000,
+      "text": "station"
+    },
+    {
+      "endUs": 237680000,
+      "speaker": "speaker_2",
+      "startUs": 237520000,
+      "text": "going"
+    },
+    {
+      "endUs": 237760000,
+      "speaker": "speaker_2",
+      "startUs": 237680000,
+      "text": "to"
+    },
+    {
+      "endUs": 238000000,
+      "speaker": "speaker_2",
+      "startUs": 237840000,
+      "text": "Mars"
+    },
+    {
+      "endUs": 238800000,
+      "speaker": "speaker_2",
+      "startUs": 238720000,
+      "text": "and"
+    },
+    {
+      "endUs": 238880000,
+      "speaker": "speaker_2",
+      "startUs": 238800000,
+      "text": "what"
+    },
+    {
+      "endUs": 239120000,
+      "speaker": "speaker_2",
+      "startUs": 239040000,
+      "text": "it"
+    },
+    {
+      "endUs": 239280000,
+      "speaker": "speaker_2",
+      "startUs": 239200000,
+      "text": "takes"
+    },
+    {
+      "endUs": 239360000,
+      "speaker": "speaker_2",
+      "startUs": 239280000,
+      "text": "to"
+    },
+    {
+      "endUs": 239440000,
+      "speaker": "speaker_2",
+      "startUs": 239360000,
+      "text": "do"
+    },
+    {
+      "endUs": 240960000,
+      "speaker": "speaker_2",
+      "startUs": 239520000,
+      "text": "that,"
+    },
+    {
+      "endUs": 241200000,
+      "speaker": "speaker_2",
+      "startUs": 240960000,
+      "text": "including"
+    },
+    {
+      "endUs": 241760000,
+      "speaker": "speaker_2",
+      "startUs": 241600000,
+      "text": "nuclear"
+    },
+    {
+      "endUs": 242640000,
+      "speaker": "speaker_2",
+      "startUs": 242000000,
+      "text": "technologies"
+    },
+    {
+      "endUs": 242800000,
+      "speaker": "speaker_2",
+      "startUs": 242720000,
+      "text": "that"
+    },
+    {
+      "endUs": 243040000,
+      "speaker": "speaker_2",
+      "startUs": 242960000,
+      "text": "may"
+    },
+    {
+      "endUs": 243520000,
+      "speaker": "speaker_2",
+      "startUs": 243200000,
+      "text": "unlock"
+    },
+    {
+      "endUs": 243920000,
+      "speaker": "speaker_2",
+      "startUs": 243840000,
+      "text": "that"
+    },
+    {
+      "endUs": 244240000,
+      "speaker": "speaker_2",
+      "startUs": 243920000,
+      "text": "capability"
+    },
+    {
+      "endUs": 244960000,
+      "speaker": "speaker_2",
+      "startUs": 244880000,
+      "text": "like"
+    },
+    {
+      "endUs": 245280000,
+      "speaker": "speaker_2",
+      "startUs": 245120000,
+      "text": "nuclear"
+    },
+    {
+      "endUs": 245920000,
+      "speaker": "speaker_2",
+      "startUs": 245520000,
+      "text": "propulsion"
+    },
+    {
+      "endUs": 247120000,
+      "speaker": "speaker_2",
+      "startUs": 247040000,
+      "text": "and"
+    },
+    {
+      "endUs": 247680000,
+      "speaker": "speaker_2",
+      "startUs": 247280000,
+      "text": "continuing"
+    },
+    {
+      "endUs": 247840000,
+      "speaker": "speaker_2",
+      "startUs": 247760000,
+      "text": "to"
+    },
+    {
+      "endUs": 247920000,
+      "speaker": "speaker_2",
+      "startUs": 247840000,
+      "text": "do"
+    },
+    {
+      "endUs": 248480000,
+      "speaker": "speaker_2",
+      "startUs": 248160000,
+      "text": "science"
+    },
+    {
+      "endUs": 248720000,
+      "speaker": "speaker_2",
+      "startUs": 248640000,
+      "text": "that"
+    },
+    {
+      "endUs": 248960000,
+      "speaker": "speaker_2",
+      "startUs": 248800000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 249120000,
+      "speaker": "speaker_2",
+      "startUs": 249040000,
+      "text": "else"
+    },
+    {
+      "endUs": 249360000,
+      "speaker": "speaker_2",
+      "startUs": 249280000,
+      "text": "can"
+    },
+    {
+      "endUs": 249520000,
+      "speaker": "speaker_2",
+      "startUs": 249440000,
+      "text": "do"
+    },
+    {
+      "endUs": 250400000,
+      "speaker": "speaker_2",
+      "startUs": 250320000,
+      "text": "because"
+    },
+    {
+      "endUs": 251600000,
+      "speaker": "speaker_2",
+      "startUs": 251520000,
+      "text": "it's"
+    },
+    {
+      "endUs": 251760000,
+      "speaker": "speaker_2",
+      "startUs": 251680000,
+      "text": "in"
+    },
+    {
+      "endUs": 252080000,
+      "speaker": "speaker_2",
+      "startUs": 251920000,
+      "text": "places"
+    },
+    {
+      "endUs": 252320000,
+      "speaker": "speaker_2",
+      "startUs": 252240000,
+      "text": "where"
+    },
+    {
+      "endUs": 252800000,
+      "speaker": "speaker_2",
+      "startUs": 252640000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 252960000,
+      "speaker": "speaker_2",
+      "startUs": 252880000,
+      "text": "can"
+    },
+    {
+      "endUs": 253280000,
+      "speaker": "speaker_2",
+      "startUs": 253120000,
+      "text": "reach"
+    },
+    {
+      "endUs": 253520000,
+      "speaker": "speaker_2",
+      "startUs": 253440000,
+      "text": "other"
+    },
+    {
+      "endUs": 255200000,
+      "speaker": "speaker_2",
+      "startUs": 253760000,
+      "text": "planets,"
+    },
+    {
+      "endUs": 255520000,
+      "speaker": "speaker_2",
+      "startUs": 255360000,
+      "text": "solar"
+    },
+    {
+      "endUs": 255600000,
+      "speaker": "speaker_2",
+      "startUs": 255520000,
+      "text": "system"
+    },
+    {
+      "endUs": 257920000,
+      "speaker": "speaker_2",
+      "startUs": 256080000,
+      "text": "beyond."
+    },
+    {
+      "endUs": 258000000,
+      "speaker": "speaker_2",
+      "startUs": 257920000,
+      "text": "So"
+    },
+    {
+      "endUs": 258400000,
+      "speaker": "speaker_2",
+      "startUs": 258080000,
+      "text": "ignition"
+    },
+    {
+      "endUs": 258640000,
+      "speaker": "speaker_2",
+      "startUs": 258560000,
+      "text": "was"
+    },
+    {
+      "endUs": 258720000,
+      "speaker": "speaker_2",
+      "startUs": 258640000,
+      "text": "about"
+    },
+    {
+      "endUs": 259840000,
+      "speaker": "speaker_2",
+      "startUs": 259520000,
+      "text": "realigning"
+    },
+    {
+      "endUs": 260000000,
+      "speaker": "speaker_2",
+      "startUs": 259920000,
+      "text": "the"
+    },
+    {
+      "endUs": 260560000,
+      "speaker": "speaker_2",
+      "startUs": 260160000,
+      "text": "agency"
+    },
+    {
+      "endUs": 260640000,
+      "speaker": "speaker_2",
+      "startUs": 260560000,
+      "text": "to"
+    },
+    {
+      "endUs": 260880000,
+      "speaker": "speaker_2",
+      "startUs": 260800000,
+      "text": "be"
+    },
+    {
+      "endUs": 260960000,
+      "speaker": "speaker_2",
+      "startUs": 260880000,
+      "text": "able"
+    },
+    {
+      "endUs": 261040000,
+      "speaker": "speaker_2",
+      "startUs": 260960000,
+      "text": "to"
+    },
+    {
+      "endUs": 261280000,
+      "speaker": "speaker_2",
+      "startUs": 261120000,
+      "text": "focus"
+    },
+    {
+      "endUs": 261520000,
+      "speaker": "speaker_2",
+      "startUs": 261440000,
+      "text": "on"
+    },
+    {
+      "endUs": 261840000,
+      "speaker": "speaker_2",
+      "startUs": 261760000,
+      "text": "these"
+    },
+    {
+      "endUs": 262160000,
+      "speaker": "speaker_2",
+      "startUs": 261920000,
+      "text": "things"
+    },
+    {
+      "endUs": 263760000,
+      "speaker": "speaker_2",
+      "startUs": 263680000,
+      "text": "and"
+    },
+    {
+      "endUs": 263840000,
+      "speaker": "speaker_2",
+      "startUs": 263760000,
+      "text": "not"
+    },
+    {
+      "endUs": 264000000,
+      "speaker": "speaker_2",
+      "startUs": 263920000,
+      "text": "like"
+    },
+    {
+      "endUs": 264480000,
+      "speaker": "speaker_2",
+      "startUs": 264320000,
+      "text": "break"
+    },
+    {
+      "endUs": 264720000,
+      "speaker": "speaker_2",
+      "startUs": 264640000,
+      "text": "all"
+    },
+    {
+      "endUs": 264960000,
+      "speaker": "speaker_2",
+      "startUs": 264720000,
+      "text": "boundaries"
+    },
+    {
+      "endUs": 265840000,
+      "speaker": "speaker_2",
+      "startUs": 265760000,
+      "text": "it's"
+    },
+    {
+      "endUs": 265920000,
+      "speaker": "speaker_2",
+      "startUs": 265840000,
+      "text": "not"
+    },
+    {
+      "endUs": 266000000,
+      "speaker": "speaker_2",
+      "startUs": 265920000,
+      "text": "about"
+    },
+    {
+      "endUs": 268400000,
+      "speaker": "speaker_2",
+      "startUs": 268160000,
+      "text": "human"
+    },
+    {
+      "endUs": 268720000,
+      "speaker": "speaker_2",
+      "startUs": 268560000,
+      "text": "space"
+    },
+    {
+      "endUs": 269120000,
+      "speaker": "speaker_2",
+      "startUs": 268880000,
+      "text": "flight"
+    },
+    {
+      "endUs": 270560000,
+      "speaker": "speaker_2",
+      "startUs": 270240000,
+      "text": "science"
+    },
+    {
+      "endUs": 271200000,
+      "speaker": "speaker_2",
+      "startUs": 271040000,
+      "text": "mission"
+    },
+    {
+      "endUs": 271680000,
+      "speaker": "speaker_2",
+      "startUs": 271360000,
+      "text": "director"
+    },
+    {
+      "endUs": 272400000,
+      "speaker": "speaker_2",
+      "startUs": 272320000,
+      "text": "and"
+    },
+    {
+      "endUs": 273040000,
+      "speaker": "speaker_2",
+      "startUs": 272640000,
+      "text": "technology"
+    },
+    {
+      "endUs": 273360000,
+      "speaker": "speaker_2",
+      "startUs": 273280000,
+      "text": "it's"
+    },
+    {
+      "endUs": 273440000,
+      "speaker": "speaker_2",
+      "startUs": 273360000,
+      "text": "not"
+    },
+    {
+      "endUs": 273520000,
+      "speaker": "speaker_2",
+      "startUs": 273440000,
+      "text": "about"
+    },
+    {
+      "endUs": 274960000,
+      "speaker": "speaker_2",
+      "startUs": 274880000,
+      "text": "all"
+    },
+    {
+      "endUs": 275040000,
+      "speaker": "speaker_2",
+      "startUs": 274960000,
+      "text": "of"
+    },
+    {
+      "endUs": 275600000,
+      "speaker": "speaker_1",
+      "startUs": 275120000,
+      "text": "it,"
+    },
+    {
+      "endUs": 275840000,
+      "speaker": "speaker_2",
+      "startUs": 275600000,
+      "text": "right?"
+    },
+    {
+      "endUs": 276000000,
+      "speaker": "speaker_2",
+      "startUs": 275920000,
+      "text": "So"
+    },
+    {
+      "endUs": 276320000,
+      "speaker": "speaker_2",
+      "startUs": 276160000,
+      "text": "every"
+    },
+    {
+      "endUs": 276640000,
+      "speaker": "speaker_2",
+      "startUs": 276480000,
+      "text": "aspect"
+    },
+    {
+      "endUs": 276880000,
+      "speaker": "speaker_2",
+      "startUs": 276800000,
+      "text": "of"
+    },
+    {
+      "endUs": 276960000,
+      "speaker": "speaker_2",
+      "startUs": 276880000,
+      "text": "it"
+    },
+    {
+      "endUs": 277760000,
+      "speaker": "speaker_2",
+      "startUs": 277520000,
+      "text": "align"
+    },
+    {
+      "endUs": 278160000,
+      "speaker": "speaker_2",
+      "startUs": 278080000,
+      "text": "to"
+    },
+    {
+      "endUs": 278560000,
+      "speaker": "speaker_2",
+      "startUs": 278160000,
+      "text": "achieve"
+    },
+    {
+      "endUs": 278800000,
+      "speaker": "speaker_2",
+      "startUs": 278720000,
+      "text": "these"
+    },
+    {
+      "endUs": 278880000,
+      "speaker": "speaker_2",
+      "startUs": 278800000,
+      "text": "key"
+    },
+    {
+      "endUs": 280640000,
+      "speaker": "speaker_2",
+      "startUs": 278960000,
+      "text": "objectives,"
+    },
+    {
+      "endUs": 280720000,
+      "speaker": "speaker_2",
+      "startUs": 280640000,
+      "text": "and"
+    },
+    {
+      "endUs": 280880000,
+      "speaker": "speaker_2",
+      "startUs": 280800000,
+      "text": "I"
+    },
+    {
+      "endUs": 281040000,
+      "speaker": "speaker_2",
+      "startUs": 280960000,
+      "text": "think"
+    },
+    {
+      "endUs": 281280000,
+      "speaker": "speaker_2",
+      "startUs": 281120000,
+      "text": "that's"
+    },
+    {
+      "endUs": 281440000,
+      "speaker": "speaker_2",
+      "startUs": 281360000,
+      "text": "what"
+    },
+    {
+      "endUs": 281840000,
+      "speaker": "speaker_2",
+      "startUs": 281600000,
+      "text": "allows"
+    },
+    {
+      "endUs": 282000000,
+      "speaker": "speaker_2",
+      "startUs": 281920000,
+      "text": "us"
+    },
+    {
+      "endUs": 282240000,
+      "speaker": "speaker_2",
+      "startUs": 282160000,
+      "text": "to"
+    },
+    {
+      "endUs": 283360000,
+      "speaker": "speaker_2",
+      "startUs": 283280000,
+      "text": "do"
+    },
+    {
+      "endUs": 283600000,
+      "speaker": "speaker_2",
+      "startUs": 283520000,
+      "text": "the"
+    },
+    {
+      "endUs": 283920000,
+      "speaker": "speaker_2",
+      "startUs": 283680000,
+      "text": "things"
+    },
+    {
+      "endUs": 284000000,
+      "speaker": "speaker_2",
+      "startUs": 283920000,
+      "text": "that"
+    },
+    {
+      "endUs": 284400000,
+      "speaker": "speaker_2",
+      "startUs": 284160000,
+      "text": "nobody"
+    },
+    {
+      "endUs": 284560000,
+      "speaker": "speaker_2",
+      "startUs": 284480000,
+      "text": "else"
+    },
+    {
+      "endUs": 284720000,
+      "speaker": "speaker_2",
+      "startUs": 284640000,
+      "text": "can"
+    },
+    {
+      "endUs": 285840000,
+      "speaker": "speaker_1",
+      "startUs": 285760000,
+      "text": "if"
+    },
+    {
+      "endUs": 285920000,
+      "speaker": "speaker_1",
+      "startUs": 285840000,
+      "text": "we"
+    },
+    {
+      "endUs": 286080000,
+      "speaker": "speaker_1",
+      "startUs": 286000000,
+      "text": "see"
+    },
+    {
+      "endUs": 286160000,
+      "speaker": "speaker_1",
+      "startUs": 286080000,
+      "text": "the"
+    },
+    {
+      "endUs": 286320000,
+      "speaker": "speaker_1",
+      "startUs": 286160000,
+      "text": "big"
+    },
+    {
+      "endUs": 286800000,
+      "speaker": "speaker_1",
+      "startUs": 286320000,
+      "text": "picture,"
+    },
+    {
+      "endUs": 286880000,
+      "speaker": "speaker_1",
+      "startUs": 286800000,
+      "text": "we"
+    },
+    {
+      "endUs": 286960000,
+      "speaker": "speaker_1",
+      "startUs": 286880000,
+      "text": "can"
+    },
+    {
+      "endUs": 287440000,
+      "speaker": "speaker_1",
+      "startUs": 287120000,
+      "text": "accomplish"
+    },
+    {
+      "endUs": 288080000,
+      "speaker": "speaker_1",
+      "startUs": 288000000,
+      "text": "the"
+    },
+    {
+      "endUs": 290640000,
+      "speaker": "speaker_1",
+      "startUs": 288320000,
+      "text": "unaccomplished."
+    },
+    {
+      "endUs": 290720000,
+      "speaker": "speaker_1",
+      "startUs": 290640000,
+      "text": "So"
+    },
+    {
+      "endUs": 291040000,
+      "speaker": "speaker_1",
+      "startUs": 290960000,
+      "text": "tell"
+    },
+    {
+      "endUs": 291120000,
+      "speaker": "speaker_1",
+      "startUs": 291040000,
+      "text": "us"
+    },
+    {
+      "endUs": 291280000,
+      "speaker": "speaker_1",
+      "startUs": 291200000,
+      "text": "a"
+    },
+    {
+      "endUs": 291360000,
+      "speaker": "speaker_1",
+      "startUs": 291280000,
+      "text": "little"
+    },
+    {
+      "endUs": 291440000,
+      "speaker": "speaker_1",
+      "startUs": 291360000,
+      "text": "bit"
+    },
+    {
+      "endUs": 291600000,
+      "speaker": "speaker_1",
+      "startUs": 291520000,
+      "text": "about"
+    },
+    {
+      "endUs": 292000000,
+      "speaker": "speaker_1",
+      "startUs": 291920000,
+      "text": "why"
+    },
+    {
+      "endUs": 292800000,
+      "speaker": "speaker_1",
+      "startUs": 292560000,
+      "text": "NASA"
+    },
+    {
+      "endUs": 292960000,
+      "speaker": "speaker_1",
+      "startUs": 292880000,
+      "text": "is"
+    },
+    {
+      "endUs": 293120000,
+      "speaker": "speaker_1",
+      "startUs": 293040000,
+      "text": "going"
+    },
+    {
+      "endUs": 293360000,
+      "speaker": "speaker_1",
+      "startUs": 293280000,
+      "text": "back"
+    },
+    {
+      "endUs": 293600000,
+      "speaker": "speaker_1",
+      "startUs": 293520000,
+      "text": "to"
+    },
+    {
+      "endUs": 293680000,
+      "speaker": "speaker_1",
+      "startUs": 293600000,
+      "text": "the"
+    },
+    {
+      "endUs": 295360000,
+      "speaker": "speaker_2",
+      "startUs": 293760000,
+      "text": "Moon."
+    },
+    {
+      "endUs": 295440000,
+      "speaker": "speaker_2",
+      "startUs": 295360000,
+      "text": "I"
+    },
+    {
+      "endUs": 295600000,
+      "speaker": "speaker_2",
+      "startUs": 295440000,
+      "text": "feel"
+    },
+    {
+      "endUs": 295680000,
+      "speaker": "speaker_2",
+      "startUs": 295600000,
+      "text": "like"
+    },
+    {
+      "endUs": 297120000,
+      "speaker": "speaker_2",
+      "startUs": 296960000,
+      "text": "it's"
+    },
+    {
+      "endUs": 297360000,
+      "speaker": "speaker_2",
+      "startUs": 297120000,
+      "text": "almost"
+    },
+    {
+      "endUs": 297680000,
+      "speaker": "speaker_2",
+      "startUs": 297600000,
+      "text": "an"
+    },
+    {
+      "endUs": 298080000,
+      "speaker": "speaker_2",
+      "startUs": 297760000,
+      "text": "obligation."
+    }
+  ],
+  "wordsWithPositiveTiming": 678
+}

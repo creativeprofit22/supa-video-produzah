@@ -1,0 +1,7 @@
+reference words in clip span: 686; hypothesis words: 678
+WER vs NASA published transcript: 0.067 (46 edits / 686 words)
+  note: NASA's transcript is edited (fillers like 'uh' removed, false starts tidied), so this WER overstates recognition error.
+exactly matched words: 647
+reference speaker x predicted label: {('guest', 'speaker_1'): 2, ('guest', 'speaker_2'): 548, ('host', 'speaker_1'): 95, ('host', 'speaker_2'): 2}
+speaker attribution accuracy (best many-to-one mapping): 0.994  mapping={'speaker_1': 'host', 'speaker_2': 'guest'}
+distinct predicted speakers: ['speaker_1', 'speaker_2']  labelled words: 678 / 678

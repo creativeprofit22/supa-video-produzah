@@ -749,7 +749,7 @@ Completed foundation slices:
 
 Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
 
-## Implementation checkpoint — 28 September 2026 (uncommitted)
+## Implementation checkpoint — 28 September 2026
 
 Evidence: `evidence/2026-09-28-p3-transcription-audio/README.md`.
 
@@ -757,7 +757,10 @@ Evidence: `evidence/2026-09-28-p3-transcription-audio/README.md`.
 - Real NeMo/CUDA proof on a GTX 1080 through the production job path: JFK fixture WER 0.0, 22/22 timed words, VRAM 628 → 2,430 MiB. Long-form, noisy-dialogue and determinism benchmarks were not run.
 - Captions: "Generate captions" is one group of existing commands (`InsertTrack` + `ApplyCaptionArtifact`); style/retime produce validated new artifacts; exports now render caption artifacts with explicit fonts inside the safe area (TS↔Rust golden, real frames at three ratios); SRT/VTT/ASS sidecars.
 - Audio: optional track `audioRole` and sequence `loudnessTarget` with undo/redo/journal recovery; padded-key ducking, dialogue cleanup, two-pass `loudnorm` with reported mode, and a post-render `ebur128` report that fails exports outside ±1 LU or above -1 dBTP. Real exports met -14/-16/-23 LUFS.
-- Not yet shown: one continuous in-app native scenario; Phase 4 preview-sync parity specs still fail intermittently and remain Phase 4 work.
+- Speaker labels (Sortformer diarizer, pinned and consent-bound) and word-level seek in the transcript panel; real two-speaker recording through the production path: 2 speakers, 99.4 % speaker attribution, WER 0.067. "Remove selected words" opens a cut preview that changes nothing until Apply. Frame shape (16:9 / 9:16 / 1:1) is an undoable command.
+- One continuous scenario in the real launched app passed all 7 steps: import → transcribe with speakers → word seek → cut with preview → undo → captions at three ratios → fades + −16 LUFS → 9:16 export. It exposed six product bugs, all fixed (including fade-out ending at the file's real audio end and FFmpeg drawtext escaping).
+- Final checks: `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (1,004), cargo fmt/clippy `-D warnings`/test (431) pass.
+- Open: the full desktop browser suite is 100/12; the 12 are pre-existing, run-to-run variable Phase 4 live-playback sync gates (they fail identically with the prior `ProgramMonitor`), carried to Phase 4 rather than counted as passing. Also open: cutting a sentence leaves inter-word pauses as short clips, live-preview caption overlay is not independently verified, VRAM headroom is thin (7.0–7.2 of 8 GiB for 5 minutes), and accuracy is measured on one clean two-speaker recording only.
 
 ### Verification actually run for the closed trim-caption slice
 
