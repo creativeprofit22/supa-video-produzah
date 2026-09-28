@@ -53,7 +53,8 @@ use super::{
         MEDIA_STORE_NAMESPACE,
     },
     nemo_transcription::{
-        transcribe_nemo_cuda, NemoTranscriptionInput, VerifiedNemoFile, VerifiedNemoRuntime,
+        speaker_diarizer_missing, transcribe_nemo_cuda, NemoTranscriptionInput, VerifiedNemoFile,
+        VerifiedNemoRuntime,
     },
     probe::{
         parse_ffprobe_json, parse_ffprobe_json_inspected, parse_thumbnail_artifact_json,
@@ -2836,7 +2837,7 @@ fn multitrack_filter_mut(plan: &mut Value) -> &mut Value {
         .expect("multitrack filter must exist")
 }
 
-const RENDER_CAPTION_FILTER: &str = "drawtext=text='Path\\\\it\\'s\\: 50\\%\\, \\[yes\\]\\;\\nnext\\nline\\nend':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
+const RENDER_CAPTION_FILTER: &str = "drawtext=text=Path\\\\\\\\\\\\\\\\it\\\\\\'s\\\\: 50\\\\\\\\%\\, \\[yes\\]\\;\nnext\nline\nend:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
 
 fn render_caption_value() -> Value {
     serde_json::json!({
@@ -5114,8 +5115,9 @@ fn caption_boundary_plan(mut plan: Value, version: u64, captions: Vec<Value>) ->
             let us = caption[key].as_u64().unwrap();
             format!("{}.{:06}", us / 1_000_000, us % 1_000_000)
         };
-        format!("drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,{})*lt(t\\,{})'",
-            caption["text"].as_str().unwrap(), seconds("startMicroseconds"), seconds("endMicroseconds"))
+        format!("drawtext=text={}:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,{})*lt(t\\,{})'",
+            super::caption_render::escape_drawtext_text(caption["text"].as_str().unwrap()),
+            seconds("startMicroseconds"), seconds("endMicroseconds"))
     }).collect();
     let arguments = plan["argv"].as_array_mut().unwrap();
     let index = arguments
@@ -6255,14 +6257,20 @@ fn nemo_runner_honor_control_markers(cache: &Path, stage: &str) {
 
 fn nemo_runner_nemo_helper() {
     let arguments = nemo_runner_arguments();
-    assert_eq!(arguments.len(), 10);
+    let diarized = arguments.len() == 14;
+    assert!(arguments.len() == 10 || diarized);
     assert_eq!(arguments[0], "--json");
     assert_eq!(arguments[1], "--verbose");
     assert_eq!(arguments[2], "transcribe");
     assert_eq!(arguments[4], "--model");
-    assert_eq!(arguments[6..], ["--device", "cuda:0", "--format", "json"]);
+    assert_eq!(arguments[6..10], ["--device", "cuda:0", "--format", "json"]);
     assert!(Path::new(&arguments[3]).is_file());
     assert!(Path::new(&arguments[5]).is_file());
+    if diarized {
+        assert_eq!(arguments[10], "--diar-model");
+        assert!(Path::new(&arguments[11]).is_file());
+        assert_eq!(arguments[12..], ["--max-speaker-count", "4"]);
+    }
     let cache = Path::new(&arguments[3])
         .parent()
         .and_then(Path::parent)
@@ -6277,6 +6285,20 @@ fn nemo_runner_nemo_helper() {
     }
     eprintln!("transcribe: device=0");
     eprintln!("<init_backends> Using GPU backend: CUDA0");
+    // With the diarizer, speaker 2 says "Hello" and "world" is untagged,
+    // matching the runtime's omission of `speaker` for untagged words. The
+    // `nemo-no-speakers` marker makes the diarizer tag nothing.
+    let words = if diarized && !cache.join("nemo-no-speakers").exists() {
+        serde_json::json!([
+            {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9, "speaker": 2},
+            {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
+        ])
+    } else {
+        serde_json::json!([
+            {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9},
+            {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
+        ])
+    };
     print!(
         "{}",
         serde_json::json!({
@@ -6285,10 +6307,7 @@ fn nemo_runner_nemo_helper() {
             "confidence": 0.95,
             "duration": 2.0,
             "languages": ["en"],
-            "words": [
-                {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9},
-                {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
-            ]
+            "words": words
         })
     );
 }
@@ -6417,6 +6436,7 @@ async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_au
         runtime_directory,
         vec![sha256_file_fixture(&dll_path)],
         model.clone(),
+        None,
     )
     .expect("runtime fixture must verify");
     let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
@@ -6529,6 +6549,7 @@ async fn transcription_job_fixture() -> TranscriptionJobFixture {
         runtime_directory,
         Vec::new(),
         model.clone(),
+        None,
     )
     .expect("runtime fixture must verify");
     let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
@@ -6863,6 +6884,178 @@ async fn transcription_job_interrupted_by_restart_is_recovered_as_blocked() {
     );
 }
 
+/// A runner workspace with an optional fake diarizer next to the model.
+struct DiarizedRunnerFixture {
+    workspace: tempfile::TempDir,
+    cache_root: PathBuf,
+    source: super::media_store::IngestedSource,
+    executable: VerifiedNemoFile,
+    model: VerifiedNemoFile,
+    diarizer: VerifiedNemoFile,
+    runtime_directory: PathBuf,
+}
+
+fn diarized_runner_fixture() -> DiarizedRunnerFixture {
+    let workspace = tempdir().expect("diarized runner workspace must exist");
+    let cache_root = workspace.path().join("cache");
+    fs::create_dir_all(&cache_root).expect("cache root must exist");
+    let source_path = workspace.path().join("source.media");
+    fs::write(&source_path, b"authorized two-speaker audio").unwrap();
+    let source = ingest_blocking_for_test(source_path.canonicalize().unwrap(), cache_root.clone())
+        .expect("source fixture must ingest");
+    let runtime_directory = workspace.path().join("runtime");
+    fs::create_dir_all(&runtime_directory).unwrap();
+    let executable_path = runtime_directory.join("nemo-speech.exe");
+    let model_path = runtime_directory.join("model.gguf");
+    let diarizer_path = runtime_directory.join("sortformer.gguf");
+    fs::write(&executable_path, b"nemo executable fixture").unwrap();
+    fs::write(&model_path, b"nemo gguf fixture").unwrap();
+    fs::write(&diarizer_path, b"sortformer gguf fixture").unwrap();
+    DiarizedRunnerFixture {
+        executable: sha256_file_fixture(&executable_path),
+        model: sha256_file_fixture(&model_path),
+        diarizer: sha256_file_fixture(&diarizer_path),
+        workspace,
+        cache_root,
+        source,
+        runtime_directory,
+    }
+}
+
+fn diarized_configuration(
+    fixture: &DiarizedRunnerFixture,
+    mode: SpeakerDiarizationModeV1,
+) -> AsrConfigurationV1 {
+    let mut configuration =
+        nemo_runner_configuration(&fixture.executable.sha256, &fixture.model.sha256);
+    configuration.speaker_diarization_mode = mode;
+    configuration.provider_settings.insert(
+        1,
+        AsrProviderSettingV1 {
+            key: "diarizer_sha256".to_owned(),
+            value: AsrProviderSettingValueV1::String(fixture.diarizer.sha256.clone()),
+        },
+    );
+    configuration
+}
+
+async fn run_diarized(
+    fixture: &DiarizedRunnerFixture,
+    configuration: &AsrConfigurationV1,
+    with_diarizer: bool,
+) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
+    let runtime = VerifiedNemoRuntime::new(
+        fixture.executable.clone(),
+        fixture.runtime_directory.clone(),
+        Vec::new(),
+        fixture.model.clone(),
+        with_diarizer.then(|| fixture.diarizer.clone()),
+    )
+    .expect("runtime fixture must verify");
+    let jobs = MediaJobService::initialize(
+        fixture.workspace.path().join("local-data"),
+        fixture.cache_root.clone(),
+    )
+    .await
+    .expect("diarized runner jobs must initialize");
+    transcribe_nemo_cuda(
+        NemoTranscriptionInput {
+            source_path: &fixture.source.object_path,
+            source_identity: &fixture.source.identity,
+            source_fingerprint: &fixture.source.fingerprint,
+            source_duration_us: 2_000_000,
+            configuration,
+            app_cache_root: &fixture.cache_root,
+        },
+        env::current_exe().expect("test executable must exist"),
+        runtime,
+        ProcessCancellation::new(),
+        jobs.cache(),
+    )
+    .await
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_passes_the_diarizer_and_maps_speaker_labels() {
+    let fixture = diarized_runner_fixture();
+    let configuration = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
+    let published = run_diarized(&fixture, &configuration, true)
+        .await
+        .expect("diarized runner must publish");
+    let labels: Vec<_> = published
+        .artifact
+        .words
+        .iter()
+        .map(|word| word.speaker_label.as_deref())
+        .collect();
+    assert_eq!(labels, [Some("speaker_2"), None]);
+    assert!(published
+        .artifact
+        .words
+        .iter()
+        .all(|word| word.speaker_confidence.is_none()));
+    assert_eq!(
+        published
+            .artifact
+            .uncertainty_counts
+            .missing_speaker_word_count,
+        1
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_required_speakers_fail_bounded_without_diarizer_or_labels() {
+    let fixture = diarized_runner_fixture();
+    let required = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Required);
+
+    let missing = run_diarized(&fixture, &required, false)
+        .await
+        .expect_err("required labels without a diarizer must fail");
+    assert_eq!(missing.code, speaker_diarizer_missing().code);
+    assert_eq!(missing.details, speaker_diarizer_missing().details);
+    assert!(
+        !fixture.cache_root.join("nemo-count").exists(),
+        "nothing is launched when the diarizer is missing"
+    );
+
+    fs::write(fixture.cache_root.join("nemo-no-speakers"), b"1").unwrap();
+    let unlabelled = run_diarized(&fixture, &required, true)
+        .await
+        .expect_err("required labels with no labelled word must fail");
+    assert_eq!(unlabelled.code, VideoErrorCode::InvalidMedia);
+    assert_eq!(unlabelled.details["category"], "speaker_labels_missing");
+
+    let optional = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
+    let published = run_diarized(&fixture, &optional, true)
+        .await
+        .expect("optional labels tolerate an unlabelled run");
+    assert_eq!(
+        published
+            .artifact
+            .uncertainty_counts
+            .missing_speaker_word_count,
+        2
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_rejects_a_diarizer_hash_that_does_not_match_the_runtime() {
+    let fixture = diarized_runner_fixture();
+    let mut configuration = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
+    configuration.provider_settings[1].value = AsrProviderSettingValueV1::String("f".repeat(64));
+    let error = run_diarized(&fixture, &configuration, true)
+        .await
+        .expect_err("a mismatched diarizer hash must fail");
+    assert_eq!(error.code, VideoErrorCode::InvalidMedia);
+
+    // `off` with a diarizer hash is inconsistent and must not silently drop it.
+    let off_with_diarizer_setting = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Off);
+    assert!(run_diarized(&fixture, &off_with_diarizer_setting, true)
+        .await
+        .is_err());
+    assert!(!fixture.cache_root.join("nemo-count").exists());
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn nemo_cuda_transcription_runner_cancelled_request_launches_nothing_and_leaves_no_partial() {
     let workspace = tempdir().expect("cancelled NeMo runner workspace must exist");
@@ -6885,9 +7078,14 @@ async fn nemo_cuda_transcription_runner_cancelled_request_launches_nothing_and_l
     fs::write(&model_path, b"nemo gguf fixture").unwrap();
     let executable = sha256_file_fixture(&executable_path);
     let model = sha256_file_fixture(&model_path);
-    let runtime =
-        VerifiedNemoRuntime::new(executable.clone(), runtime_directory, vec![], model.clone())
-            .expect("runtime fixture must verify");
+    let runtime = VerifiedNemoRuntime::new(
+        executable.clone(),
+        runtime_directory,
+        vec![],
+        model.clone(),
+        None,
+    )
+    .expect("runtime fixture must verify");
     let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
     let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
         .await

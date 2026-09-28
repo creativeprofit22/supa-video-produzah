@@ -36,7 +36,7 @@ export const STYLED_CAPTION_GOLDEN_INPUT: RenderCaptionInputV2 = {
 };
 
 export const STYLED_CAPTION_GOLDEN =
-  "drawtext=fontfile='C\\:/Windows/Fonts/arialbd.ttf':text='It\\'s 50\\%\\, \\[ok\\]\\;\nC\\:\\\\path':fontcolor=0xffd700ff:fontsize=32:line_spacing=7:text_align=C:box=1:boxcolor=black@0.65:boxborderw=12:x=max(w*0.050+12\\,min(w*0.500-text_w/2\\,w*(1-0.050)-12-text_w)):y=max(h*0.050+12\\,min(h*0.950-text_h\\,h*(1-0.050)-12-text_h)):enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
+  "drawtext=fontfile='C\\:/Windows/Fonts/arialbd.ttf':text=It\\\\\\'s 50\\\\\\\\%\\, \\[ok\\]\\;\nC\\\\:\\\\\\\\\\\\\\\\path:fontcolor=0xffd700ff:fontsize=32:line_spacing=7:text_align=C:box=1:boxcolor=black@0.65:boxborderw=12:x=max(w*0.050+12\\,min(w*0.500-text_w/2\\,w*(1-0.050)-12-text_w)):y=max(h*0.050+12\\,min(h*0.950-text_h\\,h*(1-0.050)-12-text_h)):enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
 
 describe("caption render", () => {
   it("maps a styled cue to an exact drawtext filter with a fixed fontfile", () => {
@@ -47,7 +47,7 @@ describe("caption render", () => {
     const legacy = { ...STYLED_CAPTION_GOLDEN_INPUT, text: "a\nb" };
     delete (legacy as { style?: unknown }).style;
     expect(captionDrawtextFilter(legacy, seconds)).toBe(
-      "drawtext=text='a\\nb':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.250000)*lt(t\\,1.750000)'",
+      "drawtext=text=a\nb:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.250000)*lt(t\\,1.750000)'",
     );
   });
 

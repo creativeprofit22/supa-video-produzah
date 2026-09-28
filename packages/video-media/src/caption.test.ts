@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 import {
   captionArtifactV1Schema,
   captionValidationResultV1Schema,
+  captionsOverReadingSpeed,
+  cueExceedsReadingSpeed,
   type CaptionArtifactV1,
   type CaptionValidationIssueCode,
   unicodeScalarLength,
@@ -260,8 +262,13 @@ describe("caption artifact v1", () => {
     cpsBoundary.cues[0]!.lines = ["1234567890"];
     expect(parses(cpsBoundary)).toBe(true);
 
+    expect(captionsOverReadingSpeed(cpsBoundary)).toEqual([]);
+
+    // One scalar over the reading speed: still valid, but flagged for review.
     cpsBoundary.cues[0]!.lines = ["1234567890😀"];
-    expect(issueCodes(cpsBoundary)).toContain("CAPTION_CPS_EXCEEDED");
+    expect(parses(cpsBoundary)).toBe(true);
+    expect(captionsOverReadingSpeed(cpsBoundary)).toEqual([cpsBoundary.cues[0]!.cueId]);
+    expect(cueExceedsReadingSpeed(cpsBoundary.cues[0]!, cpsBoundary.validationProfile)).toBe(true);
   });
 
   it("accepts line-length and duration thresholds and rejects the next value", () => {

@@ -1017,6 +1017,11 @@ export function VideoWorkspace({
               sourceLayers={sourceLayers}
               activeCaptions={activeCaptions}
               convertCachePath={controller.convertCachePath}
+              frame={
+                canonicalSequence === null
+                  ? undefined
+                  : { width: canonicalSequence.width, height: canonicalSequence.height }
+              }
               rate={sequence.rate}
               trimIn={draft.inFrame}
               trimOut={draft.outFrame}
@@ -1267,6 +1272,9 @@ export function VideoWorkspace({
             onCancelJob={(jobId) => onCancelMediaJob?.(jobId)}
             onOpenJobCenter={onOpenJobCenter}
             onApplyProposal={controller.applyTranscriptEditProposal}
+            onSeekTimelineFrame={(frame) => commitMonitorFrame(frame, true)}
+            playheadFrame={compositionPlayhead}
+            playing={monitorPlaying}
             onGenerateCaptions={(artifact) =>
               transcriptTarget === null
                 ? Promise.resolve(false)
@@ -1295,6 +1303,7 @@ export function VideoWorkspace({
             sequenceId={canonicalSequence?.id ?? null}
             disabled={editPending}
             onApply={controller.applyCaptionArtifactEdit}
+            onSetFrameSize={controller.setSequenceFrameSize}
             frame={
               canonicalSequence === null
                 ? { width: 1920, height: 1080 }

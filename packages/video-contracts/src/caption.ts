@@ -233,6 +233,26 @@ export const captionArtifactV1Schema = z
   });
 export type CaptionArtifactV1 = z.infer<typeof captionArtifactV1Schema>;
 
+/** True when a cue shows more characters per second than the profile's reading speed. */
+export function cueExceedsReadingSpeed(
+  cue: Pick<CaptionCueV1, "start" | "end" | "lines">,
+  profile: Pick<CaptionValidationProfileV1, "maxCharactersPerSecond">,
+): boolean {
+  const scalarCount = cue.lines.reduce((total, line) => total + unicodeScalarLength(line), 0);
+  const duration = cue.end.value - cue.start.value;
+  return (
+    BigInt(scalarCount) * BigInt(cue.start.rateNumerator) >
+    BigInt(profile.maxCharactersPerSecond) * BigInt(duration) * BigInt(cue.start.rateDenominator)
+  );
+}
+
+/** Cue IDs that read faster than the artifact's reading speed, in cue order. */
+export function captionsOverReadingSpeed(artifact: CaptionArtifactV1): readonly string[] {
+  return artifact.cues
+    .filter((cue) => cueExceedsReadingSpeed(cue, artifact.validationProfile))
+    .map(({ cueId }) => cueId);
+}
+
 export function validateCaptionArtifactV1(input: unknown): CaptionValidationResultV1 {
   const parsed = captionArtifactV1Schema.safeParse(input);
   if (parsed.success) {
@@ -319,11 +339,8 @@ function validateCueThresholds(
     addIssue(context, ["cues", cueIndex, "lines"], "CAPTION_LINE_COUNT_EXCEEDED");
   }
 
-  let scalarCount = 0;
   cue.lines.forEach((line, lineIndex) => {
-    const length = unicodeScalarLength(line);
-    scalarCount += length;
-    if (length > profile.maxCharactersPerLine) {
+    if (unicodeScalarLength(line) > profile.maxCharactersPerLine) {
       addIssue(context, ["cues", cueIndex, "lines", lineIndex], "CAPTION_LINE_LENGTH_EXCEEDED");
     }
   });
@@ -336,12 +353,8 @@ function validateCueThresholds(
     addIssue(context, ["cues", cueIndex, "end"], "CAPTION_CUE_TOO_LONG");
   }
 
-  const cpsLeft = BigInt(scalarCount) * BigInt(cue.start.rateNumerator);
-  const cpsRight =
-    BigInt(profile.maxCharactersPerSecond) * BigInt(duration) * BigInt(cue.start.rateDenominator);
-  if (cpsLeft > cpsRight) {
-    addIssue(context, ["cues", cueIndex, "lines"], "CAPTION_CPS_EXCEEDED");
-  }
+  // Reading speed is a review flag, not a validity rule: verbatim captions of
+  // fast speech cannot meet it however they are split. See captionsOverReadingSpeed.
 
   const { safeArea } = profile;
   if (

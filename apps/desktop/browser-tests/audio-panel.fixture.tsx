@@ -63,19 +63,30 @@ function Fixture() {
         sequence={sequence}
         disabled={false}
         lastReport={failedReport}
-        onSetRole={async (trackId: string, role: TrackAudioRole) => {
+        onSetRole={async (trackId: string, role: TrackAudioRole | null) => {
           setSequence((current) => ({
             ...current,
-            tracks: current.tracks.map((track) =>
-              track.id === trackId && track.kind !== "caption"
-                ? { ...track, audioRole: role }
-                : track,
-            ),
+            tracks: current.tracks.map((track) => {
+              if (track.id !== trackId || track.kind === "caption") return track;
+              if (role !== null) return { ...track, audioRole: role };
+              const next = { ...track };
+              delete next.audioRole;
+              return next;
+            }),
           }));
-          setLog(`role:${role}`);
+          setLog(`role:${role ?? "none"}`);
           return true;
         }}
-        onSetTarget={async (target: SequenceLoudnessTarget) => {
+        onSetTarget={async (target: SequenceLoudnessTarget | null) => {
+          if (target === null) {
+            setSequence((current) => {
+              const next = { ...current };
+              delete next.loudnessTarget;
+              return next;
+            });
+            setLog("target:none");
+            return true;
+          }
           setSequence((current) => ({ ...current, loudnessTarget: target }));
           setLog(
             `target:${target.integratedLufs}:${target.ducking ? "duck" : "-"}:${target.dialogueCleanup ? "clean" : "-"}`,

@@ -75,5 +75,20 @@
       "bytes": 741548352,
       "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae"
     }
+  },
+  "diarizer": {
+    "repository": "https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2",
+    "revision": "84edd514b8ef68004c10086918cd62f2148cbd59",
+    "license": {
+      "spdx": "CC-BY-4.0",
+      "url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Streaming Sortformer 4-speaker diarizer v2 by NVIDIA Corporation, used under CC-BY-4.0. Converted locally to GGUF (f32) with NeMo-Speech.cpp convert_model.py at the pinned runtime commit.",
+      "commercialUse": true
+    },
+    "file": {
+      "name": "sortformer-v2-f32.gguf",
+      "bytes": 491094720,
+      "sha256": "17ebac6c710753039820d7ec3580865fa29f29ccc2ca75ed69a7b21f1146579b"
+    }
   }
 }

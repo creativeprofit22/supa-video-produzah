@@ -101,37 +101,42 @@ export function artifactRenderCaptions(
   }));
 }
 
-export function escapeDrawtextText(text: string): string {
-  return text
-    .replaceAll("\\", "\\\\")
-    .replaceAll("'", "\\'")
-    .replaceAll(":", "\\:")
-    .replaceAll("%", "\\%")
-    .replaceAll(",", "\\,")
-    .replaceAll(";", "\\;")
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]")
-    .replaceAll("\r\n", "\\n")
-    .replaceAll("\r", "\\n")
-    .replaceAll("\n", "\\n");
-}
+const escapeEach = (text: string, special: ReadonlySet<string>): string =>
+  Array.from(text, (character) => (special.has(character) ? `\\${character}` : character)).join("");
+const OPTION_SPECIAL = new Set(["\\", "'", ":"]);
+const GRAPH_SPECIAL = new Set(["\\", "'", "[", "]", ",", ";"]);
 
 /**
- * Styled captions keep real line breaks: drawtext renders a literal newline,
- * whereas an escaped `\n` reaches it as the letter "n".
+ * Encodes caption text as an UNQUOTED drawtext `text=` value inside a
+ * filtergraph. FFmpeg unescapes it three times, so it is escaped innermost
+ * first:
+ *
+ * 1. drawtext text expansion: `\` and `%` are special;
+ * 2. the option tokenizer: `\`, `'` and `:` are special, and unescaped
+ *    leading/trailing whitespace is trimmed, so edge whitespace is escaped;
+ * 3. the filtergraph parser: `\`, `'`, `[`, `]`, `,` and `;` are special.
+ *
+ * Line breaks stay real newlines (drawtext renders them). Every other
+ * character, including `=`, braces, tabs and emoji, passes through. Verified
+ * pixel-for-pixel against drawtext's unescaped `textfile` rendering in
+ * `evidence/2026-09-28-p3-transcription-audio/13-drawtext-escape-probe.py`.
+ * Must stay byte-identical to `escape_drawtext_text` in caption_render.rs.
  */
-export function escapeStyledDrawtextText(text: string): string {
-  return text
+export function escapeDrawtextText(text: string): string {
+  const expanded = text
     .replaceAll("\r\n", "\n")
     .replaceAll("\r", "\n")
     .replaceAll("\\", "\\\\")
-    .replaceAll("'", "\\'")
-    .replaceAll(":", "\\:")
-    .replaceAll("%", "\\%")
-    .replaceAll(",", "\\,")
-    .replaceAll(";", "\\;")
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]");
+    .replaceAll("%", "\\%");
+  const core = expanded.replace(/^[ \t\n]+/u, "").replace(/[ \t\n]+$/u, "");
+  const start = core.length === 0 ? expanded.length : expanded.indexOf(core);
+  const head = expanded.slice(0, start);
+  const tail = expanded.slice(start + core.length);
+  const option =
+    escapeEach(head, new Set(head)) +
+    escapeEach(core, OPTION_SPECIAL) +
+    escapeEach(tail, new Set(tail));
+  return escapeEach(option, GRAPH_SPECIAL);
 }
 
 /**
@@ -184,13 +189,13 @@ export function captionDrawtextFilter(
   const enable = `enable='gte(t\\,${formatSeconds(caption.startMicroseconds)})*lt(t\\,${formatSeconds(caption.endMicroseconds)})'`;
   const style = caption.style;
   if (style === undefined) {
-    return `drawtext=text='${escapeDrawtextText(caption.text)}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:${enable}`;
+    return `drawtext=text=${escapeDrawtextText(caption.text)}:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:${enable}`;
   }
   const fontfile = escapeDrawtextPath(
     `${RENDER_CAPTION_FONT_DIRECTORY}/${RENDER_CAPTION_FONT_FILES[style.font]}`,
   );
   const color = `0x${style.colorRgba.slice(1)}`;
   const { x, y } = positionExpressions(style);
-  const text = escapeStyledDrawtextText(caption.text);
-  return `drawtext=fontfile='${fontfile}':text='${text}':fontcolor=${color}:fontsize=${style.fontSizePx}:line_spacing=${style.lineSpacingPx}:text_align=${style.horizontal === "center" ? "C" : style.horizontal === "right" ? "R" : "L"}:box=1:boxcolor=black@0.65:boxborderw=${CAPTION_BOX_BORDER_PX}:x=${x}:y=${y}:${enable}`;
+  const text = escapeDrawtextText(caption.text);
+  return `drawtext=fontfile='${fontfile}':text=${text}:fontcolor=${color}:fontsize=${style.fontSizePx}:line_spacing=${style.lineSpacingPx}:text_align=${style.horizontal === "center" ? "C" : style.horizontal === "right" ? "R" : "L"}:box=1:boxcolor=black@0.65:boxborderw=${CAPTION_BOX_BORDER_PX}:x=${x}:y=${y}:${enable}`;
 }

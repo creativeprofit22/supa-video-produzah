@@ -13,6 +13,8 @@ export {
   captionValidationIssueV1Schema,
   captionValidationProfileV1Schema,
   captionValidationResultV1Schema,
+  captionsOverReadingSpeed,
+  cueExceedsReadingSpeed,
   unicodeScalarLength,
   validateCaptionArtifactV1,
   type CaptionAlignmentV1,

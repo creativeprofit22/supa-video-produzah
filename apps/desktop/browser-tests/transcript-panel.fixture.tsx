@@ -156,7 +156,7 @@ const artifact: TranscriptArtifactV1 = await createTranscriptArtifactV1({
     requestedLanguage: "en",
     task: "transcribe",
     wordTimingRequired: true,
-    speakerDiarizationMode: "off",
+    speakerDiarizationMode: "optional",
     chunkDurationUs: 11_000_000,
     chunkOverlapUs: 0,
     providerSettings: [],
@@ -173,8 +173,9 @@ const artifact: TranscriptArtifactV1 = await createTranscriptArtifactV1({
         relativeStartUs: index * 450_000,
         relativeEndUs: index * 450_000 + 400_000,
         recognitionConfidence: 1,
-        speakerLabel: null,
-        speakerConfidence: 0,
+        // Two speakers, with one word the diarizer left untagged.
+        speakerLabel: index === 13 ? null : index < 5 ? "speaker_1" : "speaker_2",
+        speakerConfidence: null,
         timingProvenance: "aligned",
       })),
     },
@@ -288,6 +289,7 @@ function Fixture() {
   const [current, setCurrent] = useState(status);
   const [log, setLog] = useState<string>("");
   const [captioned, setCaptioned] = useState<ProjectProjection>(projection);
+  const [playhead, setPlayhead] = useState<number | null>(null);
   const backend: TranscriptionBackend = {
     getAsrRuntimeStatus: async () => current,
     chooseAsrRuntimeFolder: async () => {
@@ -307,7 +309,7 @@ function Fixture() {
     startTranscription: async () => {
       setJobs([job("running")]);
       window.setTimeout(() => setJobs([job("complete")]), 300);
-      return { jobId, state: "queued", transcriptKey: null };
+      return { jobId, state: "queued" };
     },
     getTranscriptionResult: async () => ({
       transcriptKey: artifact.identity.key,
@@ -336,6 +338,11 @@ function Fixture() {
           setLog(`remove:${proposal.selectedOccurrenceIds.length}`);
           return true;
         }}
+        onSeekTimelineFrame={(frame) => {
+          setPlayhead(frame);
+          setLog(`seek:${frame}`);
+        }}
+        playheadFrame={playhead}
         onGenerateCaptions={async (transcript) => {
           setCaptioned(applyGroupLocally(projection, transcript));
           setLog("captions");

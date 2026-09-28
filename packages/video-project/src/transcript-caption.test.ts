@@ -9,6 +9,7 @@ import {
   type RationalRate,
 } from "@supa-video/contracts";
 import {
+  captionsOverReadingSpeed,
   transcriptArtifactV1Schema,
   validateCaptionArtifactV1,
   type CaptionStyleV1,
@@ -698,6 +699,86 @@ describe("transcript caption generation", () => {
     );
   });
 
+  it("absorbs the one-frame overlap that outward rounding gives touching words", () => {
+    // Real speech: "Hello" ends at the exact instant "world" starts, mid-frame.
+    // Rounding the start down and the end up makes their timeline ranges share
+    // one frame. Each word must be its own cue (one 5-character line).
+    const artifact = transcript([{ text: "Hello" }, { text: "world" }]);
+    const oneLine = profile({ maxLinesPerCue: 1, maxCharactersPerLine: 5 });
+    const touching = timeline(artifact, [
+      { wordIndex: 0, start: 0, end: 11 },
+      { wordIndex: 1, start: 10, end: 20 },
+    ]);
+    const result = generateCaptionArtifactV1(input(artifact, touching, { profile: oneLine }));
+    expect(result.cues.map(({ start, end }) => [start.value, end.value])).toEqual([
+      [0, 10],
+      [10, 20],
+    ]);
+    expect(validateCaptionArtifactV1(result).valid).toBe(true);
+
+    // A genuine overlap of more than one frame still fails closed.
+    const overlapping = timeline(artifact, [
+      { wordIndex: 0, start: 0, end: 12 },
+      { wordIndex: 1, start: 10, end: 20 },
+    ]);
+    expectFailure(
+      () => generateCaptionArtifactV1(input(artifact, overlapping, { profile: oneLine })),
+      "invalid_range",
+      "caption_constraints_unsatisfied",
+    );
+  });
+
+  it("keeps captions that read too fast and flags them instead of failing", () => {
+    // 5 characters must stay up 5 s at 1 character per second, but the cue may
+    // last at most 4 s: the reading speed cannot be met, so the cue is kept at
+    // its longest allowed duration and flagged for review.
+    const artifact = transcript([{ text: "12345" }]);
+    const result = generateCaptionArtifactV1(
+      input(artifact, undefined, {
+        profile: profile({
+          maxCharactersPerSecond: 1,
+          maximumCueDuration: createRationalTime(4, { numerator: 1, denominator: 1 }),
+        }),
+      }),
+    );
+    expect(result.cues).toHaveLength(1);
+    expect(validateCaptionArtifactV1(result).valid).toBe(true);
+    expect(captionsOverReadingSpeed(result)).toEqual([result.cues[0]?.cueId]);
+
+    // A repeated word must split into two cues. The first is squeezed to one
+    // frame by the second and is flagged; the last has room and is extended
+    // to its reading time (5 characters at 10 per second = 5 frames here).
+    const again = transcript([{ text: "again" }]);
+    const repeated = generateCaptionArtifactV1(
+      input(
+        again,
+        timeline(again, [
+          { wordIndex: 0, start: 0, end: 1 },
+          { wordIndex: 0, start: 1, end: 2 },
+        ]),
+        { profile: profile({ maxCharactersPerSecond: 10 }) },
+      ),
+    );
+    expect(repeated.cues.map(({ start, end }) => [start.value, end.value])).toEqual([
+      [0, 1],
+      [1, 6],
+    ]);
+    expect(captionsOverReadingSpeed(repeated)).toEqual([repeated.cues[0]?.cueId]);
+
+    // Hard limits still fail closed: a word spoken for longer than the longest cue.
+    const long = transcript([{ text: "long" }]);
+    expectFailure(
+      () =>
+        generateCaptionArtifactV1(
+          input(long, timeline(long, [{ wordIndex: 0, start: 0, end: 9 }]), {
+            profile: profile({ maximumCueDuration: createRationalTime(4, timelineRate) }),
+          }),
+        ),
+      "invalid_range",
+      "caption_constraints_unsatisfied",
+    );
+  });
+
   it("follows clip trims and stitches a true contiguous clip split once with exact transcript lineage", () => {
     const artifact = transcript([
       { text: "trimmed", startUs: 50_001, endUs: 149_999 },
@@ -969,18 +1050,6 @@ describe("transcript caption generation", () => {
       },
     },
     {
-      name: "CPS",
-      make: () => {
-        const artifact = transcript([{ text: "12345" }]);
-        return input(artifact, undefined, {
-          profile: profile({
-            maxCharactersPerSecond: 1,
-            maximumCueDuration: createRationalTime(4, { numerator: 1, denominator: 1 }),
-          }),
-        });
-      },
-    },
-    {
       name: "line count capacity",
       make: () => {
         const artifact = transcript([{ text: "aa" }, { text: "bb" }]);
@@ -996,22 +1065,6 @@ describe("transcript caption generation", () => {
               maxCharactersPerLine: 2,
               minimumCueDuration: createRationalTime(2, timelineRate),
             }),
-          },
-        );
-      },
-    },
-    {
-      name: "mandatory repeated-word boundary",
-      make: () => {
-        const artifact = transcript([{ text: "again" }]);
-        return input(
-          artifact,
-          timeline(artifact, [
-            { wordIndex: 0, start: 0, end: 1 },
-            { wordIndex: 0, start: 1, end: 2 },
-          ]),
-          {
-            profile: profile({ maxCharactersPerSecond: 10 }),
           },
         );
       },

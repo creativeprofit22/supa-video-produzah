@@ -1527,9 +1527,10 @@ async fn execute_render_worker(
             );
         }
     });
+    let script = with_filter_script(arguments, "render_video")?;
     let process = ProcessSpec {
         program: request.programs.verified_ffmpeg("render_video").await?,
-        args: arguments.into_iter().map(OsString::from).collect(),
+        args: script.arguments.clone(),
         current_dir: None,
         operation: "render_video",
         timeout: RENDER_TIMEOUT,
@@ -1592,15 +1593,70 @@ struct MixMeasurement {
     clipped_samples: Option<u64>,
 }
 
+/// The validated argv with its `-filter_complex` graph moved into a file.
+///
+/// Windows caps a whole command line at 32,767 UTF-16 units, and the caption
+/// graph grows by about 400 characters per cue, so a five-minute interview
+/// already reaches the cap. FFmpeg 5.1+ (bundled: 8.1.2) reads an option's
+/// value from a file when the option is written `-/name`, so the graph is
+/// passed as `-/filter_complex <file>` instead. The graph itself is unchanged:
+/// validation and the loudness rewrite still operate on the in-memory argv.
+/// The file lives in a private directory that is deleted when the returned
+/// guard drops, after FFmpeg exits.
+pub(crate) struct FilterScriptArguments {
+    pub(crate) arguments: Vec<OsString>,
+    _directory: Option<tempfile::TempDir>,
+}
+
+pub(crate) fn with_filter_script(
+    arguments: Vec<String>,
+    operation: &'static str,
+) -> Result<FilterScriptArguments, VideoCommandError> {
+    let Some(index) = arguments
+        .iter()
+        .position(|argument| argument == "-filter_complex")
+    else {
+        return Ok(FilterScriptArguments {
+            arguments: arguments.into_iter().map(OsString::from).collect(),
+            _directory: None,
+        });
+    };
+    let graph = arguments
+        .get(index + 1)
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("argv_grammar"))?;
+    let directory = tempfile::Builder::new()
+        .prefix("svp-filter-")
+        .tempdir()
+        .map_err(|_| VideoCommandError::project_io(operation, "filter_script"))?;
+    let path = directory.path().join("filter_complex.txt");
+    fs::write(&path, graph.as_bytes())
+        .map_err(|_| VideoCommandError::project_io(operation, "filter_script"))?;
+    let mut next: Vec<OsString> = Vec::with_capacity(arguments.len());
+    for (position, argument) in arguments.into_iter().enumerate() {
+        next.push(if position == index {
+            OsString::from("-/filter_complex")
+        } else if position == index + 1 {
+            path.clone().into_os_string()
+        } else {
+            OsString::from(argument)
+        });
+    }
+    Ok(FilterScriptArguments {
+        arguments: next,
+        _directory: Some(directory),
+    })
+}
+
 async fn run_audio_analysis(
     request: &RenderWorkerRequest,
     arguments: Vec<String>,
     operation: &'static str,
 ) -> Result<String, VideoCommandError> {
+    let script = with_filter_script(arguments, operation)?;
     let output = super::process::run_supervised(
         ProcessSpec {
             program: request.programs.verified_ffmpeg(operation).await?,
-            args: arguments.into_iter().map(OsString::from).collect(),
+            args: script.arguments.clone(),
             current_dir: None,
             operation,
             timeout: RENDER_TIMEOUT,
@@ -2021,4 +2077,83 @@ fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
         right = remainder;
     }
     left
+}
+
+#[cfg(test)]
+mod filter_script_tests {
+    use super::with_filter_script;
+    use std::ffi::OsString;
+
+    #[test]
+    fn filter_graph_moves_to_a_file_and_the_file_is_removed_after_use() {
+        let arguments = vec![
+            "-i".to_owned(),
+            "in.mp4".to_owned(),
+            "-filter_complex".to_owned(),
+            "[0:v]null[vout]".to_owned(),
+            "-map".to_owned(),
+            "[vout]".to_owned(),
+        ];
+        let script = with_filter_script(arguments, "render_video").unwrap();
+        assert_eq!(script.arguments[2], OsString::from("-/filter_complex"));
+        let path = std::path::PathBuf::from(&script.arguments[3]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[0:v]null[vout]");
+        assert_eq!(
+            script.arguments[4..],
+            [OsString::from("-map"), OsString::from("[vout]")]
+        );
+        drop(script);
+        assert!(!path.exists(), "the filter file is deleted with its guard");
+
+        let plain = with_filter_script(vec!["-version".to_owned()], "probe").unwrap();
+        assert_eq!(plain.arguments, [OsString::from("-version")]);
+        assert!(with_filter_script(vec!["-filter_complex".to_owned()], "render_video").is_err());
+    }
+
+    /// A caption graph longer than the Windows command-line cap (32,767) runs
+    /// through the bundled FFmpeg because it is passed as a file.
+    #[test]
+    fn bundled_ffmpeg_accepts_a_filter_graph_longer_than_the_command_line_cap() {
+        let ffmpeg = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("media-toolchain/bin/x86_64-pc-windows-msvc/ffmpeg.exe");
+        if !ffmpeg.is_file() {
+            eprintln!("skipping: bundled FFmpeg unavailable");
+            return;
+        }
+        let mut graph = "[0:v]null".to_owned();
+        while graph.len() <= 40_000 {
+            graph.push_str(",null");
+        }
+        graph.push_str("[vout]");
+        let arguments = [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=s=64x64:d=0.1",
+            "-filter_complex",
+            &graph,
+            "-map",
+            "[vout]",
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let script = with_filter_script(arguments, "render_video").unwrap();
+        let output = std::process::Command::new(&ffmpeg)
+            .args(&script.arguments)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

@@ -275,8 +275,6 @@ pub(crate) struct StartTranscriptionRequest {
 pub(crate) struct TranscriptionStarted {
     pub(crate) job_id: String,
     pub(crate) state: MediaJobState,
-    /// Present when an identical transcript already exists (dedupe hit).
-    pub(crate) transcript_key: Option<String>,
 }
 
 /// Durable result stored on a completed transcription job.
@@ -353,8 +351,12 @@ pub(crate) async fn start_transcription(
     if duration_us == 0 {
         return Err(VideoCommandError::invalid_media(OPERATION, "duration"));
     }
-    let configuration =
-        nemo_asr_configuration(&ready.manifest, &ready.manifest_sha256, duration_us);
+    let configuration = nemo_asr_configuration(
+        &ready.manifest,
+        &ready.manifest_sha256,
+        duration_us,
+        ready.runtime.has_diarizer(),
+    );
     let configuration_identity =
         super::transcript::derive_asr_configuration_identity(&configuration)
             .map_err(|_| VideoCommandError::invalid_media(OPERATION, "asr_configuration"))?;
@@ -389,19 +391,11 @@ pub(crate) async fn start_transcription(
         .map_err(map_store_error)?;
 
     if enqueued.job.state == MediaJobState::Complete {
-        let transcript_key = context
-            .jobs
-            .store()
-            .get_private(enqueued.job.id.clone())
-            .await
-            .map_err(map_store_error)?
-            .result
-            .and_then(|value| serde_json::from_value::<TranscriptionJobResult>(value).ok())
-            .map(|result| result.transcript_key);
+        // Dedupe hit: the reused transcript key is available right away via
+        // `transcription_result` for this job id.
         return Ok(TranscriptionStarted {
             job_id: enqueued.job.id,
             state: MediaJobState::Complete,
-            transcript_key,
         });
     }
     let worker = Arc::new(TranscriptionWorker {
@@ -444,7 +438,6 @@ pub(crate) async fn start_transcription(
     Ok(TranscriptionStarted {
         job_id: enqueued.job.id,
         state,
-        transcript_key: None,
     })
 }
 

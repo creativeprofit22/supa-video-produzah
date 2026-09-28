@@ -13,8 +13,10 @@ interface AudioPanelProps {
   readonly sequence: VideoSequenceV2 | null;
   readonly disabled: boolean;
   readonly lastReport: LoudnessReport | null;
-  readonly onSetRole: (trackId: string, role: TrackAudioRole) => Promise<boolean>;
-  readonly onSetTarget: (target: SequenceLoudnessTarget) => Promise<boolean>;
+  /** `null` removes the track's role. */
+  readonly onSetRole: (trackId: string, role: TrackAudioRole | null) => Promise<boolean>;
+  /** `null` turns normalization, ducking and dialogue cleanup off. */
+  readonly onSetTarget: (target: SequenceLoudnessTarget | null) => Promise<boolean>;
 }
 
 const roleLabels: Record<TrackAudioRole, string> = {
@@ -77,6 +79,11 @@ export function AudioPanel({
   const target = sequence?.loudnessTarget;
   const audioTracks = (sequence?.tracks ?? []).filter((track) => track.kind !== "caption");
   const hasDialogue = audioTracks.some((track) => track.audioRole === "dialogue");
+  const hasAudibleDialogue = audioTracks.some(
+    (track) => track.audioRole === "dialogue" && track.muted !== true,
+  );
+  const duckingWarningId = useId();
+  const duckingWithoutDialogue = target?.ducking === true && !hasAudibleDialogue;
 
   const run = async (action: () => Promise<boolean>) => {
     setPending(true);
@@ -129,15 +136,17 @@ export function AudioPanel({
                     value={track.audioRole ?? ""}
                     disabled={busy}
                     onChange={(event) => {
+                      if (event.target.value === "") {
+                        void run(() => onSetRole(track.id, null));
+                        return;
+                      }
                       const role = (["dialogue", "music", "sfx"] as const).find(
                         (candidate) => candidate === event.target.value,
                       );
                       if (role) void run(() => onSetRole(track.id, role));
                     }}
                   >
-                    <option value="" disabled>
-                      No role
-                    </option>
+                    <option value="">No role</option>
                     {(Object.keys(roleLabels) as TrackAudioRole[]).map((role) => (
                       <option key={role} value={role}>
                         {roleLabels[role]}
@@ -156,15 +165,17 @@ export function AudioPanel({
                 value={target?.integratedLufs ?? ""}
                 disabled={busy}
                 onChange={(event) => {
+                  if (event.target.value === "") {
+                    void run(() => onSetTarget(null));
+                    return;
+                  }
                   const value = targets.find(
                     (candidate) => String(candidate.value) === event.target.value,
                   )?.value;
                   if (value !== undefined) updateTarget({ integratedLufs: value });
                 }}
               >
-                <option value="" disabled>
-                  Not normalized
-                </option>
+                <option value="">Not normalized</option>
                 {targets.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -178,10 +189,17 @@ export function AudioPanel({
                 type="checkbox"
                 checked={target?.ducking ?? false}
                 disabled={busy}
+                aria-describedby={duckingWithoutDialogue ? duckingWarningId : undefined}
                 onChange={(event) => updateTarget({ ducking: event.target.checked })}
               />
               Lower music while dialogue plays
             </label>
+            {duckingWithoutDialogue ? (
+              <p id={duckingWarningId} className="inline-error" role="status">
+                Ducking is on, but no unmuted track is marked Dialogue. Export will fail until you
+                mark one as Dialogue or turn ducking off.
+              </p>
+            ) : null}
             <label className="captions-checkbox">
               <input
                 type="checkbox"

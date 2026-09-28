@@ -4548,6 +4548,40 @@ fn caption_artifact_optional_fields_require_omission_instead_of_null() {
 }
 
 #[test]
+fn applied_caption_artifact_serializes_under_the_contract_field_name() {
+    let snapshot = caption_project_fixture();
+    let mut track = snapshot.state.sequences[0].tracks[0].clone();
+    let ProjectTrack::Caption {
+        active_caption_artifact,
+        ..
+    } = &mut track
+    else {
+        unreachable!();
+    };
+    *active_caption_artifact = Some(caption_artifact_for(&snapshot, "A"));
+
+    // The TS contract reads `activeCaptionArtifact`; any other key makes the
+    // whole projection unreadable in the editor.
+    let json = serde_json::to_value(&track).unwrap();
+    assert!(json.get("activeCaptionArtifact").is_some());
+    assert!(json.get("active_caption_artifact").is_none());
+    assert_eq!(serde_json::from_value::<ProjectTrack>(json).unwrap(), track);
+
+    // Projects written with the old snake_case key still load.
+    let mut legacy = serde_json::to_value(&track).unwrap();
+    let artifact = legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("activeCaptionArtifact")
+        .unwrap();
+    legacy["active_caption_artifact"] = artifact;
+    assert_eq!(
+        serde_json::from_value::<ProjectTrack>(legacy).unwrap(),
+        track
+    );
+}
+
+#[test]
 fn caption_artifact_install_replace_undo_redo_is_exact_and_deterministic() {
     let initial = caption_project_fixture();
     let legacy = initial.state.sequences[0].tracks[0].clone();

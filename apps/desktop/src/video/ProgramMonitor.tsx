@@ -61,6 +61,8 @@ interface ProgramMonitorProps {
   readonly sourceLayers?: readonly ProgramMonitorLayer[];
   readonly activeCaptions?: readonly ProgramMonitorCaption[];
   readonly convertCachePath: (path: string) => string;
+  /** The sequence frame; the stage takes its shape so the preview matches the export. */
+  readonly frame?: { readonly width: number; readonly height: number } | undefined;
   readonly rate: RationalRate;
   readonly trimIn: number;
   readonly trimOut: number;
@@ -163,6 +165,7 @@ function PlayableProgramMonitor({
   sourceLayers = [],
   activeCaptions = [],
   convertCachePath,
+  frame,
   rate,
   trimIn,
   trimOut,
@@ -908,7 +911,15 @@ function PlayableProgramMonitor({
           <p>This browser does not support pitch-preserving playback at the clip speed.</p>
         </div>
       ) : null}
-      <div className="monitor-stage">
+      <div
+        className="monitor-stage"
+        data-frame-orientation={
+          frame === undefined ? undefined : frame.height > frame.width ? "portrait" : "landscape"
+        }
+        style={
+          frame === undefined ? undefined : { aspectRatio: `${frame.width} / ${frame.height}` }
+        }
+      >
         {audioError ? <p role="alert">{audioError}</p> : null}
         {(mediaUrl !== null || (compositionActive && sourceLayers.length > 0)) && !mediaError ? (
           <>

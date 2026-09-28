@@ -205,17 +205,21 @@ export function canToggleTrackVisibility(track: ProjectTrack): boolean {
   return track.kind === "video" || track.kind === "caption";
 }
 
+/** Frame sides are even (4:2:0 video) and at most 16384. */
+export const sequenceFrameWidthSchema = safePositiveIntegerSchema
+  .max(16_384)
+  .refine((value) => value % 2 === 0, "Width must be even");
+export const sequenceFrameHeightSchema = safePositiveIntegerSchema
+  .max(16_384)
+  .refine((value) => value % 2 === 0, "Height must be even");
+
 export const videoSequenceV2Schema = z
   .object({
     id: projectUuidSchema,
     name: nonBlankSchema,
     rate: rationalRateSchema,
-    width: safePositiveIntegerSchema
-      .max(16_384)
-      .refine((value) => value % 2 === 0, "Width must be even"),
-    height: safePositiveIntegerSchema
-      .max(16_384)
-      .refine((value) => value % 2 === 0, "Height must be even"),
+    width: sequenceFrameWidthSchema,
+    height: sequenceFrameHeightSchema,
     audioSampleRate: safePositiveIntegerSchema.max(768_000),
     tracks: z.array(projectTrackSchema).max(10_000),
     markers: z.array(projectMarkerSchema).max(100_000),

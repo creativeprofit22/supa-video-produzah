@@ -21,13 +21,29 @@ const renderErrorMessages: Partial<Record<VideoErrorCode, string>> = {
   invalid_render_plan: "The project changed. Retry export from the current saved revision.",
 };
 
+const renderPlanCategoryMessages: ReadonlyMap<unknown, string> = new Map([
+  [
+    "audio_mix_invalid",
+    "Ducking needs a track marked Dialogue. Set one in the Audio panel or turn ducking off.",
+  ],
+  [
+    "caption_style_invalid",
+    "A caption font can't be exported. Choose another font in the Captions panel.",
+  ],
+]);
+
 function safeRenderError(error: Error): string {
-  if (
-    error instanceof VideoDomainError &&
-    error.code === "invalid_render_plan" &&
-    error.details["category"] === "unsupported_composition"
-  )
-    return error.message;
+  if (error instanceof VideoDomainError) {
+    const category = error.details["category"];
+    if (error.code === "invalid_render_plan") {
+      if (category === "unsupported_composition") return error.message;
+      const categoryMessage = renderPlanCategoryMessages.get(category);
+      if (categoryMessage !== undefined) return categoryMessage;
+    }
+    if (error.code === "invalid_media" && category === "loudness_out_of_tolerance") {
+      return "The export missed its loudness target. See the Audio panel for the report.";
+    }
+  }
   return error instanceof VideoDomainError
     ? (renderErrorMessages[error.code] ?? "The export could not be completed. Try again.")
     : "The desktop service returned an unexpected response. Restart the app and try again.";

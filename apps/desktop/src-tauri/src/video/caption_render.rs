@@ -72,31 +72,49 @@ pub(crate) fn valid_caption_style_fields(caption: &RenderCaptionInput) -> bool {
         && style.safe_left_permille <= 400
 }
 
-pub(crate) fn escape_drawtext_text(text: &str) -> String {
-    text.replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace(':', "\\:")
-        .replace('%', "\\%")
-        .replace(',', "\\,")
-        .replace(';', "\\;")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
-        .replace("\r\n", "\\n")
-        .replace(['\r', '\n'], "\\n")
+fn escape_each(text: &str, special: impl Fn(char) -> bool) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        if special(character) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
 }
 
-/// Styled captions keep literal line breaks (drawtext renders them).
-fn escape_styled_drawtext_text(text: &str) -> String {
-    text.replace("\r\n", "\n")
+/// Encodes caption text as an UNQUOTED drawtext `text=` value inside a
+/// filtergraph. FFmpeg unescapes it three times, so it is escaped innermost
+/// first: (1) drawtext text expansion (`\` `%`); (2) the option tokenizer
+/// (`\` `'` `:`, plus leading/trailing whitespace, which it would otherwise
+/// trim); (3) the filtergraph parser (`\` `'` `[` `]` `,` `;`). Line breaks
+/// stay real newlines. Verified pixel-for-pixel against drawtext's unescaped
+/// `textfile` rendering (evidence/2026-09-28-p3-transcription-audio/
+/// 13-drawtext-escape-probe.py). Byte-identical to `escapeDrawtextText` in
+/// caption-render.ts.
+pub(crate) fn escape_drawtext_text(text: &str) -> String {
+    let expanded = text
+        .replace("\r\n", "\n")
         .replace('\r', "\n")
         .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace(':', "\\:")
-        .replace('%', "\\%")
-        .replace(',', "\\,")
-        .replace(';', "\\;")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
+        .replace('%', "\\%");
+    let is_edge_space = |character: char| matches!(character, ' ' | '\t' | '\n');
+    let core = expanded
+        .trim_start_matches(is_edge_space)
+        .trim_end_matches(is_edge_space);
+    let start = if core.is_empty() {
+        expanded.len()
+    } else {
+        expanded.len() - expanded.trim_start_matches(is_edge_space).len()
+    };
+    let head = &expanded[..start];
+    let tail = &expanded[start + core.len()..];
+    let option = escape_each(head, |_| true)
+        + &escape_each(core, |character| matches!(character, '\\' | '\'' | ':'))
+        + &escape_each(tail, |_| true);
+    escape_each(&option, |character| {
+        matches!(character, '\\' | '\'' | '[' | ']' | ',' | ';')
+    })
 }
 
 /// Filter-option path escaping, separate from text escaping.
@@ -145,7 +163,7 @@ pub(crate) fn caption_drawtext_filter(
     );
     let Some(style) = &caption.style else {
         return format!(
-            "drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:{enable}",
+            "drawtext=text={}:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:{enable}",
             escape_drawtext_text(&caption.text),
         );
     };
@@ -159,8 +177,8 @@ pub(crate) fn caption_drawtext_filter(
     };
     let (x, y) = position_expressions(style);
     format!(
-        "drawtext=fontfile='{fontfile}':text='{}':fontcolor=0x{}:fontsize={}:line_spacing={}:text_align={align}:box=1:boxcolor=black@0.65:boxborderw={BOX_BORDER_PX}:x={x}:y={y}:{enable}",
-        escape_styled_drawtext_text(&caption.text),
+        "drawtext=fontfile='{fontfile}':text={}:fontcolor=0x{}:fontsize={}:line_spacing={}:text_align={align}:box=1:boxcolor=black@0.65:boxborderw={BOX_BORDER_PX}:x={x}:y={y}:{enable}",
+        escape_drawtext_text(&caption.text),
         &style.color_rgba[1..],
         style.font_size_px,
         style.line_spacing_px,
@@ -209,11 +227,7 @@ mod tests {
     }
 
     /// Byte-identical to `STYLED_CAPTION_GOLDEN` in caption-render.test.ts.
-    const GOLDEN: &str = concat!(
-        r"drawtext=fontfile='C\:/Windows/Fonts/arialbd.ttf':text='It\'s 50\%\, \[ok\]\;",
-        "\n",
-        r"C\:\\path':fontcolor=0xffd700ff:fontsize=32:line_spacing=7:text_align=C:box=1:boxcolor=black@0.65:boxborderw=12:x=max(w*0.050+12\,min(w*0.500-text_w/2\,w*(1-0.050)-12-text_w)):y=max(h*0.050+12\,min(h*0.950-text_h\,h*(1-0.050)-12-text_h)):enable='gte(t\,0.250000)*lt(t\,1.750000)'"
-    );
+    const GOLDEN: &str = "drawtext=fontfile='C\\:/Windows/Fonts/arialbd.ttf':text=It\\\\\\'s 50\\\\\\\\%\\, \\[ok\\]\\;\nC\\\\:\\\\\\\\\\\\\\\\path:fontcolor=0xffd700ff:fontsize=32:line_spacing=7:text_align=C:box=1:boxcolor=black@0.65:boxborderw=12:x=max(w*0.050+12\\,min(w*0.500-text_w/2\\,w*(1-0.050)-12-text_w)):y=max(h*0.050+12\\,min(h*0.950-text_h\\,h*(1-0.050)-12-text_h)):enable='gte(t\\,0.250000)*lt(t\\,1.750000)'";
 
     #[test]
     fn styled_caption_drawtext_matches_ts_golden() {
@@ -236,6 +250,60 @@ mod tests {
         let mut input = golden_input();
         input.cue_id = Some("bad id".to_owned());
         assert!(!valid_caption_style_fields(&input));
+    }
+
+    /// The escaped `text=` value, inside `-filter_complex` exactly as the
+    /// export uses it, must draw the same pixels as the raw text loaded from a
+    /// file with no escaping at all (`textfile` + `expansion=none`). Covers the
+    /// real caption that broke the step-13 export ("it's") and every character
+    /// class the three FFmpeg parsing layers treat specially.
+    #[test]
+    fn escaped_caption_text_renders_exactly_like_the_raw_text() {
+        let ffmpeg = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("media-toolchain/bin/x86_64-pc-windows-msvc/ffmpeg.exe");
+        if !ffmpeg.is_file() || !std::path::Path::new("C:/Windows/Fonts/arialbd.ttf").is_file() {
+            eprintln!("skipping: bundled FFmpeg or Windows fonts unavailable");
+            return;
+        }
+        let scratch = tempfile::tempdir().unwrap();
+        let render = |filter: &str| {
+            let output = std::process::Command::new(&ffmpeg)
+                .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"])
+                .arg("color=c=0x000000:s=640x360:d=1")
+                .arg("-filter_complex")
+                .arg(format!("[0:v]{filter},format=gray[v]"))
+                .args(["-map", "[v]", "-frames:v", "1", "-f", "rawvideo", "-"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{filter}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        };
+        for text in [
+            "it's almost an obligation.",
+            "It's 50%, [ok];\nC:\\path",
+            " leading and trailing ",
+            "a=b {x} %{pts} 100%% \\n tab\there",
+            "caf\u{e9} \u{1F600} #1 !?&*()<>|\"~`^$",
+        ] {
+            let mut input = golden_input();
+            input.text = text.to_owned();
+            input.start_microseconds = 0;
+            let filter = caption_drawtext_filter(&input, seconds);
+            let file = scratch.path().join("caption.txt");
+            std::fs::write(&file, text).unwrap();
+            let raw = format!(
+                "expansion=none:textfile='{}'",
+                escape_drawtext_path(&file.to_string_lossy())
+            );
+            let escaped = format!("text={}", escape_drawtext_text(text));
+            assert!(filter.contains(&escaped));
+            let reference = filter.replacen(&escaped, &raw, 1);
+            assert_eq!(render(&filter), render(&reference), "{text:?}");
+        }
     }
 
     /// Real frames through the bundled FFmpeg at three aspect ratios. Measures

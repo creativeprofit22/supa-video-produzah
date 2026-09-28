@@ -730,7 +730,7 @@ describe("compileSingleClipRenderPlan", () => {
     expect(hiddenPlan.captions).toEqual([]);
     expect(shownPlan.argv).not.toEqual(hiddenPlan.argv);
     expect(shownPlan.argv[shownPlan.argv.indexOf("-vf") + 1]).toBe(
-      `${shownVideoFilter},drawtext=text='Speaker\\: we\\'re ready\\, 100\\%':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.500500)*lt(t\\,1.001000)'`,
+      `${shownVideoFilter},drawtext=text=Speaker\\\\: we\\\\\\'re ready\\, 100\\\\\\\\%:fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,0.500500)*lt(t\\,1.001000)'`,
     );
     expect(hiddenPlan.argv).toEqual(avArgv);
     expect(shownPlan.expected).toEqual(expectedMetadata(true));
@@ -1069,6 +1069,31 @@ describe("compileActiveSequenceRenderPlan", () => {
     expect(error.message).toBe(reason);
   });
 
+  it("tags ducking without an audible dialogue track as an audio mix error", () => {
+    const revision = structuredClone(makeV2Revision());
+    const sequence = revision.state.sequences[0]!;
+    Object.assign(sequence, {
+      loudnessTarget: {
+        integratedLufs: -14,
+        truePeakCeilingDbtp: -1,
+        ducking: true,
+        dialogueCleanup: false,
+      },
+    });
+    Object.assign(sequence.tracks[0]!, { audioRole: "music" });
+
+    const error = expectInvalidRenderPlan(() =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      }),
+    );
+
+    expect(error.details["category"]).toBe("audio_mix_invalid");
+  });
+
   it.each([
     [30, 1, 30, 60, "1.000000", "2.000000"],
     [30_000, 1_001, 30, 60, "1.001000", "2.002000"],
@@ -1136,7 +1161,9 @@ describe("compileActiveSequenceRenderPlan", () => {
 
     expect(shown.captions).toHaveLength(1);
     expect(hidden.captions).toEqual([]);
-    expect(shownFilter).toContain("[stack0]drawtext=text='Speaker\\: we\\'re ready\\, 100\\%'");
+    expect(shownFilter).toContain(
+      "[stack0]drawtext=text=Speaker\\\\: we\\\\\\'re ready\\, 100\\\\\\\\%:fontcolor=",
+    );
     expect(shownFilter).toContain(":enable='gte(t\\,0.500500)*lt(t\\,1.001000)'[caption0]");
     expect(hiddenFilter).not.toContain("drawtext");
     expect(shown.videoInputs).toEqual(hidden.videoInputs);

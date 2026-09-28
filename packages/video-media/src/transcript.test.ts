@@ -155,6 +155,74 @@ describe("transcript V1 contract", () => {
     });
   });
 
+  it("accepts diarizer speaker labels and counts unlabelled words", async () => {
+    const fixture = await readFixture();
+    // Mirrors the native runner: Sortformer speaker N becomes "speaker_N";
+    // untagged words keep null, and speaker confidence is never invented.
+    const speakers = ["speaker_1", "speaker_2", null, "speaker_2"] as const;
+    const words = speakers.map((speakerLabel, index) => ({
+      text: `word${index}`,
+      relativeStartUs: index * 200_000,
+      relativeEndUs: index * 200_000 + 100_000,
+      recognitionConfidence: 0.9,
+      speakerLabel,
+      speakerConfidence: null,
+      timingProvenance: "aligned" as const,
+    }));
+    const chunk: TranscriptChunkInputV1 = {
+      ...fixture.chunks[0]!,
+      sourceStartUs: 0,
+      words,
+    };
+    const artifact = await createTranscriptArtifactV1({
+      ...fixture,
+      configuration: { ...fixture.configuration, chunkDurationUs: 1_000_000, chunkOverlapUs: 0 },
+      chunks: [chunk],
+    });
+
+    expect(artifact.words.map((word) => word.speakerLabel)).toEqual(speakers);
+    expect(artifact.words.every((word) => word.speakerConfidence === null)).toBe(true);
+    expect(artifact.uncertaintyCounts.missingSpeakerWordCount).toBe(1);
+    expect(transcriptArtifactV1Schema.parse(artifact)).toEqual(artifact);
+
+    const blankLabel = structuredClone(artifact);
+    blankLabel.words[0]!.speakerLabel = "  ";
+    expect(transcriptArtifactV1Schema.safeParse(blankLabel).success).toBe(false);
+  });
+
+  it("changes configuration identity with the diarization mode and diarizer hash", async () => {
+    const fixture = await readFixture();
+    const off: AsrConfigurationV1 = {
+      ...fixture.configuration,
+      speakerDiarizationMode: "off",
+      providerSettings: [{ key: "device", value: "cuda:0" }],
+    };
+    const optional: AsrConfigurationV1 = {
+      ...off,
+      speakerDiarizationMode: "optional",
+      providerSettings: [
+        { key: "device", value: "cuda:0" },
+        { key: "diarizer_sha256", value: "1".repeat(64) },
+      ],
+    };
+    const otherDiarizer: AsrConfigurationV1 = {
+      ...optional,
+      providerSettings: [
+        { key: "device", value: "cuda:0" },
+        { key: "diarizer_sha256", value: "2".repeat(64) },
+      ],
+    };
+    const digests = await Promise.all(
+      [
+        off,
+        optional,
+        otherDiarizer,
+        { ...optional, speakerDiarizationMode: "required" as const },
+      ].map(async (configuration) => (await deriveAsrConfigurationIdentity(configuration)).digest),
+    );
+    expect(new Set(digests).size).toBe(4);
+  });
+
   it("invalidates identities for ASR or source changes but not transcript content", async () => {
     const fixture = await readFixture();
     const baseline = await createTranscriptArtifactV1(fixture);

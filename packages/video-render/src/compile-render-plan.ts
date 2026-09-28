@@ -139,7 +139,9 @@ function trackRenderCaptions(
     try {
       return [...legacy, ...artifactRenderCaptions(track.id, track.activeCaptionArtifact, frame)];
     } catch (error) {
-      if (error instanceof CaptionRenderStyleError) invalidRenderPlan(error.message);
+      if (error instanceof CaptionRenderStyleError) {
+        invalidRenderPlan(error.message, { category: "caption_style_invalid" });
+      }
       throw error;
     }
   });
@@ -775,7 +777,9 @@ export function compileActiveSequenceRenderPlan(
     try {
       filterParts.push(...audioMixFilters(audibleInputs, audioMix, duration));
     } catch (error) {
-      if (error instanceof AudioMixPlanError) invalidRenderPlan(error.message);
+      if (error instanceof AudioMixPlanError) {
+        invalidRenderPlan(error.message, { category: "audio_mix_invalid" });
+      }
       throw error;
     }
 

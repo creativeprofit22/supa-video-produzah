@@ -1,8 +1,9 @@
 import type { ProjectProjection } from "@supa-video/contracts";
-import type {
-  CaptionArtifactV1,
-  CaptionStyleV1,
-  CaptionValidationIssueV1,
+import {
+  captionsOverReadingSpeed,
+  type CaptionArtifactV1,
+  type CaptionStyleV1,
+  type CaptionValidationIssueV1,
 } from "@supa-video/media";
 import {
   exportSubtitles,
@@ -34,7 +35,44 @@ interface CaptionsPanelProps {
     artifact: CaptionArtifactV1,
   ) => Promise<boolean>;
   readonly frame?: { readonly width: number; readonly height: number };
+  /** Changes the sequence frame. Omit to hide the frame choice. */
+  readonly onSetFrameSize?: (width: number, height: number) => Promise<boolean>;
   readonly subtitleWriter?: SubtitleWriter;
+}
+
+export const frameShapes = [
+  { id: "16:9", label: "Widescreen 16:9" },
+  { id: "9:16", label: "Vertical 9:16" },
+  { id: "1:1", label: "Square 1:1" },
+] as const;
+export type FrameShapeId = (typeof frameShapes)[number]["id"];
+
+const even = (value: number): number => Math.max(2, Math.round(value / 2) * 2);
+
+/**
+ * The frame for a shape, keeping the current frame's shorter side so
+ * switching shapes back and forth returns the exact original size.
+ */
+export function frameForShape(
+  current: { readonly width: number; readonly height: number },
+  shape: FrameShapeId,
+): { readonly width: number; readonly height: number } {
+  const side = Math.min(current.width, current.height);
+  if (shape === "1:1") return { width: side, height: side };
+  const long = even((side * 16) / 9);
+  return shape === "16:9" ? { width: long, height: side } : { width: side, height: long };
+}
+
+export function shapeOfFrame(frame: {
+  readonly width: number;
+  readonly height: number;
+}): FrameShapeId | null {
+  return (
+    (["16:9", "9:16", "1:1"] as const).find((shape) => {
+      const expected = frameForShape(frame, shape);
+      return expected.width === frame.width && expected.height === frame.height;
+    }) ?? null
+  );
 }
 
 const issueMessages: Partial<Record<CaptionValidationIssueV1["code"], string>> = {
@@ -69,8 +107,10 @@ export function CaptionsPanel({
   disabled,
   onApply,
   frame = { width: 1920, height: 1080 },
+  onSetFrameSize,
   subtitleWriter = tauriSubtitleWriter,
 }: CaptionsPanelProps) {
+  const frameLegendId = useId();
   const headingId = useId();
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -128,6 +168,10 @@ export function CaptionsPanel({
 
   const busy = disabled || pending;
   const artifact = active?.artifact;
+  const tooFast = useMemo(
+    () => new Set(artifact === undefined ? [] : captionsOverReadingSpeed(artifact)),
+    [artifact],
+  );
   const typography = artifact?.style.typography;
 
   return (
@@ -138,6 +182,41 @@ export function CaptionsPanel({
           <h3 id={headingId}>Caption style</h3>
         </div>
       </div>
+      {onSetFrameSize === undefined ? null : (
+        <fieldset className="frame-shape" aria-describedby={frameLegendId}>
+          <legend>Frame</legend>
+          <div className="frame-shape-options">
+            {frameShapes.map((shape) => (
+              <label key={shape.id}>
+                <input
+                  type="radio"
+                  name="frame-shape"
+                  value={shape.id}
+                  checked={shapeOfFrame(frame) === shape.id}
+                  disabled={busy}
+                  onChange={() => {
+                    const next = frameForShape(frame, shape.id);
+                    setPending(true);
+                    setMessage(null);
+                    void (async () => {
+                      try {
+                        if (!(await onSetFrameSize(next.width, next.height)))
+                          setMessage("The frame could not be changed. Try again.");
+                      } finally {
+                        setPending(false);
+                      }
+                    })();
+                  }}
+                />
+                {shape.label}
+              </label>
+            ))}
+          </div>
+          <p id={frameLegendId} className="muted-copy">
+            {frame.width} x {frame.height}. Video is fitted inside the frame with black bars.
+          </p>
+        </fieldset>
+      )}
       {artifact === undefined || typography === undefined ? (
         <p className="muted-copy">Generate captions from a transcript to style and time them.</p>
       ) : (
@@ -247,15 +326,28 @@ export function CaptionsPanel({
             </label>
           </div>
           <h4 className="captions-subheading">Timing</h4>
+          {tooFast.size > 0 ? (
+            <p className="muted-copy" role="note">
+              {tooFast.size} {tooFast.size === 1 ? "caption reads" : "captions read"} faster than{" "}
+              {artifact.validationProfile.maxCharactersPerSecond} characters per second. Review them
+              or extend their timing.
+            </p>
+          ) : null}
           <ol className="captions-cues" aria-label="Caption cues">
             {artifact.cues.map((cue) => {
               const text = cue.lines.join(" ");
+              const fast = tooFast.has(cue.cueId);
               return (
-                <li key={cue.cueId} className="captions-cue">
+                <li
+                  key={cue.cueId}
+                  className="captions-cue"
+                  data-reading-speed={fast ? "fast" : undefined}
+                >
                   <p className="captions-cue-text">{text}</p>
                   <p className="muted-copy">
                     {formatTime(cue.start.value, artifact.timelineRate)} –{" "}
                     {formatTime(cue.end.value, artifact.timelineRate)}
+                    {fast ? <strong className="captions-cue-flag"> · Reads fast</strong> : null}
                   </p>
                   <div
                     className="transcript-actions"

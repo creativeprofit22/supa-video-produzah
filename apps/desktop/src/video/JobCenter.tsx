@@ -40,6 +40,28 @@ const recoveryActionLabels = {
   free_cache: "Close media using the cache or clear available space, then retry.",
   retry: "Retry the job when the issue is resolved.",
 } as const;
+// Transcriptions have no native retry; they resume only through the Transcript panel,
+// which re-checks the runtime, license consent and GPU before re-queueing the job.
+const transcriptionRecoveryLabels: Readonly<Record<string, string>> = {
+  cuda_not_proven:
+    "Check that the NVIDIA GPU is available, then choose Transcribe again in the Transcript panel.",
+  nemo_unavailable:
+    "Choose the speech-recognition runtime folder again in the Transcript panel, then transcribe again.",
+  source_authorization_required:
+    "Reopen the project, then choose Transcribe again in the Transcript panel.",
+};
+const transcriptionRecoveryFallback = "Open the Transcript panel and choose Transcribe again.";
+
+function recoveryHint(
+  job: MediaJobRecord,
+  error: NonNullable<MediaJobRecord["error"]>,
+): string | null {
+  if (error.action === null) return null;
+  if (job.kind === "transcription" && job.state !== "retrying") {
+    return transcriptionRecoveryLabels[error.code] ?? transcriptionRecoveryFallback;
+  }
+  return recoveryActionLabels[error.action];
+}
 
 function safePublicText(value: string, fallback: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -132,6 +154,7 @@ function JobItem({
     job.state === "blocked" || job.state === "retrying" || job.state === "failed"
       ? job.error
       : null;
+  const hint = error === null ? null : recoveryHint(job, error);
 
   return (
     <li className={`job-item job-state-${job.state}${focused ? " is-targeted" : ""}`}>
@@ -166,7 +189,7 @@ function JobItem({
         {error !== null ? (
           <div className="job-message" role={job.state === "failed" ? "alert" : "status"}>
             <strong>{safePublicText(error.message, "The media job needs attention.")}</strong>
-            {error.action !== null ? <p>{recoveryActionLabels[error.action]}</p> : null}
+            {hint !== null ? <p>{hint}</p> : null}
             {job.state === "retrying" && job.retryAt !== null ? (
               <p>Next attempt at {formatTime(job.retryAt)}.</p>
             ) : null}

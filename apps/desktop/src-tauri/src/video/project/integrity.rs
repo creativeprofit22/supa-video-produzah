@@ -319,16 +319,18 @@ fn valid_track_shape(track: &ProjectTrack) -> bool {
     }
 }
 
+/// Frame sizes must be even (4:2:0 video) and at most 16384 per side.
+pub(crate) fn valid_frame_size(width: u64, height: u64) -> bool {
+    [width, height]
+        .iter()
+        .all(|side| (2..=16_384).contains(side) && side & 1 == 0)
+}
+
 fn valid_sequence_shape(sequence: &VideoSequenceV2) -> bool {
     is_canonical_uuid(&sequence.id)
         && valid_non_blank(&sequence.name)
         && valid_rate(&sequence.rate)
-        && sequence.width > 0
-        && sequence.height > 0
-        && sequence.width <= 16_384
-        && sequence.height <= 16_384
-        && sequence.width & 1 == 0
-        && sequence.height & 1 == 0
+        && valid_frame_size(sequence.width, sequence.height)
         && (1..=768_000).contains(&sequence.audio_sample_rate)
         && sequence.tracks.len() <= MAX_TRACKS
         && sequence.markers.len() <= MAX_MARKERS
@@ -615,12 +617,18 @@ fn valid_command(command: &ProjectCommand) -> bool {
             track_id,
             ..
         } => is_canonical_uuid(sequence_id) && is_canonical_uuid(track_id),
+        ProjectCommand::SetSequenceFrameSize {
+            sequence_id,
+            width,
+            height,
+            ..
+        } => is_canonical_uuid(sequence_id) && valid_frame_size(*width, *height),
         ProjectCommand::SetSequenceLoudnessTarget {
             sequence_id,
             target,
             ..
-        } => is_canonical_uuid(sequence_id) && target.valid(),
-        ProjectCommand::RestoreSequenceLoudnessTarget {
+        }
+        | ProjectCommand::RestoreSequenceLoudnessTarget {
             sequence_id,
             target,
             ..

@@ -47,8 +47,10 @@ proptest = "=1.11.0"
 tokio = { version = "=1.53.1", features = ["test-util"] }
 
 # Keep full bundled-binary integrity checks within their test deadlines without
-# optimizing application code or changing the release profile.
-[profile.test.package.sha2]
+# optimizing application code or changing the release profile. Set on the dev
+# profile (which the test profile inherits) so debug app runs can verify the
+# ~1.2 GB speech runtime in seconds instead of many minutes.
+[profile.dev.package.sha2]
 opt-level = 3
 
 [target.'cfg(windows)'.dependencies]

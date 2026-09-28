@@ -64,17 +64,52 @@ async function completeFlowWithKeyboard(page: Page) {
   const firstWord = page.getByRole("button", { name: "And", exact: true });
   await expect(firstWord).toBeVisible();
 
+  await expect(page.getByRole("heading", { name: "Speaker 1", level: 3 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unknown speaker", level: 3 })).toBeVisible();
+
+  // Seek from the keyboard: Tab from a word reaches its seek button.
+  await firstWord.focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Seek to And at 0:00.00" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Seek to so, at 0:00.40" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("fixture-log")).toHaveText("seek:4");
+  await expect(page.getByRole("button", { name: "so,", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
   await firstWord.focus();
   await page.keyboard.press("Space");
   await expect(firstWord).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "so,", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  // Remove opens a review of the proposed cut; nothing is applied yet.
+  const logBefore = await page.getByTestId("fixture-log").textContent();
   await focusAndPress(page, "Remove 2 selected words");
+  const review = page.getByRole("dialog", { name: "Review cut" });
+  await expect(review).toBeVisible();
+  await expect(review).toContainText("Removes 2 words");
+  await expect(review.getByRole("listitem")).toHaveCount(1);
+  await expect(page.getByTestId("fixture-log")).toHaveText(logBefore ?? "");
+  await expectNoAxeViolations(page);
+  // Escape keeps editing and returns focus to the Remove button.
+  await page.keyboard.press("Escape");
+  await expect(review).toBeHidden();
+  await expect(page.getByRole("button", { name: "Remove 2 selected words" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(review).toBeVisible();
+  await review.getByRole("button", { name: "Apply cut" }).focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByTestId("fixture-log")).toHaveText("remove:2");
+  await expect(review).toBeHidden();
 
   await focusAndPress(page, "Generate captions");
   await expect(page.getByTestId("fixture-log")).toHaveText("captions");

@@ -77,7 +77,8 @@ fn deserialize_restored_fades<'de, D: serde::Deserializer<'de>>(
     Option::<ClipFades>::deserialize(d)
 }
 
-// A present-but-null value is required so a restore can clear the field.
+// A present-but-null value is required so a set or restore can clear the field;
+// a missing field is still rejected.
 fn deserialize_restored_role<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<TrackAudioRole>, D::Error> {
@@ -223,8 +224,12 @@ pub enum ProjectTrack {
         #[serde(default, skip_serializing_if = "is_false")]
         hidden: bool,
         captions: Vec<ProjectCaption>,
+        // camelCase like every other project field and the TS contract. The
+        // snake_case alias still reads projects written before this was fixed.
         #[serde(
             default,
+            rename = "activeCaptionArtifact",
+            alias = "active_caption_artifact",
             deserialize_with = "deserialize_optional_non_null",
             skip_serializing_if = "Option::is_none"
         )]
@@ -622,7 +627,8 @@ pub enum ProjectCommand {
         sequence_id: String,
         #[serde(rename = "trackId")]
         track_id: String,
-        role: TrackAudioRole,
+        #[serde(deserialize_with = "deserialize_restored_role")]
+        role: Option<TrackAudioRole>,
     },
     RestoreTrackAudioRole {
         #[serde(rename = "commandId")]
@@ -634,12 +640,23 @@ pub enum ProjectCommand {
         #[serde(deserialize_with = "deserialize_restored_role")]
         role: Option<TrackAudioRole>,
     },
+    /// Changes the output frame. Clips keep their size and are letterboxed
+    /// or pillarboxed into the new frame by the renderer. Self-inverse.
+    SetSequenceFrameSize {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        width: u64,
+        height: u64,
+    },
     SetSequenceLoudnessTarget {
         #[serde(rename = "commandId")]
         command_id: String,
         #[serde(rename = "sequenceId")]
         sequence_id: String,
-        target: SequenceLoudnessTarget,
+        #[serde(deserialize_with = "deserialize_restored_loudness")]
+        target: Option<SequenceLoudnessTarget>,
     },
     RestoreSequenceLoudnessTarget {
         #[serde(rename = "commandId")]
@@ -770,6 +787,7 @@ impl ProjectCommand {
             | Self::RestoreClipFades { command_id, .. }
             | Self::SetTrackAudioRole { command_id, .. }
             | Self::RestoreTrackAudioRole { command_id, .. }
+            | Self::SetSequenceFrameSize { command_id, .. }
             | Self::SetSequenceLoudnessTarget { command_id, .. }
             | Self::RestoreSequenceLoudnessTarget { command_id, .. }
             | Self::SetClipSpeed { command_id, .. }

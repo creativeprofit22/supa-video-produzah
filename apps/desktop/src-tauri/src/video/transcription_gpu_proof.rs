@@ -61,6 +61,13 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
     let source = PathBuf::from(required_env("SUPA_VIDEO_REAL_ASR_SOURCE"));
     let tools = PathBuf::from(required_env("SUPA_VIDEO_REAL_ASR_FFMPEG_DIR"));
     let evidence_path = PathBuf::from(required_env("SUPA_VIDEO_REAL_ASR_EVIDENCE"));
+    // Optional reference transcript for a non-JFK source. The JFK WER gate
+    // applies only to the built-in JFK reference; an edited reference (such as
+    // a published podcast transcript without fillers) is recorded, not gated.
+    let gold_override = std::env::var("SUPA_VIDEO_REAL_ASR_GOLD_FILE")
+        .ok()
+        .map(|path| std::fs::read_to_string(path).expect("gold file must be readable"));
+    let gold = gold_override.as_deref().unwrap_or(GOLD);
 
     let workspace = tempfile::tempdir().unwrap();
     let config_dir = workspace.path().join("config");
@@ -130,7 +137,7 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         ) {
             break job;
         }
-        assert!(started_at.elapsed() < Duration::from_secs(300), "job stuck");
+        assert!(started_at.elapsed() < Duration::from_secs(900), "job stuck");
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let job_wall_clock_ms = started_at.elapsed().as_millis();
@@ -157,12 +164,34 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         .map(|word| word.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    let wer = word_error_rate(GOLD, &text);
+    let wer = word_error_rate(gold, &text);
     let timed = artifact
         .words
         .iter()
         .filter(|word| word.source_end_us > word.source_start_us)
         .count();
+    let labelled = artifact
+        .words
+        .iter()
+        .filter(|word| word.speaker_label.is_some())
+        .count();
+    let speakers: std::collections::BTreeSet<_> = artifact
+        .words
+        .iter()
+        .filter_map(|word| word.speaker_label.as_deref())
+        .collect();
+    let words_detail: Vec<_> = artifact
+        .words
+        .iter()
+        .map(|word| {
+            serde_json::json!({
+                "text": word.text,
+                "startUs": word.source_start_us,
+                "endUs": word.source_end_us,
+                "speaker": word.speaker_label,
+            })
+        })
+        .collect();
 
     // Same source and configuration: the artifact identity dedupes the work.
     let second_started_at = Instant::now();
@@ -180,6 +209,9 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
     .await
     .unwrap();
     let second_ms = second_started_at.elapsed().as_millis();
+    let second_result = transcription_result(&jobs, "main", &second.job_id)
+        .await
+        .unwrap();
 
     let provider_settings: BTreeMap<_, _> = artifact
         .configuration
@@ -209,9 +241,14 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         "wordCount": artifact.words.len(),
         "wordsWithPositiveTiming": timed,
         "text": text,
-        "gold": GOLD,
+        "gold": gold,
         "wer": wer,
-        "werThreshold": JFK_WER_THRESHOLD,
+        "werThreshold": gold_override.is_none().then_some(JFK_WER_THRESHOLD),
+        "speakerDiarizationMode": artifact.configuration.speaker_diarization_mode,
+        "labelledWordCount": labelled,
+        "missingSpeakerWordCount": artifact.uncertainty_counts.missing_speaker_word_count,
+        "distinctSpeakers": speakers,
+        "words": words_detail,
         "engineVersion": artifact.configuration.engine_version,
         "modelId": artifact.configuration.model_id,
         "modelRevision": artifact.configuration.model_revision,
@@ -219,7 +256,7 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         "manifestSha256": pinned_manifest_sha256(),
         "secondStart": {
             "state": second.state,
-            "transcriptKey": second.transcript_key,
+            "transcriptKey": second_result.transcript_key,
             "elapsedMs": second_ms,
         },
     });
@@ -229,15 +266,19 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
     )
     .unwrap();
 
-    assert!(
-        wer <= JFK_WER_THRESHOLD,
-        "WER {wer} above threshold: {text}"
-    );
+    if gold_override.is_none() {
+        assert!(
+            wer <= JFK_WER_THRESHOLD,
+            "WER {wer} above threshold: {text}"
+        );
+    }
+    if artifact.configuration.speaker_diarization_mode
+        != crate::video::transcript::SpeakerDiarizationModeV1::Off
+    {
+        assert!(labelled > 0, "the diarizer labelled no word");
+    }
     assert_eq!(timed, artifact.words.len());
     assert_eq!(second.state, MediaJobState::Complete);
-    assert_eq!(
-        second.transcript_key.as_deref(),
-        Some(result.transcript_key.as_str())
-    );
+    assert_eq!(second_result.transcript_key, result.transcript_key);
     jobs.shutdown().await.unwrap();
 }

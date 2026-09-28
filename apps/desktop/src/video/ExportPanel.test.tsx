@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { VideoDomainError } from "@supa-video/contracts";
 import type { MediaJobRecord } from "@supa-video/media";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +60,46 @@ describe("ExportPanel", () => {
     expect((exportButton as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(exportButton);
     expect(props.onExport).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "invalid_render_plan",
+      "audio_mix_invalid",
+      "Ducking needs a track marked Dialogue. Set one in the Audio panel or turn ducking off.",
+    ],
+    [
+      "invalid_render_plan",
+      "caption_style_invalid",
+      "A caption font can't be exported. Choose another font in the Captions panel.",
+    ],
+    [
+      "invalid_media",
+      "loudness_out_of_tolerance",
+      "The export missed its loudness target. See the Audio panel for the report.",
+    ],
+    [
+      "invalid_render_plan",
+      "other",
+      "The project changed. Retry export from the current saved revision.",
+    ],
+    ["invalid_media", "other", "The exported video could not be validated. Try exporting again."],
+  ] as const)("explains %s failures with category %s", (code, category, message) => {
+    render(
+      <ExportPanel
+        {...baseProps()}
+        render={{
+          phase: "failed",
+          ...identity,
+          outputPath: "C:\\Neutral\\output.mp4",
+          error: new VideoDomainError(code, "internal detail", { category }),
+          canOverwrite: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain(message);
+    expect(screen.queryByText("internal detail")).toBeNull();
   });
 
   it("opens a native overwrite dialog with initial focus and returns focus on cancel", async () => {

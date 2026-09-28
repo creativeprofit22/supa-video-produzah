@@ -6,7 +6,16 @@ import {
   type TranscriptEditProposal,
   type TranscriptTimelineOccurrence,
 } from "@supa-video/project";
-import { Captions, FolderOpen, Mic, RotateCcw, Scissors, ShieldCheck, X } from "lucide-react";
+import {
+  Captions,
+  FolderOpen,
+  LocateFixed,
+  Mic,
+  RotateCcw,
+  Scissors,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { TranscriptionBackend } from "../asr-ipc";
@@ -34,6 +43,113 @@ interface TranscriptPanelProps {
     artifact: TranscriptArtifactV1,
   ) => Promise<boolean>;
   readonly onGenerateCaptions: (artifact: TranscriptArtifactV1) => Promise<boolean>;
+  /** Moves the monitor and timeline playhead to a timeline frame. */
+  readonly onSeekTimelineFrame?: (frame: number) => void;
+  /** The current timeline playhead frame, used to mark the spoken word. */
+  readonly playheadFrame?: number | null;
+  /** While playing, the active word is marked but never scrolled into view. */
+  readonly playing?: boolean;
+}
+
+/** "speaker_2" becomes "Speaker 2"; any other label is shown as-is. */
+export function speakerDisplayName(label: string | null): string {
+  if (label === null) return "Unknown speaker";
+  const match = /^speaker_(\d+)$/u.exec(label);
+  return match === null ? label : `Speaker ${match[1]}`;
+}
+
+/** Minutes, seconds and hundredths of a timeline frame. */
+export function formatTimelineTime(
+  frame: number,
+  rate: { readonly rateNumerator: number; readonly rateDenominator: number },
+): string {
+  const seconds = (frame * rate.rateDenominator) / rate.rateNumerator;
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+}
+
+/**
+ * Index of the occurrence whose timeline range contains `frame`, or -1.
+ * Occurrences are sorted by timeline start and do not overlap on one track,
+ * so a binary search finds the last start at or before the frame.
+ */
+export function findActiveOccurrenceIndex(
+  occurrences: readonly TranscriptTimelineOccurrence[],
+  frame: number | null,
+): number {
+  if (frame === null) return -1;
+  let low = 0;
+  let high = occurrences.length - 1;
+  let found = -1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const candidate = occurrences[middle];
+    if (candidate === undefined) break;
+    if (candidate.timelineRange.start.value <= frame) {
+      found = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  const active = occurrences[found];
+  return active !== undefined && frame < active.timelineRange.end.value ? found : -1;
+}
+
+function rangeFrames(range: {
+  readonly start: { readonly value: number };
+  readonly end: { readonly value: number };
+}): number {
+  return range.end.value - range.start.value;
+}
+
+/** What the reviewed cut removes and how long the timeline becomes. */
+function CutPreview({ proposal }: { readonly proposal: TranscriptEditProposal }) {
+  const first = proposal.keptRanges[0] ?? proposal.deletedRanges[0];
+  if (first === undefined) return null;
+  const rate = first.originalTimelineRange.start;
+  const removedFrames = proposal.deletedRanges.reduce(
+    (total, range) => total + rangeFrames(range.originalTimelineRange),
+    0,
+  );
+  const wordCount = proposal.deletedRanges.reduce(
+    (total, range) => total + range.selectedWords.length,
+    0,
+  );
+  return (
+    <>
+      <h2 id="transcript-cut-title">Review cut</h2>
+      <p>
+        Removes {wordCount} {wordCount === 1 ? "word" : "words"} in {proposal.deletedRanges.length}{" "}
+        {proposal.deletedRanges.length === 1 ? "range" : "ranges"}. Later material moves earlier to
+        close each gap, so the track gets {formatTimelineTime(removedFrames, rate)} shorter. You can
+        undo this.
+      </p>
+      <ol className="transcript-cut-ranges">
+        {proposal.deletedRanges.map((range) => (
+          <li key={`${range.clipId}-${range.originalTimelineRange.start.value}`}>
+            <span className="transcript-cut-time">
+              {formatTimelineTime(range.originalTimelineRange.start.value, rate)} to{" "}
+              {formatTimelineTime(range.originalTimelineRange.end.value, rate)}
+            </span>{" "}
+            <q>{range.selectedWords.map((word) => word.text).join(" ")}</q>{" "}
+            <span className="muted-copy">
+              (the cut point lands at{" "}
+              {formatTimelineTime(range.previewTimelineRange.start.value, rate)})
+            </span>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+interface SpeakerSegment {
+  readonly key: string;
+  readonly speakerLabel: string | null;
+  readonly entries: readonly {
+    readonly occurrence: TranscriptTimelineOccurrence;
+    readonly index: number;
+  }[];
 }
 
 const problemMessages: Record<string, string> = {
@@ -86,6 +202,9 @@ export function TranscriptPanel({
   onOpenJobCenter,
   onApplyProposal,
   onGenerateCaptions,
+  onSeekTimelineFrame,
+  playheadFrame = null,
+  playing = false,
 }: TranscriptPanelProps) {
   const [status, setStatus] = useState<AsrRuntimeStatus | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -95,6 +214,19 @@ export function TranscriptPanel({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const consentDialogRef = useRef<HTMLDialogElement>(null);
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
+  const cutDialogRef = useRef<HTMLDialogElement>(null);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
+  // The proposed cut under review. Nothing changes until it is applied.
+  const [proposal, setProposal] = useState<TranscriptEditProposal | null>(null);
+  const wordListRef = useRef<HTMLDivElement>(null);
+  // A stable seek handler, so a new parent callback each render does not
+  // rebuild the whole word list.
+  const seekRef = useRef(onSeekTimelineFrame);
+  useEffect(() => {
+    seekRef.current = onSeekTimelineFrame;
+  }, [onSeekTimelineFrame]);
+  const canSeek = onSeekTimelineFrame !== undefined;
+  const seek = useCallback((frame: number) => seekRef.current?.(frame), []);
 
   useEffect(() => {
     let current = true;
@@ -147,6 +279,58 @@ export function TranscriptPanel({
     }
   }, [load, projection, target]);
 
+  // Speaker for each word, and the words cut from (or never on) the timeline.
+  const { speakerByWordId, offTimelineWords, hasSpeakerLabels } = useMemo(() => {
+    const speakers = new Map<string, string | null>();
+    if (load.phase !== "loaded") {
+      return { speakerByWordId: speakers, offTimelineWords: [], hasSpeakerLabels: false };
+    }
+    const onTimeline = new Set(occurrences.map((occurrence) => occurrence.wordId));
+    for (const word of load.artifact.words) speakers.set(word.wordId, word.speakerLabel);
+    return {
+      speakerByWordId: speakers,
+      offTimelineWords: load.artifact.words.filter((word) => !onTimeline.has(word.wordId)),
+      hasSpeakerLabels: load.artifact.words.some((word) => word.speakerLabel !== null),
+    };
+  }, [load, occurrences]);
+
+  // Consecutive words by the same speaker share one heading.
+  const segments = useMemo((): readonly SpeakerSegment[] => {
+    const result: {
+      key: string;
+      speakerLabel: string | null;
+      entries: SpeakerSegment["entries"][number][];
+    }[] = [];
+    occurrences.forEach((occurrence, index) => {
+      const speakerLabel = hasSpeakerLabels
+        ? (speakerByWordId.get(occurrence.wordId) ?? null)
+        : null;
+      const last = result.at(-1);
+      if (last !== undefined && last.speakerLabel === speakerLabel)
+        last.entries.push({ occurrence, index });
+      else
+        result.push({
+          key: occurrence.occurrenceId,
+          speakerLabel,
+          entries: [{ occurrence, index }],
+        });
+    });
+    return result;
+  }, [hasSpeakerLabels, occurrences, speakerByWordId]);
+
+  const activeIndex = useMemo(
+    () => findActiveOccurrenceIndex(occurrences, playheadFrame),
+    [occurrences, playheadFrame],
+  );
+
+  // Keep the spoken word visible, but only while paused so playback never
+  // fights the user's own scrolling.
+  useEffect(() => {
+    if (playing || activeIndex < 0) return;
+    const active = wordListRef.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    active?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex, playing]);
+
   const run = useCallback(async (action: () => Promise<void>) => {
     setPending(true);
     setMessage(null);
@@ -198,18 +382,63 @@ export function TranscriptPanel({
       setLoad({ phase: "idle" });
     });
 
-  const deleteSelected = () =>
+  // Step 1: build the proposal and show it for review.
+  const previewSelected = () =>
     run(async () => {
       if (load.phase !== "loaded" || projection === null || target === null) return;
-      const proposal = await createTranscriptEditProposal({
-        artifact: load.artifact,
-        projection,
-        sequenceId: target.sequenceId,
-        trackId: target.trackId,
-        deletedOccurrenceIds: [...selected],
-      });
-      if (await onApplyProposal(proposal, load.artifact)) setSelected(new Set());
+      setProposal(
+        await createTranscriptEditProposal({
+          artifact: load.artifact,
+          projection,
+          sequenceId: target.sequenceId,
+          trackId: target.trackId,
+          deletedOccurrenceIds: [...selected],
+        }),
+      );
     });
+  // Close the modal before moving focus: while it is open the rest of the
+  // page is inert and cannot take focus.
+  const dismissCutDialog = () => {
+    const dialog = cutDialogRef.current;
+    if (dialog?.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+    setProposal(null);
+  };
+  const closeCutPreview = () => {
+    dismissCutDialog();
+    removeButtonRef.current?.focus();
+  };
+  // Step 2: apply exactly the reviewed proposal. It is bound to the project
+  // revision it was built from, so a stale proposal is rejected on apply.
+  const applyCut = () =>
+    run(async () => {
+      if (proposal === null || load.phase !== "loaded") return;
+      const applied = await onApplyProposal(proposal, load.artifact);
+      dismissCutDialog();
+      if (applied) setSelected(new Set());
+      removeButtonRef.current?.focus();
+    });
+
+  useEffect(() => {
+    const dialog = cutDialogRef.current;
+    if (dialog === null) return;
+    if (proposal !== null && !dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    } else if (proposal === null && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+  }, [proposal]);
+
+  // A proposal built from an older revision must not be applied.
+  useEffect(() => {
+    if (proposal !== null && projection?.revision.id !== proposal.projectRevision.id) {
+      setProposal(null);
+    }
+  }, [projection, proposal]);
 
   const generateCaptions = () =>
     run(async () => {
@@ -217,13 +446,67 @@ export function TranscriptPanel({
       await onGenerateCaptions(load.artifact);
     });
 
-  const toggle = (occurrenceId: string) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(occurrenceId)) next.delete(occurrenceId);
-      else next.add(occurrenceId);
-      return next;
-    });
+  const toggle = useCallback(
+    (occurrenceId: string) =>
+      setSelected((current) => {
+        const next = new Set(current);
+        if (next.has(occurrenceId)) next.delete(occurrenceId);
+        else next.add(occurrenceId);
+        return next;
+      }),
+    [],
+  );
+
+  // The word list re-renders only when its words, selection or active word
+  // change, not on every playhead frame.
+  const wordList = useMemo(
+    () =>
+      segments.map((segment) => (
+        <div key={segment.key} className="transcript-segment">
+          {hasSpeakerLabels ? (
+            <h3 className="transcript-speaker">{speakerDisplayName(segment.speakerLabel)}</h3>
+          ) : null}
+          <ul className="transcript-words" aria-describedby="transcript-help">
+            {segment.entries.map(({ occurrence, index }) => {
+              const current = index === activeIndex;
+              const at = formatTimelineTime(
+                occurrence.timelineRange.start.value,
+                occurrence.timelineRange.start,
+              );
+              return (
+                <li
+                  key={occurrence.occurrenceId}
+                  className="transcript-word-item"
+                  data-current={current ? "true" : undefined}
+                >
+                  <button
+                    className="transcript-word"
+                    type="button"
+                    aria-pressed={selected.has(occurrence.occurrenceId)}
+                    aria-current={current ? "true" : undefined}
+                    onClick={() => toggle(occurrence.occurrenceId)}
+                  >
+                    {occurrence.text}
+                  </button>
+                  {!canSeek ? null : (
+                    <button
+                      className="transcript-seek"
+                      type="button"
+                      aria-label={`Seek to ${occurrence.text} at ${at}`}
+                      title={`Seek to ${at}`}
+                      onClick={() => seek(occurrence.timelineRange.start.value)}
+                    >
+                      <LocateFixed size={14} aria-hidden />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )),
+    [activeIndex, canSeek, hasSpeakerLabels, seek, segments, selected, toggle],
+  );
 
   const ready = status?.runtime.state === "ready" && status.consent === "accepted";
   const active = job !== null && !isMediaJobSettled(job) && job.state !== "blocked";
@@ -314,6 +597,11 @@ export function TranscriptPanel({
               </a>
               .
             </p>
+            <p>
+              {status.license.commercialUse
+                ? "Both licenses allow commercial use of your videos."
+                : "One of these licenses does not allow commercial use. Check the license terms before using transcripts commercially."}
+            </p>
             <p>{status.license.runtimeAttribution}</p>
             <p>
               Audio is processed only on this computer. The app never downloads or updates the
@@ -398,27 +686,27 @@ export function TranscriptPanel({
         <div className="transcript-body">
           <p id="transcript-help" className="muted-copy">
             Select words to remove from the timeline. {occurrences.length} words on the timeline.
+            {hasSpeakerLabels ? " Speaker names are detected automatically and may be wrong." : ""}
           </p>
-          <ul className="transcript-words" aria-describedby="transcript-help">
-            {occurrences.map((occurrence) => (
-              <li key={occurrence.occurrenceId}>
-                <button
-                  className="transcript-word"
-                  type="button"
-                  aria-pressed={selected.has(occurrence.occurrenceId)}
-                  onClick={() => toggle(occurrence.occurrenceId)}
-                >
-                  {occurrence.text}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div ref={wordListRef} className="transcript-word-list">
+            {wordList}
+          </div>
+          {offTimelineWords.length > 0 ? (
+            <details className="transcript-off-timeline">
+              <summary>
+                {offTimelineWords.length} {offTimelineWords.length === 1 ? "word is" : "words are"}{" "}
+                not on the timeline
+              </summary>
+              <p className="muted-copy">{offTimelineWords.map((word) => word.text).join(" ")}</p>
+            </details>
+          ) : null}
           <div className="transcript-actions">
             <button
+              ref={removeButtonRef}
               className="secondary-button"
               type="button"
               disabled={selected.size === 0 || pending || disabled}
-              onClick={() => void deleteSelected()}
+              onClick={() => void previewSelected()}
             >
               <Scissors size={16} aria-hidden />
               Remove {selected.size} selected {selected.size === 1 ? "word" : "words"}
@@ -435,6 +723,31 @@ export function TranscriptPanel({
           </div>
         </div>
       ) : null}
+      <dialog
+        ref={cutDialogRef}
+        className="overwrite-dialog transcript-cut-dialog"
+        aria-labelledby="transcript-cut-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeCutPreview();
+        }}
+      >
+        {proposal === null ? null : <CutPreview proposal={proposal} />}
+        <div className="dialog-actions">
+          <button className="secondary-button" type="button" onClick={closeCutPreview}>
+            Keep editing
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={pending || disabled || proposal === null}
+            onClick={() => void applyCut()}
+          >
+            <Scissors size={16} aria-hidden />
+            Apply cut
+          </button>
+        </div>
+      </dialog>
     </section>
   );
 }

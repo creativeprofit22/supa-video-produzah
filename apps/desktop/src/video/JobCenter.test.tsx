@@ -369,4 +369,84 @@ describe("JobCenter", () => {
     expect(screen.getByText("Could not load media jobs")).toBeTruthy();
     expect(screen.getByText("Could not update cache health")).toBeTruthy();
   });
+
+  it.each([
+    {
+      code: "cuda_not_proven",
+      category: "toolchain_unavailable",
+      action: "verify_toolchain",
+      message: "The speech-recognition runtime did not run on the NVIDIA GPU.",
+      hint: "Check that the NVIDIA GPU is available, then choose Transcribe again in the Transcript panel.",
+    },
+    {
+      code: "nemo_unavailable",
+      category: "toolchain_unavailable",
+      action: "verify_toolchain",
+      message: "The speech-recognition runtime is unavailable or changed.",
+      hint: "Choose the speech-recognition runtime folder again in the Transcript panel, then transcribe again.",
+    },
+    {
+      code: "source_authorization_required",
+      category: "authorization_required",
+      action: "reauthorize_source",
+      message: "The source needs to be authorized again.",
+      hint: "Reopen the project, then choose Transcribe again in the Transcript panel.",
+    },
+    {
+      code: "unknown_transcription_block",
+      category: "toolchain_unavailable",
+      action: "verify_toolchain",
+      message: "Transcription needs attention.",
+      hint: "Open the Transcript panel and choose Transcribe again.",
+    },
+  ] as const)(
+    "guides blocked transcription ($code) to the Transcript panel without Retry",
+    (row) => {
+      const transcriptionJob = job({
+        id: "70000000-0000-4000-8000-000000000090",
+        kind: "transcription",
+        state: "blocked",
+        stage: "blocked",
+        summary: "Transcribe interview",
+        error: {
+          code: row.code,
+          category: row.category,
+          message: row.message,
+          retryable: false,
+          action: row.action,
+        },
+      } as Partial<MediaJobRecord>);
+      const value = controller({ jobs: [transcriptionJob] });
+      render(<JobCenter controller={value} onClose={vi.fn()} />);
+
+      const item = screen.getByRole("article", { name: "Transcribe interview" });
+      expect(within(item).getByText(row.message)).toBeTruthy();
+      expect(within(item).getByText(row.hint)).toBeTruthy();
+      expect(item.textContent).not.toContain("bundled media tools");
+      expect(item.textContent).not.toContain("then retry");
+      expect(within(item).queryByRole("button", { name: "Retry" })).toBeNull();
+    },
+  );
+
+  it("keeps the media-tools repair hint for non-transcription jobs", () => {
+    const proxyJob = job({
+      id: "70000000-0000-4000-8000-000000000091",
+      kind: "proxy",
+      state: "blocked",
+      stage: "blocked",
+      summary: "Build preview proxy",
+      error: {
+        code: "toolchain_unavailable",
+        category: "toolchain_unavailable",
+        message: "The media tools are unavailable.",
+        retryable: false,
+        action: "verify_toolchain",
+      },
+    } as Partial<MediaJobRecord>);
+    const value = controller({ jobs: [proxyJob] });
+    render(<JobCenter controller={value} onClose={vi.fn()} />);
+
+    const item = screen.getByRole("article", { name: "Build preview proxy" });
+    expect(within(item).getByText("Repair the bundled media tools, then retry.")).toBeTruthy();
+  });
 });

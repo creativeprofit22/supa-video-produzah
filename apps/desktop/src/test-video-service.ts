@@ -536,12 +536,20 @@ export function createMockVideoService(
             ?.tracks.find(({ id }) => id === item.trackId);
           if (!track) throw commandError("unknown_track");
           if (track.kind === "caption") throw commandError("non_audio_track");
-          track.audioRole = item.role;
+          if (item.role === null) delete track.audioRole;
+          else track.audioRole = item.role;
           addCacheInvalidations(cacheInvalidations, ["audio_mix", "render_plan"]);
+        } else if (item.type === "SetSequenceFrameSize") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (!sequence) throw commandError("unknown_sequence");
+          sequence.width = item.width;
+          sequence.height = item.height;
+          addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
         } else if (item.type === "SetSequenceLoudnessTarget") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
           if (!sequence) throw commandError("unknown_sequence");
-          sequence.loudnessTarget = item.target;
+          if (item.target === null) delete sequence.loudnessTarget;
+          else sequence.loudnessTarget = item.target;
           addCacheInvalidations(cacheInvalidations, ["audio_mix", "render_plan"]);
         } else if (item.type === "SetClipGain" || item.type === "SetClipFades") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);

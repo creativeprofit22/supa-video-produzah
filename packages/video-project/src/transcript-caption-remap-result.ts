@@ -24,7 +24,11 @@ import type {
   ClassifiedCue,
   CueCandidate,
 } from "./transcript-caption-remap-outcome.js";
-import type { FrameConstraints } from "./transcript-caption-internal.js";
+import {
+  cueEndWithinLimits,
+  speechEndBeforeNextCue,
+  type FrameConstraints,
+} from "./transcript-caption-internal.js";
 
 export interface CaptionRemapTargetCue {
   readonly cueId: string;
@@ -153,12 +157,14 @@ function buildPartialCue(
     );
     if (cpsFrames === null)
       constraintsUnsatisfied(candidate.sourceCue.cueId, { constraint: "cps" });
-    const end = Math.max(rawEnd, start + constraints.minimumDurationFrames, start + cpsFrames);
-    const latestEnd = Math.min(
-      start + constraints.maximumDurationFrames,
-      nextStart ?? Number.MAX_SAFE_INTEGER,
+    const end = cueEndWithinLimits(
+      start,
+      speechEndBeforeNextCue(rawEnd, nextStart),
+      cpsFrames,
+      constraints,
+      nextStart,
     );
-    if (!Number.isSafeInteger(end) || end <= start || end > latestEnd) {
+    if (end === null || end <= start) {
       constraintsUnsatisfied(candidate.sourceCue.cueId, { constraint: "duration" });
     }
     return {

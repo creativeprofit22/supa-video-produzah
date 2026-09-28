@@ -82,6 +82,7 @@ export type TimelineEditOperation =
   | "generate-captions"
   | "caption-edit"
   | "audio-mix"
+  | "frame-size"
   | "clip-speed"
   | "clip-audio"
   | "clip-opacity"
@@ -1828,7 +1829,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [executeTimelineCommandGroup],
   );
   const setTrackAudioRole = useCallback(
-    async (trackId: string, role: TrackAudioRole): Promise<boolean> => {
+    async (trackId: string, role: TrackAudioRole | null): Promise<boolean> => {
       const base = stateRef.current.projection;
       const sequence = activeSequence(base);
       const track = sequence?.tracks.find((candidate) => candidate.id === trackId);
@@ -1837,7 +1838,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         sequence === null ||
         track === undefined ||
         track.kind === "caption" ||
-        track.audioRole === role ||
+        (track.audioRole ?? null) === role ||
         editOperationPendingRef.current
       )
         return false;
@@ -1848,12 +1849,41 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [executeTimelineCommandGroup],
   );
   const setSequenceLoudnessTarget = useCallback(
-    async (target: SequenceLoudnessTarget): Promise<boolean> => {
+    async (target: SequenceLoudnessTarget | null): Promise<boolean> => {
       const base = stateRef.current.projection;
       const sequence = activeSequence(base);
-      if (base === null || sequence === null || editOperationPendingRef.current) return false;
+      if (
+        base === null ||
+        sequence === null ||
+        (target === null && sequence.loudnessTarget === undefined) ||
+        editOperationPendingRef.current
+      )
+        return false;
       return executeTimelineCommandGroup(base, "audio-mix", [
         { type: "SetSequenceLoudnessTarget", commandId: newId(), sequenceId: sequence.id, target },
+      ]);
+    },
+    [executeTimelineCommandGroup],
+  );
+  const setSequenceFrameSize = useCallback(
+    async (width: number, height: number): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      const sequence = activeSequence(base);
+      if (
+        base === null ||
+        sequence === null ||
+        (sequence.width === width && sequence.height === height) ||
+        editOperationPendingRef.current
+      )
+        return false;
+      return executeTimelineCommandGroup(base, "frame-size", [
+        {
+          type: "SetSequenceFrameSize",
+          commandId: newId(),
+          sequenceId: sequence.id,
+          width,
+          height,
+        },
       ]);
     },
     [executeTimelineCommandGroup],
@@ -2098,6 +2128,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     applyCaptionArtifactEdit,
     setTrackAudioRole,
     setSequenceLoudnessTarget,
+    setSequenceFrameSize,
     setTimelineClipSpeed,
     editTimelineClips,
     setTimelineClipAudio,

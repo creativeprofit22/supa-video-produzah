@@ -370,7 +370,6 @@ fn legacy_validation_issue(message: &str) -> CaptionValidationIssueV1 {
         "caption line exceeds the Unicode-scalar limit" => (Code::LineLengthExceeded, "$.cues"),
         "caption cue is shorter than the minimum duration" => (Code::CueTooShort, "$.cues"),
         "caption cue is longer than the maximum duration" => (Code::CueTooLong, "$.cues"),
-        "caption cue exceeds the Unicode-scalar CPS limit" => (Code::CpsExceeded, "$.cues"),
         "caption anchor must remain inside the safe area" => (Code::SafeAreaExceeded, "$.cues"),
         "caption source span must be positive and safe" => (Code::SourceSpanInvalid, "$.cues"),
         "caption source link references another transcript" => {
@@ -500,7 +499,6 @@ fn validate_cue(cue: &CaptionCueV1, artifact: &CaptionArtifactV1) -> Result<(), 
         return Err("caption cue line count is out of range".to_owned());
     }
 
-    let mut scalar_count = 0_u64;
     for line in &cue.lines {
         let line_scalars = line.chars().count();
         if line.is_empty()
@@ -510,9 +508,6 @@ fn validate_cue(cue: &CaptionCueV1, artifact: &CaptionArtifactV1) -> Result<(), 
         {
             return Err("caption line exceeds the Unicode-scalar limit".to_owned());
         }
-        scalar_count = scalar_count
-            .checked_add(line_scalars as u64)
-            .ok_or_else(|| "caption scalar count overflowed".to_owned())?;
     }
 
     let duration_frames = cue.end.value - cue.start.value;
@@ -527,13 +522,9 @@ fn validate_cue(cue: &CaptionCueV1, artifact: &CaptionArtifactV1) -> Result<(), 
         return Err("caption cue is longer than the maximum duration".to_owned());
     }
 
-    let cps_left = u128::from(scalar_count) * u128::from(cue.start.rate_numerator);
-    let cps_right = u128::from(profile.max_characters_per_second)
-        * u128::from(duration_frames)
-        * u128::from(cue.start.rate_denominator);
-    if cps_left > cps_right {
-        return Err("caption cue exceeds the Unicode-scalar CPS limit".to_owned());
-    }
+    // Reading speed (max_characters_per_second) is a review flag shown in the
+    // editor, not a validity rule: verbatim captions of fast speech cannot meet
+    // it. It stays in the profile and in the persisted identity.
 
     let safe = &profile.safe_area;
     if cue.anchor.x_permille > 1_000
@@ -956,12 +947,14 @@ mod tests {
         line_boundary["validationProfile"]["maxCharactersPerLine"] = json!(1);
         assert!(parse_value(line_boundary).is_err());
 
+        // Reading speed is a review flag, not a validity rule: a cue over the
+        // characters-per-second limit (fast verbatim speech) still loads.
         let mut cps_boundary = one_cue();
         cps_boundary["cues"][0]["end"]["value"] = json!(12);
         cps_boundary["cues"][0]["lines"] = json!(["1234567890"]);
         assert!(parse_value(cps_boundary.clone()).is_ok());
         cps_boundary["cues"][0]["lines"] = json!(["1234567890😀"]);
-        assert!(parse_value(cps_boundary).is_err());
+        assert!(parse_value(cps_boundary).is_ok());
     }
 
     #[test]

@@ -174,7 +174,7 @@ fn role(snapshot: &VideoProjectSnapshotV2, role: super::types::TrackAudioRole) -
         command_id: "71000000-0000-4000-8000-000000000001".into(),
         sequence_id: snapshot.state.sequences[0].id.clone(),
         track_id: snapshot.state.sequences[0].tracks[0].id().into(),
-        role,
+        role: Some(role),
     }
 }
 
@@ -182,12 +182,12 @@ fn loudness(snapshot: &VideoProjectSnapshotV2, lufs: i64) -> ProjectCommand {
     ProjectCommand::SetSequenceLoudnessTarget {
         command_id: "71000000-0000-4000-8000-000000000002".into(),
         sequence_id: snapshot.state.sequences[0].id.clone(),
-        target: super::types::SequenceLoudnessTarget {
+        target: Some(super::types::SequenceLoudnessTarget {
             integrated_lufs: lufs,
             true_peak_ceiling_dbtp: -1,
             ducking: true,
             dialogue_cleanup: true,
-        },
+        }),
     }
 }
 
@@ -320,4 +320,181 @@ fn audio_mix_commands_reject_invalid_targets_and_public_inverses_without_mutatio
         "rejections never advanced the revision"
     );
     service.close("mix", &original.id).unwrap();
+}
+
+#[test]
+fn audio_mix_public_null_clears_to_legacy_state_and_undo_restores_values() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("mix.svpvideo");
+    let grants = VideoPathGrants::default();
+    let original = fixture();
+    fs::write(&path, canonical_bytes(&original).unwrap()).unwrap();
+    let service = VideoProjectService::default();
+    service.open("mix", &path, &grants).unwrap();
+    let set = service
+        .execute(
+            "mix",
+            request(
+                &original,
+                990,
+                vec![
+                    role(&original, super::types::TrackAudioRole::Dialogue),
+                    loudness(&original, -16),
+                ],
+            ),
+            &grants,
+        )
+        .unwrap();
+
+    let sequence_id = original.state.sequences[0].id.clone();
+    let track_id = original.state.sequences[0].tracks[0].id().to_owned();
+    let clear: Vec<ProjectCommand> = [
+        serde_json::json!({
+            "type": "SetTrackAudioRole",
+            "commandId": "71000000-0000-4000-8000-000000000020",
+            "sequenceId": sequence_id,
+            "trackId": track_id,
+            "role": null,
+        }),
+        serde_json::json!({
+            "type": "SetSequenceLoudnessTarget",
+            "commandId": "71000000-0000-4000-8000-000000000021",
+            "sequenceId": sequence_id,
+            "target": null,
+        }),
+    ]
+    .into_iter()
+    .map(|value| serde_json::from_value(value).unwrap())
+    .collect();
+    let mut clear_request = request(&original, 991, clear);
+    clear_request.base_revision = 1;
+    let cleared = service.execute("mix", clear_request, &grants).unwrap();
+    assert_eq!(cleared.projection.state, original.state);
+    let bytes = String::from_utf8(canonical_bytes(&cleared.projection.state).unwrap()).unwrap();
+    assert!(!bytes.contains("loudnessTarget") && !bytes.contains("audioRole"));
+
+    let undone = service
+        .undo(
+            "mix",
+            &original.id,
+            2,
+            "71000000-0000-4000-8000-000000000022",
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(undone.projection.state, set.projection.state);
+    service.close("mix", &original.id).unwrap();
+}
+
+#[test]
+fn audio_mix_public_set_commands_require_the_value_field_to_be_present() {
+    let original = fixture();
+    for missing in [
+        serde_json::json!({
+            "type": "SetTrackAudioRole",
+            "commandId": "71000000-0000-4000-8000-000000000030",
+            "sequenceId": original.state.sequences[0].id,
+            "trackId": original.state.sequences[0].tracks[0].id(),
+        }),
+        serde_json::json!({
+            "type": "SetSequenceLoudnessTarget",
+            "commandId": "71000000-0000-4000-8000-000000000031",
+            "sequenceId": original.state.sequences[0].id,
+        }),
+    ] {
+        assert!(serde_json::from_value::<ProjectCommand>(missing).is_err());
+    }
+}
+
+fn frame_size(snapshot: &VideoProjectSnapshotV2, width: u64, height: u64) -> ProjectCommand {
+    ProjectCommand::SetSequenceFrameSize {
+        command_id: "71000000-0000-4000-8000-000000000020".into(),
+        sequence_id: snapshot.state.sequences[0].id.clone(),
+        width,
+        height,
+    }
+}
+
+#[test]
+fn sequence_frame_size_persists_undoes_and_recovers_from_journal() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("frame.svpvideo");
+    let grants = VideoPathGrants::default();
+    let original = fixture();
+    let (width, height) = (
+        original.state.sequences[0].width,
+        original.state.sequences[0].height,
+    );
+    fs::write(&path, canonical_bytes(&original).unwrap()).unwrap();
+
+    let result = {
+        let service = VideoProjectService::default();
+        service.open("frame", &path, &grants).unwrap();
+        // 9:16 vertical at the same height class.
+        service
+            .execute(
+                "frame",
+                request(&original, 990, vec![frame_size(&original, 1_080, 1_920)]),
+                &grants,
+            )
+            .unwrap()
+    }; // Journal-only close.
+    let sequence = &result.projection.state.sequences[0];
+    assert_eq!((sequence.width, sequence.height), (1_080, 1_920));
+    assert_eq!(
+        sequence.tracks, original.state.sequences[0].tracks,
+        "clips are untouched"
+    );
+
+    let reopened = VideoProjectService::default();
+    let recovered = reopened.open("frame", &path, &grants).unwrap();
+    assert_eq!(recovered.projection.state, result.projection.state);
+    let undone = reopened
+        .undo(
+            "frame",
+            &original.id,
+            1,
+            "71000000-0000-4000-8000-000000000021",
+            &grants,
+        )
+        .unwrap();
+    let sequence = &undone.projection.state.sequences[0];
+    assert_eq!((sequence.width, sequence.height), (width, height));
+    assert_eq!(undone.state_hash, original.revision.state_hash);
+    reopened.close("frame", &original.id).unwrap();
+}
+
+#[test]
+fn sequence_frame_size_rejects_odd_zero_and_oversized_frames() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("frame.svpvideo");
+    let original = fixture();
+    fs::write(&path, canonical_bytes(&original).unwrap()).unwrap();
+    let grants = VideoPathGrants::default();
+    let service = VideoProjectService::default();
+    service.open("frame", &path, &grants).unwrap();
+    for (width, height) in [(1_081, 1_920), (1_080, 0), (0, 0), (16_386, 1_080)] {
+        assert!(
+            service
+                .execute(
+                    "frame",
+                    request(&original, 991, vec![frame_size(&original, width, height)]),
+                    &grants,
+                )
+                .is_err(),
+            "{width}x{height} must be rejected"
+        );
+    }
+    let applied = service
+        .execute(
+            "frame",
+            request(&original, 992, vec![frame_size(&original, 1_080, 1_080)]),
+            &grants,
+        )
+        .unwrap();
+    assert_eq!(
+        applied.new_revision.number, 1,
+        "rejections never advanced the revision"
+    );
+    service.close("frame", &original.id).unwrap();
 }

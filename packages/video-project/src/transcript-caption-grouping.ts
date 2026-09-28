@@ -10,6 +10,8 @@ import {
 import {
   captionError,
   spansOverlap,
+  cueEndWithinLimits,
+  speechEndBeforeNextCue,
   type FrameConstraints,
   type LogicalOccurrence,
   type ValidatedCaptionInput,
@@ -93,16 +95,13 @@ function cueEndForMetrics(
     input.validationProfile.maxCharactersPerSecond,
   );
   if (cpsFrames === null) return null;
-  const end = Math.max(
-    metrics.rawEnd,
-    metrics.start + constraints.minimumDurationFrames,
-    metrics.start + cpsFrames,
+  return cueEndWithinLimits(
+    metrics.start,
+    speechEndBeforeNextCue(metrics.rawEnd, nextCueStart),
+    cpsFrames,
+    constraints,
+    nextCueStart,
   );
-  const latestEnd = Math.min(
-    metrics.start + constraints.maximumDurationFrames,
-    nextCueStart ?? Number.MAX_SAFE_INTEGER,
-  );
-  return Number.isSafeInteger(end) && end <= latestEnd ? end : null;
 }
 
 export function finalCueEnd(

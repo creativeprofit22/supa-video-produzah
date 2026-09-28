@@ -46,6 +46,48 @@ async function useKeyboardToSetUpMix(page: Page) {
   await expect(log).toHaveText("target:-14:duck:clean");
 }
 
+const duckingDriftWarning =
+  "Ducking is on, but no unmuted track is marked Dialogue. Export will fail until you mark one as Dialogue or turn ducking off.";
+
+test("audio panel keeps warning when the dialogue role is removed after ducking is on", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(fixturePath);
+  await useKeyboardToSetUpMix(page);
+  await expect(page.getByText(duckingDriftWarning)).toHaveCount(0);
+
+  await page.getByRole("combobox", { name: "Interview camera" }).selectOption("music");
+  await expect(page.getByTestId("fixture-log")).toHaveText("role:music");
+  await expect(page.getByText(duckingDriftWarning)).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Interview camera" }).selectOption("dialogue");
+  await expect(page.getByText(duckingDriftWarning)).toHaveCount(0);
+});
+
+test("audio panel clears a role and the loudness target back to none", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(fixturePath);
+  await useKeyboardToSetUpMix(page);
+  const log = page.getByTestId("fixture-log");
+
+  const target = page.getByRole("combobox", { name: "Target" });
+  await target.selectOption({ label: "Not normalized" });
+  await expect(log).toHaveText("target:none");
+  await expect(target).toHaveValue("");
+  await expect(
+    page.getByRole("checkbox", { name: "Lower music while dialogue plays" }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Clean up dialogue (rumble and hiss)" }),
+  ).not.toBeChecked();
+
+  const soundtrack = page.getByRole("combobox", { name: "Soundtrack" });
+  await soundtrack.selectOption({ label: "No role" });
+  await expect(log).toHaveText("role:none");
+  await expect(soundtrack).toHaveValue("");
+});
+
 test("audio panel sets roles, target, ducking and cleanup, and explains a failed export", async ({
   page,
 }) => {

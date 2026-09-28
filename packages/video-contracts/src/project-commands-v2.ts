@@ -5,6 +5,8 @@ import { clipSpeedSchema } from "./clip-timing.js";
 import {
   clipTransformSchema,
   clipFadesSchema,
+  sequenceFrameHeightSchema,
+  sequenceFrameWidthSchema,
   sequenceLoudnessTargetSchema,
   trackAudioRoleSchema,
   projectCaptionSchema,
@@ -217,7 +219,8 @@ export const setTrackAudioRoleCommandSchemaV2 = z
     type: z.literal("SetTrackAudioRole"),
     ...commandId,
     ...target,
-    role: trackAudioRoleSchema,
+    /** `null` clears the role (legacy: no role). The field itself is required. */
+    role: trackAudioRoleSchema.nullable(),
   })
   .strict();
 
@@ -235,7 +238,19 @@ export const setSequenceLoudnessTargetCommandSchemaV2 = z
     type: z.literal("SetSequenceLoudnessTarget"),
     ...commandId,
     sequenceId: projectUuidSchema,
-    target: sequenceLoudnessTargetSchema,
+    /** `null` clears the target (legacy: not normalized). The field itself is required. */
+    target: sequenceLoudnessTargetSchema.nullable(),
+  })
+  .strict();
+
+/** Changes the output frame; clips are fitted into it by the renderer. Self-inverse. */
+export const setSequenceFrameSizeCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetSequenceFrameSize"),
+    ...commandId,
+    sequenceId: projectUuidSchema,
+    width: sequenceFrameWidthSchema,
+    height: sequenceFrameHeightSchema,
   })
   .strict();
 
@@ -384,6 +399,7 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   restoreClipSpeedCommandSchemaV2,
   setTrackAudioRoleCommandSchemaV2,
   restoreTrackAudioRoleCommandSchemaV2,
+  setSequenceFrameSizeCommandSchemaV2,
   setSequenceLoudnessTargetCommandSchemaV2,
   restoreSequenceLoudnessTargetCommandSchemaV2,
   addMarkerCommandSchemaV2,

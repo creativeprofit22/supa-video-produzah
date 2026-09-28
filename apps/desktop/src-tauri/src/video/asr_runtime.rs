@@ -35,6 +35,10 @@ pub(crate) struct NemoRuntimeManifest {
     pub(crate) quantization: String,
     pub(crate) runtime: NemoRuntimeSection,
     pub(crate) model: NemoModelSection,
+    /// Optional speaker diarizer (Sortformer). The runtime folder may omit it;
+    /// when present it must match byte-for-byte like every other file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diarizer: Option<NemoModelSection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -122,7 +126,8 @@ fn validate_manifest(manifest: &NemoRuntimeManifest) -> Result<(), VideoCommandE
     let mut names = BTreeSet::new();
     let files = std::iter::once(&manifest.runtime.executable)
         .chain(manifest.runtime.dlls.iter())
-        .chain(std::iter::once(&manifest.model.file));
+        .chain(std::iter::once(&manifest.model.file))
+        .chain(manifest.diarizer.iter().map(|diarizer| &diarizer.file));
     for file in files {
         let lower = file.name.to_ascii_lowercase();
         if file.bytes == 0
@@ -157,6 +162,16 @@ fn validate_manifest(manifest: &NemoRuntimeManifest) -> Result<(), VideoCommandE
         || !manifest.runtime.license.url.starts_with("https://")
     {
         return Err(manifest_invalid());
+    }
+    if let Some(diarizer) = &manifest.diarizer {
+        if !diarizer.file.name.to_ascii_lowercase().ends_with(".gguf")
+            || !is_git_sha(&diarizer.revision)
+            || diarizer.license.spdx.is_empty()
+            || !diarizer.license.url.starts_with("https://")
+            || !diarizer.repository.starts_with("https://")
+        {
+            return Err(manifest_invalid());
+        }
     }
     Ok(())
 }
@@ -203,7 +218,16 @@ pub(crate) fn verify_runtime_folder(
         dlls.push(checked_file(&folder, dll)?);
     }
     let model = checked_file(&folder, &manifest.model.file)?;
-    VerifiedNemoRuntime::new(executable, folder, dlls, model)
+    // The diarizer is optional: absent means "no speaker labels". A present
+    // file must still match the manifest, so a swapped model fails closed.
+    let diarizer = match &manifest.diarizer {
+        // symlink_metadata so a dangling link is verified (and rejected), not skipped.
+        Some(section) if fs::symlink_metadata(folder.join(&section.file.name)).is_ok() => {
+            Some(checked_file(&folder, &section.file)?)
+        }
+        _ => None,
+    };
+    VerifiedNemoRuntime::new(executable, folder, dlls, model, diarizer)
         .map_err(|_| NemoRuntimeProblem::IntegrityFailed)
 }
 
@@ -239,15 +263,32 @@ fn checked_file(
 /// runtime commit (`engine_version`), model repository and revision, model and
 /// executable hashes, the whole manifest (covering the DLL set) and the device.
 /// Changing any of them changes the transcript artifact identity.
+///
+/// Speaker labels default to `Optional` when a verified diarizer is available
+/// and `Off` otherwise. `Off` adds no setting, so its identity is unchanged
+/// from configurations created before diarization existed.
 pub(crate) fn nemo_asr_configuration(
     manifest: &NemoRuntimeManifest,
     manifest_sha256: &str,
     source_duration_us: u64,
+    diarizer_available: bool,
 ) -> AsrConfigurationV1 {
     let setting = |key: &str, value: &str| AsrProviderSettingV1 {
         key: key.to_owned(),
         value: AsrProviderSettingValueV1::String(value.to_owned()),
     };
+    let diarizer = manifest.diarizer.as_ref().filter(|_| diarizer_available);
+    // Keys stay strictly sorted: "device" < "diarizer_sha256" < "gguf_sha256".
+    let mut provider_settings = vec![setting("device", &manifest.device)];
+    if let Some(diarizer) = diarizer {
+        provider_settings.push(setting("diarizer_sha256", &diarizer.file.sha256));
+    }
+    provider_settings.extend([
+        setting("gguf_sha256", &manifest.model.file.sha256),
+        setting("quantization", &manifest.quantization),
+        setting("runtime_manifest_sha256", manifest_sha256),
+        setting("runtime_sha256", &manifest.runtime.executable.sha256),
+    ]);
     AsrConfigurationV1 {
         schema_version: 1,
         engine_id: manifest.engine_id.clone(),
@@ -257,16 +298,14 @@ pub(crate) fn nemo_asr_configuration(
         requested_language: Some("en".to_owned()),
         task: AsrTaskV1::Transcribe,
         word_timing_required: true,
-        speaker_diarization_mode: SpeakerDiarizationModeV1::Off,
+        speaker_diarization_mode: if diarizer.is_some() {
+            SpeakerDiarizationModeV1::Optional
+        } else {
+            SpeakerDiarizationModeV1::Off
+        },
         chunk_duration_us: source_duration_us,
         chunk_overlap_us: 0,
-        provider_settings: vec![
-            setting("device", &manifest.device),
-            setting("gguf_sha256", &manifest.model.file.sha256),
-            setting("quantization", &manifest.quantization),
-            setting("runtime_manifest_sha256", manifest_sha256),
-            setting("runtime_sha256", &manifest.runtime.executable.sha256),
-        ],
+        provider_settings,
     }
 }
 
@@ -374,6 +413,81 @@ mod tests {
         let mut value: serde_json::Value = serde_json::from_str(MANIFEST_JSON).unwrap();
         value["unexpected"] = true.into();
         assert!(parse_manifest(&value.to_string()).is_err());
+        let mut value: serde_json::Value = serde_json::from_str(MANIFEST_JSON).unwrap();
+        value["diarizer"]["file"]["name"] = value["model"]["file"]["name"].clone();
+        assert!(parse_manifest(&value.to_string()).is_err());
+        let mut value: serde_json::Value = serde_json::from_str(MANIFEST_JSON).unwrap();
+        value["diarizer"]["license"]["url"] = "http://example.com".into();
+        assert!(parse_manifest(&value.to_string()).is_err());
+    }
+
+    #[test]
+    fn embedded_manifest_pins_the_sortformer_diarizer() {
+        let manifest = pinned_manifest().unwrap();
+        let diarizer = manifest.diarizer.as_ref().unwrap();
+        assert_eq!(
+            diarizer.repository,
+            "https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2"
+        );
+        assert_eq!(
+            diarizer.revision,
+            "84edd514b8ef68004c10086918cd62f2148cbd59"
+        );
+        assert_eq!(diarizer.license.spdx, "CC-BY-4.0");
+        assert_eq!(diarizer.file.name, "sortformer-v2-f32.gguf");
+        assert_eq!(diarizer.file.bytes, 491_094_720);
+        assert_eq!(
+            diarizer.file.sha256,
+            "17ebac6c710753039820d7ec3580865fa29f29ccc2ca75ed69a7b21f1146579b"
+        );
+    }
+
+    fn with_diarizer(mut manifest: NemoRuntimeManifest, bytes: &[u8]) -> NemoRuntimeManifest {
+        let diarizer = manifest.diarizer.as_mut().unwrap();
+        diarizer.file = ManifestFile {
+            name: "diarizer.gguf".to_owned(),
+            bytes: bytes.len() as u64,
+            sha256: sha(bytes),
+        };
+        manifest
+    }
+
+    #[test]
+    fn absent_diarizer_is_optional() {
+        let dir = tempfile::tempdir().unwrap();
+        write_all(dir.path(), FILES);
+        let manifest = with_diarizer(fixture_manifest(FILES), b"diar-bytes");
+        let runtime = verify_runtime_folder(dir.path(), &manifest).unwrap();
+        assert!(!runtime.has_diarizer());
+    }
+
+    #[test]
+    fn matching_diarizer_is_verified() {
+        let dir = tempfile::tempdir().unwrap();
+        write_all(dir.path(), FILES);
+        fs::write(dir.path().join("diarizer.gguf"), b"diar-bytes").unwrap();
+        let manifest = with_diarizer(fixture_manifest(FILES), b"diar-bytes");
+        let runtime = verify_runtime_folder(dir.path(), &manifest).unwrap();
+        assert!(runtime.has_diarizer());
+    }
+
+    #[test]
+    fn swapped_diarizer_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        write_all(dir.path(), FILES);
+        fs::write(dir.path().join("diarizer.gguf"), b"diar-byteZ").unwrap();
+        let manifest = with_diarizer(fixture_manifest(FILES), b"diar-bytes");
+        assert_eq!(
+            verify_runtime_folder(dir.path(), &manifest).unwrap_err(),
+            NemoRuntimeProblem::IntegrityFailed
+        );
+        fs::write(dir.path().join("diarizer.gguf"), b"longer-diar-bytes").unwrap();
+        assert_eq!(
+            verify_runtime_folder(dir.path(), &manifest).unwrap_err(),
+            NemoRuntimeProblem::SizeMismatch {
+                name: "diarizer.gguf".to_owned()
+            }
+        );
     }
 
     #[test]
@@ -478,6 +592,7 @@ mod tests {
                 manifest,
                 manifest_sha,
                 2_000_000,
+                false,
             ))
             .unwrap()
         };
@@ -522,7 +637,7 @@ mod tests {
     #[test]
     fn pinned_configuration_records_provenance_in_the_artifact() {
         let manifest = pinned_manifest().unwrap();
-        let configuration = nemo_asr_configuration(&manifest, &pinned_manifest_sha256(), 1);
+        let configuration = nemo_asr_configuration(&manifest, &pinned_manifest_sha256(), 1, false);
         assert_eq!(configuration.engine_version, manifest.runtime.commit);
         assert_eq!(
             configuration.model_id,
@@ -543,6 +658,67 @@ mod tests {
                 "runtime_manifest_sha256",
                 "runtime_sha256"
             ]
+        );
+    }
+
+    #[test]
+    fn diarization_off_is_byte_identical_to_a_manifest_without_diarizer() {
+        use crate::video::transcript::derive_asr_configuration_identity;
+
+        let manifest = pinned_manifest().unwrap();
+        let mut without = manifest.clone();
+        without.diarizer = None;
+        let sha = pinned_manifest_sha256();
+        let off = nemo_asr_configuration(&manifest, &sha, 2_000_000, false);
+        let legacy = nemo_asr_configuration(&without, &sha, 2_000_000, true);
+        assert_eq!(off.speaker_diarization_mode, SpeakerDiarizationModeV1::Off);
+        assert_eq!(
+            serde_json::to_vec(&off).unwrap(),
+            serde_json::to_vec(&legacy).unwrap(),
+        );
+        assert_eq!(
+            derive_asr_configuration_identity(&off).unwrap(),
+            derive_asr_configuration_identity(&legacy).unwrap()
+        );
+    }
+
+    #[test]
+    fn available_diarizer_selects_optional_labels_and_pins_its_hash() {
+        use crate::video::transcript::derive_asr_configuration_identity;
+
+        let manifest = pinned_manifest().unwrap();
+        let sha = pinned_manifest_sha256();
+        let on = nemo_asr_configuration(&manifest, &sha, 2_000_000, true);
+        assert_eq!(
+            on.speaker_diarization_mode,
+            SpeakerDiarizationModeV1::Optional
+        );
+        let diarizer_setting = on
+            .provider_settings
+            .iter()
+            .find(|setting| setting.key == "diarizer_sha256")
+            .unwrap();
+        assert_eq!(
+            diarizer_setting.value,
+            AsrProviderSettingValueV1::String(
+                manifest.diarizer.as_ref().unwrap().file.sha256.clone()
+            )
+        );
+        let on_identity = derive_asr_configuration_identity(&on).unwrap();
+        let off_identity = derive_asr_configuration_identity(&nemo_asr_configuration(
+            &manifest, &sha, 2_000_000, false,
+        ))
+        .unwrap();
+        assert_ne!(on_identity, off_identity);
+        let mut other = manifest.clone();
+        other.diarizer.as_mut().unwrap().file.sha256 = "f".repeat(64);
+        assert_ne!(
+            on_identity,
+            derive_asr_configuration_identity(&nemo_asr_configuration(
+                &other, &sha, 2_000_000, true,
+            ))
+            .unwrap(),
+            "a different diarizer must change identity"
         );
     }
 }

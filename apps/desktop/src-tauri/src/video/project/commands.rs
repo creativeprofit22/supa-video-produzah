@@ -451,6 +451,14 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
                 vec![CacheInvalidation::AudioMix, CacheInvalidation::RenderPlan],
             )
         }
+        ProjectCommand::SetSequenceFrameSize { .. } => (
+            "Changed frame size",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
         ProjectCommand::SetSequenceLoudnessTarget { .. }
         | ProjectCommand::RestoreSequenceLoudnessTarget { .. } => (
             "Updated loudness target",
@@ -555,6 +563,37 @@ fn set_sequence_loudness_target(
             command_id: inverse_id(command_id, 0),
             sequence_id: sequence_id.to_owned(),
             target: previous,
+        }],
+        vec![],
+    ))
+}
+
+/// Changes the sequence frame. Nothing on the timeline moves, so there is no
+/// affected range; captions and clips re-fit through the render compiler.
+fn set_sequence_frame_size(
+    state: &mut VideoProjectStateV2,
+    command_id: &str,
+    sequence_id: &str,
+    width: u64,
+    height: u64,
+) -> Result<(Vec<ProjectCommand>, Vec<AffectedRange>), VideoCommandError> {
+    if !super::integrity::valid_frame_size(width, height) {
+        return Err(invalid("frame_size"));
+    }
+    let sequence = state
+        .sequences
+        .iter_mut()
+        .find(|sequence| sequence.id == sequence_id)
+        .ok_or_else(|| invalid("unknown_sequence"))?;
+    let previous = (sequence.width, sequence.height);
+    sequence.width = width;
+    sequence.height = height;
+    Ok((
+        vec![ProjectCommand::SetSequenceFrameSize {
+            command_id: inverse_id(command_id, 0),
+            sequence_id: sequence_id.to_owned(),
+            width: previous.0,
+            height: previous.1,
         }],
         vec![],
     ))
@@ -835,18 +874,24 @@ fn apply_one(
             track_id,
             role,
             ..
-        } => set_track_audio_role(state, id, sequence_id, track_id, Some(*role)),
+        } => set_track_audio_role(state, id, sequence_id, track_id, *role),
         ProjectCommand::RestoreTrackAudioRole {
             sequence_id,
             track_id,
             role,
             ..
         } => set_track_audio_role(state, id, sequence_id, track_id, *role),
+        ProjectCommand::SetSequenceFrameSize {
+            sequence_id,
+            width,
+            height,
+            ..
+        } => set_sequence_frame_size(state, id, sequence_id, *width, *height),
         ProjectCommand::SetSequenceLoudnessTarget {
             sequence_id,
             target,
             ..
-        } => set_sequence_loudness_target(state, id, sequence_id, Some(*target)),
+        } => set_sequence_loudness_target(state, id, sequence_id, *target),
         ProjectCommand::RestoreSequenceLoudnessTarget {
             sequence_id,
             target,

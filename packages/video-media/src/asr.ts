@@ -74,7 +74,6 @@ export const transcriptionStartedSchema = z
   .object({
     jobId: uuidSchema,
     state: mediaJobStateSchema,
-    transcriptKey: sha256HexSchema.nullable(),
   })
   .strict();
 export type TranscriptionStarted = z.infer<typeof transcriptionStartedSchema>;

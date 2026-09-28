@@ -34,6 +34,9 @@ const NEMO_STDOUT_LIMIT: usize = 128 * 1024 * 1024;
 const NEMO_STDERR_TAIL_LIMIT: usize = 512 * 1024;
 const HASH_BUFFER_BYTES: usize = 1024 * 1024;
 const OWNER_LABEL: &str = "nemo-transcription";
+/// The pinned Sortformer diarizer tracks at most four speakers. The runtime
+/// numbers them from 1 and omits `speaker` for untagged words.
+const MAX_DIARIZED_SPEAKERS: u64 = 4;
 
 #[derive(Debug, Clone)]
 pub(crate) struct NemoTranscriptionInput<'a> {
@@ -58,6 +61,7 @@ pub(crate) struct VerifiedNemoRuntime {
     dll_directory: PathBuf,
     required_dlls: Vec<VerifiedNemoFile>,
     model: VerifiedNemoFile,
+    diarizer: Option<VerifiedNemoFile>,
 }
 
 impl VerifiedNemoRuntime {
@@ -65,11 +69,17 @@ impl VerifiedNemoRuntime {
         &self.dll_directory
     }
 
+    /// Whether a hash-verified speaker diarizer is available.
+    pub(crate) fn has_diarizer(&self) -> bool {
+        self.diarizer.is_some()
+    }
+
     pub(crate) fn new(
         executable: VerifiedNemoFile,
         dll_directory: PathBuf,
         required_dlls: Vec<VerifiedNemoFile>,
         model: VerifiedNemoFile,
+        diarizer: Option<VerifiedNemoFile>,
     ) -> Result<Self, VideoCommandError> {
         let canonical_dll_directory = verify_runtime_directory(&dll_directory)?;
         let executable = verify_runtime_file(executable)?;
@@ -91,6 +101,7 @@ impl VerifiedNemoRuntime {
             dll_directory: canonical_dll_directory,
             required_dlls: verified_dlls,
             model: verify_runtime_file(model)?,
+            diarizer: diarizer.map(verify_runtime_file).transpose()?,
         })
     }
 
@@ -101,6 +112,9 @@ impl VerifiedNemoRuntime {
         }
         verify_runtime_file(self.executable.clone())?;
         verify_runtime_file(self.model.clone())?;
+        if let Some(diarizer) = &self.diarizer {
+            verify_runtime_file(diarizer.clone())?;
+        }
         for dll in &self.required_dlls {
             verify_runtime_file(dll.clone())?;
         }
@@ -115,7 +129,7 @@ pub(crate) async fn transcribe_nemo_cuda(
     cancellation: ProcessCancellation,
     cache: &MediaCacheService,
 ) -> Result<PublishedTranscriptArtifact, VideoCommandError> {
-    validate_configuration(input.configuration, input.source_duration_us, &nemo)?;
+    let diarization = validate_configuration(input.configuration, input.source_duration_us, &nemo)?;
     validate_source_path(input.source_path)?;
 
     let configuration_identity =
@@ -167,12 +181,12 @@ pub(crate) async fn transcribe_nemo_cuda(
     validate_pcm_wav(&wav_path)?;
 
     nemo.verify_again()?;
-    let output = run_nemo(&nemo, &wav_path, cancellation).await?;
+    let output = run_nemo(&nemo, &wav_path, diarization, cancellation).await?;
     if !proves_cuda_device_zero(&output.stderr_tail) {
         // Not retryable: rerunning on the same machine cannot produce GPU proof.
         return Err(cuda_not_proven());
     }
-    let chunk = parse_nemo_chunk(&output.stdout, input.source_duration_us)?;
+    let chunk = parse_nemo_chunk(&output.stdout, input.source_duration_us, diarization)?;
     let artifact = create_transcript_artifact_v1(
         input.source_identity.clone(),
         input.source_fingerprint.clone(),
@@ -233,9 +247,10 @@ async fn extract_pcm_wav(
 async fn run_nemo(
     nemo: &VerifiedNemoRuntime,
     wav_path: &Path,
+    diarization: Diarization,
     cancellation: ProcessCancellation,
 ) -> Result<super::process::SupervisedOutput, VideoCommandError> {
-    let args = vec![
+    let mut args = vec![
         OsString::from("--json"),
         OsString::from("--verbose"),
         OsString::from("transcribe"),
@@ -247,6 +262,19 @@ async fn run_nemo(
         OsString::from("--format"),
         OsString::from("json"),
     ];
+    if diarization != Diarization::Off {
+        // validate_configuration only returns a non-Off mode with a diarizer.
+        let diarizer = nemo
+            .diarizer
+            .as_ref()
+            .ok_or_else(speaker_diarizer_missing)?;
+        args.extend([
+            OsString::from("--diar-model"),
+            diarizer.path.as_os_str().to_owned(),
+            OsString::from("--max-speaker-count"),
+            OsString::from(MAX_DIARIZED_SPEAKERS.to_string()),
+        ]);
+    }
     run_transcription_process(
         ProcessSpec {
             program: nemo.executable.path.as_os_str().to_owned(),
@@ -362,9 +390,38 @@ struct NemoJsonWord {
     speaker: Option<serde_json::Value>,
 }
 
+/// How speaker labels are produced for one run, after validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Diarization {
+    /// No diarizer argument; any `speaker` field in the output is invalid.
+    Off,
+    /// Labels when the diarizer tags a word; untagged words stay unlabelled.
+    Optional,
+    /// Like `Optional`, but a run with no labelled word fails.
+    Required,
+}
+
+/// Maps the runtime's 1-based speaker index to a stable identifier.
+fn speaker_label(
+    value: Option<&serde_json::Value>,
+    diarization: Diarization,
+) -> Result<Option<String>, VideoCommandError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if diarization == Diarization::Off {
+        return Err(transcript_invalid());
+    }
+    match value.as_u64() {
+        Some(index @ 1..=MAX_DIARIZED_SPEAKERS) => Ok(Some(format!("speaker_{index}"))),
+        _ => Err(transcript_invalid()),
+    }
+}
+
 fn parse_nemo_chunk(
     bytes: &[u8],
     source_duration_us: u64,
+    diarization: Diarization,
 ) -> Result<TranscriptChunkInputV1, VideoCommandError> {
     let parsed: NemoJsonOutput = serde_json::from_slice(bytes).map_err(|_| transcript_invalid())?;
     let _ = (
@@ -380,15 +437,15 @@ fn parse_nemo_chunk(
         return Err(transcript_invalid());
     }
 
-    let mut words = Vec::with_capacity(parsed.words.len());
-    let mut previous_end_us = 0_i64;
+    let mut words: Vec<TranscriptChunkWordInputV1> = Vec::with_capacity(parsed.words.len());
     for raw in parsed.words {
-        if raw.word.trim().is_empty() || raw.speaker.is_some() {
+        if raw.word.trim().is_empty() {
             return Err(transcript_invalid());
         }
+        let speaker_label = speaker_label(raw.speaker.as_ref(), diarization)?;
         let start_us = seconds_to_microseconds(raw.start)?;
         let end_us = seconds_to_microseconds(raw.end)?;
-        if start_us < previous_end_us || end_us <= start_us || end_us as u64 > source_duration_us {
+        if end_us <= start_us || end_us as u64 > source_duration_us {
             return Err(transcript_invalid());
         }
         if raw
@@ -397,16 +454,20 @@ fn parse_nemo_chunk(
         {
             return Err(transcript_invalid());
         }
-        previous_end_us = end_us;
-        words.push(TranscriptChunkWordInputV1 {
+        let mut word = TranscriptChunkWordInputV1 {
             text: raw.word,
             relative_start_us: start_us,
             relative_end_us: end_us,
             recognition_confidence: raw.confidence,
-            speaker_label: None,
+            speaker_label,
+            // The runtime emits no per-word speaker confidence; none is invented.
             speaker_confidence: None,
             timing_provenance: TimingProvenanceV1::Aligned,
-        });
+        };
+        if let Some(previous) = words.last_mut() {
+            repair_word_overlap(previous, &mut word)?;
+        }
+        words.push(word);
     }
 
     let words_text = words
@@ -416,6 +477,10 @@ fn parse_nemo_chunk(
         .join(" ");
     if normalized_text(&parsed.text) != normalized_text(&words_text) {
         return Err(transcript_invalid());
+    }
+    if diarization == Diarization::Required && words.iter().all(|word| word.speaker_label.is_none())
+    {
+        return Err(speaker_labels_missing());
     }
 
     let source_end_us = i64::try_from(source_duration_us).map_err(|_| transcript_invalid())?;
@@ -427,6 +492,51 @@ fn parse_nemo_chunk(
         source_end_us,
         words,
     })
+}
+
+/// The streaming ASR emits word times on an 80 ms frame grid, and on real
+/// speech it sometimes lets a word's end run past the next word's start, or
+/// gives two words the same frame. Such output is in order but overlapping.
+/// It is repaired instead of discarding the whole transcript, and the repair
+/// is recorded in the word's timing provenance (so the artifact counts it):
+///
+/// - the next word starts inside the previous one: the previous word's end is
+///   pulled back to that start (`Clamped`);
+/// - both start together (or the word starts inside an earlier repaired
+///   split of the same frame): their combined span is split evenly
+///   (`Estimated`).
+///
+/// A word that ends before the previous word starts is out of order and
+/// still rejects the transcript.
+fn repair_word_overlap(
+    previous: &mut TranscriptChunkWordInputV1,
+    word: &mut TranscriptChunkWordInputV1,
+) -> Result<(), VideoCommandError> {
+    if word.relative_start_us >= previous.relative_end_us {
+        return Ok(());
+    }
+    if word.relative_end_us <= previous.relative_start_us {
+        return Err(transcript_invalid());
+    }
+    if word.relative_start_us > previous.relative_start_us {
+        previous.relative_end_us = word.relative_start_us;
+        if previous.timing_provenance == TimingProvenanceV1::Aligned {
+            previous.timing_provenance = TimingProvenanceV1::Clamped;
+        }
+        return Ok(());
+    }
+    let start = previous.relative_start_us;
+    let end = previous.relative_end_us.max(word.relative_end_us);
+    let middle = start + (end - start) / 2;
+    if middle <= start || end <= middle {
+        return Err(transcript_invalid());
+    }
+    previous.relative_end_us = middle;
+    previous.timing_provenance = TimingProvenanceV1::Estimated;
+    word.relative_start_us = middle;
+    word.relative_end_us = end;
+    word.timing_provenance = TimingProvenanceV1::Estimated;
+    Ok(())
 }
 
 fn seconds_to_microseconds(seconds: f64) -> Result<i64, VideoCommandError> {
@@ -451,17 +561,43 @@ fn normalized_text(text: &str) -> String {
         .collect()
 }
 
+/// Validates the configuration against the verified runtime and returns how
+/// speaker labels are produced. A `diarizer_sha256` setting is required for
+/// `optional`/`required` and forbidden for `off`, so the diarizer is always
+/// part of the transcript identity when it is used.
 fn validate_configuration(
     configuration: &AsrConfigurationV1,
     source_duration_us: u64,
     nemo: &VerifiedNemoRuntime,
-) -> Result<(), VideoCommandError> {
+) -> Result<Diarization, VideoCommandError> {
     derive_asr_configuration_identity(configuration).map_err(|_| transcript_invalid())?;
+    let diarization = match configuration.speaker_diarization_mode {
+        SpeakerDiarizationModeV1::Off => Diarization::Off,
+        SpeakerDiarizationModeV1::Optional => Diarization::Optional,
+        SpeakerDiarizationModeV1::Required => Diarization::Required,
+    };
+    let diarizer_setting = configuration
+        .provider_settings
+        .iter()
+        .find(|setting| setting.key == "diarizer_sha256");
+    if diarization != Diarization::Off {
+        let Some(diarizer) = &nemo.diarizer else {
+            return Err(speaker_diarizer_missing());
+        };
+        let matches = matches!(
+            diarizer_setting.map(|setting| &setting.value),
+            Some(AsrProviderSettingValueV1::String(value)) if *value == diarizer.sha256
+        );
+        if !matches {
+            return Err(transcript_invalid());
+        }
+    } else if diarizer_setting.is_some() {
+        return Err(transcript_invalid());
+    }
     if configuration.engine_id != "nemo-speech.cpp"
         || configuration.requested_language.as_deref() != Some("en")
         || configuration.task != AsrTaskV1::Transcribe
         || !configuration.word_timing_required
-        || configuration.speaker_diarization_mode != SpeakerDiarizationModeV1::Off
         || configuration.chunk_duration_us != source_duration_us
         || configuration.chunk_overlap_us != 0
     {
@@ -488,6 +624,10 @@ fn validate_configuration(
             }
             continue;
         }
+        if setting.key == "diarizer_sha256" {
+            // Already matched against the verified diarizer above.
+            continue;
+        }
         let Some((_, expected)) = required.iter().find(|(key, _)| *key == setting.key) else {
             return Err(transcript_invalid());
         };
@@ -499,7 +639,7 @@ fn validate_configuration(
     if matched != required.len() {
         return Err(transcript_invalid());
     }
-    Ok(())
+    Ok(diarization)
 }
 
 fn validate_source_path(source_path: &Path) -> Result<(), VideoCommandError> {
@@ -673,6 +813,24 @@ pub(crate) fn cuda_not_proven() -> VideoCommandError {
     )
 }
 
+/// `required` speaker labels were requested but no verified diarizer exists.
+pub(crate) fn speaker_diarizer_missing() -> VideoCommandError {
+    VideoCommandError::new(
+        super::error::VideoErrorCode::ToolUnavailable,
+        "Speaker labels need the speaker-detection model in the speech-recognition runtime folder",
+        serde_json::json!({
+            "operation": OPERATION,
+            "executable": "nemo",
+            "category": "speaker_diarizer_missing",
+        }),
+    )
+}
+
+/// `required` speaker labels were requested but the diarizer labelled no word.
+fn speaker_labels_missing() -> VideoCommandError {
+    VideoCommandError::invalid_media(OPERATION, "speaker_labels_missing")
+}
+
 fn transcript_invalid() -> VideoCommandError {
     VideoCommandError::invalid_media(OPERATION, "transcript_artifact_invalid")
 }
@@ -697,5 +855,196 @@ pub(crate) fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
     #[cfg(not(windows))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod speaker_mapping_tests {
+    use super::*;
+
+    const SOURCE_US: u64 = 4_000_000;
+
+    fn output(speakers: &[serde_json::Value]) -> Vec<u8> {
+        let texts = ["Hi", "there", "hello", "back"];
+        let words: Vec<serde_json::Value> = speakers
+            .iter()
+            .enumerate()
+            .map(|(index, speaker)| {
+                let mut word = serde_json::json!({
+                    "word": texts[index],
+                    "start": index as f64 * 0.5,
+                    "end": index as f64 * 0.5 + 0.25,
+                    "confidence": 0.9,
+                });
+                if !speaker.is_null() {
+                    word["speaker"] = speaker.clone();
+                }
+                word
+            })
+            .collect();
+        let text = texts[..speakers.len()].join(" ");
+        serde_json::to_vec(&serde_json::json!({
+            "file": "input.wav",
+            "text": text,
+            "duration": 2.0,
+            "words": words,
+        }))
+        .unwrap()
+    }
+
+    fn labels(chunk: &TranscriptChunkInputV1) -> Vec<Option<&str>> {
+        chunk
+            .words
+            .iter()
+            .map(|word| word.speaker_label.as_deref())
+            .collect()
+    }
+
+    #[test]
+    fn mixed_and_missing_speakers_map_to_stable_labels() {
+        let bytes = output(&[
+            serde_json::json!(1),
+            serde_json::json!(1),
+            serde_json::json!(2),
+            serde_json::Value::Null,
+        ]);
+        for mode in [Diarization::Optional, Diarization::Required] {
+            let chunk = parse_nemo_chunk(&bytes, SOURCE_US, mode).unwrap();
+            assert_eq!(
+                labels(&chunk),
+                [
+                    Some("speaker_1"),
+                    Some("speaker_1"),
+                    Some("speaker_2"),
+                    None
+                ]
+            );
+            assert!(chunk
+                .words
+                .iter()
+                .all(|word| word.speaker_confidence.is_none()));
+        }
+    }
+
+    #[test]
+    fn out_of_range_or_non_integer_speakers_are_rejected() {
+        for speaker in [
+            serde_json::json!(0),
+            serde_json::json!(5),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("1"),
+            serde_json::json!(true),
+        ] {
+            let bytes = output(std::slice::from_ref(&speaker));
+            assert!(
+                parse_nemo_chunk(&bytes, SOURCE_US, Diarization::Optional).is_err(),
+                "speaker {speaker} must be rejected"
+            );
+        }
+    }
+
+    /// Word shapes taken from a real 5-minute NeMo run (HWHAP episode 436).
+    fn timed(words: &[(&str, f64, f64)]) -> Vec<u8> {
+        let text = words
+            .iter()
+            .map(|(word, _, _)| *word)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let words: Vec<_> = words
+            .iter()
+            .map(|(word, start, end)| serde_json::json!({"word": word, "start": start, "end": end}))
+            .collect();
+        serde_json::to_vec(&serde_json::json!({
+            "file": "a.wav",
+            "text": text,
+            "duration": 1.0,
+            "words": words
+        }))
+        .unwrap()
+    }
+
+    fn ranges(chunk: &TranscriptChunkInputV1) -> Vec<(i64, i64, TimingProvenanceV1)> {
+        chunk
+            .words
+            .iter()
+            .map(|word| {
+                (
+                    word.relative_start_us,
+                    word.relative_end_us,
+                    word.timing_provenance,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn overlapping_runtime_word_times_are_repaired_and_marked() {
+        use TimingProvenanceV1::{Aligned, Clamped, Estimated};
+        // "today." runs past the start of "So"; "much" and "for" share a frame.
+        let bytes = timed(&[
+            ("today.", 11.68, 13.2),
+            ("So", 13.12, 13.2),
+            ("much", 14.12, 14.2),
+            ("for", 14.12, 14.2),
+            ("being", 14.2, 14.36),
+        ]);
+        let chunk = parse_nemo_chunk(&bytes, 20_000_000, Diarization::Off).unwrap();
+        assert_eq!(
+            ranges(&chunk),
+            [
+                (11_680_000, 13_120_000, Clamped),
+                (13_120_000, 13_200_000, Aligned),
+                (14_120_000, 14_160_000, Estimated),
+                (14_160_000, 14_200_000, Estimated),
+                (14_200_000, 14_360_000, Aligned),
+            ]
+        );
+        for pair in chunk.words.windows(2) {
+            assert!(pair[0].relative_end_us <= pair[1].relative_start_us);
+        }
+    }
+
+    #[test]
+    fn three_words_sharing_a_frame_stay_ordered_and_non_empty() {
+        let bytes = timed(&[("a", 1.12, 1.2), ("b", 1.12, 1.2), ("c", 1.12, 1.2)]);
+        let chunk = parse_nemo_chunk(&bytes, 2_000_000, Diarization::Off);
+        let chunk = chunk.unwrap();
+        assert_eq!(
+            ranges(&chunk)
+                .into_iter()
+                .map(|(start, end, _)| (start, end))
+                .collect::<Vec<_>>(),
+            [
+                (1_120_000, 1_160_000),
+                (1_160_000, 1_180_000),
+                (1_180_000, 1_200_000)
+            ]
+        );
+        assert!(chunk
+            .words
+            .iter()
+            .all(|word| word.timing_provenance == TimingProvenanceV1::Estimated));
+    }
+
+    #[test]
+    fn out_of_order_runtime_words_are_still_rejected() {
+        let bytes = timed(&[("late", 2.0, 2.4), ("early", 1.0, 1.2)]);
+        assert!(parse_nemo_chunk(&bytes, 3_000_000, Diarization::Off).is_err());
+    }
+
+    #[test]
+    fn speaker_without_diarization_is_rejected() {
+        let bytes = output(&[serde_json::json!(1)]);
+        assert!(parse_nemo_chunk(&bytes, SOURCE_US, Diarization::Off).is_err());
+    }
+
+    #[test]
+    fn required_labels_fail_bounded_when_no_word_is_labelled() {
+        let bytes = output(&[serde_json::Value::Null, serde_json::Value::Null]);
+        assert!(parse_nemo_chunk(&bytes, SOURCE_US, Diarization::Optional).is_ok());
+        let error = parse_nemo_chunk(&bytes, SOURCE_US, Diarization::Required).unwrap_err();
+        assert_eq!(error.code, speaker_labels_missing().code);
+        assert_eq!(error.details, speaker_labels_missing().details);
     }
 }
