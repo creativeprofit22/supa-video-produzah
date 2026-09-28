@@ -4929,6 +4929,109 @@ fn caption_artifact_checkpoint_and_journal_recovery_preserve_provenance_and_hist
     }
 }
 
+/// "Generate captions from transcript" on a sequence without a caption track
+/// is one group of existing commands: InsertTrack(caption) + ApplyCaptionArtifact.
+/// Undo removes both atomically; redo and journal recovery restore both.
+#[test]
+fn generated_captions_group_inserts_track_and_artifact_atomically_across_history_and_recovery() {
+    for (name, clean_close) in [("gen-checkpoint", true), ("gen-journal-crash", false)] {
+        let directory = tempfile::tempdir().unwrap();
+        let project_path = directory.path().join(format!("{name}.svpvideo"));
+        let mut initial = caption_project_fixture();
+        initial.state.sequences[0].tracks.clear();
+        initial.revision.state_hash = state_hash(&initial.state).unwrap();
+        fs::write(&project_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+        let grants = crate::video::VideoPathGrants::default();
+        let artifact = caption_artifact_for(&initial, "A");
+        let group_id = "84000000-0000-4000-8000-000000000001";
+        let (hash, project_id) = {
+            let service = VideoProjectService::default();
+            let opened = service.open(name, &project_path, &grants).unwrap();
+            let result = service
+                .execute(
+                    name,
+                    CommandGroupRequest {
+                        group_id: group_id.to_owned(),
+                        project_id: initial.id.clone(),
+                        base_revision: initial.revision.number,
+                        commands: vec![
+                            ProjectCommand::InsertTrack {
+                                command_id: "84000000-0000-4000-8000-000000000002".to_owned(),
+                                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                                index: 0,
+                                track: ProjectTrack::Caption {
+                                    id: CAPTION_TRACK_ID.to_owned(),
+                                    name: "Captions".to_owned(),
+                                    locked: false,
+                                    hidden: false,
+                                    captions: vec![],
+                                    active_caption_artifact: None,
+                                },
+                            },
+                            ProjectCommand::ApplyCaptionArtifact {
+                                command_id: "84000000-0000-4000-8000-000000000003".to_owned(),
+                                sequence_id: CAPTION_SEQUENCE_ID.to_owned(),
+                                track_id: CAPTION_TRACK_ID.to_owned(),
+                                artifact: artifact.clone(),
+                            },
+                        ],
+                    },
+                    &grants,
+                )
+                .unwrap();
+            assert_eq!(
+                active_caption_artifact(&result.projection.state),
+                Some(&artifact)
+            );
+            if clean_close {
+                service.close(name, &opened.projection.project_id).unwrap();
+            }
+            (result.state_hash, opened.projection.project_id)
+        };
+
+        let service = VideoProjectService::default();
+        let owner = format!("{name}-reopen");
+        let reopened = service.open(&owner, &project_path, &grants).unwrap();
+        assert_eq!(reopened.projection.revision.state_hash, hash);
+        assert_eq!(
+            active_caption_artifact(&reopened.projection.state),
+            Some(&artifact)
+        );
+        if !clean_close {
+            assert_eq!(reopened.recovery.status, RecoveryStatus::Recovered);
+            assert_eq!(reopened.recovery.replayed_record_count, 1);
+        }
+        let undone = service
+            .undo(
+                &owner,
+                &project_id,
+                1,
+                "84000000-0000-4000-8000-000000000004",
+                &grants,
+            )
+            .unwrap();
+        assert!(
+            undone.projection.state.sequences[0].tracks.is_empty(),
+            "one undo removes the inserted track and its artifact together"
+        );
+        assert_eq!(undone.state_hash, initial.revision.state_hash);
+        let redone = service
+            .redo(
+                &owner,
+                &project_id,
+                2,
+                "84000000-0000-4000-8000-000000000005",
+                &grants,
+            )
+            .unwrap();
+        assert_eq!(redone.state_hash, hash);
+        assert_eq!(
+            active_caption_artifact(&redone.projection.state),
+            Some(&artifact)
+        );
+    }
+}
+
 #[test]
 fn move_clip_caption_lifecycle_is_atomic_across_history_recovery_and_checkpoint() {
     let directory = tempfile::tempdir().unwrap();

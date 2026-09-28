@@ -23,6 +23,7 @@ export const mediaJobKindSchema = z.enum([
   "proxy",
   "thumbnail_tile",
   "final_render",
+  "transcription",
 ]);
 export type MediaJobKind = z.infer<typeof mediaJobKindSchema>;
 

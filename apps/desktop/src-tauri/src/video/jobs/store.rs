@@ -23,7 +23,7 @@ use super::model::{
 };
 
 pub(crate) const MEDIA_STATE_FILENAME: &str = "media-state-v1.sqlite3";
-pub(crate) const MEDIA_STATE_SCHEMA_VERSION: i64 = 2;
+pub(crate) const MEDIA_STATE_SCHEMA_VERSION: i64 = 3;
 pub(crate) const DEFAULT_CACHE_BUDGET_BYTES: i64 = 20 * 1024 * 1024 * 1024;
 const MEDIA_STATE_APPLICATION_ID: i64 = 0x5356_504A;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -134,7 +134,10 @@ fn migrate(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
         return Ok(());
     }
     if version == 1 {
-        return migrate_v1_to_v2(connection);
+        migrate_v1_to_v2(connection)?;
+    }
+    if version == 1 || version == 2 {
+        return migrate_v2_to_v3(connection);
     }
 
     let transaction = connection.transaction()?;
@@ -142,7 +145,7 @@ fn migrate(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
         "CREATE TABLE media_jobs (
             id TEXT PRIMARY KEY NOT NULL CHECK(length(id) BETWEEN 1 AND 64),
             schema_version INTEGER NOT NULL CHECK(schema_version = 1),
-            kind TEXT NOT NULL CHECK(kind IN ('asset_preparation', 'proxy', 'thumbnail_tile', 'final_render')),
+            kind TEXT NOT NULL CHECK(kind IN ('asset_preparation', 'proxy', 'thumbnail_tile', 'final_render', 'transcription')),
             parent_id TEXT REFERENCES media_jobs(id) ON DELETE CASCADE,
             dedupe_key TEXT NOT NULL CHECK(length(dedupe_key) BETWEEN 1 AND 512),
             project_id TEXT CHECK(project_id IS NULL OR length(project_id) BETWEEN 1 AND 64),
@@ -323,10 +326,106 @@ fn migrate_v1_to_v2(connection: &mut Connection) -> Result<(), MediaStateStoreEr
     {
         return Err(MediaStateStoreError::Integrity);
     }
-    transaction.pragma_update(None, "user_version", MEDIA_STATE_SCHEMA_VERSION)?;
+    transaction.pragma_update(None, "user_version", 2_i64)?;
     transaction.commit()?;
     Ok(())
 }
+
+/// v3 adds the `transcription` job kind. SQLite cannot alter a CHECK constraint,
+/// so `media_jobs` is rebuilt. Foreign keys are disabled for the rebuild because
+/// dropping the old table would otherwise cascade-delete every job event.
+fn migrate_v2_to_v3(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
+    connection.pragma_update(None, "foreign_keys", false)?;
+    let result = rebuild_media_jobs_for_v3(connection);
+    connection.pragma_update(None, "foreign_keys", true)?;
+    result
+}
+
+fn rebuild_media_jobs_for_v3(connection: &mut Connection) -> Result<(), MediaStateStoreError> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let job_count_before: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM media_jobs", [], |row| row.get(0))?;
+    let event_count_before: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM media_job_events", [], |row| {
+            row.get(0)
+        })?;
+    transaction.execute_batch(&format!(
+        "CREATE TABLE media_jobs_v3 ({MEDIA_JOBS_V3_COLUMNS}) STRICT;
+         INSERT INTO media_jobs_v3 SELECT {MEDIA_JOBS_COLUMN_LIST} FROM media_jobs;
+         DROP TABLE media_jobs;
+         ALTER TABLE media_jobs_v3 RENAME TO media_jobs;
+         CREATE INDEX media_jobs_parent_idx ON media_jobs(parent_id, created_at_ms, id);
+         CREATE INDEX media_jobs_state_queue_idx ON media_jobs(state, priority_class, retry_at_ms, created_at_ms, id);
+         CREATE INDEX media_jobs_recent_idx ON media_jobs(updated_at_ms DESC, id DESC);
+         CREATE UNIQUE INDEX media_jobs_unsettled_dedupe_idx ON media_jobs(dedupe_key)
+             WHERE state NOT IN ('cancelled', 'failed', 'complete');"
+    ))?;
+    let job_count_after: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM media_jobs", [], |row| row.get(0))?;
+    let event_count_after: i64 =
+        transaction.query_row("SELECT COUNT(*) FROM media_job_events", [], |row| {
+            row.get(0)
+        })?;
+    let quick_check: String =
+        transaction.pragma_query_value(None, "quick_check", |row| row.get(0))?;
+    let foreign_key_violation = transaction
+        .prepare("PRAGMA foreign_key_check")?
+        .exists([])?;
+    if job_count_before != job_count_after
+        || event_count_before != event_count_after
+        || quick_check != "ok"
+        || foreign_key_violation
+    {
+        return Err(MediaStateStoreError::Integrity);
+    }
+    transaction.pragma_update(None, "user_version", 3_i64)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+const MEDIA_JOBS_V3_COLUMNS: &str = "
+            id TEXT PRIMARY KEY NOT NULL CHECK(length(id) BETWEEN 1 AND 64),
+            schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+            kind TEXT NOT NULL CHECK(kind IN ('asset_preparation', 'proxy', 'thumbnail_tile', 'final_render', 'transcription')),
+            parent_id TEXT REFERENCES media_jobs_v3(id) ON DELETE CASCADE,
+            dedupe_key TEXT NOT NULL CHECK(length(dedupe_key) BETWEEN 1 AND 512),
+            project_id TEXT CHECK(project_id IS NULL OR length(project_id) BETWEEN 1 AND 64),
+            asset_id TEXT CHECK(asset_id IS NULL OR length(asset_id) BETWEEN 1 AND 64),
+            revision_id TEXT CHECK(revision_id IS NULL OR length(revision_id) BETWEEN 1 AND 128),
+            priority_class TEXT NOT NULL CHECK(priority_class IN ('interactive', 'export', 'background')),
+            priority_value INTEGER NOT NULL CHECK(priority_value BETWEEN 0 AND 1000),
+            state TEXT NOT NULL CHECK(state IN ('queued', 'probing', 'running', 'blocked', 'retrying', 'cancelled', 'failed', 'complete')),
+            stage TEXT NOT NULL CHECK(length(stage) BETWEEN 1 AND 64),
+            progress_completed INTEGER NOT NULL CHECK(progress_completed >= 0),
+            progress_total INTEGER NOT NULL CHECK(progress_total >= 0),
+            progress_unit TEXT NOT NULL CHECK(progress_unit IN ('items', 'bytes', 'frames', 'microseconds', 'stages')),
+            attempt INTEGER NOT NULL CHECK(attempt BETWEEN 0 AND 100),
+            max_attempts INTEGER NOT NULL CHECK(max_attempts BETWEEN 1 AND 100),
+            safe_summary TEXT NOT NULL CHECK(length(safe_summary) BETWEEN 1 AND 512),
+            payload_version INTEGER NOT NULL CHECK(payload_version >= 1),
+            private_payload_json TEXT NOT NULL CHECK(length(private_payload_json) <= 1048576),
+            result_version INTEGER CHECK(result_version IS NULL OR result_version >= 1),
+            result_json TEXT CHECK(result_json IS NULL OR length(result_json) <= 1048576),
+            error_code TEXT CHECK(error_code IS NULL OR length(error_code) <= 64),
+            error_category TEXT CHECK(error_category IS NULL OR length(error_category) <= 64),
+            error_message TEXT CHECK(error_message IS NULL OR length(error_message) <= 512),
+            error_retryable INTEGER CHECK(error_retryable IS NULL OR error_retryable IN (0, 1)),
+            error_action TEXT CHECK(error_action IS NULL OR length(error_action) <= 64),
+            retry_at_ms INTEGER CHECK(retry_at_ms IS NULL OR retry_at_ms >= 0),
+            created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
+            started_at_ms INTEGER CHECK(started_at_ms IS NULL OR started_at_ms >= created_at_ms),
+            settled_at_ms INTEGER CHECK(settled_at_ms IS NULL OR settled_at_ms >= created_at_ms),
+            cancellation_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancellation_requested IN (0, 1)),
+            CHECK(progress_completed <= progress_total OR progress_total = 0)
+";
+
+const MEDIA_JOBS_COLUMN_LIST: &str = "id, schema_version, kind, parent_id, dedupe_key, \
+    project_id, asset_id, revision_id, priority_class, priority_value, state, stage, \
+    progress_completed, progress_total, progress_unit, attempt, max_attempts, safe_summary, \
+    payload_version, private_payload_json, result_version, result_json, error_code, \
+    error_category, error_message, error_retryable, error_action, retry_at_ms, created_at_ms, \
+    updated_at_ms, started_at_ms, settled_at_ms, cancellation_requested";
 
 fn verify_integrity(connection: &Connection) -> Result<(), MediaStateStoreError> {
     let result: String = connection.pragma_query_value(None, "quick_check", |row| row.get(0))?;
@@ -1733,7 +1832,7 @@ fn timestamp_string(timestamp_ms: i64) -> Result<String, MediaStateStoreError> {
         .ok_or(MediaStateStoreError::CorruptRecord)
 }
 
-fn parse_timestamp_millis(timestamp: &str) -> Result<i64, MediaStateStoreError> {
+pub(crate) fn parse_timestamp_millis(timestamp: &str) -> Result<i64, MediaStateStoreError> {
     chrono::DateTime::parse_from_rfc3339(timestamp)
         .map(|value| value.timestamp_millis())
         .map_err(|_| MediaStateStoreError::CorruptRecord)
@@ -1994,19 +2093,147 @@ mod tests {
         let store = MediaStateStore::initialize(directory.path()).unwrap();
         let connection = store.open_connection().unwrap();
         connection
-            .pragma_update(None, "user_version", 3_i64)
+            .pragma_update(None, "user_version", 4_i64)
             .unwrap();
         drop(connection);
 
         assert!(matches!(
             MediaStateStore::initialize(directory.path()),
-            Err(MediaStateStoreError::UnsupportedSchema(3))
+            Err(MediaStateStoreError::UnsupportedSchema(4))
         ));
         let connection = Connection::open(store.path()).unwrap();
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
+        assert_eq!(version, 4);
+    }
+
+    /// Replaces `media_jobs` with the v2 shape (no `transcription` kind) and
+    /// seeds a parent job, a child job and an event, then stamps `version`.
+    fn downgrade_media_jobs_to_v2(store: &MediaStateStore, version: i64) {
+        let connection = store.open_connection().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
+        let v2_columns = MEDIA_JOBS_V3_COLUMNS
+            .replace(", 'transcription')", ")")
+            .replace("media_jobs_v3(id)", "media_jobs(id)");
+        assert!(!v2_columns.contains("transcription"));
+        connection
+            .execute_batch(&format!(
+                "DELETE FROM media_job_events;
+                 DROP TABLE media_jobs;
+                 CREATE TABLE media_jobs ({v2_columns}) STRICT;
+                 CREATE UNIQUE INDEX media_jobs_unsettled_dedupe_idx ON media_jobs(dedupe_key)
+                     WHERE state NOT IN ('cancelled', 'failed', 'complete');"
+            ))
+            .unwrap();
+        for (id, parent, kind) in [
+            ("job-parent", None, "asset_preparation"),
+            ("job-child", Some("job-parent"), "proxy"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO media_jobs (
+                        id, schema_version, kind, parent_id, dedupe_key, priority_class,
+                        priority_value, state, stage, progress_completed, progress_total,
+                        progress_unit, attempt, max_attempts, safe_summary, payload_version,
+                        private_payload_json, created_at_ms, updated_at_ms
+                     ) VALUES (?1, 1, ?2, ?3, ?1, 'background', 0, 'queued', 'queued',
+                        0, 1, 'stages', 0, 3, 'Seeded job', 1, '{}', 5, 5)",
+                    params![id, kind, parent],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO media_job_events (
+                    job_id, event_type, state, stage, progress_completed, progress_total,
+                    progress_unit, created_at_ms
+                 ) VALUES ('job-child', 'queued', 'queued', 'queued', 0, 1, 'stages', 5)",
+                [],
+            )
+            .unwrap();
+        let rejected = connection.execute(
+            "UPDATE media_jobs SET kind = 'transcription' WHERE id = 'job-parent'",
+            [],
+        );
+        assert!(
+            rejected.is_err(),
+            "v2 schema must reject transcription jobs"
+        );
+        connection
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+    }
+
+    fn assert_v3_preserved_jobs_and_accepts_transcription(store: &MediaStateStore) {
+        let connection = store.open_connection().unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
         assert_eq!(version, 3);
+        let jobs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM media_jobs", [], |row| row.get(0))
+            .unwrap();
+        let events: i64 = connection
+            .query_row("SELECT COUNT(*) FROM media_job_events", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let child_parent: Option<String> = connection
+            .query_row(
+                "SELECT parent_id FROM media_jobs WHERE id = 'job-child'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!((jobs, events), (2, 1));
+        assert_eq!(child_parent.as_deref(), Some("job-parent"));
+        connection
+            .execute(
+                "UPDATE media_jobs SET kind = 'transcription' WHERE id = 'job-parent'",
+                [],
+            )
+            .unwrap();
+        let foreign_keys: i64 = connection
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+        // The rebuilt self-reference and the events reference still cascade.
+        connection
+            .execute("DELETE FROM media_jobs WHERE id = 'job-parent'", [])
+            .unwrap();
+        let remaining: (i64, i64) = connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM media_jobs), (SELECT COUNT(*) FROM media_job_events)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(remaining, (0, 0));
+    }
+
+    #[test]
+    fn migrates_v2_jobs_and_events_to_v3_and_accepts_transcription() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaStateStore::initialize(directory.path()).unwrap();
+        downgrade_media_jobs_to_v2(&store, 2);
+
+        let migrated = MediaStateStore::initialize(directory.path()).unwrap();
+        assert_v3_preserved_jobs_and_accepts_transcription(&migrated);
+        // Reopening an already-migrated store is a no-op.
+        MediaStateStore::initialize(directory.path()).unwrap();
+    }
+
+    #[test]
+    fn migrates_v1_jobs_through_v2_to_v3() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MediaStateStore::initialize(directory.path()).unwrap();
+        downgrade_media_jobs_to_v2(&store, 1);
+
+        let migrated = MediaStateStore::initialize(directory.path()).unwrap();
+        assert_v3_preserved_jobs_and_accepts_transcription(&migrated);
     }
 
     fn new_job(dedupe_key: &str, kind: MediaJobKind, created_at_ms: i64) -> NewMediaJob {

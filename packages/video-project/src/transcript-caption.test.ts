@@ -22,6 +22,11 @@ import {
   type GenerateCaptionArtifactV1Input,
 } from "./transcript-caption.js";
 import {
+  DEFAULT_CAPTION_STYLE_V1,
+  buildGenerateCaptionsCommandGroup,
+  defaultCaptionValidationProfileV1,
+} from "./transcript-caption-apply.js";
+import {
   projectTranscriptToTimeline,
   type TranscriptTimelineOccurrence,
   type TranscriptTimelineProjection,
@@ -1114,5 +1119,87 @@ describe("transcript caption generation", () => {
     expect(frozenInput).toEqual(before);
     expect(Object.isFrozen(frozenInput)).toBe(true);
     expect(Object.isFrozen(frozenInput.timeline.occurrences)).toBe(true);
+  });
+});
+
+describe("buildGenerateCaptionsCommandGroup", () => {
+  const words = [
+    { text: "Hello", startUs: 100_000, endUs: 400_000 },
+    { text: "world.", startUs: 500_000, endUs: 900_000 },
+  ];
+  const ids = {
+    groupId: id(700),
+    applyCommandId: id(701),
+    insertTrackCommandId: id(702),
+    newCaptionTrackId: id(703),
+  };
+
+  it("inserts a caption track and applies generated captions using existing command types only", () => {
+    const artifact = transcript(words);
+    const base = project([clip(300, 0, 20, 0)]);
+    const result = buildGenerateCaptionsCommandGroup({
+      artifact,
+      projection: base,
+      sequenceId: id(2),
+      trackId: id(10),
+      language: "en",
+      ...ids,
+    });
+
+    expect(result.insertsTrack).toBe(true);
+    expect(result.captionTrackId).toBe(ids.newCaptionTrackId);
+    expect(result.cueCount).toBeGreaterThan(0);
+    expect(result.commandGroup.baseRevision).toBe(base.revision.number);
+    expect(result.commandGroup.commands.map((command) => command.type)).toEqual([
+      "InsertTrack",
+      "ApplyCaptionArtifact",
+    ]);
+    const apply = result.commandGroup.commands[1];
+    if (apply?.type !== "ApplyCaptionArtifact") throw new Error("Expected apply command");
+    expect(apply.artifact.style).toEqual(DEFAULT_CAPTION_STYLE_V1);
+    expect(apply.artifact.transcriptArtifactIdentityKey).toBe(artifact.identity.key);
+    expect(validateCaptionArtifactV1(apply.artifact).valid).toBe(true);
+  });
+
+  it("reuses an existing caption track instead of inserting another", () => {
+    const base = project([clip(300, 0, 20, 0)]);
+    const sequence = base.state.sequences[0];
+    if (sequence === undefined) throw new Error("Expected sequence");
+    const withCaptions: ProjectProjection = {
+      ...base,
+      state: {
+        ...base.state,
+        sequences: [
+          {
+            ...sequence,
+            tracks: [
+              ...sequence.tracks,
+              { id: id(800), name: "Captions", kind: "caption", captions: [] },
+            ],
+          },
+        ],
+      },
+    };
+    const result = buildGenerateCaptionsCommandGroup({
+      artifact: transcript(words),
+      projection: withCaptions,
+      sequenceId: id(2),
+      trackId: id(10),
+      language: "en",
+      ...ids,
+    });
+
+    expect(result.insertsTrack).toBe(false);
+    expect(result.captionTrackId).toBe(id(800));
+    expect(result.commandGroup.commands.map((command) => command.type)).toEqual([
+      "ApplyCaptionArtifact",
+    ]);
+  });
+
+  it("derives a frame-aligned default profile within the schema bounds", () => {
+    const profile30 = defaultCaptionValidationProfileV1({ numerator: 30_000, denominator: 1_001 });
+    expect(profile30.minimumCueDuration.value).toBe(25);
+    expect(profile30.maximumCueDuration.value).toBe(209);
+    expect(profile30.maxLinesPerCue).toBe(2);
   });
 });

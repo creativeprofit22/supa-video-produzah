@@ -31,6 +31,7 @@ const kindLabels: Record<MediaJobRecord["kind"], string> = {
   proxy: "Proxy video",
   thumbnail_tile: "Thumbnail strip",
   final_render: "Final export",
+  transcription: "Transcription",
 };
 const recoveryActionLabels = {
   reauthorize_source: "Choose the source again, then retry.",

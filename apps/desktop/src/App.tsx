@@ -162,6 +162,7 @@ export function AppContent() {
           readiness={readiness}
           onCheckTools={checkReadiness}
           onOpenJobCenter={openJobCenter}
+          onCancelMediaJob={(jobId) => void mediaJobs.cancelJob(jobId)}
         />
       )}
       {discardDialog}

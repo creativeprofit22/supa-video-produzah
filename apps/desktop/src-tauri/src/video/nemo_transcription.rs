@@ -61,6 +61,10 @@ pub(crate) struct VerifiedNemoRuntime {
 }
 
 impl VerifiedNemoRuntime {
+    pub(crate) fn directory(&self) -> &Path {
+        &self.dll_directory
+    }
+
     pub(crate) fn new(
         executable: VerifiedNemoFile,
         dll_directory: PathBuf,
@@ -165,7 +169,8 @@ pub(crate) async fn transcribe_nemo_cuda(
     nemo.verify_again()?;
     let output = run_nemo(&nemo, &wav_path, cancellation).await?;
     if !proves_cuda_device_zero(&output.stderr_tail) {
-        return Err(VideoCommandError::process_failed(OPERATION, "nemo", None));
+        // Not retryable: rerunning on the same machine cannot produce GPU proof.
+        return Err(cuda_not_proven());
     }
     let chunk = parse_nemo_chunk(&output.stdout, input.source_duration_us)?;
     let artifact = create_transcript_artifact_v1(
@@ -269,6 +274,9 @@ async fn run_transcription_process(
 }
 
 #[cfg(test)]
+pub(crate) const REAL_ASR_PROOF_ENV: &str = "SUPA_VIDEO_REAL_ASR_PROOF";
+
+#[cfg(test)]
 async fn run_transcription_process(
     spec: ProcessSpec,
     cancellation: ProcessCancellation,
@@ -276,6 +284,10 @@ async fn run_transcription_process(
 ) -> Result<super::process::SupervisedOutput, ProcessFailure> {
     use super::process::run_supervised_with_test_environment;
 
+    // The ignored real-GPU proof opts back into the production process path.
+    if std::env::var_os(REAL_ASR_PROOF_ENV).is_some_and(|value| value == "1") {
+        return super::process::run_supervised(spec, cancellation).await;
+    }
     let current_executable = std::env::current_exe().map_err(|_| ProcessFailure::Io {
         operation: OPERATION,
     })?;
@@ -456,21 +468,36 @@ fn validate_configuration(
         return Err(transcript_invalid());
     }
 
-    let expected = [
+    // Keys are already strictly sorted by the identity validation above.
+    // `runtime_manifest_sha256` is optional so the pinned DLL set can be part
+    // of the transcript identity without forcing it on every caller.
+    let required = [
         ("device", "cuda:0"),
         ("gguf_sha256", nemo.model.sha256.as_str()),
         ("quantization", "q8_0"),
         ("runtime_sha256", nemo.executable.sha256.as_str()),
     ];
-    if configuration.provider_settings.len() != expected.len() {
-        return Err(transcript_invalid());
-    }
-    for (setting, (key, value)) in configuration.provider_settings.iter().zip(expected) {
-        if setting.key != key
-            || setting.value != AsrProviderSettingValueV1::String(value.to_owned())
-        {
+    let mut matched = 0;
+    for setting in &configuration.provider_settings {
+        let AsrProviderSettingValueV1::String(value) = &setting.value else {
+            return Err(transcript_invalid());
+        };
+        if setting.key == "runtime_manifest_sha256" {
+            if !is_sha256(value) {
+                return Err(transcript_invalid());
+            }
+            continue;
+        }
+        let Some((_, expected)) = required.iter().find(|(key, _)| *key == setting.key) else {
+            return Err(transcript_invalid());
+        };
+        if value != expected {
             return Err(transcript_invalid());
         }
+        matched += 1;
+    }
+    if matched != required.len() {
+        return Err(transcript_invalid());
     }
     Ok(())
 }
@@ -599,12 +626,13 @@ fn validate_pcm_wav(path: &Path) -> Result<(), VideoCommandError> {
     Ok(())
 }
 
+/// NeMo-Speech.cpp at the pinned commit logs `Using GPU backend: CUDA0` only
+/// after it actually selected the CUDA device; `device=0` alone is printed
+/// before backend selection and does not prove GPU execution.
 fn proves_cuda_device_zero(stderr: &[u8]) -> bool {
-    let diagnostics = String::from_utf8_lossy(stderr).to_ascii_lowercase();
-    diagnostics.contains("cuda")
-        && (diagnostics.contains("cuda:0")
-            || diagnostics.contains("cuda device 0")
-            || diagnostics.contains("device=0"))
+    String::from_utf8_lossy(stderr)
+        .to_ascii_lowercase()
+        .contains("using gpu backend: cuda0")
 }
 
 fn map_process_failure(failure: ProcessFailure, executable: &'static str) -> VideoCommandError {
@@ -633,6 +661,18 @@ fn nemo_unavailable() -> VideoCommandError {
     VideoCommandError::tool_unavailable(OPERATION, "nemo")
 }
 
+pub(crate) fn cuda_not_proven() -> VideoCommandError {
+    VideoCommandError::new(
+        super::error::VideoErrorCode::ToolUnavailable,
+        "The speech-recognition runtime did not prove it ran on CUDA device 0",
+        serde_json::json!({
+            "operation": OPERATION,
+            "executable": "nemo",
+            "category": "cuda_not_proven",
+        }),
+    )
+}
+
 fn transcript_invalid() -> VideoCommandError {
     VideoCommandError::invalid_media(OPERATION, "transcript_artifact_invalid")
 }
@@ -644,7 +684,7 @@ fn is_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
+pub(crate) fn is_reparse_or_symlink(metadata: &Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }

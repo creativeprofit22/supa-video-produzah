@@ -6,10 +6,8 @@ use std::{
     path::Path,
 };
 
-#[cfg(test)]
 use std::{io::Write, path::PathBuf};
 
-#[cfg(test)]
 use super::cache::{CacheArtifactKind, CacheArtifactRegistration, MediaCacheService};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -114,7 +112,6 @@ pub enum TimingProvenanceV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg(test)]
 pub struct TranscriptChunkWordInputV1 {
     pub text: String,
     pub relative_start_us: i64,
@@ -127,7 +124,6 @@ pub struct TranscriptChunkWordInputV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg(test)]
 pub struct TranscriptChunkInputV1 {
     pub schema_version: u64,
     pub chunk_id: String,
@@ -177,7 +173,6 @@ pub struct TranscriptUncertaintyCountsV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg(test)]
 pub struct NormalizedTranscriptV1 {
     pub schema_version: u64,
     pub chunks: Vec<NormalizedTranscriptChunkV1>,
@@ -222,11 +217,14 @@ pub struct TranscriptArtifactFixtureV1 {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(test)]
 pub(crate) struct PublishedTranscriptArtifact {
     pub(crate) artifact: TranscriptArtifactV1,
+    // Production reads only the artifact; the rest is asserted by publish tests.
+    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) path: PathBuf,
+    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) content_digest: String,
+    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) lease_id: String,
     pub(crate) reused: bool,
 }
@@ -418,7 +416,6 @@ pub fn derive_transcript_artifact_identity(
     })
 }
 
-#[cfg(test)]
 pub fn normalize_transcript_chunks(
     chunks: &[TranscriptChunkInputV1],
     source_duration_us: u64,
@@ -500,7 +497,6 @@ pub fn normalize_transcript_chunks(
     Ok(transcript)
 }
 
-#[cfg(test)]
 pub fn create_transcript_artifact_v1(
     source_identity: MediaContentIdentityV1,
     source_fingerprint: SourceFingerprintV1,
@@ -563,7 +559,6 @@ pub fn load_transcript_artifact(path: &Path) -> Result<TranscriptArtifactV1, Vid
     parse_transcript_artifact(&bytes)
 }
 
-#[cfg(test)]
 pub fn load_transcript_artifact_for_identity(
     path: &Path,
     expected: &TranscriptArtifactIdentityV1,
@@ -589,8 +584,8 @@ pub fn load_transcript_artifact_for_key(
     Ok(artifact)
 }
 
-/// Loads only the path derived from the expected content-addressed key.
 #[cfg(test)]
+/// Loads only the path derived from the expected content-addressed key.
 pub(crate) async fn load_managed_transcript_artifact(
     app_cache_root: &Path,
     expected: &TranscriptArtifactIdentityV1,
@@ -617,7 +612,6 @@ pub(super) async fn load_managed_transcript_artifact_for_key(
     Ok(artifact)
 }
 
-#[cfg(test)]
 pub(crate) async fn publish_transcript_artifact(
     app_cache_root: &Path,
     cache: &MediaCacheService,
@@ -663,7 +657,6 @@ pub(crate) async fn publish_transcript_artifact_file(
     .await
 }
 
-#[cfg(test)]
 async fn publish_validated_bytes(
     app_cache_root: &Path,
     cache: &MediaCacheService,
@@ -865,7 +858,6 @@ fn validate_configuration_identity(
     Ok(())
 }
 
-#[cfg(test)]
 fn validate_input_chunk(chunk: &TranscriptChunkInputV1) -> Result<(), VideoCommandError> {
     if chunk.schema_version != 1 || chunk.source_end_us <= chunk.source_start_us {
         return Err(transcript_error("input_chunk"));
@@ -880,7 +872,6 @@ fn validate_input_chunk(chunk: &TranscriptChunkInputV1) -> Result<(), VideoComma
     Ok(())
 }
 
-#[cfg(test)]
 fn validate_input_word(word: &TranscriptChunkWordInputV1) -> Result<(), VideoCommandError> {
     require_text(&word.text)?;
     require_signed_safe(word.relative_start_us, "relative_start")?;
@@ -1046,7 +1037,6 @@ fn count_uncertainty(words: &[TranscriptWordV1], removed: u64) -> TranscriptUnce
     counts
 }
 
-#[cfg(test)]
 fn checked_safe_sum(first: i64, second: i64) -> Result<i64, VideoCommandError> {
     let value = first
         .checked_add(second)

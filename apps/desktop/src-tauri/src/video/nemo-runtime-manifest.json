@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "engineId": "nemo-speech.cpp",
+  "device": "cuda:0",
+  "quantization": "q8_0",
+  "runtime": {
+    "repository": "https://github.com/NVIDIA/NeMo-Speech.cpp",
+    "commit": "5be7bfb104802131e61fe679b3f1401b27270216",
+    "cudaArchitecture": "61",
+    "license": {
+      "spdx": "Apache-2.0",
+      "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/blob/5be7bfb104802131e61fe679b3f1401b27270216/LICENSE",
+      "attribution": "NeMo-Speech.cpp by NVIDIA Corporation, built locally with CUDA 12.6 for compute capability 6.1. The CUDA runtime and cuBLAS libraries come from the NVIDIA CUDA Toolkit under the NVIDIA CUDA EULA.",
+      "commercialUse": true
+    },
+    "executable": {
+      "name": "nemo-speech.exe",
+      "bytes": 333312,
+      "sha256": "4b1434ee5b4d099646df0392fc3c4e7fb397a12bc4c3b2adc48739bd03c92bf0"
+    },
+    "dlls": [
+      {
+        "name": "cublas64_12.dll",
+        "bytes": 104883712,
+        "sha256": "01d8172b25d8e2d2cb6a276e76e719f5908c6124f484c8c8ca310fbe7b6634f3"
+      },
+      {
+        "name": "cublasLt64_12.dll",
+        "bytes": 531812352,
+        "sha256": "0d59d264782cec2782b9ac72483e53c9ba485a9d3a1e19b34071a17b8152102e"
+      },
+      {
+        "name": "cudart64_12.dll",
+        "bytes": 556544,
+        "sha256": "d954ca542b3b6bcf03cc2b798a7d00051501cf734ca751050e986af505cf9dad"
+      },
+      {
+        "name": "ggml-base.dll",
+        "bytes": 628224,
+        "sha256": "abafb7a2d239d45f86ce078d1f44d4923a2dacd4719534ed1a2b4aa55e1b5dae"
+      },
+      {
+        "name": "ggml-cpu.dll",
+        "bytes": 785408,
+        "sha256": "263af7bb7ac99f68c25a96736a649d9ab8d38ed5542d03cb2d8a1ccd335f4a8f"
+      },
+      {
+        "name": "ggml-cuda.dll",
+        "bytes": 94571520,
+        "sha256": "9df11b001d81a385329a4eaeaf2ef8ebfaeee3a05260fd911550978bd5c155c6"
+      },
+      {
+        "name": "ggml.dll",
+        "bytes": 67072,
+        "sha256": "3394a386fba62828e6e0922d19a1c9ae8a7df872345c50a4d1c4151a480a1f69"
+      },
+      {
+        "name": "nemo_speech_asr.dll",
+        "bytes": 3894272,
+        "sha256": "b316dbf05533d2797e7e9f17ef4356f185a1bb3d76dc6cfd2e94d1fcc96eb2d1"
+      }
+    ]
+  },
+  "model": {
+    "repository": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b",
+    "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+    "license": {
+      "spdx": "OpenMDW-1.1",
+      "url": "https://openmdw.ai/license/1-1/",
+      "attribution": "Nemotron 3.5 ASR Streaming 0.6B by NVIDIA Corporation, used under the OpenMDW-1.1 license. The model card states it is ready for commercial use.",
+      "commercialUse": true
+    },
+    "file": {
+      "name": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "bytes": 741548352,
+      "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae"
+    }
+  }
+}

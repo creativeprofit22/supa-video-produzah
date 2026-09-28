@@ -6230,7 +6230,25 @@ fn nemo_runner_ffmpeg_helper() {
         .expect("request temporary directory must have cache parent")
         .join("ffmpeg-count");
     bump_helper_counter(&counter);
+    nemo_runner_honor_control_markers(counter.parent().unwrap(), "ffmpeg");
     write_minimal_pcm_wav(output);
+}
+
+/// Test control: marker files in the cache root make a helper stage hang (so
+/// cancellation can be observed mid-process) or crash with a nonzero exit.
+fn nemo_runner_honor_control_markers(cache: &Path, stage: &str) {
+    if cache.join(format!("nemo-hang-{stage}")).exists() {
+        fs::write(cache.join(format!("nemo-{stage}-running")), b"1").unwrap();
+        thread::sleep(Duration::from_secs(30));
+    }
+    let crash = cache.join(format!("nemo-crash-{stage}"));
+    if let Ok(remaining) = fs::read_to_string(&crash) {
+        let remaining: u32 = remaining.trim().parse().unwrap_or(0);
+        if remaining > 0 {
+            fs::write(&crash, (remaining - 1).to_string()).unwrap();
+            std::process::exit(3);
+        }
+    }
 }
 
 fn nemo_runner_nemo_helper() {
@@ -6248,7 +6266,15 @@ fn nemo_runner_nemo_helper() {
         .and_then(Path::parent)
         .expect("request temporary directory must have cache parent");
     bump_helper_counter(&cache.join("nemo-count"));
-    eprintln!("CUDA backend initialized; transcribe device=0 cuda:0");
+    nemo_runner_honor_control_markers(cache, "nemo");
+    if cache.join("nemo-no-cuda").exists() {
+        eprintln!("transcribe: device=0");
+        eprintln!("<init_backends> Using CPU backend");
+        print!("{{\"text\":\"\",\"words\":[]}}");
+        return;
+    }
+    eprintln!("transcribe: device=0");
+    eprintln!("<init_backends> Using GPU backend: CUDA0");
     print!(
         "{}",
         serde_json::json!({
@@ -6466,6 +6492,373 @@ async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_au
     assert!(remaining_names
         .iter()
         .all(|name| !name.to_string_lossy().starts_with(".nemo-transcribe-")));
+}
+
+struct TranscriptionJobFixture {
+    _workspace: tempfile::TempDir,
+    cache_root: PathBuf,
+    jobs: MediaJobService,
+    worker: Arc<dyn MediaJobWorker>,
+}
+
+async fn transcription_job_fixture() -> TranscriptionJobFixture {
+    let workspace = tempdir().expect("transcription job workspace must exist");
+    let cache_root = workspace.path().join("cache");
+    fs::create_dir_all(&cache_root).expect("cache root must exist");
+    let source_path = workspace.path().join("source.media");
+    fs::write(&source_path, b"authorized source audio").expect("source fixture must write");
+    let source = ingest_blocking_for_test(
+        source_path
+            .canonicalize()
+            .expect("source must canonicalize"),
+        cache_root.clone(),
+    )
+    .expect("source fixture must ingest");
+    let runtime_directory = workspace.path().join("runtime");
+    fs::create_dir_all(&runtime_directory).expect("runtime directory must exist");
+    let executable_path = runtime_directory.join("nemo-speech.exe");
+    let model_path = runtime_directory.join("model.gguf");
+    fs::write(&executable_path, b"nemo executable fixture").expect("executable must write");
+    fs::write(&model_path, b"nemo gguf fixture").expect("model must write");
+    let executable = sha256_file_fixture(&executable_path);
+    let model = sha256_file_fixture(&model_path);
+    let runtime = VerifiedNemoRuntime::new(
+        executable.clone(),
+        runtime_directory,
+        Vec::new(),
+        model.clone(),
+    )
+    .expect("runtime fixture must verify");
+    let configuration = nemo_runner_configuration(&executable.sha256, &model.sha256);
+    let jobs = MediaJobService::initialize(workspace.path().join("local-data"), cache_root.clone())
+        .await
+        .expect("transcription jobs must initialize");
+    let worker = super::transcription_job::transcription_worker_for_test(
+        source,
+        2_000_000,
+        configuration,
+        runtime,
+        MediaPrograms::explicit(
+            env::current_exe().unwrap().into_os_string(),
+            OsString::from("ffprobe"),
+        ),
+        cache_root.clone(),
+        jobs.cache().clone(),
+    );
+    TranscriptionJobFixture {
+        _workspace: workspace,
+        cache_root,
+        jobs,
+        worker,
+    }
+}
+
+async fn submit_transcription_job(fixture: &TranscriptionJobFixture, dedupe: &str) -> String {
+    let job = fixture
+        .jobs
+        .store()
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::Transcription,
+            parent_id: None,
+            dedupe_key: dedupe.to_owned(),
+            project_id: None,
+            asset_id: None,
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 1,
+                unit: MediaJobProgressUnit::Stages,
+            },
+            max_attempts: super::transcription_job::TRANSCRIPTION_MAX_ATTEMPTS,
+            summary: "Transcribe source audio".to_owned(),
+            private_payload: serde_json::json!({"ownerLabel": "main"}),
+            created_at_ms: current_timestamp_millis(),
+        })
+        .await
+        .expect("transcription job must enqueue")
+        .job;
+    fixture
+        .jobs
+        .scheduler()
+        .submit(
+            job.id.clone(),
+            MediaJobPriority::Interactive,
+            job.attempt,
+            job.max_attempts,
+            SchedulerResource::Gpu,
+            fixture.worker.clone(),
+        )
+        .await
+        .expect("transcription job must submit");
+    job.id
+}
+
+async fn wait_for_transcription_state(
+    fixture: &TranscriptionJobFixture,
+    job_id: &str,
+    predicate: impl Fn(MediaJobState) -> bool,
+) -> super::jobs::model::MediaJobRecord {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let job = fixture
+            .jobs
+            .store()
+            .get_private(job_id.to_owned())
+            .await
+            .expect("transcription job must load")
+            .public;
+        if predicate(job.state) {
+            return job;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "job stuck in {:?}",
+            job.state
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+async fn wait_for_marker(path: &Path) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while !path.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{} never appeared",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+fn is_settled(state: MediaJobState) -> bool {
+    matches!(
+        state,
+        MediaJobState::Complete | MediaJobState::Failed | MediaJobState::Cancelled
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_completes_on_gpu_slot_with_artifact_key_result() {
+    let fixture = transcription_job_fixture().await;
+    let id = submit_transcription_job(&fixture, "transcribe-complete").await;
+    let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+    assert_eq!(job.state, MediaJobState::Complete);
+    let result = super::transcription_job::transcription_result(&fixture.jobs, "main", &id)
+        .await
+        .expect("owner must read the transcript key");
+    assert_eq!(result.transcript_key.len(), 64);
+    assert_eq!(result.word_count, 2);
+    assert!(!result.reused);
+    assert!(
+        super::transcription_job::transcription_result(&fixture.jobs, "other-window", &id)
+            .await
+            .is_err(),
+        "another window must not read the result"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_cancels_mid_ffmpeg_and_mid_nemo_without_publishing() {
+    for stage in ["ffmpeg", "nemo"] {
+        let fixture = transcription_job_fixture().await;
+        fs::write(fixture.cache_root.join(format!("nemo-hang-{stage}")), b"1").unwrap();
+        let id = submit_transcription_job(&fixture, &format!("transcribe-cancel-{stage}")).await;
+        wait_for_marker(&fixture.cache_root.join(format!("nemo-{stage}-running"))).await;
+        fixture
+            .jobs
+            .scheduler()
+            .cancel(&id)
+            .await
+            .expect("running transcription must accept cancellation");
+        let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+        assert_eq!(job.state, MediaJobState::Cancelled, "cancel during {stage}");
+        assert!(fixture
+            .jobs
+            .store()
+            .get_private(id)
+            .await
+            .unwrap()
+            .result
+            .is_none());
+        let leftovers: Vec<_> = fs::read_dir(&fixture.cache_root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".nemo-transcribe-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "cancel during {stage} left {leftovers:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_retries_a_crash_exactly_once() {
+    // One crash: the single automatic retry completes the job.
+    let fixture = transcription_job_fixture().await;
+    fs::write(fixture.cache_root.join("nemo-crash-nemo"), b"1").unwrap();
+    let id = submit_transcription_job(&fixture, "transcribe-crash-once").await;
+    let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+    assert_eq!(job.state, MediaJobState::Complete);
+    assert_eq!(job.attempt, 2);
+    assert_eq!(
+        fs::read_to_string(fixture.cache_root.join("nemo-count")).unwrap(),
+        "2"
+    );
+
+    // Two crashes: no third attempt; the failure stays retryable by the user.
+    let fixture = transcription_job_fixture().await;
+    fs::write(fixture.cache_root.join("nemo-crash-nemo"), b"2").unwrap();
+    let id = submit_transcription_job(&fixture, "transcribe-crash-twice").await;
+    let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+    assert_eq!(job.state, MediaJobState::Failed);
+    assert_eq!(job.attempt, 2);
+    assert_eq!(
+        fs::read_to_string(fixture.cache_root.join("nemo-count")).unwrap(),
+        "2"
+    );
+    let error = job.error.expect("failed job must carry an error");
+    assert_eq!(error.code, "transcription_process_failed");
+    assert!(error.retryable);
+    assert!(error.message.len() <= super::jobs::model::MAX_PUBLIC_MESSAGE_BYTES);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_does_not_retry_when_cuda_is_not_proven() {
+    let fixture = transcription_job_fixture().await;
+    fs::write(fixture.cache_root.join("nemo-no-cuda"), b"1").unwrap();
+    let id = submit_transcription_job(&fixture, "transcribe-no-cuda").await;
+    // Toolchain problems are actionable: the job blocks (user fixes the runtime,
+    // then resumes) instead of failing, and never retries automatically.
+    let job = wait_for_transcription_state(&fixture, &id, |state| {
+        is_settled(state) || state == MediaJobState::Blocked
+    })
+    .await;
+    assert_eq!(job.state, MediaJobState::Blocked);
+    assert_eq!(job.attempt, 1, "CUDA-not-proven must not auto-retry");
+    let error = job.error.expect("blocked job must carry an error");
+    assert_eq!(error.code, "cuda_not_proven");
+    assert!(!error.retryable);
+    assert_eq!(error.action, Some(MediaJobRecoveryAction::VerifyToolchain));
+    assert_eq!(
+        fs::read_to_string(fixture.cache_root.join("nemo-count")).unwrap(),
+        "1"
+    );
+}
+
+#[test]
+fn transcription_job_errors_are_bounded_and_only_process_failures_retry() {
+    use super::transcription_job::transcription_job_error;
+    let cases = [
+        (
+            VideoCommandError::process_failed("x", "nemo", None),
+            "transcription_process_failed",
+            true,
+        ),
+        (
+            VideoCommandError::process_timeout("x", "nemo"),
+            "transcription_process_failed",
+            true,
+        ),
+        (
+            super::nemo_transcription::cuda_not_proven(),
+            "cuda_not_proven",
+            false,
+        ),
+        (
+            super::asr_runtime::NemoRuntimeProblem::IntegrityFailed.into_command_error(),
+            "nemo_unavailable",
+            false,
+        ),
+        (
+            super::asr_settings::consent_required(super::asr_settings::AsrConsentState::Missing),
+            "nemo_unavailable",
+            false,
+        ),
+        (
+            VideoCommandError::invalid_media("x", "no_audio_stream"),
+            "invalid_audio",
+            false,
+        ),
+    ];
+    for (error, code, retryable) in cases {
+        let mapped = transcription_job_error(&error);
+        assert_eq!(mapped.code, code);
+        assert_eq!(mapped.retryable, retryable, "{code}");
+        assert!(mapped.message.len() <= super::jobs::model::MAX_PUBLIC_MESSAGE_BYTES);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_interrupted_by_restart_is_recovered_as_blocked() {
+    let workspace = tempdir().unwrap();
+    let local_data = workspace.path().join("local-data");
+    let cache_root = workspace.path().join("cache");
+    fs::create_dir_all(&cache_root).unwrap();
+    let store = MediaJobStore::initialize(local_data.clone()).await.unwrap();
+    let job = store
+        .enqueue(NewMediaJob {
+            kind: MediaJobKind::Transcription,
+            parent_id: None,
+            dedupe_key: "transcribe-restart".to_owned(),
+            project_id: None,
+            asset_id: None,
+            revision_id: None,
+            priority: MediaJobPriority::Interactive,
+            priority_value: 0,
+            stage: "queued".to_owned(),
+            progress: MediaJobProgress {
+                completed: 0,
+                total: 1,
+                unit: MediaJobProgressUnit::Stages,
+            },
+            max_attempts: 2,
+            summary: "Transcribe source audio".to_owned(),
+            private_payload: serde_json::json!({"ownerLabel": "main"}),
+            created_at_ms: 1_000,
+        })
+        .await
+        .unwrap()
+        .job;
+    store
+        .transition(
+            job.id.clone(),
+            MediaJobTransition {
+                state: MediaJobState::Running,
+                stage: "transcribe".to_owned(),
+                progress: MediaJobProgress {
+                    completed: 0,
+                    total: 1,
+                    unit: MediaJobProgressUnit::Stages,
+                },
+                attempt: Some(1),
+                error: None,
+                retry_at_ms: None,
+                result: None,
+                cancellation_requested: false,
+                event_type: MediaJobEventType::StateChanged,
+                message: None,
+                occurred_at_ms: 1_001,
+            },
+        )
+        .await
+        .unwrap();
+    drop(store);
+
+    let jobs = MediaJobService::initialize(local_data, cache_root)
+        .await
+        .unwrap();
+    let recovered = jobs.store().get_private(job.id).await.unwrap().public;
+    assert_eq!(recovered.state, MediaJobState::Blocked);
+    assert_eq!(recovered.kind, MediaJobKind::Transcription);
+    assert!(
+        recovered.error.is_some(),
+        "blocked job must explain how to resume"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

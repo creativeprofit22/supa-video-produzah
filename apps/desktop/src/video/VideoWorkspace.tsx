@@ -46,6 +46,9 @@ import { createPlaybackClock } from "./playback-clock";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
+import { TranscriptPanel, type TranscriptTarget } from "./TranscriptPanel";
+import { tauriTranscriptionBackend, type TranscriptionBackend } from "../asr-ipc";
+import { loadManagedTranscriptArtifact } from "../video-ipc";
 import type { ReadinessState } from "./VideoProjectOpener";
 
 interface VideoWorkspaceProps {
@@ -55,6 +58,8 @@ interface VideoWorkspaceProps {
   readonly readiness: ReadinessState;
   readonly onCheckTools: () => void;
   readonly onOpenJobCenter: (jobId: string) => void;
+  readonly onCancelMediaJob?: (jobId: string) => void;
+  readonly transcriptionBackend?: TranscriptionBackend;
 }
 
 export function findAssetPreparationJob(
@@ -150,6 +155,8 @@ export function VideoWorkspace({
   readiness,
   onCheckTools,
   onOpenJobCenter,
+  onCancelMediaJob,
+  transcriptionBackend = tauriTranscriptionBackend,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
@@ -251,6 +258,26 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
+  const transcriptTarget = useMemo((): TranscriptTarget | null => {
+    const projectId = controller.projection?.projectId;
+    const assetId = controller.source?.assetId;
+    const sourcePath = controller.sourcePath;
+    if (projectId === undefined || assetId === undefined || sourcePath === null) return null;
+    const track = canonicalSequence?.tracks.find(
+      (candidate) =>
+        candidate.kind !== "caption" &&
+        candidate.clips.some(
+          (clip) => clip.source.kind === "asset" && clip.source.assetId === assetId,
+        ),
+    );
+    if (canonicalSequence === null || track === undefined) return null;
+    return { projectId, assetId, sourcePath, sequenceId: canonicalSequence.id, trackId: track.id };
+  }, [
+    canonicalSequence,
+    controller.projection?.projectId,
+    controller.source?.assetId,
+    controller.sourcePath,
+  ]);
   const orderedMediaIds = useMemo(
     () =>
       canonicalSequence?.tracks.flatMap((track) =>
@@ -1227,6 +1254,26 @@ export function VideoWorkspace({
             onCancel={() => void controller.cancelRender()}
             onConfirmOverwrite={() => void controller.confirmOverwrite()}
             onOpenJobCenter={onOpenJobCenter}
+          />
+          <TranscriptPanel
+            backend={transcriptionBackend}
+            loadTranscript={loadManagedTranscriptArtifact}
+            projection={controller.projection}
+            target={transcriptTarget}
+            mediaJobs={mediaJobs}
+            disabled={editPending}
+            onCancelJob={(jobId) => onCancelMediaJob?.(jobId)}
+            onOpenJobCenter={onOpenJobCenter}
+            onApplyProposal={controller.applyTranscriptEditProposal}
+            onGenerateCaptions={(artifact) =>
+              transcriptTarget === null
+                ? Promise.resolve(false)
+                : controller.generateCaptionsFromTranscript(artifact, {
+                    sequenceId: transcriptTarget.sequenceId,
+                    trackId: transcriptTarget.trackId,
+                    language: "en",
+                  })
+            }
           />
         </aside>
       </TwoPaneWorkspace>

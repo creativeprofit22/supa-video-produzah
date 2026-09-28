@@ -1,3 +1,6 @@
+pub(crate) mod asr_ipc;
+mod asr_runtime;
+mod asr_settings;
 pub(crate) mod cache;
 #[allow(dead_code)]
 mod caption;
@@ -7,8 +10,6 @@ mod error;
 mod grants;
 pub(crate) mod jobs;
 pub(crate) mod media_store;
-// The runner is not integrated into production jobs yet; retain its regression coverage.
-#[cfg(test)]
 mod nemo_transcription;
 pub(crate) mod probe;
 mod process;
@@ -17,6 +18,7 @@ pub(crate) mod project_io;
 pub(crate) mod render;
 pub(crate) mod toolchain;
 mod transcript;
+pub(crate) mod transcription_job;
 mod types;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]

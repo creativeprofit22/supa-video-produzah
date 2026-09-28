@@ -38,3 +38,4 @@ export type {
 } from "./trim-clip-caption-lifecycle.js";
 export * from "./transcript-caption.js";
 export * from "./transcript-edit.js";
+export * from "./transcript-caption-apply.js";

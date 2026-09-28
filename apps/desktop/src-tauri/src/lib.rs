@@ -113,6 +113,11 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::jobs::ipc::video_reauthorize_media_job_output,
             video::jobs::ipc::video_get_media_cache_status,
             video::jobs::ipc::video_clear_legacy_media_cache,
+            video::asr_ipc::video_asr_runtime_status,
+            video::asr_ipc::video_asr_set_runtime,
+            video::asr_ipc::video_asr_accept_consent,
+            video::asr_ipc::video_start_transcription,
+            video::asr_ipc::video_transcription_result,
         ])
         .on_window_event(clean_up_video_state_on_destroyed)
 }
@@ -1115,6 +1120,114 @@ mod tests {
             invoke_request("video_close_project", json!({ "projectId": project_id })),
         )
         .expect("the owning window must close its project");
+    }
+
+    fn mock_transcription_app() -> tauri::App<tauri::test::MockRuntime> {
+        // A unique identifier isolates app_config_dir, so consent records written
+        // by this test never touch a real user profile's settings.
+        let mut context = mock_context(noop_assets());
+        context.config_mut().identifier = format!(
+            "com.supavideo.producer.asr-ipc-test.{}.{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        );
+        mock_builder()
+            .manage(video::VideoPathGrants::default())
+            .manage(test_media_jobs("asr"))
+            .manage(video::toolchain::MediaToolchainState::from_ready(
+                video::toolchain::MediaToolchain::from_test_programs(
+                    PathBuf::from("ffmpeg"),
+                    PathBuf::from("ffprobe"),
+                ),
+            ))
+            .invoke_handler(tauri::generate_handler![
+                video::asr_ipc::video_asr_runtime_status,
+                video::asr_ipc::video_asr_set_runtime,
+                video::asr_ipc::video_asr_accept_consent,
+                video::asr_ipc::video_start_transcription,
+                video::asr_ipc::video_transcription_result,
+            ])
+            .build(context)
+            .expect("transcription IPC app must build")
+    }
+
+    #[test]
+    fn transcription_commands_fail_closed_over_mock_ipc() {
+        let app = mock_transcription_app();
+        let config_dir = app
+            .path()
+            .app_config_dir()
+            .expect("config dir must resolve");
+        let webview = WebviewWindowBuilder::new(&app, "asr-owner", Default::default())
+            .build()
+            .expect("transcription webview must build");
+
+        let status = get_ipc_response(
+            &webview,
+            invoke_request("video_asr_runtime_status", json!({})),
+        )
+        .expect("status must answer")
+        .deserialize::<Value>()
+        .expect("status must be JSON");
+        assert_eq!(status["consent"], "missing");
+        assert_eq!(status["runtime"]["state"], "notConfigured");
+        assert_eq!(status["license"]["modelLicenseSpdx"], "OpenMDW-1.1");
+        let manifest = status["manifestSha256"]
+            .as_str()
+            .expect("manifest hash")
+            .to_owned();
+
+        let request = json!({ "request": {
+            "projectId": uuid::Uuid::new_v4().to_string(),
+            "assetId": uuid::Uuid::new_v4().to_string(),
+            "sourcePath": "C:\\not-granted\\source.mp4",
+        }});
+        let error = get_ipc_response(
+            &webview,
+            invoke_request("video_start_transcription", request.clone()),
+        )
+        .expect_err("start without consent must fail closed");
+        assert_eq!(error["details"]["category"], "consent_required");
+
+        let unknown = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_asr_accept_consent",
+                json!({ "request": { "accepted": true, "manifestSha256": manifest, "extra": 1 } }),
+            ),
+        );
+        assert!(unknown.is_err(), "unknown fields must be rejected");
+
+        let accepted = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_asr_accept_consent",
+                json!({ "request": { "accepted": true, "manifestSha256": manifest } }),
+            ),
+        )
+        .expect("consent must record")
+        .deserialize::<Value>()
+        .expect("consent status must be JSON");
+        assert_eq!(accepted["consent"], "accepted");
+
+        let error = get_ipc_response(
+            &webview,
+            invoke_request("video_start_transcription", request),
+        )
+        .expect_err("start without a runtime folder must fail closed");
+        assert_eq!(error["code"], "tool_unavailable");
+        assert_eq!(error["details"]["problem"]["reason"], "folderMissing");
+
+        let missing = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_transcription_result",
+                json!({ "request": { "jobId": uuid::Uuid::new_v4().to_string() } }),
+            ),
+        )
+        .expect_err("unknown transcription job must read as not found");
+        assert_eq!(missing["details"]["category"], "not_found");
+        let _ = fs::remove_dir_all(config_dir);
     }
 
     #[test]

@@ -34,6 +34,7 @@ import type {
 import {
   assertTranscriptEditProposalCurrent,
   buildCommandGroup,
+  buildGenerateCaptionsCommandGroup,
   buildProjectCommand,
   prepareMoveClipCaptionLifecycleV1,
   prepareRippleDeleteClipCaptionLifecycleV1,
@@ -73,6 +74,7 @@ export type TimelineEditOperation =
   | "trim"
   | "ripple-delete"
   | "transcript-edit"
+  | "generate-captions"
   | "clip-speed"
   | "clip-audio"
   | "clip-opacity"
@@ -1189,6 +1191,59 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     },
     [activateEditResult, backend],
   );
+  /**
+   * Generates captions from a transcript and applies them as one undoable group
+   * (optional caption-track insert + ApplyCaptionArtifact). Undo/redo/recovery
+   * are the existing caption lifecycle; no new command type is involved.
+   */
+  const generateCaptionsFromTranscript = useCallback(
+    async (
+      artifact: TranscriptArtifactV1,
+      target: { readonly sequenceId: string; readonly trackId: string; readonly language: string },
+    ): Promise<boolean> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current) return false;
+      let request: ReturnType<typeof buildGenerateCaptionsCommandGroup>["commandGroup"];
+      try {
+        request = buildGenerateCaptionsCommandGroup({
+          artifact,
+          projection: base,
+          sequenceId: target.sequenceId,
+          trackId: target.trackId,
+          language: target.language,
+          groupId: newId(),
+          applyCommandId: newId(),
+          insertTrackCommandId: newId(),
+          newCaptionTrackId: newId(),
+        }).commandGroup;
+      } catch (error) {
+        setEditOperation({ phase: "error", operation: "generate-captions", error: asError(error) });
+        return false;
+      }
+      const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
+      setEditOperation({ phase: "saving", operation: "generate-captions" });
+      try {
+        const result = await backend.executeVideoProjectGroup(request);
+        if (result.groupId !== request.groupId)
+          throw new Error("The desktop service returned a mismatched caption edit");
+        const activated = activateEditResult(base, result, operation);
+        if (activated) setEditOperation({ phase: "idle" });
+        return activated;
+      } catch (error) {
+        if (operation === editOperationRef.current)
+          setEditOperation({
+            phase: "error",
+            operation: "generate-captions",
+            error: asError(error),
+          });
+        return false;
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
+      }
+    },
+    [activateEditResult, backend],
+  );
   const splitTimelineClip = useCallback(
     async ({ clipId, sourceFrame }: SplitTimelineClipInput) => {
       const base = stateRef.current.projection;
@@ -1962,6 +2017,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimTimelineClip,
     rippleDeleteTimelineClip,
     applyTranscriptEditProposal,
+    generateCaptionsFromTranscript,
     setTimelineClipSpeed,
     editTimelineClips,
     setTimelineClipAudio,

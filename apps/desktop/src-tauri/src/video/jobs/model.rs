@@ -21,6 +21,7 @@ pub(crate) enum MediaJobKind {
     Proxy,
     ThumbnailTile,
     FinalRender,
+    Transcription,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

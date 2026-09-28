@@ -44,7 +44,12 @@ pub(crate) trait MediaJobWorker: Send + Sync + 'static {
 pub(crate) enum SchedulerResource {
     Ffmpeg,
     BlockingIo,
+    /// One GPU inference process at a time; not configurable until the
+    /// foundations are proven under contention.
+    Gpu,
 }
+
+const GPU_PERMITS: usize = 1;
 
 #[derive(Clone, Debug)]
 pub(crate) enum MediaWorkerOutcome {
@@ -139,6 +144,7 @@ pub(crate) struct MediaJobScheduler {
     running: Mutex<HashMap<String, RunningWork>>,
     ffmpeg_permits: Arc<Semaphore>,
     blocking_io_permits: Arc<Semaphore>,
+    gpu_permits: Arc<Semaphore>,
     // Shared by dispatch and idle observers: state changes must wake every waiter.
     notify: Notify,
     sequence: AtomicU64,
@@ -168,6 +174,7 @@ impl MediaJobScheduler {
             running: Mutex::new(HashMap::new()),
             ffmpeg_permits: Arc::new(Semaphore::new(config.ffmpeg_permits)),
             blocking_io_permits: Arc::new(Semaphore::new(config.blocking_io_permits)),
+            gpu_permits: Arc::new(Semaphore::new(GPU_PERMITS)),
             notify: Notify::new(),
             sequence: AtomicU64::new(0),
             active_count: AtomicUsize::new(0),
@@ -189,6 +196,7 @@ impl MediaJobScheduler {
         let semaphore = match resource {
             SchedulerResource::Ffmpeg => self.ffmpeg_permits.clone(),
             SchedulerResource::BlockingIo => self.blocking_io_permits.clone(),
+            SchedulerResource::Gpu => self.gpu_permits.clone(),
         };
         semaphore
             .acquire_owned()
@@ -445,6 +453,7 @@ impl MediaJobScheduler {
             let semaphore = match queue[index].resource {
                 SchedulerResource::Ffmpeg => self.ffmpeg_permits.clone(),
                 SchedulerResource::BlockingIo => self.blocking_io_permits.clone(),
+                SchedulerResource::Gpu => self.gpu_permits.clone(),
             };
             if let Ok(permit) = semaphore.try_acquire_owned() {
                 let work = queue.remove(index);
