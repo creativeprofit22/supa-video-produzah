@@ -1157,10 +1157,14 @@ fn audio_fade_filter(
     input: &super::types::RenderVideoInputV2,
     expected: &super::types::RenderExpectation,
 ) -> Result<String, VideoCommandError> {
-    let Some(fades) = &input.fades else {
-        return Ok(String::new());
-    };
     let invalid = || VideoCommandError::invalid_render_plan("clip_fades");
+    let Some(fades) = &input.fades else {
+        // An audio end only times a fade-out; without fades it is inconsistent.
+        return match input.audio_end_microseconds {
+            None => Ok(String::new()),
+            Some(_) => Err(invalid()),
+        };
+    };
     if !fades.valid()
         || fades
             .in_frames
@@ -1188,12 +1192,39 @@ fn audio_fade_filter(
             seconds(fades.in_frames)?
         ));
     }
-    if fades.out_frames > 0 {
-        filter.push_str(&format!(
-            ",afade=t=out:st={}:d={}:curve=tri",
-            seconds(expected.duration_frames - fades.out_frames)?,
-            seconds(fades.out_frames)?
-        ));
+    match input.audio_end_microseconds {
+        None if fades.out_frames > 0 => {
+            filter.push_str(&format!(
+                ",afade=t=out:st={}:d={}:curve=tri",
+                seconds(expected.duration_frames - fades.out_frames)?,
+                seconds(fades.out_frames)?
+            ));
+        }
+        None => {}
+        // The audio stops before the clip: end the fade where the sound ends,
+        // shortened only if the audio is shorter than the fade itself.
+        Some(audio_end) => {
+            let clip_end = render_time_microseconds(&super::types::RationalTime {
+                value: expected.duration_frames,
+                rate_numerator: expected.rate.numerator,
+                rate_denominator: expected.rate.denominator,
+            })?;
+            if fades.out_frames == 0 || !input.has_audio || audio_end == 0 || audio_end >= clip_end
+            {
+                return Err(invalid());
+            }
+            let fade = render_time_microseconds(&super::types::RationalTime {
+                value: fades.out_frames,
+                rate_numerator: expected.rate.numerator,
+                rate_denominator: expected.rate.denominator,
+            })?
+            .min(audio_end);
+            filter.push_str(&format!(
+                ",afade=t=out:st={}:d={}:curve=tri",
+                fixed_six_seconds(audio_end - fade),
+                fixed_six_seconds(fade)
+            ));
+        }
     }
     Ok(filter)
 }

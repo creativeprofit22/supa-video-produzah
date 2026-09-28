@@ -221,13 +221,29 @@ pub struct MediaAudioShape {
     pub codec_name: String,
     pub channels: u64,
     pub sample_rate: u64,
+    /// The audio stream's own length from ffprobe. It can be shorter than the
+    /// file (video) duration, and a clip's audio fade-out must end where the
+    /// audio does. Absent in projects imported before this was recorded, and
+    /// when ffprobe reports no stream duration; the video length is used then.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub duration_microseconds: Option<u64>,
 }
 
 impl MediaAudioShape {
-    pub(crate) fn checked(codec_name: String, channels: u64, sample_rate: u64) -> Option<Self> {
+    pub(crate) fn checked(
+        codec_name: String,
+        channels: u64,
+        sample_rate: u64,
+        duration_microseconds: Option<u64>,
+    ) -> Option<Self> {
         if !is_valid_codec_name(&codec_name)
             || !(1..=64).contains(&channels)
             || !(1..=768_000).contains(&sample_rate)
+            || duration_microseconds.is_some_and(|value| !(1..=MAX_SAFE_INTEGER).contains(&value))
         {
             return None;
         }
@@ -235,6 +251,7 @@ impl MediaAudioShape {
             codec_name,
             channels,
             sample_rate,
+            duration_microseconds,
         })
     }
 }
@@ -486,6 +503,15 @@ pub struct RenderVideoInputV2 {
         deserialize_with = "deserialize_optional_non_null"
     )]
     pub fades: Option<super::project::types::ClipFades>,
+    /// Clip-relative output time at which the source audio stream ends.
+    /// Present only when the clip fades out and its audio stops before the
+    /// clip does, so the fade-out ends where the sound actually ends.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub audio_end_microseconds: Option<u64>,
     #[serde(deserialize_with = "deserialize_position_permille")]
     pub position_x_permille: i64,
     #[serde(deserialize_with = "deserialize_position_permille")]

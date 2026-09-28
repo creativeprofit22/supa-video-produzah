@@ -680,6 +680,7 @@ pub(crate) fn prepared_asset_plan_fixture(cache_root: &Path) -> serde_json::Valu
             codec_name: "aac".to_owned(),
             channels: 2,
             sample_rate: 48_000,
+            duration_microseconds: None,
         }),
         file_size_bytes: 4_096,
     };

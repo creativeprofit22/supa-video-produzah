@@ -1186,6 +1186,7 @@ fn derived_valid_inspected(source_has_audio: bool) -> InspectedMedia {
                 codec_name: "aac".to_owned(),
                 channels: 2,
                 sample_rate: 48_000,
+                duration_microseconds: None,
             }),
             file_size_bytes: 4_096,
         },
@@ -3280,6 +3281,113 @@ fn render_fades_exact_output_frames_and_tamper_rejection() {
         bad["videoInputs"][0]["fades"] = fades;
         assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
     }
+}
+
+/// A 2 s clip (60 frames at 30 fps) whose audio stops 1 s before its video.
+/// The fade-out must end where the sound ends, not where the picture does.
+#[test]
+fn render_fade_out_ends_where_shorter_audio_ends() {
+    let directory = tempdir().unwrap();
+    let (grants, base) = granted_multitrack_render_plan(directory.path());
+    let with_fade = |audio_end: Option<u64>, fade_out_graph: &str| {
+        let mut plan = base.clone();
+        plan["videoInputs"][0]["fades"] = serde_json::json!({"inFrames":0,"outFrames":30});
+        if let Some(audio_end) = audio_end {
+            plan["videoInputs"][0]["audioEndMicroseconds"] = Value::from(audio_end);
+        }
+        let filter = multitrack_filter_mut(&mut plan);
+        *filter = Value::String(filter.as_str().unwrap().replace(
+            "[0:a:0]asetpts=PTS-STARTPTS[a0]",
+            &format!(
+                "[0:a:0]atrim=duration=2.000000,asetpts=PTS-STARTPTS,atrim=duration=2.000000,{fade_out_graph}[a0]"
+            ),
+        ));
+        plan
+    };
+
+    // Audio ends at 1 s: a 1 s fade from 0 s to 1 s.
+    let shorter = with_fade(
+        Some(1_000_000),
+        "afade=t=out:st=0.000000:d=1.000000:curve=tri",
+    );
+    parse_and_validate_render_plan(shorter.clone(), "owner", &grants)
+        .expect("a fade-out timed to the audio end must validate");
+    // The old video-length timing is now rejected for the same plan metadata.
+    let video_timed = with_fade(
+        Some(1_000_000),
+        "afade=t=out:st=1.000000:d=1.000000:curve=tri",
+    );
+    assert!(parse_and_validate_render_plan(video_timed, "owner", &grants).is_err());
+
+    // Audio shorter than the fade: the fade is shortened to the audio.
+    let tiny = with_fade(
+        Some(400_000),
+        "afade=t=out:st=0.000000:d=0.400000:curve=tri",
+    );
+    parse_and_validate_render_plan(tiny, "owner", &grants).expect("short audio fade");
+
+    // No recorded audio end (older projects): the video-length fade is unchanged.
+    let legacy = with_fade(None, "afade=t=out:st=1.000000:d=1.000000:curve=tri");
+    parse_and_validate_render_plan(legacy, "owner", &grants).expect("legacy fade-out");
+
+    // An audio end at or after the clip end, or zero, is inconsistent.
+    for audio_end in [2_000_000_u64, 3_000_000] {
+        let bad = with_fade(
+            Some(audio_end),
+            "afade=t=out:st=1.000000:d=1.000000:curve=tri",
+        );
+        assert!(parse_and_validate_render_plan(bad, "owner", &grants).is_err());
+    }
+    let mut zero = shorter.clone();
+    zero["videoInputs"][0]["audioEndMicroseconds"] = Value::from(0);
+    assert!(parse_and_validate_render_plan(zero, "owner", &grants).is_err());
+    // An audio end without any fade is inconsistent.
+    let mut no_fades = base.clone();
+    no_fades["videoInputs"][0]["audioEndMicroseconds"] = Value::from(1_000_000);
+    assert!(parse_and_validate_render_plan(no_fades, "owner", &grants).is_err());
+}
+
+#[test]
+fn probe_records_the_audio_stream_duration_and_old_probes_still_load() {
+    let json = br#"{
+        "streams": [
+            {"index": 0, "codec_type": "video", "codec_name": "h264", "width": 1280,
+             "height": 720, "avg_frame_rate": "30/1", "r_frame_rate": "30/1",
+             "duration": "299.000000", "disposition": {"attached_pic": 0}},
+            {"index": 1, "codec_type": "audio", "codec_name": "aac", "sample_rate": "48000",
+             "channels": 2, "duration": "298.000000"}
+        ],
+        "format": {"duration": "299.000000", "size": "4096"}
+    }"#;
+    let probe = parse_ffprobe_json(json, 4_096).expect("probe must parse");
+    let audio = probe.audio.as_ref().expect("audio stream");
+    assert_eq!(probe.duration_microseconds, 299_000_000);
+    assert_eq!(audio.duration_microseconds, Some(298_000_000));
+    let serialized = serde_json::to_value(&probe).unwrap();
+    assert_eq!(serialized["audio"]["durationMicroseconds"], 298_000_000);
+
+    // A probe stored before the field existed loads with no audio duration,
+    // and serializes back without it (no spurious field in old projects).
+    let mut old = serialized.clone();
+    old["audio"]
+        .as_object_mut()
+        .unwrap()
+        .remove("durationMicroseconds");
+    let loaded: MediaProbe = serde_json::from_value(old.clone()).expect("old probe loads");
+    assert_eq!(loaded.audio.as_ref().unwrap().duration_microseconds, None);
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), old);
+    let mut null = serialized;
+    null["audio"]["durationMicroseconds"] = Value::Null;
+    assert!(serde_json::from_value::<MediaProbe>(null).is_err());
+
+    // A missing or unparsable stream duration is not recorded and does not
+    // reject the file.
+    let without = std::str::from_utf8(json)
+        .unwrap()
+        .replace(", \"duration\": \"298.000000\"", "");
+    let probe =
+        parse_ffprobe_json(without.as_bytes(), 4_096).expect("probe without audio duration");
+    assert_eq!(probe.audio.unwrap().duration_microseconds, None);
 }
 
 #[test]

@@ -223,6 +223,9 @@ fn valid_probe(probe: &MediaProbe) -> bool {
             valid_non_blank(&audio.codec_name)
                 && (1..=64).contains(&audio.channels)
                 && (1..=768_000).contains(&audio.sample_rate)
+                && audio
+                    .duration_microseconds
+                    .is_none_or(|value| (1..=MAX_SAFE_INTEGER).contains(&value))
         })
 }
 

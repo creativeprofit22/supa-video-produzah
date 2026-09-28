@@ -684,7 +684,13 @@ fn parse_audio_stream(stream: &ProbeStream) -> Result<Option<MediaAudioShape>, P
             .as_deref()
             .ok_or(ProbeParseError::InvalidMedia)?,
     )?;
-    MediaAudioShape::checked(codec_name, channels, sample_rate)
+    // A stream duration that is missing or unparsable is simply not recorded;
+    // it only refines fade timing and must not reject otherwise valid media.
+    let duration_microseconds = stream
+        .duration
+        .as_deref()
+        .and_then(parse_duration_microseconds);
+    MediaAudioShape::checked(codec_name, channels, sample_rate, duration_microseconds)
         .map(Some)
         .ok_or(ProbeParseError::InvalidMedia)
 }

@@ -384,6 +384,66 @@ describe("V2 fades export", () => {
       expect(() => compile(revision)).toThrow("V1 export does not support nonzero audio fades");
     }
   });
+  describe("audio shorter than the video", () => {
+    // The clip plays source frames 15..90 at 30000/1001: 0.500500..3.003000 s of the
+    // file, 2.502500 s on the timeline. Audio durations below are file-relative.
+    const withAudioDuration = (
+      revision: ReturnType<typeof faded>,
+      durationMicroseconds?: number,
+    ) => {
+      const audio = revision.state.assets[0]!.probe.audio!;
+      if (durationMicroseconds === undefined)
+        delete (audio as { durationMicroseconds?: number }).durationMicroseconds;
+      else Object.assign(audio, { durationMicroseconds });
+      return revision;
+    };
+    const filterOf = (plan: ReturnType<typeof active>) =>
+      plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
+
+    it("ends the fade-out where the audio ends, not where the video ends", () => {
+      const plan = active(withAudioDuration(faded(0, 30), 2_003_000));
+      // The audio stops 1 s before the clip does: 2.003000 - 0.500500 = 1.502500 s in.
+      expect(plan.videoInputs[0]!.audioEndMicroseconds).toBe(1_502_500);
+      // Fade of 30 frames (1.001000 s) ending at 1.502500 s: starts at 0.501500 s.
+      expect(filterOf(plan)).toContain("afade=t=out:st=0.501500:d=1.001000:curve=tri");
+      expect(filterOf(plan)).not.toContain("afade=t=out:st=1.501500");
+      expect(renderPlanV2Schema.safeParse(plan).success).toBe(true);
+    });
+
+    it("shortens the fade when the audio is shorter than the fade itself", () => {
+      const plan = active(withAudioDuration(faded(0, 30), 900_500));
+      expect(filterOf(plan)).toContain("afade=t=out:st=0.000000:d=0.400000:curve=tri");
+    });
+
+    it("accounts for the clip's source offset and speed", () => {
+      // 2x speed over source frames 0..105: the audio end is halved on output.
+      const plan = active(
+        withAudioDuration(
+          faded(15, 30, { speed: { numerator: 2, denominator: 1 }, sourceOut: 105 }),
+          2_502_500,
+        ),
+      );
+      // (2.502500 - 0.500500) s of source audio at 2x = 1.001000 s of output.
+      expect(plan.videoInputs[0]!.audioEndMicroseconds).toBe(1_001_000);
+      expect(filterOf(plan)).toContain("afade=t=out:st=0.000000:d=1.001000:curve=tri");
+    });
+
+    it.each([
+      ["no recorded audio duration (older projects)", undefined],
+      ["audio as long as the clip", 3_003_000],
+      ["audio longer than the video", 9_000_000],
+    ])("keeps the video-length fade with %s", (_, durationMicroseconds) => {
+      const plan = active(withAudioDuration(faded(0, 30), durationMicroseconds));
+      expect(plan.videoInputs[0]!.audioEndMicroseconds).toBeUndefined();
+      expect(filterOf(plan)).toContain("afade=t=out:st=1.501500:d=1.001000:curve=tri");
+    });
+
+    it("records no audio end when there is no fade-out", () => {
+      const plan = active(withAudioDuration(faded(15, 0), 2_003_000));
+      expect(plan.videoInputs[0]!.audioEndMicroseconds).toBeUndefined();
+      expect(filterOf(plan)).not.toContain("afade=t=out");
+    });
+  });
   it.each([false, true])(
     "orders retiming, bounded trim, gain and fades independently of hidden/opacity and mute=%s",
     (muted) => {

@@ -555,20 +555,75 @@ function transformedOverlayFilter(transform: ClipTransform): string {
   return `overlay=x='${overlayCoordinate("x", transform.positionXPermille)}':y='${overlayCoordinate("y", transform.positionYPermille)}':format=auto`;
 }
 
+function optionalAudioEnd(audioEndMicroseconds: number | undefined): {
+  readonly audioEndMicroseconds?: number;
+} {
+  return audioEndMicroseconds === undefined ? {} : { audioEndMicroseconds };
+}
+
 function hasFades(clip: V2Clip): boolean {
   return clip.fades !== undefined && (clip.fades.inFrames > 0 || clip.fades.outFrames > 0);
 }
 
-function audioFadeFilter(clip: V2Clip, sequence: V2Sequence, durationFrames: number): string {
+/**
+ * Clip-relative output microseconds at which the source audio ends, when the
+ * clip fades out and its audio stops before the clip does; otherwise
+ * undefined. The fade-out must end where the sound ends, or a file whose audio
+ * is shorter than its video never fades at all.
+ */
+function clipAudioEndMicroseconds(
+  clip: V2Clip,
+  asset: {
+    readonly probe: {
+      readonly audio: { readonly durationMicroseconds?: number | undefined } | null;
+    };
+  },
+  sequence: V2Sequence,
+  durationFrames: number,
+): number | undefined {
+  const audioDuration = asset.probe.audio?.durationMicroseconds;
+  if (audioDuration === undefined || !hasFades(clip) || clip.fades!.outFrames === 0) {
+    return undefined;
+  }
+  const sourceIn = rationalTimeToMicroseconds(clip.sourceIn, "nearestTiesAwayFromZero");
+  const clipEnd = rationalTimeToMicroseconds(
+    createRationalTime(durationFrames, sequence.rate),
+    "nearestTiesAwayFromZero",
+  );
+  const remaining = audioDuration - sourceIn;
+  if (remaining <= 0) return undefined; // the clip starts after the audio ends: nothing to fade
+  const speed = clip.speed ?? { numerator: 1, denominator: 1 };
+  // Output time = source time / speed, rounded half away from zero like every other boundary.
+  const scaled = BigInt(remaining) * BigInt(speed.denominator);
+  const divisor = BigInt(speed.numerator);
+  const end = Number((2n * scaled + divisor) / (2n * divisor));
+  return end > 0 && end < clipEnd ? end : undefined;
+}
+
+function audioFadeFilter(
+  clip: V2Clip,
+  sequence: V2Sequence,
+  durationFrames: number,
+  audioEndMicroseconds: number | undefined,
+): string {
   if (!hasFades(clip)) return "";
   const fades = clip.fades!;
   const seconds = (frames: number) => toBoundarySeconds(createRationalTime(frames, sequence.rate));
-  return (
-    (fades.inFrames > 0 ? `,afade=t=in:st=0.000000:d=${seconds(fades.inFrames)}:curve=tri` : "") +
-    (fades.outFrames > 0
-      ? `,afade=t=out:st=${seconds(durationFrames - fades.outFrames)}:d=${seconds(fades.outFrames)}:curve=tri`
-      : "")
+  const fadeIn =
+    fades.inFrames > 0 ? `,afade=t=in:st=0.000000:d=${seconds(fades.inFrames)}:curve=tri` : "";
+  if (fades.outFrames === 0) return fadeIn;
+  if (audioEndMicroseconds === undefined) {
+    return `${fadeIn},afade=t=out:st=${seconds(durationFrames - fades.outFrames)}:d=${seconds(fades.outFrames)}:curve=tri`;
+  }
+  // End the fade where the sound ends, shortened only if the audio is shorter than the fade.
+  const fade = Math.min(
+    rationalTimeToMicroseconds(
+      createRationalTime(fades.outFrames, sequence.rate),
+      "nearestTiesAwayFromZero",
+    ),
+    audioEndMicroseconds,
   );
+  return `${fadeIn},afade=t=out:st=${formatMicrosecondsAsSeconds(audioEndMicroseconds - fade)}:d=${formatMicrosecondsAsSeconds(fade)}:curve=tri`;
 }
 
 function audioGainFilter(clip: V2Clip): string {
@@ -728,6 +783,7 @@ export function compileActiveSequenceRenderPlan(
       opacityPermille: clip.transform.opacityPermille,
       ...(clip.gainMilliDecibels !== 0 ? { gainMilliDecibels: clip.gainMilliDecibels } : {}),
       ...(hasFades(clip) ? { fades: clip.fades } : {}),
+      ...optionalAudioEnd(clipAudioEndMicroseconds(clip, asset, sequence, durationFrames)),
       hidden: isTrackHidden(track),
       muted: isTrackMuted(track),
       hasAudio: asset.probe.audio !== null,
@@ -746,8 +802,9 @@ export function compileActiveSequenceRenderPlan(
         visibleTrackIndices.push(trackIndex);
       }
       if (!isTrackMuted(track) && asset.probe.audio !== null) {
+        const audioEnd = clipAudioEndMicroseconds(clip, asset, sequence, durationFrames);
         filterParts.push(
-          `[${trackIndex}:a:0]${audioTimingFilter(clip, duration)}${audioGainFilter(clip)}${audioFadeFilter(clip, sequence, durationFrames)}[a${trackIndex}]`,
+          `[${trackIndex}:a:0]${audioTimingFilter(clip, duration)}${audioGainFilter(clip)}${audioFadeFilter(clip, sequence, durationFrames, audioEnd)}[a${trackIndex}]`,
         );
         audibleTrackIndices.push(trackIndex);
         audibleInputs.push({

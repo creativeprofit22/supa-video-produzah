@@ -195,6 +195,8 @@ export const renderVideoInputV2Schema = z
     sourceInMicroseconds: safeNonNegativeIntegerSchema,
     timing: renderClipTimingV2Schema.optional(),
     fades: clipFadesSchema.optional(),
+    /** Clip-relative time the source audio ends, when that is before the clip ends and it fades out. */
+    audioEndMicroseconds: safePositiveIntegerSchema.optional(),
     gainMilliDecibels: z.number().int().safe().min(-96_000).max(24_000).optional(),
     ...clipTransformGeometrySchema.shape,
     opacityPermille: z.number().int().safe().min(0).max(1_000),
@@ -229,6 +231,14 @@ export const renderPlanV2Schema = z
         code: "custom",
         message: "Render output must be the final FFmpeg argument",
       });
+    }
+    if (
+      plan.videoInputs.some(
+        (videoInput) =>
+          videoInput.audioEndMicroseconds !== undefined && videoInput.fades === undefined,
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "An audio end only times a clip fade-out" });
     }
     const entries = Object.entries(plan.inputPathsByAssetId);
     if (entries.length === 0) {
@@ -270,8 +280,37 @@ export const renderPlanV2Schema = z
           if (gain !== 0)
             audio += `,volume=${gain < 0 ? "-" : ""}${Math.floor(Math.abs(gain) / 1000)}.${String(Math.abs(gain) % 1000).padStart(3, "0")}dB`;
           if (inFrames > 0) audio += `,afade=t=in:st=0.000000:d=${seconds(inFrames)}:curve=tri`;
-          if (outFrames > 0)
-            audio += `,afade=t=out:st=${seconds(plan.expected.durationFrames - outFrames)}:d=${seconds(outFrames)}:curve=tri`;
+          const audioEnd = videoInput.audioEndMicroseconds;
+          if (audioEnd === undefined) {
+            if (outFrames > 0)
+              audio += `,afade=t=out:st=${seconds(plan.expected.durationFrames - outFrames)}:d=${seconds(outFrames)}:curve=tri`;
+          } else {
+            // The audio stops before the clip does: the fade-out ends where the sound ends.
+            const clipEnd = rationalTimeToMicroseconds(
+              {
+                value: plan.expected.durationFrames,
+                rateNumerator: plan.expected.rate.numerator,
+                rateDenominator: plan.expected.rate.denominator,
+              },
+              "nearestTiesAwayFromZero",
+            );
+            if (outFrames === 0 || !videoInput.hasAudio || audioEnd >= clipEnd)
+              throw new Error("audio end");
+            const fade = Math.min(
+              rationalTimeToMicroseconds(
+                {
+                  value: outFrames,
+                  rateNumerator: plan.expected.rate.numerator,
+                  rateDenominator: plan.expected.rate.denominator,
+                },
+                "nearestTiesAwayFromZero",
+              ),
+              audioEnd,
+            );
+            const format = (us: number) =>
+              `${Math.floor(us / 1_000_000)}.${String(us % 1_000_000).padStart(6, "0")}`;
+            audio += `,afade=t=out:st=${format(audioEnd - fade)}:d=${format(fade)}:curve=tri`;
+          }
           const filters = plan.argv[plan.argv.indexOf("-filter_complex") + 1]?.split(";") ?? [];
           const branch = `[${index}:a:0]${audio}[a${index}]`;
           if (

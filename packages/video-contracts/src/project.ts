@@ -59,6 +59,12 @@ export const mediaAudioShapeSchema = z
     codecName: nonBlankSchema,
     channels: safePositiveIntegerSchema.max(64),
     sampleRate: safePositiveIntegerSchema.max(768_000),
+    /**
+     * The audio stream's own length from ffprobe; it can be shorter than the
+     * file (video) duration. Absent for media imported before it was recorded
+     * or when ffprobe reports none, in which case the video length is used.
+     */
+    durationMicroseconds: safePositiveIntegerSchema.optional(),
   })
   .strict();
 
