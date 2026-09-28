@@ -21,7 +21,10 @@ const result = {
   releaseReceipt: releasePath,
   releaseReceiptSha256: createHash("sha256").update(readFileSync(releasePath)).digest("hex"),
   fixtureSha256: fixture.fixtureSha256,
-  scope: "assembled release executable, not installer",
+  scope:
+    release.installer === true
+      ? "executable from an administratively extracted MSI (assemble-installer.mjs)"
+      : "assembled release executable, not installer",
 };
 let session;
 try {
