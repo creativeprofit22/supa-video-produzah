@@ -43,7 +43,8 @@ on `main` at the time of writing.
    the optional diarizer. Consent is bound to the manifest hash, and provenance (including `diarizer_sha256`
    when used) is part of the ASR configuration identity. A job gets 2 attempts, auto-retrying only a crash or
    timeout. Tests: `transcription_job_*`, `asr_*`, `migrates_v*_to_v3`, `rejects_future_schema_without_modifying_it`,
-   `transcription_commands_fail_closed_over_mock_ipc`, `speaker_mapping_tests`, `nemo_runner_*`.
+   `transcription_commands_fail_closed_over_mock_ipc`, `speaker_assignment_tests`, `diarize_output_tests`,
+   `piece_output_tests`, `piece_tests`, `nemo_runner_*`.
 2. **Real NeMo/CUDA execution.** `10-real-gpu-proof.md` (JFK). `12-real-two-speaker-proof.md` (5-minute real
    interview with speakers). `13-continuous-native-scenario.md` (cold transcription inside the running app, 678
    words in 53.3 s).
