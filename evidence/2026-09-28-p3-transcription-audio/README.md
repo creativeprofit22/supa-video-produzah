@@ -24,6 +24,9 @@ on `main` at the time of writing.
 | `13-fade-out-ebur128.txt` | `ebur128` momentary loudness over the last second, before vs after the fade-out fix |
 | `13-drawtext-escape-probe.py` | Shows the old drawtext apostrophe quoting fails in FFmpeg and the new escaping renders pixel-identical to the raw text |
 | `13-continuous-native-scenario.mjs`, `13-owned.mjs`, `13-OwnedLauncher.cpp`, `13-native-dialog.ps1` | The harness that launched and drove the real app (owned processes, WebView2 over CDP, owner-checked native pickers) |
+| `14-cut-gap-native-scenario.md` | **Deleting a sentence removes its inner pauses**, rerun in the real app: 11 words now give 2 clips (9 before the fix), and undo restores the identical project state hash |
+| `14-*.png`, `14-scenario-log.json`, `14-baseline-*` | Step-14 screenshots and log, plus the same run without the fix (9 clips) |
+| `14-cut-gap-native-scenario.mjs` | Step-14 driver (reuses the step-13 launcher and dialog helper) |
 | `transcript-panel-*.png`, `transcript-license-*.png` | Transcript panel and license dialog at 1280 px and 320 px/200 % text |
 | `captions-panel-320px-200-percent-text.png` | Captions style/timing panel reflow |
 | `caption-probe-*.png` | Styled `drawtext` probe frames at 16:9, 9:16, 1:1 |
@@ -61,7 +64,8 @@ on `main` at the time of writing.
      fade-out reaches digital silence.
 5. **Cut preview and undo.** "Remove selected words" opens a Review cut dialog, and nothing changes until
    Apply. Proven in the app: revision unchanged while previewing, then apply and undo back to one clip with
-   678 words.
+   678 words. Pauses inside a deleted sentence go with it (`14-cut-gap-native-scenario.md`): the cut leaves
+   2 clips, and undo returns the identical project state hash.
 6. **Reuse.** Transcript store, exact-key read, `ApplyCaptionArtifact`, `InsertTrack` and the job scheduler are
    reused. No new caption command type was added.
 
@@ -72,7 +76,8 @@ on `main` at the time of writing.
   P2 synthetic-clock script now imports `Buffer`/`console`/`process` from Node, and the P2 native-performance
   ESLint config's `runs/**` ignore is now written relative to its own folder, so its generated run output is
   skipped as originally intended.
-- `pnpm test`: **1,004 passed** (contracts 288, render 84, media 46, project 149, desktop 437).
+- `pnpm test`: **1,006 passed** (contracts 288, render 84, media 46, project 151, desktop 437), run after
+  rebuilding the workspace packages the desktop app imports.
 - `pnpm format:check`: clean.
 - `cargo fmt --check`: clean. `cargo clippy --locked --all-targets --all-features -- -D warnings` (the CI command): clean, re-run after the
   commits were split. Without `--all-features` it reports 30 dead-code errors in test-only IPC helpers
@@ -91,8 +96,6 @@ on `main` at the time of writing.
   failing before this work (first pass: 100/10; P2: 90/12) and belong to the P2 editor-controls phase's open
   preview/export sync acceptance. By user decision they are recorded here as a carried Phase 4 gap; the plan's
   step-18 browser-suite item is therefore not met in P3.
-- **Cutting a sentence leaves the pauses between its words** as short clips (11 words gave 9 clips). Undo is
-  correct. Kept word-by-word on purpose for now and logged as open.
 - **Live-preview caption overlay not independently verified.** Captions are proven in the exported video only.
 - **VRAM headroom is thin:** transcription with the diarizer peaks at 7.0–7.2 GiB of 8 GiB for a 5-minute clip.
   Longer media may run out of memory, and the separate-pass fallback is not implemented.

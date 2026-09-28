@@ -464,13 +464,14 @@ describe("TranscriptPanel word navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove 2 selected words" }));
 
     const review = await screen.findByRole("dialog", { name: "Review cut" });
-    // The fixture leaves a one-frame gap between the words, so they are two ranges.
-    expect(review.textContent).toContain("Removes 2 words in 2 ranges");
+    // The fixture leaves a one-frame pause between the words; it lies inside the
+    // deleted range, so it goes with them and the cut is one range.
+    expect(review.textContent).toContain("Removes 2 words in 1 range.");
     expect(
       within(review)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual([expect.stringContaining("hello"), expect.stringContaining("back")]);
+    ).toEqual([expect.stringContaining("0:01.00 to 0:01.90 hello back")]);
     expect(panelProps.onApplyProposal).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));

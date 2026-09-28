@@ -111,10 +111,25 @@ function snapshot(occurrence: TranscriptTimelineOccurrence): TranscriptEditWordS
   });
 }
 
+// True when an unselected word in the same clip overlaps the pause between
+// a deletion ending at `gapStart` and the next selected word starting at
+// `gapEnd`. Only such a pause must survive the cut.
+function unselectedWordInGap(
+  unselected: readonly TranscriptTimelineOccurrence[],
+  gapStart: number,
+  gapEnd: number,
+): boolean {
+  return unselected.some(
+    ({ sourceRange }) => sourceRange.end.value > gapStart && sourceRange.start.value < gapEnd,
+  );
+}
+
 function mergeSelectedOccurrences(
   selected: readonly TranscriptTimelineOccurrence[],
+  all: readonly TranscriptTimelineOccurrence[],
   scope: ReturnType<typeof resolveScope>,
 ): MergedDeletion[] {
+  const selectedIds = new Set(selected.map(({ occurrenceId }) => occurrenceId));
   const byClip = new Map<string, TranscriptTimelineOccurrence[]>();
   for (const occurrence of selected) {
     const occurrences = byClip.get(occurrence.clipId) ?? [];
@@ -141,12 +156,17 @@ function mergeSelectedOccurrences(
         left.sourceRange.end.value - right.sourceRange.end.value ||
         compareStrings(left.occurrenceId, right.occurrenceId),
     );
+    const unselected = all.filter(
+      (candidate) => candidate.clipId === clipId && !selectedIds.has(candidate.occurrenceId),
+    );
     for (const occurrence of occurrences) {
       const last = merged.at(-1);
+      // Consecutive selected words form one cut, pauses between them included.
       if (
         last !== undefined &&
         last.clip.id === clip.id &&
-        occurrence.sourceRange.start.value <= last.sourceEnd
+        (occurrence.sourceRange.start.value <= last.sourceEnd ||
+          !unselectedWordInGap(unselected, last.sourceEnd, occurrence.sourceRange.start.value))
       ) {
         last.sourceEnd = Math.max(last.sourceEnd, occurrence.sourceRange.end.value);
         last.originalTimelineEnd = sourceFrameToTimelineFrame(
@@ -324,7 +344,7 @@ export async function createTranscriptEditProposal(
     }
     return occurrence;
   });
-  const deletions = mergeSelectedOccurrences(selected, scope);
+  const deletions = mergeSelectedOccurrences(selected, timeline.occurrences, scope);
   if (deletions.length === 0) {
     throw transcriptError(
       "invalid_range",

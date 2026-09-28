@@ -80,6 +80,7 @@ if ([IO.Directory]::Exists($full)) {
   (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty,'ToolbarWindow32')))
  $selectDeadline = [DateTime]::UtcNow.AddSeconds(10)
  $selected = $false
+ $lastSeen = 'address not found'
  while (!$selected -and [DateTime]::UtcNow -lt $selectDeadline) {
   [Threading.Thread]::Sleep(200)
   try { $address = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$addressCondition) } catch { break }
@@ -87,14 +88,20 @@ if ([IO.Directory]::Exists($full)) {
   # Localised label, e.g. "Address: E:\x" or "Dirección: E:\x": compare the path after ": ".
   $name = $address.Current.Name
   $shown = $name.Substring($name.IndexOf(': ') + 2)
+  $lastSeen = 'address=' + $name
   if ($shown -ne $full.TrimEnd('\')) { continue }
+  # When the dialog already opened in this folder (Windows remembers the last one),
+  # OK does not navigate and the field keeps the folder's name, which would select a
+  # child of that name. Clear the field explicitly so OK selects the verified folder.
+  if ([DialogInterop]::SendMessageTimeout($handle,12,[IntPtr]::Zero,'',2,2000,[ref]$result) -eq [IntPtr]::Zero) { throw 'Folder field clear timed out' }
   $current = New-Object Text.StringBuilder 32768
   if ([DialogInterop]::ReadText($handle,13,[IntPtr]$current.Capacity,$current,2,2000,[ref]$result) -eq [IntPtr]::Zero) { throw 'Folder field readback timed out' }
-  if ($current.ToString() -ne '') { throw ('Folder field not empty after navigation: ' + $current.ToString()) }
+  $lastSeen = $lastSeen + '; field=' + $current.ToString()
+  if ($current.ToString() -ne '') { continue }
   if (![DialogInterop]::PostMessage($dialogHandle,273,[IntPtr]1,[IntPtr]::Zero)) { throw 'Select Folder submit failed' }
   $selected = $true
  }
- if (!$selected) { throw 'Folder picker did not navigate to the verified folder' }
+ if (!$selected) { throw ('Folder picker did not navigate to the verified folder (' + $lastSeen + ')') }
  Write-Output 'OWNED_FOLDER_NAVIGATED_VERIFIED_AND_SELECTED'
 }
 Write-Output 'OWNED_FILENAME_VERIFIED_AND_SUBMITTED'

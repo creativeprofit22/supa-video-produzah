@@ -518,6 +518,58 @@ describe("transcript edit proposals", () => {
     ]);
   });
 
+  it("removes the pauses inside a deleted sentence instead of leaving them as tiny clips", async () => {
+    // "one two three" with pauses between the words, then "four" after a pause.
+    const value = artifact([
+      { startUs: 100_000, endUs: 200_000, text: "one" },
+      { startUs: 300_000, endUs: 400_000, text: "two" },
+      { startUs: 500_000, endUs: 600_000, text: "three" },
+      { startUs: 800_000, endUs: 900_000, text: "four" },
+    ]);
+    const result = await proposalForWordIds(value, projection(), ["words:0", "words:1", "words:2"]);
+
+    // One cut from the first selected word's start to the last one's end.
+    expect(result.deletedRanges.map((range) => rangeValues(range.sourceRange))).toEqual([[1, 6]]);
+    expect(result.deletedRanges[0]?.selectedWords.map(({ text }) => text)).toEqual([
+      "one",
+      "two",
+      "three",
+    ]);
+    // The media before and after the sentence is untouched and closes up.
+    expect(result.keptRanges.map((range) => rangeValues(range.sourceRange))).toEqual([
+      [0, 1],
+      [6, 10],
+    ]);
+    expect(result.keptRanges.map((range) => rangeValues(range.previewTimelineRange))).toEqual([
+      [0, 1],
+      [1, 5],
+    ]);
+    expect(result.commandGroup.commands.map(({ type }) => type)).toEqual([
+      "SplitClip",
+      "SplitClip",
+      "RippleDeleteClip",
+    ]);
+  });
+
+  it("keeps a pause next to a word the user did not select", async () => {
+    const value = artifact([
+      { startUs: 100_000, endUs: 200_000, text: "one" },
+      { startUs: 300_000, endUs: 400_000, text: "two" },
+      { startUs: 500_000, endUs: 600_000, text: "three" },
+    ]);
+    const result = await proposalForWordIds(value, projection(), ["words:0", "words:2"]);
+
+    expect(result.deletedRanges.map((range) => rangeValues(range.sourceRange))).toEqual([
+      [1, 2],
+      [5, 6],
+    ]);
+    expect(result.keptRanges.map((range) => rangeValues(range.sourceRange))).toEqual([
+      [0, 1],
+      [2, 5],
+      [6, 10],
+    ]);
+  });
+
   it("appends a corrected caption artifact after all captioned proposal geometry", async () => {
     const value = artifact([
       { startUs: 100_000, endUs: 200_000, text: "delete" },
@@ -678,15 +730,17 @@ describe("transcript edit proposals", () => {
   });
 
   it("rejects proposals requiring more than 100 atomic commands", async () => {
-    const words = Array.from({ length: 34 }, (_, index) => ({
-      startUs: (index * 2 + 1) * 100_000,
-      endUs: (index * 2 + 2) * 100_000,
+    // 68 back-to-back words; every other one is selected, so the kept word
+    // between each pair keeps the 34 cuts separate.
+    const words = Array.from({ length: 68 }, (_, index) => ({
+      startUs: (index + 1) * 100_000,
+      endUs: (index + 2) * 100_000,
     }));
     const value = artifact(words, { sourceDurationUs: 7_100_000 });
     const project = projection([clip(100, 0, 70)]);
-    const occurrenceIds = projectTranscriptToTimeline(scope(value, project)).occurrences.map(
-      ({ occurrenceId }) => occurrenceId,
-    );
+    const occurrenceIds = projectTranscriptToTimeline(scope(value, project))
+      .occurrences.filter((_, index) => index % 2 === 0)
+      .map(({ occurrenceId }) => occurrenceId);
 
     await expectDomainFailure(
       () =>
