@@ -1277,6 +1277,91 @@ mod tests {
         assert_eq!(zero_identity, negative_zero_identity);
     }
 
+    fn piece_word(text: &str, start_us: i64, end_us: i64) -> TranscriptChunkWordInputV1 {
+        TranscriptChunkWordInputV1 {
+            text: text.to_owned(),
+            relative_start_us: start_us,
+            relative_end_us: end_us,
+            recognition_confidence: Some(0.9),
+            speaker_label: None,
+            speaker_confidence: None,
+            timing_provenance: TimingProvenanceV1::Aligned,
+        }
+    }
+
+    fn piece(index: u64, start_us: i64, end_us: i64) -> TranscriptChunkInputV1 {
+        TranscriptChunkInputV1 {
+            schema_version: 1,
+            chunk_id: format!("piece-{index}"),
+            chunk_index: index,
+            source_start_us: start_us,
+            source_end_us: end_us,
+            words: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_zero_word_middle_chunk_normalizes_publishes_and_loads_again() {
+        let fixture = fixture();
+        let mut first = piece(0, 0, 400_000);
+        first.words = vec![
+            piece_word("hello", 0, 100_000),
+            piece_word("there", 150_000, 300_000),
+        ];
+        let silent = piece(1, 400_000, 800_000);
+        let mut last = piece(2, 800_000, 1_200_000);
+        let mut unlabelled = piece_word("again", 50_000, 200_000);
+        unlabelled.recognition_confidence = None;
+        last.words = vec![unlabelled];
+        let chunks = vec![first, silent, last];
+
+        let normalized = normalize_transcript_chunks(&chunks, fixture.source_duration_us).unwrap();
+        assert_eq!(normalized.chunks.len(), 3);
+        assert!(normalized.chunks[1].words.is_empty());
+        assert_eq!(
+            (
+                normalized.chunks[1].source_start_us,
+                normalized.chunks[1].source_end_us
+            ),
+            (400_000, 800_000)
+        );
+
+        let artifact = create_transcript_artifact_v1(
+            fixture.source_identity,
+            fixture.source_fingerprint,
+            fixture.source_duration_us,
+            fixture.configuration,
+            &chunks,
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("artifact.json");
+        fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+        let loaded = load_transcript_artifact_for_identity(&path, &artifact.identity).unwrap();
+
+        assert_eq!(loaded, artifact);
+        assert_eq!(
+            loaded
+                .words
+                .iter()
+                .map(|word| (word.text.as_str(), word.source_start_us))
+                .collect::<Vec<_>>(),
+            vec![("hello", 0), ("there", 150_000), ("again", 850_000)]
+        );
+        assert!(loaded.chunks[1].words.is_empty());
+        assert_eq!(
+            loaded.uncertainty_counts,
+            TranscriptUncertaintyCountsV1 {
+                missing_confidence_word_count: 1,
+                missing_speaker_word_count: 3,
+                estimated_timing_word_count: 0,
+                clamped_timing_word_count: 0,
+                retained_overlap_word_count: 0,
+                removed_exact_duplicate_word_count: 0,
+            }
+        );
+    }
+
     #[test]
     fn bounded_load_rejects_identity_mismatch() {
         let fixture = fixture();

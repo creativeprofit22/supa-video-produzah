@@ -6291,7 +6291,10 @@ fn bump_helper_counter(path: &Path) {
 }
 
 fn write_minimal_pcm_wav(path: &Path) {
-    let samples = [0_i16; 160];
+    write_pcm_wav(path, &[0_i16; 160]);
+}
+
+fn write_pcm_wav(path: &Path, samples: &[i16]) {
     let data_length = (samples.len() * 2) as u32;
     let mut wav = Vec::with_capacity(44 + data_length as usize);
     wav.extend_from_slice(b"RIFF");
@@ -6310,6 +6313,12 @@ fn write_minimal_pcm_wav(path: &Path) {
         wav.extend_from_slice(&sample.to_le_bytes());
     }
     fs::write(path, wav).expect("helper WAV must be writable");
+}
+
+/// Seconds of 16 kHz mono PCM in a WAV written by [`write_pcm_wav`].
+fn pcm_wav_seconds(path: &Path) -> f64 {
+    let length = fs::metadata(path).expect("helper WAV must exist").len();
+    (length - 44) as f64 / 32_000.0
 }
 
 fn nemo_runner_ffmpeg_helper() {
@@ -6342,8 +6351,17 @@ fn nemo_runner_ffmpeg_helper() {
         .expect("request temporary directory must have cache parent")
         .join("ffmpeg-count");
     bump_helper_counter(&counter);
-    nemo_runner_honor_control_markers(counter.parent().unwrap(), "ffmpeg");
-    write_minimal_pcm_wav(output);
+    let cache = counter.parent().unwrap();
+    nemo_runner_honor_control_markers(cache, "ffmpeg");
+    // `nemo-pcm-seconds` makes the extracted audio that long and loud
+    // throughout, so pieces are cut exactly at each 240 s limit.
+    match fs::read_to_string(cache.join("nemo-pcm-seconds")) {
+        Ok(seconds) => {
+            let seconds: usize = seconds.trim().parse().expect("PCM seconds must parse");
+            write_pcm_wav(output, &vec![10_000_i16; seconds * 16_000]);
+        }
+        Err(_) => write_minimal_pcm_wav(output),
+    }
 }
 
 /// Test control: marker files in the cache root make a helper stage hang (so
@@ -6363,28 +6381,45 @@ fn nemo_runner_honor_control_markers(cache: &Path, stage: &str) {
     }
 }
 
+/// Fake per-piece transcription: never given the speaker model. Word times
+/// are relative to the piece. `nemo-silent-pieces` (comma-separated piece
+/// indexes) makes those pieces print the runtime's real no-speech output, and
+/// `nemo-hang-piece-N` hangs piece N after writing `nemo-piece-N-running`.
 fn nemo_runner_nemo_helper() {
     let arguments = nemo_runner_arguments();
-    let diarized = arguments.len() == 14;
-    assert!(arguments.len() == 10 || diarized);
+    assert_eq!(arguments.len(), 10, "pieces run without the speaker model");
     assert_eq!(arguments[0], "--json");
     assert_eq!(arguments[1], "--verbose");
     assert_eq!(arguments[2], "transcribe");
     assert_eq!(arguments[4], "--model");
     assert_eq!(arguments[6..10], ["--device", "cuda:0", "--format", "json"]);
-    assert!(Path::new(&arguments[3]).is_file());
+    let piece_path = Path::new(&arguments[3]);
+    assert!(piece_path.is_file());
     assert!(Path::new(&arguments[5]).is_file());
-    if diarized {
-        assert_eq!(arguments[10], "--diar-model");
-        assert!(Path::new(&arguments[11]).is_file());
-        assert_eq!(arguments[12..], ["--max-speaker-count", "4"]);
-    }
-    let cache = Path::new(&arguments[3])
+    let piece_index: u64 = piece_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("piece-"))
+        .and_then(|name| name.strip_suffix(".wav"))
+        .and_then(|index| index.parse().ok())
+        .expect("piece files are named piece-NNNN.wav");
+    let cache = piece_path
         .parent()
         .and_then(Path::parent)
         .expect("request temporary directory must have cache parent");
     bump_helper_counter(&cache.join("nemo-count"));
     nemo_runner_honor_control_markers(cache, "nemo");
+    if cache
+        .join(format!("nemo-hang-piece-{piece_index}"))
+        .exists()
+    {
+        fs::write(
+            cache.join(format!("nemo-piece-{piece_index}-running")),
+            b"1",
+        )
+        .unwrap();
+        thread::sleep(Duration::from_secs(30));
+    }
     if cache.join("nemo-no-cuda").exists() {
         eprintln!("transcribe: device=0");
         eprintln!("<init_backends> Using CPU backend");
@@ -6393,31 +6428,95 @@ fn nemo_runner_nemo_helper() {
     }
     eprintln!("transcribe: device=0");
     eprintln!("<init_backends> Using GPU backend: CUDA0");
-    // With the diarizer, speaker 2 says "Hello" and "world" is untagged,
-    // matching the runtime's omission of `speaker` for untagged words. The
-    // `nemo-no-speakers` marker makes the diarizer tag nothing.
-    let words = if diarized && !cache.join("nemo-no-speakers").exists() {
-        serde_json::json!([
-            {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9, "speaker": 2},
-            {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
-        ])
-    } else {
-        serde_json::json!([
-            {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9},
-            {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
-        ])
-    };
+    let silent = fs::read_to_string(cache.join("nemo-silent-pieces"))
+        .map(|list| {
+            list.split(',')
+                .any(|index| index.trim().parse() == Ok(piece_index))
+        })
+        .unwrap_or(false);
+    if silent {
+        // Exactly what the pinned runtime printed for 240 s of silence.
+        print!(
+            "{}",
+            serde_json::json!({
+                "file": arguments[3],
+                "text": "",
+                "confidence": 1,
+                "duration": pcm_wav_seconds(piece_path),
+                "languages": [],
+                "words": []
+            })
+        );
+        return;
+    }
     print!(
         "{}",
         serde_json::json!({
             "file": arguments[3],
             "text": "Hello world",
             "confidence": 0.95,
-            "duration": 2.0,
+            "duration": pcm_wav_seconds(piece_path),
             "languages": ["en"],
-            "words": words
+            "words": [
+                {"word": "Hello", "start": 0.25, "end": 0.75, "confidence": 0.9},
+                {"word": "world", "start": 1.0, "end": 1.5, "confidence": 0.8}
+            ]
         })
     );
+}
+
+/// Fake whole-file speaker pass. In every 240 s block, speaker 2 speaks at
+/// 0.2–0.8 s and speaker 1 at 0.9–1.6 s (block-relative), so each piece's
+/// "Hello" and "world" get different speakers. `nemo-no-speakers` makes it
+/// find nobody, as the runtime does for silence.
+fn nemo_runner_diarize_helper() {
+    let arguments = nemo_runner_arguments();
+    assert_eq!(arguments.len(), 12);
+    assert_eq!(arguments[0], "diarize");
+    assert_eq!(arguments[2], "--model");
+    assert_eq!(
+        arguments[4..10],
+        [
+            "--device",
+            "cuda:0",
+            "--preset",
+            "streaming",
+            "--format",
+            "json"
+        ]
+    );
+    assert_eq!(arguments[10], "-o");
+    let wav = Path::new(&arguments[1]);
+    assert!(wav.is_file());
+    assert_eq!(wav.file_name().unwrap(), "input.wav", "the whole file");
+    assert!(Path::new(&arguments[3]).is_file());
+    let output = Path::new(&arguments[11]);
+    assert!(!output.exists(), "the output path is fresh");
+    let cache = wav
+        .parent()
+        .and_then(Path::parent)
+        .expect("request temporary directory must have cache parent");
+    bump_helper_counter(&cache.join("diarize-count"));
+    nemo_runner_honor_control_markers(cache, "diarize");
+    eprintln!("<init_backends> Using GPU backend: CUDA0");
+    let seconds = pcm_wav_seconds(wav);
+    let mut segments = Vec::new();
+    if !cache.join("nemo-no-speakers").exists() {
+        let mut block = 0.0;
+        while block + 1.6 <= seconds.max(2.0) {
+            segments
+                .push(serde_json::json!({"start": block + 0.2, "end": block + 0.8, "speaker": 2}));
+            segments
+                .push(serde_json::json!({"start": block + 0.9, "end": block + 1.6, "speaker": 1}));
+            block += 240.0;
+        }
+    }
+    fs::write(
+        output,
+        serde_json::to_vec(&serde_json::json!({"file": arguments[1], "segments": segments}))
+            .unwrap(),
+    )
+    .expect("diarize output must be writable");
 }
 
 #[test]
@@ -6467,6 +6566,7 @@ fn supervised_process_helper() {
         "process_tree_grandchild" => process_tree_grandchild(),
         "nemo_runner_ffmpeg" => nemo_runner_ffmpeg_helper(),
         "nemo_runner_nemo" => nemo_runner_nemo_helper(),
+        "nemo_runner_diarize" => nemo_runner_diarize_helper(),
         other => panic!("unknown process helper mode: {other}"),
     }
 }
@@ -6509,6 +6609,10 @@ fn nemo_runner_configuration(executable_hash: &str, model_hash: &str) -> AsrConf
             AsrProviderSettingV1 {
                 key: "runtime_sha256".to_owned(),
                 value: AsrProviderSettingValueV1::String(executable_hash.to_owned()),
+            },
+            AsrProviderSettingV1 {
+                key: "segmentation".to_owned(),
+                value: AsrProviderSettingValueV1::String("silence-cut-v1".to_owned()),
             },
         ],
     }
@@ -7037,12 +7141,18 @@ fn diarized_configuration(
     let mut configuration =
         nemo_runner_configuration(&fixture.executable.sha256, &fixture.model.sha256);
     configuration.speaker_diarization_mode = mode;
-    configuration.provider_settings.insert(
-        1,
-        AsrProviderSettingV1 {
-            key: "diarizer_sha256".to_owned(),
-            value: AsrProviderSettingValueV1::String(fixture.diarizer.sha256.clone()),
-        },
+    configuration.provider_settings.splice(
+        1..1,
+        [
+            AsrProviderSettingV1 {
+                key: "diarization_pass".to_owned(),
+                value: AsrProviderSettingValueV1::String("whole-file-streaming-v1".to_owned()),
+            },
+            AsrProviderSettingV1 {
+                key: "diarizer_sha256".to_owned(),
+                value: AsrProviderSettingValueV1::String(fixture.diarizer.sha256.clone()),
+            },
+        ],
     );
     configuration
 }
@@ -7051,6 +7161,23 @@ async fn run_diarized(
     fixture: &DiarizedRunnerFixture,
     configuration: &AsrConfigurationV1,
     with_diarizer: bool,
+) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
+    run_diarized_for(
+        fixture,
+        configuration,
+        with_diarizer,
+        2_000_000,
+        ProcessCancellation::new(),
+    )
+    .await
+}
+
+async fn run_diarized_for(
+    fixture: &DiarizedRunnerFixture,
+    configuration: &AsrConfigurationV1,
+    with_diarizer: bool,
+    source_duration_us: u64,
+    cancellation: ProcessCancellation,
 ) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
     let runtime = VerifiedNemoRuntime::new(
         fixture.executable.clone(),
@@ -7071,20 +7198,36 @@ async fn run_diarized(
             source_path: &fixture.source.object_path,
             source_identity: &fixture.source.identity,
             source_fingerprint: &fixture.source.fingerprint,
-            source_duration_us: 2_000_000,
+            source_duration_us,
             configuration,
             app_cache_root: &fixture.cache_root,
         },
         env::current_exe().expect("test executable must exist"),
         runtime,
-        ProcessCancellation::new(),
+        cancellation,
         jobs.cache(),
     )
     .await
 }
 
+fn helper_count(cache_root: &Path, name: &str) -> u64 {
+    fs::read_to_string(cache_root.join(name))
+        .map(|count| count.parse().unwrap())
+        .unwrap_or(0)
+}
+
+fn no_request_leftovers(cache_root: &Path) -> bool {
+    fs::read_dir(cache_root).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".nemo-transcribe-")
+    })
+}
+
 #[tokio::test(flavor = "current_thread")]
-async fn nemo_runner_passes_the_diarizer_and_maps_speaker_labels() {
+async fn nemo_runner_labels_speakers_from_the_separate_whole_file_pass() {
     let fixture = diarized_runner_fixture();
     let configuration = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
     let published = run_diarized(&fixture, &configuration, true)
@@ -7096,7 +7239,7 @@ async fn nemo_runner_passes_the_diarizer_and_maps_speaker_labels() {
         .iter()
         .map(|word| word.speaker_label.as_deref())
         .collect();
-    assert_eq!(labels, [Some("speaker_2"), None]);
+    assert_eq!(labels, [Some("speaker_2"), Some("speaker_1")]);
     assert!(published
         .artifact
         .words
@@ -7107,8 +7250,212 @@ async fn nemo_runner_passes_the_diarizer_and_maps_speaker_labels() {
             .artifact
             .uncertainty_counts
             .missing_speaker_word_count,
-        1
+        0
     );
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 1);
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_off_mode_never_runs_the_speaker_pass() {
+    let fixture = diarized_runner_fixture();
+    let configuration =
+        nemo_runner_configuration(&fixture.executable.sha256, &fixture.model.sha256);
+    let published = run_diarized(&fixture, &configuration, true)
+        .await
+        .expect("off mode must publish with a diarizer present");
+    assert!(published
+        .artifact
+        .words
+        .iter()
+        .all(|word| word.speaker_label.is_none()));
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 1);
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 0);
+}
+
+fn long_configuration(fixture: &DiarizedRunnerFixture) -> AsrConfigurationV1 {
+    let mut configuration = diarized_configuration(fixture, SpeakerDiarizationModeV1::Optional);
+    configuration.chunk_duration_us = 240_000_000;
+    configuration
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_transcribes_a_long_file_in_bounded_pieces_on_one_timeline() {
+    let fixture = diarized_runner_fixture();
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    let configuration = long_configuration(&fixture);
+
+    // The configured chunk length must match the piece limit.
+    let mut whole_file = configuration.clone();
+    whole_file.chunk_duration_us = 600_000_000;
+    assert!(run_diarized_for(
+        &fixture,
+        &whole_file,
+        true,
+        600_000_000,
+        ProcessCancellation::new()
+    )
+    .await
+    .is_err());
+    assert_eq!(helper_count(&fixture.cache_root, "ffmpeg-count"), 0);
+
+    let published = run_diarized_for(
+        &fixture,
+        &configuration,
+        true,
+        600_000_000,
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("a long file must publish");
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 3);
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 1);
+    let chunks: Vec<_> = published
+        .artifact
+        .chunks
+        .iter()
+        .map(|chunk| {
+            (
+                chunk.chunk_index,
+                chunk.source_start_us,
+                chunk.source_end_us,
+            )
+        })
+        .collect();
+    assert_eq!(
+        chunks,
+        [
+            (0, 0, 240_000_000),
+            (1, 240_000_000, 480_000_000),
+            (2, 480_000_000, 600_000_000)
+        ]
+    );
+    let words: Vec<_> = published
+        .artifact
+        .words
+        .iter()
+        .map(|word| {
+            (
+                word.text.as_str(),
+                word.source_start_us,
+                word.speaker_label.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        words,
+        [
+            ("Hello", 250_000, Some("speaker_2")),
+            ("world", 1_000_000, Some("speaker_1")),
+            ("Hello", 240_250_000, Some("speaker_2")),
+            ("world", 241_000_000, Some("speaker_1")),
+            ("Hello", 480_250_000, Some("speaker_2")),
+            ("world", 481_000_000, Some("speaker_1")),
+        ]
+    );
+    assert!(no_request_leftovers(&fixture.cache_root));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_keeps_a_silent_middle_piece_as_a_zero_word_chunk() {
+    let fixture = diarized_runner_fixture();
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    fs::write(fixture.cache_root.join("nemo-silent-pieces"), b"1").unwrap();
+    let published = run_diarized_for(
+        &fixture,
+        &long_configuration(&fixture),
+        true,
+        600_000_000,
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("a silent middle piece must not fail the job");
+    let chunks = &published.artifact.chunks;
+    assert_eq!(chunks.len(), 3);
+    assert!(chunks[1].words.is_empty());
+    assert_eq!(
+        (chunks[1].source_start_us, chunks[1].source_end_us),
+        (240_000_000, 480_000_000)
+    );
+    let words: Vec<_> = published
+        .artifact
+        .words
+        .iter()
+        .map(|word| {
+            (
+                word.text.as_str(),
+                word.source_start_us,
+                word.speaker_label.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        words,
+        [
+            ("Hello", 250_000, Some("speaker_2")),
+            ("world", 1_000_000, Some("speaker_1")),
+            ("Hello", 480_250_000, Some("speaker_2")),
+            ("world", 481_000_000, Some("speaker_1")),
+        ]
+    );
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_fails_like_no_speech_when_every_piece_is_silent() {
+    let fixture = diarized_runner_fixture();
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    fs::write(fixture.cache_root.join("nemo-silent-pieces"), b"0,1,2").unwrap();
+    let error = run_diarized_for(
+        &fixture,
+        &long_configuration(&fixture),
+        true,
+        600_000_000,
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect_err("a file with no speech must fail");
+    assert_eq!(error.code, VideoErrorCode::InvalidMedia);
+    assert_eq!(error.details["category"], "transcript_artifact_invalid");
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 3);
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 0);
+    assert!(no_request_leftovers(&fixture.cache_root));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn nemo_runner_cancel_during_a_later_piece_stops_the_whole_job() {
+    let fixture = diarized_runner_fixture();
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    fs::write(fixture.cache_root.join("nemo-hang-piece-1"), b"1").unwrap();
+    let configuration = long_configuration(&fixture);
+    let cancellation = ProcessCancellation::new();
+    let marker = fixture.cache_root.join("nemo-piece-1-running");
+    let cancel = {
+        let cancellation = cancellation.clone();
+        async move {
+            wait_for_marker(&marker).await;
+            cancellation.cancel();
+        }
+    };
+    let (result, ()) = tokio::join!(
+        run_diarized_for(&fixture, &configuration, true, 600_000_000, cancellation),
+        cancel
+    );
+    let error = result.expect_err("a cancelled long job must fail");
+    assert_eq!(error.code, VideoErrorCode::ProcessCancelled);
+    assert_eq!(
+        helper_count(&fixture.cache_root, "nemo-count"),
+        2,
+        "piece 2 never starts"
+    );
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 0);
+    let transcript_root = fixture
+        .cache_root
+        .join(MEDIA_STORE_NAMESPACE)
+        .join("derived")
+        .join("transcript");
+    assert!(!transcript_root.exists() || walk_regular_files(&transcript_root).is_empty());
+    assert!(no_request_leftovers(&fixture.cache_root));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -7150,7 +7497,7 @@ async fn nemo_runner_required_speakers_fail_bounded_without_diarizer_or_labels()
 async fn nemo_runner_rejects_a_diarizer_hash_that_does_not_match_the_runtime() {
     let fixture = diarized_runner_fixture();
     let mut configuration = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
-    configuration.provider_settings[1].value = AsrProviderSettingValueV1::String("f".repeat(64));
+    configuration.provider_settings[2].value = AsrProviderSettingValueV1::String("f".repeat(64));
     let error = run_diarized(&fixture, &configuration, true)
         .await
         .expect_err("a mismatched diarizer hash must fail");
@@ -7161,7 +7508,35 @@ async fn nemo_runner_rejects_a_diarizer_hash_that_does_not_match_the_runtime() {
     assert!(run_diarized(&fixture, &off_with_diarizer_setting, true)
         .await
         .is_err());
+
+    // The piece plan and speaker pass are pinned exactly.
+    let optional = diarized_configuration(&fixture, SpeakerDiarizationModeV1::Optional);
+    let mut without_segmentation = optional.clone();
+    without_segmentation.provider_settings.pop();
+    let mut other_segmentation = optional.clone();
+    other_segmentation
+        .provider_settings
+        .last_mut()
+        .unwrap()
+        .value = AsrProviderSettingValueV1::String("silence-cut-v2".to_owned());
+    let mut without_pass = optional.clone();
+    without_pass.provider_settings.remove(1);
+    let mut other_pass = optional.clone();
+    other_pass.provider_settings[1].value =
+        AsrProviderSettingValueV1::String("per-piece".to_owned());
+    let mut overlapping = optional.clone();
+    overlapping.chunk_overlap_us = 1;
+    for configuration in [
+        without_segmentation,
+        other_segmentation,
+        without_pass,
+        other_pass,
+        overlapping,
+    ] {
+        assert!(run_diarized(&fixture, &configuration, true).await.is_err());
+    }
     assert!(!fixture.cache_root.join("nemo-count").exists());
+    assert!(!fixture.cache_root.join("ffmpeg-count").exists());
 }
 
 #[tokio::test(flavor = "current_thread")]

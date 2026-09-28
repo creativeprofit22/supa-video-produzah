@@ -27,6 +27,8 @@ on `main` at the time of writing.
 | `14-cut-gap-native-scenario.md` | **Deleting a sentence removes its inner pauses**, rerun in the real app: 11 words now give 2 clips (9 before the fix), and undo restores the identical project state hash |
 | `14-*.png`, `14-scenario-log.json`, `14-baseline-*` | Step-14 screenshots and log, plus the same run without the fix (9 clips) |
 | `14-cut-gap-native-scenario.mjs` | Step-14 driver (reuses the step-13 launcher and dialog helper) |
+| `15-long-file-transcription.md` | **Long files in bounded pieces plus one whole-file speaker pass**: 5 min peaks at 6,149 MB (was 7,165), 50 min at WER 0.071 and 99.51 % speaker attribution (was 85.6 %), 2 h runs flat with a silent stretch kept as a zero-word chunk |
+| `15-long-file-probe.mjs`, `15-score.mjs`, `15-sample-gpu.ps1`, `15-summarize-run.mjs` | Pre-plan probe, WER/speaker scorer against NASA's turns, GPU/process sampler, and run summarizer |
 | `transcript-panel-*.png`, `transcript-license-*.png` | Transcript panel and license dialog at 1280 px and 320 px/200 % text |
 | `captions-panel-320px-200-percent-text.png` | Captions style/timing panel reflow |
 | `caption-probe-*.png` | Styled `drawtext` probe frames at 16:9, 9:16, 1:1 |
@@ -97,8 +99,13 @@ on `main` at the time of writing.
   preview/export sync acceptance. By user decision they are recorded here as a carried Phase 4 gap; the plan's
   step-18 browser-suite item is therefore not met in P3.
 - **Live-preview caption overlay not independently verified.** Captions are proven in the exported video only.
-- **VRAM headroom is thin:** transcription with the diarizer peaks at 7.0–7.2 GiB of 8 GiB for a 5-minute clip.
-  Longer media may run out of memory, and the separate-pass fallback is not implemented.
+- **GPU memory for long files** (was "VRAM headroom is thin"; resolved by `15-long-file-transcription.md`).
+  Long files now run in pieces of at most 240 s plus one separate speaker pass. Peak total GPU memory was
+  6,149 MB for 5 min, 6,144 MB for 50 min and 5,892 MB for 2 h, against 7,165 MB before for 5 min. The
+  50-minute run missed its 6,000 MB target by 144 MB: two pieces went over, while the desktop's own use moved
+  between 1.6 and 2.0 GB. Recorded rather than tuned, by user decision.
+- **No progress inside a long transcription:** the job shows one stage, and a 2-hour file takes about
+  20 minutes.
 - **Accuracy coverage is narrow:** one clean two-speaker studio recording. Overlapping speech, 3–4 speakers and
   noisy rooms were not measured.
 

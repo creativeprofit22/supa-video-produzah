@@ -15,7 +15,10 @@ use sha2::{Digest, Sha256};
 
 use super::{
     error::VideoCommandError,
-    nemo_transcription::{is_reparse_or_symlink, VerifiedNemoFile, VerifiedNemoRuntime},
+    nemo_transcription::{
+        is_reparse_or_symlink, VerifiedNemoFile, VerifiedNemoRuntime, DIARIZATION_PASS_SETTING,
+        DIARIZATION_PASS_VALUE, MAX_PIECE_US, SEGMENTATION_SETTING, SEGMENTATION_VALUE,
+    },
     transcript::{
         AsrConfigurationV1, AsrProviderSettingV1, AsrProviderSettingValueV1, AsrTaskV1,
         SpeakerDiarizationModeV1,
@@ -265,8 +268,10 @@ fn checked_file(
 /// Changing any of them changes the transcript artifact identity.
 ///
 /// Speaker labels default to `Optional` when a verified diarizer is available
-/// and `Off` otherwise. `Off` adds no setting, so its identity is unchanged
-/// from configurations created before diarization existed.
+/// and `Off` otherwise. Every configuration pins the piece plan
+/// (`segmentation`); a diarizer also pins the whole-file speaker pass
+/// (`diarization_pass`). Transcripts made before bounded pieces existed have a
+/// different identity, so they are transcribed again rather than reused.
 pub(crate) fn nemo_asr_configuration(
     manifest: &NemoRuntimeManifest,
     manifest_sha256: &str,
@@ -278,16 +283,21 @@ pub(crate) fn nemo_asr_configuration(
         value: AsrProviderSettingValueV1::String(value.to_owned()),
     };
     let diarizer = manifest.diarizer.as_ref().filter(|_| diarizer_available);
-    // Keys stay strictly sorted: "device" < "diarizer_sha256" < "gguf_sha256".
+    // Keys stay strictly sorted: "device" < "diarization_pass" <
+    // "diarizer_sha256" < "gguf_sha256" < ... < "runtime_sha256" < "segmentation".
     let mut provider_settings = vec![setting("device", &manifest.device)];
     if let Some(diarizer) = diarizer {
-        provider_settings.push(setting("diarizer_sha256", &diarizer.file.sha256));
+        provider_settings.extend([
+            setting(DIARIZATION_PASS_SETTING, DIARIZATION_PASS_VALUE),
+            setting("diarizer_sha256", &diarizer.file.sha256),
+        ]);
     }
     provider_settings.extend([
         setting("gguf_sha256", &manifest.model.file.sha256),
         setting("quantization", &manifest.quantization),
         setting("runtime_manifest_sha256", manifest_sha256),
         setting("runtime_sha256", &manifest.runtime.executable.sha256),
+        setting(SEGMENTATION_SETTING, SEGMENTATION_VALUE),
     ]);
     AsrConfigurationV1 {
         schema_version: 1,
@@ -303,7 +313,8 @@ pub(crate) fn nemo_asr_configuration(
         } else {
             SpeakerDiarizationModeV1::Off
         },
-        chunk_duration_us: source_duration_us,
+        // Long files are transcribed in bounded pieces (see nemo_transcription).
+        chunk_duration_us: source_duration_us.min(MAX_PIECE_US),
         chunk_overlap_us: 0,
         provider_settings,
     }
@@ -656,8 +667,78 @@ mod tests {
                 "gguf_sha256",
                 "quantization",
                 "runtime_manifest_sha256",
-                "runtime_sha256"
+                "runtime_sha256",
+                "segmentation"
             ]
+        );
+        let on = nemo_asr_configuration(&manifest, &pinned_manifest_sha256(), 1, true);
+        let keys: Vec<&str> = on
+            .provider_settings
+            .iter()
+            .map(|setting| setting.key.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "device",
+                "diarization_pass",
+                "diarizer_sha256",
+                "gguf_sha256",
+                "quantization",
+                "runtime_manifest_sha256",
+                "runtime_sha256",
+                "segmentation"
+            ]
+        );
+        assert!(
+            keys.windows(2).all(|pair| pair[0] < pair[1]),
+            "keys stay sorted"
+        );
+    }
+
+    #[test]
+    fn long_files_record_the_piece_limit_and_the_piece_plan() {
+        use crate::video::transcript::derive_asr_configuration_identity;
+
+        let manifest = pinned_manifest().unwrap();
+        let sha = pinned_manifest_sha256();
+        let short = nemo_asr_configuration(&manifest, &sha, 2_000_000, true);
+        assert_eq!(short.chunk_duration_us, 2_000_000);
+        assert_eq!(short.chunk_overlap_us, 0);
+        for duration in [MAX_PIECE_US, MAX_PIECE_US + 1, 3_000_000_000] {
+            let long = nemo_asr_configuration(&manifest, &sha, duration, true);
+            assert_eq!(long.chunk_duration_us, MAX_PIECE_US, "{duration}");
+        }
+        let value = |configuration: &AsrConfigurationV1, key: &str| {
+            configuration
+                .provider_settings
+                .iter()
+                .find(|setting| setting.key == key)
+                .map(|setting| setting.value.clone())
+        };
+        assert_eq!(
+            value(&short, "segmentation"),
+            Some(AsrProviderSettingValueV1::String(
+                "silence-cut-v1".to_owned()
+            ))
+        );
+        assert_eq!(
+            value(&short, "diarization_pass"),
+            Some(AsrProviderSettingValueV1::String(
+                "whole-file-streaming-v1".to_owned()
+            ))
+        );
+        let off = nemo_asr_configuration(&manifest, &sha, 2_000_000, false);
+        assert_eq!(value(&off, "diarization_pass"), None);
+
+        // Transcripts made before bounded pieces are not reused.
+        let mut before = off.clone();
+        before
+            .provider_settings
+            .retain(|setting| setting.key != "segmentation");
+        assert_ne!(
+            derive_asr_configuration_identity(&off).unwrap(),
+            derive_asr_configuration_identity(&before).unwrap()
         );
     }
 

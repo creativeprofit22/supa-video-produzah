@@ -68,6 +68,13 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         .ok()
         .map(|path| std::fs::read_to_string(path).expect("gold file must be readable"));
     let gold = gold_override.as_deref().unwrap_or(GOLD);
+    // Long sources (the 2-hour memory check) need more than the default.
+    let job_limit = Duration::from_secs(
+        std::env::var("SUPA_VIDEO_REAL_ASR_JOB_LIMIT_SECS")
+            .ok()
+            .map(|secs| secs.parse().expect("job limit must be whole seconds"))
+            .unwrap_or(900),
+    );
 
     let workspace = tempfile::tempdir().unwrap();
     let config_dir = workspace.path().join("config");
@@ -137,7 +144,7 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         ) {
             break job;
         }
-        assert!(started_at.elapsed() < Duration::from_secs(900), "job stuck");
+        assert!(started_at.elapsed() < job_limit, "job stuck");
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let job_wall_clock_ms = started_at.elapsed().as_millis();
@@ -213,6 +220,18 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         .await
         .unwrap();
 
+    let chunks_detail: Vec<_> = artifact
+        .chunks
+        .iter()
+        .map(|chunk| {
+            serde_json::json!({
+                "index": chunk.chunk_index,
+                "startUs": chunk.source_start_us,
+                "endUs": chunk.source_end_us,
+                "wordCount": chunk.words.len(),
+            })
+        })
+        .collect();
     let provider_settings: BTreeMap<_, _> = artifact
         .configuration
         .provider_settings
@@ -248,6 +267,8 @@ async fn real_nemo_cuda_transcription_through_production_job_path() {
         "labelledWordCount": labelled,
         "missingSpeakerWordCount": artifact.uncertainty_counts.missing_speaker_word_count,
         "distinctSpeakers": speakers,
+        "chunkDurationUs": artifact.configuration.chunk_duration_us,
+        "chunks": chunks_detail,
         "words": words_detail,
         "engineVersion": artifact.configuration.engine_version,
         "modelId": artifact.configuration.model_id,

@@ -155,6 +155,52 @@ describe("transcript V1 contract", () => {
     });
   });
 
+  it("accepts a zero-word chunk from a silent transcription piece", async () => {
+    const fixture = await readFixture();
+    const word = {
+      recognitionConfidence: 0.9,
+      speakerLabel: null,
+      speakerConfidence: null,
+      timingProvenance: "aligned",
+    } as const;
+    const chunks: TranscriptChunkInputV1[] = [
+      {
+        schemaVersion: 1,
+        chunkId: "piece-0",
+        chunkIndex: 0,
+        sourceStartUs: 0,
+        sourceEndUs: 400_000,
+        words: [{ ...word, text: "hello", relativeStartUs: 0, relativeEndUs: 100_000 }],
+      },
+      {
+        schemaVersion: 1,
+        chunkId: "piece-1",
+        chunkIndex: 1,
+        sourceStartUs: 400_000,
+        sourceEndUs: 800_000,
+        words: [],
+      },
+      {
+        schemaVersion: 1,
+        chunkId: "piece-2",
+        chunkIndex: 2,
+        sourceStartUs: 800_000,
+        sourceEndUs: 1_200_000,
+        words: [{ ...word, text: "again", relativeStartUs: 50_000, relativeEndUs: 200_000 }],
+      },
+    ];
+
+    const artifact = await createTranscriptArtifactV1({ ...fixture, chunks });
+    const parsed = transcriptArtifactV1Schema.parse(artifact);
+
+    expect(parsed.chunks.map((chunk) => chunk.words.length)).toEqual([1, 0, 1]);
+    expect(parsed.chunks[1]).toMatchObject({ sourceStartUs: 400_000, sourceEndUs: 800_000 });
+    expect(parsed.words.map((entry) => [entry.text, entry.sourceStartUs])).toEqual([
+      ["hello", 0],
+      ["again", 850_000],
+    ]);
+  });
+
   it("accepts diarizer speaker labels and counts unlabelled words", async () => {
     const fixture = await readFixture();
     // Mirrors the native runner: Sortformer speaker N becomes "speaker_N";
