@@ -38,6 +38,8 @@ const FFMPEG_STDERR_TAIL_LIMIT: usize = 256 * 1024;
 const NEMO_STDOUT_LIMIT: usize = 128 * 1024 * 1024;
 const NEMO_STDERR_TAIL_LIMIT: usize = 512 * 1024;
 const HASH_BUFFER_BYTES: usize = 1024 * 1024;
+/// Piece WAVs are copied from the extracted audio through this buffer.
+const PIECE_COPY_BUFFER_BYTES: usize = 1024 * 1024;
 const OWNER_LABEL: &str = "nemo-transcription";
 /// The pinned Sortformer diarizer tracks at most four speakers. The runtime
 /// numbers them from 1 and omits `speaker` for untagged words.
@@ -67,7 +69,7 @@ const RUNTIME_END_TOLERANCE_US: i64 = 160_000;
 /// The runtime's word-timing grid (one encoder frame).
 const RUNTIME_FRAME_US: i64 = 80_000;
 /// `segmentation` provider setting: bounded full-quality pieces cut at quiet
-/// moments by [`plan_transcription_pieces`].
+/// moments by [`plan_pieces_with`].
 pub(crate) const SEGMENTATION_SETTING: &str = "segmentation";
 pub(crate) const SEGMENTATION_VALUE: &str = "silence-cut-v1";
 /// `diarization_pass` provider setting: one whole-file streaming speaker pass.
@@ -215,12 +217,9 @@ pub(crate) async fn transcribe_nemo_cuda(
     )
     .await?;
     let layout = validate_pcm_wav(&wav_path)?;
-    let pcm = read_pcm_samples(
-        &wav_path,
-        layout,
-        samples_for_duration(input.source_duration_us),
-    )?;
-    let pieces = place_pieces(&pcm, input.source_duration_us)?;
+    let sample_count = pcm_sample_count(layout, samples_for_duration(input.source_duration_us))?;
+    let ranges = plan_pieces_from_wav(&wav_path, layout, sample_count)?;
+    let pieces = place_ranges(ranges, input.source_duration_us)?;
 
     let mut chunks = Vec::with_capacity(pieces.len());
     for piece in &pieces {
@@ -230,7 +229,7 @@ pub(crate) async fn transcribe_nemo_cuda(
         let piece_path = temporary
             .path()
             .join(format!("piece-{:04}.wav", piece.index));
-        write_piece_wav(&pcm[piece.samples.clone()], &piece_path)?;
+        copy_piece_wav(&wav_path, layout, piece.samples.clone(), &piece_path)?;
         validate_pcm_wav(&piece_path)?;
         nemo.verify_again()?;
         let output = run_nemo_piece(&nemo, &piece_path, cancellation.clone()).await?;
@@ -242,7 +241,6 @@ pub(crate) async fn transcribe_nemo_cuda(
         fs::remove_file(&piece_path)
             .map_err(|_| VideoCommandError::project_io(OPERATION, "temporary_audio"))?;
     }
-    drop(pcm);
     if chunks.iter().all(|chunk| chunk.words.is_empty()) {
         // The whole file has no speech: today's no-speech result.
         return Err(transcript_invalid());
@@ -529,16 +527,74 @@ struct PlannedPiece {
     source_end_us: i64,
 }
 
-/// Splits PCM into contiguous, non-overlapping sample ranges that cover it,
-/// each at most `max_piece_us` long. Audio of `max_piece_us` or less stays one
-/// piece. Otherwise each cut lands in the middle of the quietest
-/// `CUT_WINDOW_US` window in the last `CUT_SEARCH_FRACTION` before the limit,
-/// or exactly at the limit when every window there is loud.
+/// [`plan_pieces_with`] over PCM already in memory.
+#[cfg(test)]
 fn plan_transcription_pieces(
     pcm: &[i16],
     sample_rate: u32,
     max_piece_us: u64,
 ) -> Vec<Range<usize>> {
+    let Ok(pieces) = plan_pieces_with::<std::convert::Infallible>(
+        pcm.len(),
+        sample_rate,
+        max_piece_us,
+        |region, samples| {
+            samples.clear();
+            samples.extend_from_slice(&pcm[region]);
+            Ok(())
+        },
+    );
+    pieces
+}
+
+/// Plans the pieces of a validated PCM WAV without loading it: only each
+/// cut-search region is read, into one reused buffer.
+fn plan_pieces_from_wav(
+    path: &Path,
+    layout: PcmLayout,
+    sample_count: usize,
+) -> Result<Vec<Range<usize>>, VideoCommandError> {
+    let invalid = || VideoCommandError::invalid_media(OPERATION, "extracted_audio");
+    let mut file = File::open(path).map_err(|_| invalid())?;
+    let mut bytes = Vec::new();
+    plan_pieces_with(
+        sample_count,
+        PCM_SAMPLE_RATE,
+        MAX_PIECE_US,
+        |region, samples| {
+            let offset = layout
+                .data_offset
+                .checked_add(region.start as u64 * 2)
+                .ok_or_else(invalid)?;
+            file.seek(SeekFrom::Start(offset)).map_err(|_| invalid())?;
+            bytes.clear();
+            bytes.resize(region.len() * 2, 0);
+            file.read_exact(&mut bytes).map_err(|_| invalid())?;
+            samples.clear();
+            samples.extend(
+                bytes
+                    .chunks_exact(2)
+                    .map(|pair| i16::from_le_bytes([pair[0], pair[1]])),
+            );
+            Ok(())
+        },
+    )
+}
+
+/// Splits `len` samples of PCM into contiguous, non-overlapping sample ranges
+/// that cover it, each at most `max_piece_us` long. Audio of `max_piece_us` or
+/// less stays one piece. Otherwise each cut lands in the middle of the quietest
+/// `CUT_WINDOW_US` window in the last `CUT_SEARCH_FRACTION` before the limit,
+/// or exactly at the limit when every window there is loud.
+///
+/// `read_region` fills the buffer with exactly the samples of the given range;
+/// it is only asked for cut-search regions, so memory stays bounded.
+fn plan_pieces_with<E>(
+    len: usize,
+    sample_rate: u32,
+    max_piece_us: u64,
+    mut read_region: impl FnMut(Range<usize>, &mut Vec<i16>) -> Result<(), E>,
+) -> Result<Vec<Range<usize>>, E> {
     let per_us = |us: u64| (u128::from(us) * u128::from(sample_rate) / 1_000_000) as usize;
     let max_samples = per_us(max_piece_us).max(1);
     let window = per_us(CUT_WINDOW_US).clamp(1, max_samples);
@@ -546,22 +602,21 @@ fn plan_transcription_pieces(
     let quiet_sum = (QUIET_WINDOW_RMS * QUIET_WINDOW_RMS) as u128 * window as u128;
 
     let mut pieces = Vec::new();
+    let mut samples = Vec::new();
     let mut start = 0_usize;
-    while pcm.len() - start > max_samples {
+    while len - start > max_samples {
         let limit = start + max_samples;
         let region = limit - search..limit;
-        let energy = |sample: &i16| {
-            let value = i64::from(*sample);
+        read_region(region.clone(), &mut samples)?;
+        let at = |index: usize| {
+            let value = i64::from(samples[index - region.start]);
             (value * value) as u128
         };
         // Sliding window sum of squares; the latest quietest window wins ties.
-        let mut sum: u128 = pcm[region.start..region.start + window]
-            .iter()
-            .map(energy)
-            .sum();
+        let mut sum: u128 = (region.start..region.start + window).map(at).sum();
         let mut best = (sum, region.start);
         for window_start in region.start + 1..=limit - window {
-            sum = sum + energy(&pcm[window_start + window - 1]) - energy(&pcm[window_start - 1]);
+            sum = sum + at(window_start + window - 1) - at(window_start - 1);
             if sum <= best.0 {
                 best = (sum, window_start);
             }
@@ -574,10 +629,10 @@ fn plan_transcription_pieces(
         pieces.push(start..cut);
         start = cut;
     }
-    if start < pcm.len() || pieces.is_empty() {
-        pieces.push(start..pcm.len());
+    if start < len || pieces.is_empty() {
+        pieces.push(start..len);
     }
-    pieces
+    Ok(pieces)
 }
 
 /// Samples covering `duration_us` at 16 kHz, rounded up.
@@ -589,13 +644,24 @@ fn sample_to_us(sample: usize) -> i64 {
     (sample as u128 * 1_000_000 / u128::from(PCM_SAMPLE_RATE)) as i64
 }
 
-/// Places the planned sample ranges on the source timeline. The last piece
-/// ends exactly at the source duration, and adjacent pieces share bounds.
+/// Plans `pcm` and places its pieces with [`place_ranges`].
+#[cfg(test)]
 fn place_pieces(
     pcm: &[i16],
     source_duration_us: u64,
 ) -> Result<Vec<PlannedPiece>, VideoCommandError> {
-    let ranges = plan_transcription_pieces(pcm, PCM_SAMPLE_RATE, MAX_PIECE_US);
+    place_ranges(
+        plan_transcription_pieces(pcm, PCM_SAMPLE_RATE, MAX_PIECE_US),
+        source_duration_us,
+    )
+}
+
+/// Places the planned sample ranges on the source timeline. The last piece
+/// ends exactly at the source duration, and adjacent pieces share bounds.
+fn place_ranges(
+    ranges: Vec<Range<usize>>,
+    source_duration_us: u64,
+) -> Result<Vec<PlannedPiece>, VideoCommandError> {
     let source_end = i64::try_from(source_duration_us).map_err(|_| transcript_invalid())?;
     let count = ranges.len();
     ranges
@@ -1098,8 +1164,22 @@ struct PcmLayout {
     data_len: u64,
 }
 
-/// Reads at most `max_samples` samples. Audio past the probed source duration
-/// is not transcribed, as today (words past it were rejected).
+/// Samples of the WAV that are transcribed: at most `max_samples`. Audio past
+/// the probed source duration is not transcribed, as today (words past it were
+/// rejected).
+fn pcm_sample_count(layout: PcmLayout, max_samples: u64) -> Result<usize, VideoCommandError> {
+    let count = (layout.data_len / 2).min(max_samples);
+    match usize::try_from(count) {
+        Ok(count) if count > 0 => Ok(count),
+        _ => Err(VideoCommandError::invalid_media(
+            OPERATION,
+            "extracted_audio",
+        )),
+    }
+}
+
+/// Reads at most `max_samples` samples into memory.
+#[cfg(test)]
 fn read_pcm_samples(
     path: &Path,
     layout: PcmLayout,
@@ -1127,9 +1207,61 @@ fn read_pcm_samples(
 }
 
 /// Writes a canonical 44-byte-header 16 kHz mono s16 WAV holding `samples`.
+#[cfg(test)]
 fn write_piece_wav(samples: &[i16], path: &Path) -> Result<(), VideoCommandError> {
     let io_error = || VideoCommandError::project_io(OPERATION, "temporary_audio");
-    let data_len = u32::try_from(samples.len() * 2).map_err(|_| io_error())?;
+    let mut writer = create_piece_wav(path, samples.len())?;
+    for sample in samples {
+        writer
+            .write_all(&sample.to_le_bytes())
+            .map_err(|_| io_error())?;
+    }
+    finish_piece_wav(writer)
+}
+
+/// Writes the same WAV as [`write_piece_wav`] for `samples` of the validated
+/// PCM WAV at `input`, copying its bytes through a bounded buffer.
+fn copy_piece_wav(
+    input: &Path,
+    layout: PcmLayout,
+    samples: Range<usize>,
+    path: &Path,
+) -> Result<(), VideoCommandError> {
+    let invalid = || VideoCommandError::invalid_media(OPERATION, "extracted_audio");
+    let io_error = || VideoCommandError::project_io(OPERATION, "temporary_audio");
+    let offset = layout
+        .data_offset
+        .checked_add(samples.start as u64 * 2)
+        .ok_or_else(invalid)?;
+    let mut source = File::open(input).map_err(|_| invalid())?;
+    source
+        .seek(SeekFrom::Start(offset))
+        .map_err(|_| invalid())?;
+    let mut writer = create_piece_wav(path, samples.len())?;
+    let mut remaining = samples.len() as u64 * 2;
+    let mut buffer = vec![0_u8; PIECE_COPY_BUFFER_BYTES];
+    while remaining > 0 {
+        let step = remaining.min(PIECE_COPY_BUFFER_BYTES as u64) as usize;
+        source
+            .read_exact(&mut buffer[..step])
+            .map_err(|_| invalid())?;
+        writer.write_all(&buffer[..step]).map_err(|_| io_error())?;
+        remaining -= step as u64;
+    }
+    finish_piece_wav(writer)
+}
+
+/// Creates a new piece file (never overwriting) and writes the canonical
+/// 44-byte header for `sample_count` samples.
+fn create_piece_wav(
+    path: &Path,
+    sample_count: usize,
+) -> Result<BufWriter<File>, VideoCommandError> {
+    let io_error = || VideoCommandError::project_io(OPERATION, "temporary_audio");
+    let data_len = sample_count
+        .checked_mul(2)
+        .and_then(|len| u32::try_from(len).ok())
+        .ok_or_else(io_error)?;
     let riff_len = data_len
         .checked_add(PCM_HEADER_BYTES as u32 - 8)
         .ok_or_else(io_error)?;
@@ -1153,11 +1285,11 @@ fn write_piece_wav(samples: &[i16], path: &Path) -> Result<(), VideoCommandError
     header.extend_from_slice(b"data");
     header.extend_from_slice(&data_len.to_le_bytes());
     writer.write_all(&header).map_err(|_| io_error())?;
-    for sample in samples {
-        writer
-            .write_all(&sample.to_le_bytes())
-            .map_err(|_| io_error())?;
-    }
+    Ok(writer)
+}
+
+fn finish_piece_wav(writer: BufWriter<File>) -> Result<(), VideoCommandError> {
+    let io_error = || VideoCommandError::project_io(OPERATION, "temporary_audio");
     writer
         .into_inner()
         .map_err(|_| io_error())?
@@ -1419,6 +1551,78 @@ mod piece_tests {
         assert_eq!(read_pcm_samples(&path, layout, 2).unwrap(), [0, 1]);
         // A fresh name is required: existing files are never overwritten.
         assert!(write_piece_wav(&samples, &path).is_err());
+    }
+
+    /// 600 s at 16 kHz: loud, with quiet stretches inside both cut-search
+    /// regions, one too early to be used, and a trailing tail past the limit.
+    fn synthetic_long_pcm() -> Vec<i16> {
+        let mut pcm: Vec<i16> = (0..600 * 16_000)
+            .map(|index| if index % 2 == 0 { LOUD } else { -LOUD })
+            .collect();
+        let second = |s: f64| (s * 16_000.0) as usize;
+        pcm[second(100.0)..second(101.0)].fill(0);
+        pcm[second(200.3)..second(200.8)].fill(0);
+        pcm[second(230.0)..second(230.4)].fill(200);
+        pcm[second(420.0)..second(420.6)].fill(-100);
+        pcm
+    }
+
+    #[test]
+    fn streamed_planning_matches_slice_planning() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("input.wav");
+        let pcm = synthetic_long_pcm();
+        write_piece_wav(&pcm, &path).unwrap();
+        let layout = validate_pcm_wav(&path).unwrap();
+        let count = pcm_sample_count(layout, samples_for_duration(600_000_000)).unwrap();
+        assert_eq!(count, pcm.len());
+
+        let streamed = plan_pieces_from_wav(&path, layout, count).unwrap();
+        let sliced = plan_transcription_pieces(&pcm, PCM_SAMPLE_RATE, MAX_PIECE_US);
+        assert_eq!(streamed, sliced);
+        // Both quiet cuts were taken, so this is not the all-loud plan.
+        assert_eq!(sliced.len(), 3);
+        assert_ne!(sliced[0].end, 240 * 16_000);
+        assert_ne!(sliced[1].end, sliced[0].end + 240 * 16_000);
+
+        let placed = place_ranges(streamed, 600_000_000).unwrap();
+        assert_eq!(placed, place_pieces(&pcm, 600_000_000).unwrap());
+
+        // A shorter probed duration caps the samples the same way.
+        let capped = pcm_sample_count(layout, samples_for_duration(500_000_000)).unwrap();
+        assert_eq!(
+            plan_pieces_from_wav(&path, layout, capped).unwrap(),
+            plan_transcription_pieces(&pcm[..capped], PCM_SAMPLE_RATE, MAX_PIECE_US)
+        );
+        assert!(pcm_sample_count(layout, 0).is_err());
+    }
+
+    #[test]
+    fn copied_piece_wavs_match_written_piece_wavs_byte_for_byte() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.wav");
+        // Longer than the copy buffer so the copy takes several steps.
+        let pcm: Vec<i16> = (0..1_500_000)
+            .map(|index| (index % 65_536) as u16 as i16)
+            .collect();
+        write_piece_wav(&pcm, &input).unwrap();
+        let layout = validate_pcm_wav(&input).unwrap();
+
+        for (index, range) in [0..1, 0..pcm.len(), 7..700_007, 1_000_000..1_500_000]
+            .into_iter()
+            .enumerate()
+        {
+            let copied = root.path().join(format!("copied-{index}.wav"));
+            let written = root.path().join(format!("written-{index}.wav"));
+            copy_piece_wav(&input, layout, range.clone(), &copied).unwrap();
+            write_piece_wav(&pcm[range.clone()], &written).unwrap();
+            assert_eq!(fs::read(&copied).unwrap(), fs::read(&written).unwrap());
+            // Existing files are never overwritten.
+            assert!(copy_piece_wav(&input, layout, range, &copied).is_err());
+        }
+        // A range past the audio fails instead of writing a short piece.
+        let past = root.path().join("past.wav");
+        assert!(copy_piece_wav(&input, layout, 1_400_000..1_600_000, &past).is_err());
     }
 }
 
