@@ -1362,6 +1362,111 @@ mod tests {
         );
     }
 
+    const MULTICHUNK_FIXTURE_PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../packages/video-media/fixtures/transcript-artifact-multichunk-v1.json"
+    );
+
+    fn labelled_word(
+        text: &str,
+        start_us: i64,
+        end_us: i64,
+        speaker: Option<&str>,
+    ) -> TranscriptChunkWordInputV1 {
+        let mut word = piece_word(text, start_us, end_us);
+        word.speaker_label = speaker.map(str::to_owned);
+        word
+    }
+
+    /// Mirrors a long-file NeMo run: 240 s pieces, a silent middle piece, a last
+    /// word clamped at a piece end, and a word starting exactly on a piece boundary.
+    fn multichunk_artifact() -> TranscriptArtifactV1 {
+        const PIECE_US: i64 = 240_000_000;
+        let fixture = fixture();
+        let mut configuration = fixture.configuration;
+        configuration.engine_id = "nemo-speech.cpp".to_owned();
+        configuration.chunk_duration_us = PIECE_US as u64;
+        configuration.chunk_overlap_us = 0;
+
+        let mut first = piece(0, 0, PIECE_US);
+        let mut unlabelled = labelled_word("um", 1_000_000, 1_300_000, None);
+        unlabelled.recognition_confidence = None;
+        first.words = vec![
+            labelled_word("hello", 0, 400_000, Some("speaker_1")),
+            unlabelled,
+            labelled_word("there", 2_000_000, 2_500_000, Some("speaker_2")),
+            // Ends 100 ms past the piece end, so normalization clamps it.
+            labelled_word(
+                "boundary",
+                PIECE_US - 500_000,
+                PIECE_US + 100_000,
+                Some("speaker_1"),
+            ),
+        ];
+        let silent = piece(1, PIECE_US, 2 * PIECE_US);
+        let mut last = piece(2, 2 * PIECE_US, 600_000_000);
+        last.words = vec![
+            labelled_word("resumed", 0, 500_000, Some("speaker_2")),
+            labelled_word("finally", 1_000_000, 1_600_000, Some("speaker_1")),
+        ];
+
+        create_transcript_artifact_v1(
+            fixture.source_identity,
+            fixture.source_fingerprint,
+            600_000_000,
+            configuration,
+            &[first, silent, last],
+        )
+        .unwrap()
+    }
+
+    /// Set `SUPA_UPDATE_SHARED_FIXTURES=1` to regenerate the shared fixture after
+    /// an intentional contract change; the TS schema test parses the same bytes.
+    #[test]
+    fn multichunk_artifact_matches_the_shared_fixture_bytes() {
+        let artifact = multichunk_artifact();
+        assert_eq!(artifact.chunks.len(), 3);
+        assert!(artifact.chunks[1].words.is_empty());
+        let boundary = artifact
+            .words
+            .iter()
+            .find(|word| word.text == "boundary")
+            .unwrap();
+        assert_eq!(boundary.source_end_us, 240_000_000);
+        assert_eq!(boundary.timing_provenance, TimingProvenanceV1::Clamped);
+        let resumed = artifact
+            .words
+            .iter()
+            .find(|word| word.text == "resumed")
+            .unwrap();
+        assert_eq!(resumed.source_start_us, 480_000_000);
+        assert_eq!(
+            artifact.uncertainty_counts,
+            TranscriptUncertaintyCountsV1 {
+                missing_confidence_word_count: 1,
+                missing_speaker_word_count: 1,
+                estimated_timing_word_count: 0,
+                clamped_timing_word_count: 1,
+                retained_overlap_word_count: 0,
+                removed_exact_duplicate_word_count: 0,
+            }
+        );
+
+        let mut bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        bytes.push(b'\n');
+        if std::env::var_os("SUPA_UPDATE_SHARED_FIXTURES").is_some() {
+            fs::write(MULTICHUNK_FIXTURE_PATH, &bytes).unwrap();
+        }
+        let committed = fs::read(MULTICHUNK_FIXTURE_PATH).expect(
+            "shared multichunk fixture must exist; regenerate with SUPA_UPDATE_SHARED_FIXTURES=1",
+        );
+        assert!(
+            committed == bytes,
+            "shared multichunk fixture drifted from the Rust merge; regenerate with SUPA_UPDATE_SHARED_FIXTURES=1"
+        );
+        assert_eq!(parse_transcript_artifact(&committed).unwrap(), artifact);
+    }
+
     #[test]
     fn bounded_load_rejects_identity_mismatch() {
         let fixture = fixture();

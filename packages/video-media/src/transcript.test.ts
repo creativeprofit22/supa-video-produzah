@@ -201,6 +201,37 @@ describe("transcript V1 contract", () => {
     ]);
   });
 
+  it("accepts a Rust-built multi-piece artifact with a silent piece and a clamped boundary word", async () => {
+    // Written by the Rust test multichunk_artifact_matches_the_shared_fixture_bytes.
+    const raw: unknown = JSON.parse(
+      await readFile(
+        new URL("../fixtures/transcript-artifact-multichunk-v1.json", import.meta.url),
+        "utf8",
+      ),
+    );
+
+    const result = transcriptArtifactV1Schema.safeParse(raw);
+
+    expect(result.error?.issues).toBeUndefined();
+    const artifact = result.data!;
+    expect(artifact.chunks.map((chunk) => chunk.words.length)).toEqual([4, 0, 2]);
+    expect(artifact.chunks[1]!.words).toEqual([]);
+    expect(artifact.uncertaintyCounts.clampedTimingWordCount).toBe(1);
+    expect(artifact.words.find((word) => word.text === "boundary")).toMatchObject({
+      sourceEndUs: 240_000_000,
+      timingProvenance: "clamped",
+    });
+    expect(artifact.words.find((word) => word.text === "resumed")?.sourceStartUs).toBe(480_000_000);
+    expect(artifact.words.map((word) => word.speakerLabel)).toEqual([
+      "speaker_1",
+      null,
+      "speaker_2",
+      "speaker_1",
+      "speaker_2",
+      "speaker_1",
+    ]);
+  });
+
   it("accepts diarizer speaker labels and counts unlabelled words", async () => {
     const fixture = await readFixture();
     // Mirrors the native runner: Sortformer speaker N becomes "speaker_N";
