@@ -46,6 +46,7 @@ import { createPlaybackClock } from "./playback-clock";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
+import { CaptionsPanel } from "./CaptionsPanel";
 import { TranscriptPanel, type TranscriptTarget } from "./TranscriptPanel";
 import { tauriTranscriptionBackend, type TranscriptionBackend } from "../asr-ipc";
 import { loadManagedTranscriptArtifact } from "../video-ipc";
@@ -1273,6 +1274,17 @@ export function VideoWorkspace({
                     trackId: transcriptTarget.trackId,
                     language: "en",
                   })
+            }
+          />
+          <CaptionsPanel
+            projection={controller.projection}
+            sequenceId={canonicalSequence?.id ?? null}
+            disabled={editPending}
+            onApply={controller.applyCaptionArtifactEdit}
+            frame={
+              canonicalSequence === null
+                ? { width: 1920, height: 1080 }
+                : { width: canonicalSequence.width, height: canonicalSequence.height }
             }
           />
         </aside>

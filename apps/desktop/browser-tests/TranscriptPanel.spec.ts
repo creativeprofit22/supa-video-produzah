@@ -117,3 +117,75 @@ test("license dialog reflows at 320px with 200% text", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: `${evidence}/transcript-license-320px-200-percent-text.png` });
 });
+
+async function reachCaptions(page: Page) {
+  await focusAndPress(page, "Choose runtime folder");
+  await focusAndPress(page, "Review license");
+  await focusAndPress(page, "Accept license");
+  await focusAndPress(page, "Transcribe");
+  await expect(page.getByRole("button", { name: "And", exact: true })).toBeVisible();
+  await focusAndPress(page, "Generate captions");
+  await expect(page.getByRole("heading", { name: "Caption style" })).toBeVisible();
+}
+
+test("captions panel restyles and nudges cues from the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(fixturePath);
+  await reachCaptions(page);
+
+  const size = page.getByLabel("Size (px)");
+  await size.focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("fixture-log")).toHaveText("caption-edit:50");
+
+  const cues = page.getByRole("list", { name: "Caption cues" }).getByRole("listitem");
+  await expect(cues.first()).toBeVisible();
+  const laterEnd = cues.first().getByRole("button", { name: /^End one frame later/u });
+  await laterEnd.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("fixture-log")).toHaveText("caption-edit:50");
+
+  // Pulling the start past the end is rejected with a readable reason.
+  const earlierEnd = cues.first().getByRole("button", { name: /^End one frame earlier/u });
+  for (let press = 0; press < 80; press += 1) {
+    await earlierEnd.press("Enter");
+    if (await page.getByRole("alert").isVisible()) break;
+  }
+  await expect(page.getByRole("alert")).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .include(".captions-panel")
+    .withTags(wcagTags)
+    .analyze();
+  expect(results.violations, results.violations.map(({ id }) => id).join(", ")).toEqual([]);
+});
+
+test("captions panel reflows at 320px with 200% text", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(fixturePath);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "32px";
+  });
+  await reachCaptions(page);
+  await expectNoHorizontalOverflow(page);
+  await page.locator(".captions-panel").screenshot({
+    path: `${evidence}/captions-panel-320px-200-percent-text.png`,
+  });
+});
+
+test("captions panel exports SRT, VTT and ASS sidecar files", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(fixturePath);
+  await reachCaptions(page);
+  for (const [format, header] of [
+    ["SRT", "srt:1"],
+    ["VTT", "vtt:WEBVTT"],
+    ["ASS", "ass:[Script Info]"],
+  ] as const) {
+    await focusAndPress(page, `Export ${format}`);
+    await expect(page.getByTestId("fixture-log")).toHaveText(`subtitles:${header}`);
+    await expect(page.locator(".captions-panel").getByRole("status")).toHaveText(
+      `Saved ${format} subtitles.`,
+    );
+  }
+});

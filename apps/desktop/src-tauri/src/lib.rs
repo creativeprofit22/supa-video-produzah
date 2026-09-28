@@ -118,6 +118,8 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::asr_ipc::video_asr_accept_consent,
             video::asr_ipc::video_start_transcription,
             video::asr_ipc::video_transcription_result,
+            video::subtitle_export::video_pick_subtitle_path,
+            video::subtitle_export::video_write_subtitles,
         ])
         .on_window_event(clean_up_video_state_on_destroyed)
 }
@@ -1146,6 +1148,8 @@ mod tests {
                 video::asr_ipc::video_asr_accept_consent,
                 video::asr_ipc::video_start_transcription,
                 video::asr_ipc::video_transcription_result,
+                video::subtitle_export::video_pick_subtitle_path,
+                video::subtitle_export::video_write_subtitles,
             ])
             .build(context)
             .expect("transcription IPC app must build")
@@ -1227,6 +1231,22 @@ mod tests {
         )
         .expect_err("unknown transcription job must read as not found");
         assert_eq!(missing["details"]["category"], "not_found");
+
+        let ungranted = std::env::temp_dir().join(format!("{}.srt", uuid::Uuid::new_v4()));
+        let error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_write_subtitles",
+                json!({ "request": {
+                    "format": "srt",
+                    "path": ungranted.to_string_lossy(),
+                    "contents": "1\n00:00:00,000 --> 00:00:01,000\nHi\n",
+                } }),
+            ),
+        )
+        .expect_err("subtitle writes need a dialog-issued grant");
+        assert_eq!(error["code"], "path_not_granted");
+        assert!(!ungranted.exists());
         let _ = fs::remove_dir_all(config_dir);
     }
 

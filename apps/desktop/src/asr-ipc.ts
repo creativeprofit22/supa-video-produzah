@@ -80,3 +80,26 @@ export const tauriTranscriptionBackend = {
   startTranscription,
   getTranscriptionResult,
 } satisfies TranscriptionBackend;
+
+export type SubtitleFileFormat = "srt" | "vtt" | "ass";
+
+/** Opens a native save dialog; resolves the granted path or `null` on cancel. */
+export async function pickSubtitlePath(
+  format: SubtitleFileFormat,
+  defaultName: string,
+): Promise<string | null> {
+  const response = await invokeAsrCommand("video_pick_subtitle_path", {
+    request: { format, defaultName },
+  });
+  if (response === null) return null;
+  if (typeof response !== "string" || response.length === 0) throw new VideoIpcResponseError();
+  return response;
+}
+
+export async function writeSubtitles(
+  format: SubtitleFileFormat,
+  path: string,
+  contents: string,
+): Promise<void> {
+  await invokeAsrCommand("video_write_subtitles", { request: { format, path, contents } });
+}

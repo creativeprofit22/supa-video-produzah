@@ -7,8 +7,10 @@ import {
   createTranscriptArtifactV1,
   type AsrRuntimeStatus,
   type MediaJobRecord,
+  type CaptionArtifactV1,
   type TranscriptArtifactV1,
 } from "@supa-video/media";
+import { buildGenerateCaptionsCommandGroup } from "@supa-video/project";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import { useState } from "react";
@@ -16,6 +18,7 @@ import ReactDOM from "react-dom/client";
 
 import "../src/App.css";
 import type { TranscriptionBackend } from "../src/asr-ipc";
+import { CaptionsPanel } from "../src/video/CaptionsPanel";
 import { TranscriptPanel } from "../src/video/TranscriptPanel";
 
 const id = (value: number): string =>
@@ -225,10 +228,66 @@ function job(state: "running" | "complete"): MediaJobRecord {
     : ({ ...base, state, settledAt: timestamp, resultAvailable: true } as MediaJobRecord);
 }
 
+/** Mirrors what the native service does for InsertTrack + ApplyCaptionArtifact. */
+function applyGroupLocally(
+  base: ProjectProjection,
+  transcript: TranscriptArtifactV1,
+): ProjectProjection {
+  const group = buildGenerateCaptionsCommandGroup({
+    artifact: transcript,
+    projection: base,
+    sequenceId: id(2),
+    trackId: id(10),
+    language: "en",
+    groupId: id(600),
+    applyCommandId: id(601),
+    insertTrackCommandId: id(602),
+    newCaptionTrackId: id(603),
+  });
+  const apply = group.commandGroup.commands.at(-1);
+  if (apply?.type !== "ApplyCaptionArtifact") throw new Error("Expected caption apply");
+  const withTrack: ProjectProjection = {
+    ...base,
+    state: {
+      ...base.state,
+      sequences: base.state.sequences.map((sequence) => ({
+        ...sequence,
+        tracks: [
+          ...sequence.tracks,
+          { id: group.captionTrackId, name: "Captions", kind: "caption", captions: [] },
+        ],
+      })),
+    },
+  };
+  return withCaptionArtifact(withTrack, group.captionTrackId, apply.artifact);
+}
+
+function withCaptionArtifact(
+  base: ProjectProjection,
+  trackId: string,
+  artifact: CaptionArtifactV1,
+): ProjectProjection {
+  return {
+    ...base,
+    state: {
+      ...base.state,
+      sequences: base.state.sequences.map((sequence) => ({
+        ...sequence,
+        tracks: sequence.tracks.map((track) =>
+          track.id === trackId && track.kind === "caption"
+            ? { ...track, activeCaptionArtifact: artifact }
+            : track,
+        ),
+      })),
+    },
+  };
+}
+
 function Fixture() {
   const [jobs, setJobs] = useState<readonly MediaJobRecord[]>([]);
   const [current, setCurrent] = useState(status);
   const [log, setLog] = useState<string>("");
+  const [captioned, setCaptioned] = useState<ProjectProjection>(projection);
   const backend: TranscriptionBackend = {
     getAsrRuntimeStatus: async () => current,
     chooseAsrRuntimeFolder: async () => {
@@ -277,9 +336,26 @@ function Fixture() {
           setLog(`remove:${proposal.selectedOccurrenceIds.length}`);
           return true;
         }}
-        onGenerateCaptions={async () => {
+        onGenerateCaptions={async (transcript) => {
+          setCaptioned(applyGroupLocally(projection, transcript));
           setLog("captions");
           return true;
+        }}
+      />
+      <CaptionsPanel
+        projection={captioned}
+        sequenceId={id(2)}
+        disabled={false}
+        onApply={async (active, next) => {
+          setCaptioned(withCaptionArtifact(captioned, active.trackId, next));
+          setLog(`caption-edit:${next.style.typography.fontSizePx}`);
+          return true;
+        }}
+        subtitleWriter={{
+          pick: async (format) => `C:/exports/captions.${format}`,
+          write: async (format, _path, contents) => {
+            setLog(`subtitles:${format}:${contents.split("\n")[0] ?? ""}`);
+          },
         }}
       />
       <output data-testid="fixture-log">{log}</output>

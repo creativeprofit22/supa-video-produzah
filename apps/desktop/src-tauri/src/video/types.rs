@@ -508,9 +508,32 @@ pub struct RenderVideoInputV2 {
 pub struct RenderCaptionInput {
     pub track_id: ProjectUuid,
     pub caption_id: ProjectUuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cue_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<RenderCaptionStyle>,
     pub start_microseconds: u64,
     pub end_microseconds: u64,
     pub text: String,
+}
+
+/// Mirrors `renderCaptionStyleV1Schema`. `font` is a closed key that maps to a
+/// fixed Windows core-font file; no caller-supplied path reaches FFmpeg.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderCaptionStyle {
+    pub font: String,
+    pub font_size_px: u64,
+    pub line_spacing_px: u64,
+    pub color_rgba: String,
+    pub horizontal: String,
+    pub vertical: String,
+    pub anchor_x_permille: u64,
+    pub anchor_y_permille: u64,
+    pub safe_top_permille: u64,
+    pub safe_right_permille: u64,
+    pub safe_bottom_permille: u64,
+    pub safe_left_permille: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

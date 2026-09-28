@@ -2989,3 +2989,61 @@ video {
   background: rgb(185 28 28 / 12%);
   text-decoration: line-through;
 }
+
+/* Captions panel */
+.captions-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.captions-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 8px;
+}
+
+.captions-style-grid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.captions-style-grid select,
+.captions-style-grid input:not([type="checkbox"]) {
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.captions-checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.captions-subheading {
+  margin: 0;
+}
+
+.captions-cues {
+  display: grid;
+  gap: 8px;
+  max-height: 20rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.captions-cue {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.captions-cue-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

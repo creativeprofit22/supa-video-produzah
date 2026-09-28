@@ -4,6 +4,7 @@ mod asr_settings;
 pub(crate) mod cache;
 #[allow(dead_code)]
 mod caption;
+mod caption_render;
 #[allow(dead_code)]
 pub(crate) mod derived;
 mod error;
@@ -16,6 +17,7 @@ mod process;
 pub mod project;
 pub(crate) mod project_io;
 pub(crate) mod render;
+pub(crate) mod subtitle_export;
 pub(crate) mod toolchain;
 mod transcript;
 pub(crate) mod transcription_job;

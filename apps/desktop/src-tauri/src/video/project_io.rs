@@ -588,7 +588,7 @@ where
     promote(temporary, destination)
 }
 
-fn promote_temp_file(
+pub(crate) fn promote_temp_file(
     temporary: NamedTempFile,
     destination: &Path,
 ) -> Result<(), VideoCommandError> {

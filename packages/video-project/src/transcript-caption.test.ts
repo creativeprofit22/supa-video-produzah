@@ -27,6 +27,11 @@ import {
   defaultCaptionValidationProfileV1,
 } from "./transcript-caption-apply.js";
 import {
+  buildCaptionEditCommandGroup,
+  restyleCaptionArtifactV1,
+  retimeCaptionCueV1,
+} from "./caption-edit.js";
+import {
   projectTranscriptToTimeline,
   type TranscriptTimelineOccurrence,
   type TranscriptTimelineProjection,
@@ -1201,5 +1206,100 @@ describe("buildGenerateCaptionsCommandGroup", () => {
     expect(profile30.minimumCueDuration.value).toBe(25);
     expect(profile30.maximumCueDuration.value).toBe(209);
     expect(profile30.maxLinesPerCue).toBe(2);
+  });
+});
+
+describe("caption style and retime edits", () => {
+  const words = [
+    { text: "Hello", startUs: 100_000, endUs: 400_000 },
+    { text: "world.", startUs: 500_000, endUs: 900_000 },
+    { text: "Second", startUs: 1_600_000, endUs: 1_900_000 },
+    { text: "cue.", startUs: 2_000_000, endUs: 2_400_000 },
+  ];
+
+  function captioned() {
+    const base = project([clip(300, 0, 40, 0)]);
+    const artifact = generateCaptionArtifactV1(input(transcript(words)));
+    return { base, artifact };
+  }
+
+  it("restyles into a new valid artifact and re-anchors cues inside the safe area", () => {
+    const { base, artifact } = captioned();
+    const style = {
+      ...artifact.style,
+      alignment: { horizontal: "left", vertical: "top" },
+      typography: { ...artifact.style.typography, fontSizePx: 64 },
+    } as const;
+    const result = restyleCaptionArtifactV1(artifact, style, base);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    const { safeArea } = artifact.validationProfile;
+    expect(result.artifact).not.toBe(artifact);
+    expect(result.artifact.style.typography.fontSizePx).toBe(64);
+    expect(result.artifact.trackLink.projectRevision).toEqual(base.revision);
+    expect(
+      result.artifact.cues.every(
+        ({ anchor }) =>
+          anchor.xPermille === safeArea.leftPermille && anchor.yPermille === safeArea.topPermille,
+      ),
+    ).toBe(true);
+  });
+
+  it("nudges a cue edge by frames and rejects overlap, too-short cues and unknown cues", () => {
+    const { base, artifact } = captioned();
+    const [first, second] = artifact.cues;
+    if (first === undefined || second === undefined) throw new Error("Expected two cues");
+
+    const later = retimeCaptionCueV1(artifact, first.cueId, "end", 1, base);
+    expect(later.ok).toBe(true);
+    if (later.ok) expect(later.artifact.cues[0]?.end.value).toBe(first.end.value + 1);
+
+    const overlap = retimeCaptionCueV1(
+      artifact,
+      first.cueId,
+      "end",
+      second.start.value - first.end.value + 1,
+      base,
+    );
+    expect(overlap.ok).toBe(false);
+    if (!overlap.ok)
+      expect(overlap.issues.map(({ code }) => code)).toContain("CAPTION_CUE_OVERLAP");
+
+    const collapse = retimeCaptionCueV1(
+      artifact,
+      first.cueId,
+      "end",
+      first.start.value - first.end.value,
+      base,
+    );
+    expect(collapse.ok).toBe(false);
+
+    expect(retimeCaptionCueV1(artifact, "missing", "start", 1, base).ok).toBe(false);
+    expect(retimeCaptionCueV1(artifact, first.cueId, "start", 0, base).ok).toBe(false);
+  });
+
+  it("rejects a style whose line length makes cues exceed the profile", () => {
+    const { base, artifact } = captioned();
+    const tight = {
+      ...artifact,
+      validationProfile: { ...artifact.validationProfile, maxCharactersPerLine: 3 },
+    };
+    const result = restyleCaptionArtifactV1(tight, artifact.style, base);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.issues.map(({ code }) => code)).toContain("CAPTION_LINE_LENGTH_EXCEEDED");
+  });
+
+  it("packages an edit as a single ApplyCaptionArtifact command", () => {
+    const { base, artifact } = captioned();
+    const group = buildCaptionEditCommandGroup({
+      projection: base,
+      active: { sequenceId: id(2), trackId: artifact.trackLink.captionTrackId, artifact },
+      artifact,
+      groupId: id(901),
+      commandId: id(902),
+    });
+    expect(group.commands).toHaveLength(1);
+    expect(group.commands[0]?.type).toBe("ApplyCaptionArtifact");
+    expect(group.baseRevision).toBe(base.revision.number);
   });
 });

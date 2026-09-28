@@ -845,6 +845,7 @@ fn validate_captions(plan: &RenderPlan) -> Result<(), VideoCommandError> {
                 || caption.start_microseconds > MAX_SAFE_INTEGER
                 || caption.end_microseconds > MAX_SAFE_INTEGER
                 || caption.end_microseconds <= caption.start_microseconds
+                || !super::caption_render::valid_caption_style_fields(caption)
         })
     {
         return Err(VideoCommandError::invalid_render_plan("captions"));
@@ -1013,26 +1014,8 @@ fn transformed_overlay_filter(input: &super::types::RenderVideoInputV2) -> Strin
     )
 }
 
-fn escape_drawtext_text(text: &str) -> String {
-    text.replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace(':', "\\:")
-        .replace('%', "\\%")
-        .replace(',', "\\,")
-        .replace(';', "\\;")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
-        .replace("\r\n", "\\n")
-        .replace(['\r', '\n'], "\\n")
-}
-
 fn caption_drawtext_filter(caption: &RenderCaptionInput) -> String {
-    format!(
-        "drawtext=text='{}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,{})*lt(t\\,{})'",
-        escape_drawtext_text(&caption.text),
-        fixed_six_seconds(caption.start_microseconds),
-        fixed_six_seconds(caption.end_microseconds),
-    )
+    super::caption_render::caption_drawtext_filter(caption, fixed_six_seconds)
 }
 
 /// Export keyframe spacing: a full frame every 2 seconds, in whole frames at the sequence rate,

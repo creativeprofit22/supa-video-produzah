@@ -48,8 +48,14 @@ export function sourceLinks(
 }
 
 function anchorFor(input: ValidatedCaptionInput): CaptionCueV1["anchor"] {
-  const { alignment } = input.style;
-  const { safeArea } = input.validationProfile;
+  return captionAnchorForAlignment(input.style.alignment, input.validationProfile.safeArea);
+}
+
+/** The cue anchor implied by an alignment, always inside the safe area. */
+export function captionAnchorForAlignment(
+  alignment: CaptionArtifactV1["style"]["alignment"],
+  safeArea: CaptionArtifactV1["validationProfile"]["safeArea"],
+): CaptionCueV1["anchor"] {
   const horizontalStart = safeArea.leftPermille;
   const horizontalEnd = 1_000 - safeArea.rightPermille;
   const verticalStart = safeArea.topPermille;

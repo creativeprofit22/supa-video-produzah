@@ -25,6 +25,12 @@ import {
   videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 
+import {
+  CaptionRenderStyleError,
+  artifactRenderCaptions,
+  captionDrawtextFilter,
+} from "./caption-render.js";
+
 export interface RenderableRevisionV2 {
   readonly revision: Readonly<ProjectRevisionDescriptorV2>;
   readonly state: Readonly<VideoProjectStateV2>;
@@ -107,23 +113,35 @@ function formatMicrosecondsAsSeconds(microseconds: number): string {
   return `${wholeSeconds}.${fractionalMicroseconds.toString().padStart(6, "0")}`;
 }
 
-function escapeDrawtextText(text: string): string {
-  return text
-    .replaceAll("\\", "\\\\")
-    .replaceAll("'", "\\'")
-    .replaceAll(":", "\\:")
-    .replaceAll("%", "\\%")
-    .replaceAll(",", "\\,")
-    .replaceAll(";", "\\;")
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]")
-    .replaceAll("\r\n", "\\n")
-    .replaceAll("\r", "\\n")
-    .replaceAll("\n", "\\n");
+function renderCaption(caption: RenderCaptionInputV2): string {
+  return captionDrawtextFilter(caption, formatMicrosecondsAsSeconds);
 }
 
-function captionDrawtextFilter(caption: RenderCaptionInputV2): string {
-  return `drawtext=text='${escapeDrawtextText(caption.text)}':fontcolor=white:fontsize=h/18:box=1:boxcolor=black@0.65:boxborderw=12:x=(w-text_w)/2:y=h-text_h-h/12:enable='gte(t\\,${formatMicrosecondsAsSeconds(caption.startMicroseconds)})*lt(t\\,${formatMicrosecondsAsSeconds(caption.endMicroseconds)})'`;
+/**
+ * Legacy caption items plus every cue of the track's active caption artifact.
+ * Artifact cues carry their style, anchor and safe area into the render plan.
+ */
+function trackRenderCaptions(
+  tracks: readonly VideoProjectStateV2["sequences"][number]["tracks"][number][],
+  frame: { readonly width: number; readonly height: number },
+): RenderCaptionInputV2[] {
+  return tracks.flatMap((track) => {
+    if (track.kind !== "caption" || isTrackHidden(track)) return [];
+    const legacy = track.captions.map((caption) => ({
+      trackId: track.id,
+      captionId: caption.id,
+      startMicroseconds: rationalTimeToMicroseconds(caption.start, "nearestTiesAwayFromZero"),
+      endMicroseconds: rationalTimeToMicroseconds(caption.end, "nearestTiesAwayFromZero"),
+      text: caption.text,
+    }));
+    if (track.activeCaptionArtifact === undefined) return legacy;
+    try {
+      return [...legacy, ...artifactRenderCaptions(track.id, track.activeCaptionArtifact, frame)];
+    } catch (error) {
+      if (error instanceof CaptionRenderStyleError) invalidRenderPlan(error.message);
+      throw error;
+    }
+  });
 }
 
 function toBoundarySeconds(time: RationalTime): string {
@@ -201,17 +219,7 @@ function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
   ) {
     invalidRenderPlan("The Phase 2 single-clip exporter requires default transform and gain");
   }
-  const captions = sequence.tracks.flatMap((candidateTrack) =>
-    candidateTrack.kind === "caption" && !isTrackHidden(candidateTrack)
-      ? candidateTrack.captions.map((caption) => ({
-          trackId: candidateTrack.id,
-          captionId: caption.id,
-          startMicroseconds: rationalTimeToMicroseconds(caption.start, "nearestTiesAwayFromZero"),
-          endMicroseconds: rationalTimeToMicroseconds(caption.end, "nearestTiesAwayFromZero"),
-          text: caption.text,
-        }))
-      : [],
-  );
+  const captions = trackRenderCaptions(sequence.tracks, sequence);
   return {
     revision: projectRevisionSchema.parse({
       id: descriptor.data.id,
@@ -354,7 +362,7 @@ function compileValidatedPlan(
     `pad=${sequence.width}:${sequence.height}:(ow-iw)/2:(oh-ih)/2:black`,
     ...(videoHidden ? ["drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill"] : []),
     `fps=${sequence.rate.numerator}/${sequence.rate.denominator}`,
-    ...captions.map(captionDrawtextFilter),
+    ...captions.map(renderCaption),
   ].join(",");
   const argv = [
     "-hide_banner",
@@ -721,17 +729,7 @@ export function compileActiveSequenceRenderPlan(
       muted: isTrackMuted(track),
       hasAudio: asset.probe.audio !== null,
     }));
-    const captions = sequence.tracks.flatMap((track) =>
-      track.kind === "caption" && !isTrackHidden(track)
-        ? track.captions.map((caption) => ({
-            trackId: track.id,
-            captionId: caption.id,
-            startMicroseconds: rationalTimeToMicroseconds(caption.start, "nearestTiesAwayFromZero"),
-            endMicroseconds: rationalTimeToMicroseconds(caption.end, "nearestTiesAwayFromZero"),
-            text: caption.text,
-          }))
-        : [],
-    );
+    const captions = trackRenderCaptions(sequence.tracks, sequence);
     const filterParts = [
       `color=c=black:s=${sequence.width}x${sequence.height}:r=${sequence.rate.numerator}/${sequence.rate.denominator}:d=${duration}[base]`,
     ];
@@ -761,7 +759,7 @@ export function compileActiveSequenceRenderPlan(
     });
     captions.forEach((caption, captionIndex) => {
       const outputLabel = `caption${captionIndex}`;
-      filterParts.push(`[${baseLabel}]${captionDrawtextFilter(caption)}[${outputLabel}]`);
+      filterParts.push(`[${baseLabel}]${renderCaption(caption)}[${outputLabel}]`);
       baseLabel = outputLabel;
     });
     filterParts.push(`[${baseLabel}]null[vout]`);

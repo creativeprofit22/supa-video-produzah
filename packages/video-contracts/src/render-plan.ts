@@ -37,10 +37,70 @@ const renderExpectationSchema = z
   })
   .strict();
 
+/**
+ * Caption fonts the exporter can burn in. Each key maps to a fixed Windows
+ * core-font file in both render compilers; no user-supplied path reaches FFmpeg.
+ */
+export const RENDER_CAPTION_FONT_FILES = {
+  "arial-regular": "arial.ttf",
+  "arial-bold": "arialbd.ttf",
+  "arial-italic": "ariali.ttf",
+  "arial-bold-italic": "arialbi.ttf",
+  "segoe-ui-regular": "segoeui.ttf",
+  "segoe-ui-bold": "segoeuib.ttf",
+  "segoe-ui-italic": "segoeuii.ttf",
+  "segoe-ui-bold-italic": "segoeuiz.ttf",
+  "verdana-regular": "verdana.ttf",
+  "verdana-bold": "verdanab.ttf",
+  "verdana-italic": "verdanai.ttf",
+  "verdana-bold-italic": "verdanaz.ttf",
+  "georgia-regular": "georgia.ttf",
+  "georgia-bold": "georgiab.ttf",
+  "georgia-italic": "georgiai.ttf",
+  "georgia-bold-italic": "georgiaz.ttf",
+  "consolas-regular": "consola.ttf",
+  "consolas-bold": "consolab.ttf",
+  "consolas-italic": "consolai.ttf",
+  "consolas-bold-italic": "consolaz.ttf",
+} as const;
+export type RenderCaptionFontKey = keyof typeof RENDER_CAPTION_FONT_FILES;
+const renderCaptionFontKeys = Object.keys(RENDER_CAPTION_FONT_FILES) as [
+  RenderCaptionFontKey,
+  ...RenderCaptionFontKey[],
+];
+
+const permilleSchema = safeNonNegativeIntegerSchema.max(1_000);
+
+export const renderCaptionStyleV1Schema = z
+  .object({
+    font: z.enum(renderCaptionFontKeys),
+    fontSizePx: z.number().int().min(8).max(400),
+    lineSpacingPx: z.number().int().min(0).max(400),
+    colorRgba: z.string().regex(/^#[0-9a-f]{8}$/u),
+    horizontal: z.enum(["left", "center", "right"]),
+    vertical: z.enum(["top", "center", "bottom"]),
+    anchorXPermille: permilleSchema,
+    anchorYPermille: permilleSchema,
+    safeTopPermille: permilleSchema.max(400),
+    safeRightPermille: permilleSchema.max(400),
+    safeBottomPermille: permilleSchema.max(400),
+    safeLeftPermille: permilleSchema.max(400),
+  })
+  .strict();
+export type RenderCaptionStyleV1 = z.infer<typeof renderCaptionStyleV1Schema>;
+
 export const renderCaptionInputV2Schema = z
   .object({
     trackId: projectUuidSchema,
     captionId: projectUuidSchema,
+    /** Present for cues from an active caption artifact. */
+    cueId: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]+$/u)
+      .min(1)
+      .max(128)
+      .optional(),
+    style: renderCaptionStyleV1Schema.optional(),
     startMicroseconds: safeNonNegativeIntegerSchema,
     endMicroseconds: safePositiveIntegerSchema,
     text: z
