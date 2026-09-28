@@ -166,8 +166,79 @@ Then the job ends on `complete` as before.
   as designed. The GPU proof now fails if no piece progress is recorded, and it writes the events to
   `progressEvents` in its JSON.
 
+## Cheaper runtime re-check between pieces (follow-up, user decision)
+
+Before this, every piece re-hashed all runtime files (about 1.9 GB, about 8 s). By user decision it is now:
+
+1. **Job start:** each file is opened once and SHA-256-hashed through that handle, then held open until the job
+   ends. On Windows the handle shares **read only**, so any other process's write, rename or delete fails. The
+   program, its DLLs and the models still load, because loading only reads.
+2. **Before each piece:** a file-identity check with no hashing. The runtime directory must still be the same
+   canonical, non-linked directory. Each path must still be a plain, non-linked file at its canonical location
+   with the verified size. The path and the held handle must both report the recorded volume, file ID, size and
+   last-write time. Unix also compares the inode change time, which a user cannot set back. This check is the
+   fallback on platforms without the Windows lock.
+3. **Before the speaker pass:** every held file is fully re-hashed through its handle, then checked again.
+
+Any mismatch fails the job with the existing `nemo_unavailable` error, which is not retried. Code:
+`HeldNemoRuntime` / `HeldNemoFile` in `nemo_transcription.rs`.
+
+**Remaining trade-off (accepted):** without the Windows lock, a same-size in-place rewrite with its last-write
+time put back is not caught before the next piece. It is caught by the full hash before the speaker pass. With
+the lock, that rewrite cannot happen.
+
+**Fake-runtime tests** (the fake runtime tampers with the model during piece 0 via `nemo-tamper-piece-N`):
+
+- `nemo_runner_hashes_an_unchanged_runtime_only_at_start_and_before_speakers`: 3 pieces, and exactly 6 file
+  hashes (3 files × start + speaker pass). The pieces do not re-hash.
+- `a_held_runtime_file_cannot_be_written_renamed_or_deleted_but_can_be_read` (Windows): holds a runtime directly.
+  A write, a rename and a delete are refused for every file, while reading still works. Once the hold ends, the
+  same write succeeds, which proves the lock is what refused it.
+- `nemo_runner_holds_runtime_files_so_nobody_can_change_them` (Windows): while the job holds the files, a
+  write, a rename and a delete of the model all fail. The job publishes and the model is unchanged.
+- `nemo_runner_fails_when_a_runtime_file_is_swapped_between_pieces`: with the lock off, a same-size model with
+  other bytes is renamed over the model. The job fails with `nemo_unavailable` (not retryable) before piece 1
+  runs, and leaves nothing behind. A mutation that disables the per-piece check makes this test fail.
+- `nemo_runner_catches_an_in_place_rewrite_with_its_time_put_back`: with the lock off, it is caught before the
+  next piece on Unix, and on Windows by the full hash before the speaker pass. Either way, no speaker pass and
+  no publish.
+
+**Real runs** (RTX 8 GB, production job path, debug build):
+
+| Run | Job time | Pieces (GPU) | Speaker pass | Other (verify, cut, parse, store) | Peak total | Speakers |
+|---|---|---|---|---|---|---|
+| 5 min, re-hash per piece (`progress-5min`) | 80 s | – | – | – | 5,754 MB | 99.4 % |
+| 5 min, held (`held-5min`) | 65 s | – | – | – | – | 99.4 %, WER 0.041 |
+| 2 h, re-hash per piece (`long2h`) | 1,180 s | 487 s | 404 s | about 289 s | 5,892 MB | 99.62 % |
+| 2 h, held (`held-2h`) | 1,164 s | 542 s | 572 s | about 50 s | 5,978 MB | 99.62 % |
+
+**Where the runtime-check time goes.** The 2-hour run's logs only record job totals, so each check was timed
+separately against the same real runtime (11 files, 1,970,175,488 bytes; debug build). This used the ignored
+test `runtime_check_cost::real_runtime_check_costs`, run alone and single-threaded, which counts this process's
+read bytes with `GetProcessIoCounters`:
+
+| Check | Time | Bytes read |
+|---|---|---|
+| Folder verify when the job is started (unchanged by this work) | 9.4 s | 1,970,175,488 |
+| Hold + full hash at job start | 9.8 s | 1,970,175,488 |
+| 30 between-piece identity checks, together | 0.13 s (4.5 ms each) | **0** |
+| Full hash before the speaker pass | 11.0 s | 1,970,175,488 |
+
+So the runtime checks now cost about 30 s per job, whatever its length: three full hashes plus about 0.1 s.
+Before, they cost about 33 full hashes on 2 hours. The between-piece check reads no file contents. The rest of
+the estimated ~50 s non-NeMo overhead is audio extraction and cutting, parsing and the job store. The two full
+hashes at start come from separate layers: the readiness check and the job's own hold. Merging them would save
+about 10 s more. That is not done here.
+
+The overhead outside NeMo fell by about 240 s on 2 hours (about 8 s × 30 pieces), as predicted. The total
+only fell by 16 s, because both GPU stages ran slower this time: the pieces took +55 s and the speaker pass
++168 s. The card was at 1,177 of 1,974 MHz, 63 °C, just after the run, so this looks like a clock or thermal
+difference rather than the change. The runtime check does not touch the GPU. The speaker pass peaked at
+2,989 MB (was 2,335 MB); the total peak stayed under 6,000 MB. The 2-hour file has no full reference, so its
+WER is not scored. The progress events show 30 pieces at about 19 s apart, with no gap from the per-piece check.
+
 ## Follow-ups (not done here)
 
 - ~~The job shows one stage, so a 20-minute job gives no progress within it.~~ Closed above.
-- Re-verifying the runtime before every piece costs about 8 s each in a debug build. Checking a cheaper
-  identity between pieces would need its own decision, because it trades away a check the plan requires.
+- ~~Re-verifying the runtime before every piece costs about 8 s each.~~ Closed above.
+- A like-for-like 2-hour timing on a cool card would show the saving in the total; this run could not.

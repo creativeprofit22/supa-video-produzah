@@ -129,6 +129,14 @@ pub(crate) struct VerifiedNemoRuntime {
     required_dlls: Vec<VerifiedNemoFile>,
     model: VerifiedNemoFile,
     diarizer: Option<VerifiedNemoFile>,
+    /// Files hashed through [`HeldNemoRuntime`], so tests can prove an
+    /// unchanged runtime is not re-hashed before every piece.
+    #[cfg(test)]
+    held_hashes: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Tests turn the Windows lock off to exercise the identity check that
+    /// other platforms rely on.
+    #[cfg(test)]
+    lock_files: bool,
 }
 
 impl VerifiedNemoRuntime {
@@ -169,24 +177,268 @@ impl VerifiedNemoRuntime {
             required_dlls: verified_dlls,
             model: verify_runtime_file(model)?,
             diarizer: diarizer.map(verify_runtime_file).transpose()?,
+            #[cfg(test)]
+            held_hashes: std::sync::Arc::default(),
+            #[cfg(test)]
+            lock_files: true,
         })
     }
 
-    fn verify_again(&self) -> Result<(), VideoCommandError> {
-        let directory = verify_runtime_directory(&self.dll_directory)?;
-        if directory != self.dll_directory {
+    #[cfg(test)]
+    pub(crate) fn without_file_locks(mut self) -> Self {
+        self.lock_files = false;
+        self
+    }
+
+    fn locks_files(&self) -> bool {
+        #[cfg(test)]
+        {
+            self.lock_files
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    /// How many runtime files have been hashed through held handles.
+    #[cfg(test)]
+    pub(crate) fn held_hash_count(&self) -> u64 {
+        self.held_hashes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn files(&self) -> impl Iterator<Item = &VerifiedNemoFile> {
+        std::iter::once(&self.executable)
+            .chain(&self.required_dlls)
+            .chain(std::iter::once(&self.model))
+            .chain(&self.diarizer)
+    }
+
+    fn check_directory(&self) -> Result<(), VideoCommandError> {
+        if verify_runtime_directory(&self.dll_directory)? != self.dll_directory {
             return Err(nemo_unavailable());
-        }
-        verify_runtime_file(self.executable.clone())?;
-        verify_runtime_file(self.model.clone())?;
-        if let Some(diarizer) = &self.diarizer {
-            verify_runtime_file(diarizer.clone())?;
-        }
-        for dll in &self.required_dlls {
-            verify_runtime_file(dll.clone())?;
         }
         Ok(())
     }
+
+    /// Opens every runtime file for the rest of the job and hashes it through
+    /// that handle, so what was hashed is what stays held.
+    fn hold(&self) -> Result<HeldNemoRuntime<'_>, VideoCommandError> {
+        self.check_directory()?;
+        let lock = self.locks_files();
+        let files = self
+            .files()
+            .map(|file| HeldNemoFile::open(file, lock))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut held = HeldNemoRuntime {
+            runtime: self,
+            files,
+        };
+        held.verify_contents()?;
+        Ok(held)
+    }
+}
+
+/// A verified runtime held open for one transcription.
+///
+/// On Windows each file is opened with read-only sharing, so no other process
+/// can write, rename or delete it until the job ends, while reads, and loading
+/// the program and its DLLs, still work. On every platform the path and the
+/// handle are compared with the identity recorded when the file was hashed:
+/// that is the check before each piece, and the only one where files cannot be
+/// locked. The contents are hashed in full again before the speaker pass.
+struct HeldNemoRuntime<'a> {
+    runtime: &'a VerifiedNemoRuntime,
+    files: Vec<HeldNemoFile>,
+}
+
+impl HeldNemoRuntime<'_> {
+    /// Cheap check that no runtime file was replaced, moved or modified.
+    fn check_unchanged(&self) -> Result<(), VideoCommandError> {
+        self.runtime.check_directory()?;
+        self.files
+            .iter()
+            .try_for_each(HeldNemoFile::check_unchanged)
+    }
+
+    /// Full hash of every held file, then the identity check.
+    fn verify_contents(&mut self) -> Result<(), VideoCommandError> {
+        for held in &mut self.files {
+            held.verify_contents()?;
+            #[cfg(test)]
+            self.runtime
+                .held_hashes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.check_unchanged()
+    }
+}
+
+struct HeldNemoFile {
+    expected: VerifiedNemoFile,
+    file: File,
+    identity: FileIdentity,
+}
+
+impl HeldNemoFile {
+    fn open(expected: &VerifiedNemoFile, lock: bool) -> Result<Self, VideoCommandError> {
+        let expected = expected.clone();
+        check_runtime_path(&expected)?;
+        let file = open_held_runtime_file(&expected.path, lock).map_err(|_| nemo_unavailable())?;
+        let identity = handle_identity(&file)?;
+        if identity.byte_length != expected.byte_length
+            || path_identity(&expected.path)? != identity
+        {
+            return Err(nemo_unavailable());
+        }
+        Ok(Self {
+            expected,
+            file,
+            identity,
+        })
+    }
+
+    fn check_unchanged(&self) -> Result<(), VideoCommandError> {
+        check_runtime_path(&self.expected)?;
+        if handle_identity(&self.file)? != self.identity
+            || path_identity(&self.expected.path)? != self.identity
+        {
+            return Err(nemo_unavailable());
+        }
+        Ok(())
+    }
+
+    fn verify_contents(&mut self) -> Result<(), VideoCommandError> {
+        self.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| nemo_unavailable())?;
+        if hash_reader_exact(&mut self.file, self.expected.byte_length)? != self.expected.sha256 {
+            return Err(nemo_unavailable());
+        }
+        Ok(())
+    }
+}
+
+/// The path is still a plain file, with no linked ancestor, at its verified
+/// canonical location and size.
+fn check_runtime_path(file: &VerifiedNemoFile) -> Result<(), VideoCommandError> {
+    let metadata = fs::symlink_metadata(&file.path).map_err(|_| nemo_unavailable())?;
+    if !metadata.is_file() || is_reparse_or_symlink(&metadata) || metadata.len() != file.byte_length
+    {
+        return Err(nemo_unavailable());
+    }
+    reject_linked_ancestors(&file.path)?;
+    if fs::canonicalize(&file.path).map_err(|_| nemo_unavailable())? != file.path {
+        return Err(nemo_unavailable());
+    }
+    Ok(())
+}
+
+/// Which file a path or handle names, and its size and last-write time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileIdentity {
+    volume: u64,
+    index: u64,
+    byte_length: u64,
+    modified: i128,
+    /// Inode change time where the platform has one the user cannot set.
+    changed: i128,
+}
+
+#[cfg(windows)]
+const FILE_SHARE_READ: u32 = 0x1;
+#[cfg(windows)]
+const FILE_SHARE_ALL: u32 = 0x7;
+#[cfg(windows)]
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+/// Opens a runtime file for reading. On Windows, `lock` shares it for reading
+/// only, so writes, renames and deletes by anyone else fail while it is held.
+#[cfg(windows)]
+fn open_held_runtime_file(path: &Path, lock: bool) -> std::io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .share_mode(if lock {
+            FILE_SHARE_READ
+        } else {
+            FILE_SHARE_ALL
+        })
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+}
+
+#[cfg(not(windows))]
+fn open_held_runtime_file(path: &Path, _lock: bool) -> std::io::Result<File> {
+    File::open(path)
+}
+
+#[cfg(windows)]
+fn handle_identity(file: &File) -> Result<FileIdentity, VideoCommandError> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
+    };
+
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle is owned by `file`, which outlives this call, and
+    // `info` is a valid, writable out-parameter.
+    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }
+        .map_err(|_| nemo_unavailable())?;
+    let join = |high: u32, low: u32| (u64::from(high) << 32) | u64::from(low);
+    Ok(FileIdentity {
+        volume: u64::from(info.dwVolumeSerialNumber),
+        index: join(info.nFileIndexHigh, info.nFileIndexLow),
+        byte_length: join(info.nFileSizeHigh, info.nFileSizeLow),
+        modified: i128::from(join(
+            info.ftLastWriteTime.dwHighDateTime,
+            info.ftLastWriteTime.dwLowDateTime,
+        )),
+        changed: 0,
+    })
+}
+
+/// Opens the path itself (never a link target) without read, write or delete
+/// access, which works even while the job holds the file.
+#[cfg(windows)]
+fn path_identity(path: &Path) -> Result<FileIdentity, VideoCommandError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let file = fs::OpenOptions::new()
+        .access_mode(0)
+        .share_mode(FILE_SHARE_ALL)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|_| nemo_unavailable())?;
+    handle_identity(&file)
+}
+
+#[cfg(unix)]
+fn metadata_identity(metadata: &Metadata) -> FileIdentity {
+    use std::os::unix::fs::MetadataExt;
+    let nanos = |seconds: i64, nanos: i64| i128::from(seconds) * 1_000_000_000 + i128::from(nanos);
+    FileIdentity {
+        volume: metadata.dev(),
+        index: metadata.ino(),
+        byte_length: metadata.len(),
+        modified: nanos(metadata.mtime(), metadata.mtime_nsec()),
+        changed: nanos(metadata.ctime(), metadata.ctime_nsec()),
+    }
+}
+
+#[cfg(unix)]
+fn handle_identity(file: &File) -> Result<FileIdentity, VideoCommandError> {
+    Ok(metadata_identity(
+        &file.metadata().map_err(|_| nemo_unavailable())?,
+    ))
+}
+
+#[cfg(unix)]
+fn path_identity(path: &Path) -> Result<FileIdentity, VideoCommandError> {
+    Ok(metadata_identity(
+        &fs::symlink_metadata(path).map_err(|_| nemo_unavailable())?,
+    ))
 }
 
 pub(crate) async fn transcribe_nemo_cuda(
@@ -237,7 +489,7 @@ pub(crate) async fn transcribe_nemo_cuda(
         completed: 0,
         total: 0,
     });
-    nemo.verify_again()?;
+    let mut held = nemo.hold()?;
     let temporary = TempDirBuilder::new()
         .prefix(".nemo-transcribe-")
         .tempdir_in(input.app_cache_root)
@@ -274,7 +526,7 @@ pub(crate) async fn transcribe_nemo_cuda(
             .join(format!("piece-{:04}.wav", piece.index));
         copy_piece_wav(&wav_path, layout, piece.samples.clone(), &piece_path)?;
         validate_pcm_wav(&piece_path)?;
-        nemo.verify_again()?;
+        held.check_unchanged()?;
         let output = run_nemo_piece(&nemo, &piece_path, cancellation.clone()).await?;
         if !proves_cuda_device_zero(&output.stderr_tail) {
             // Not retryable: rerunning on the same machine cannot produce GPU proof.
@@ -299,7 +551,7 @@ pub(crate) async fn transcribe_nemo_cuda(
             completed: piece_count,
             total: total_steps,
         });
-        nemo.verify_again()?;
+        held.verify_contents()?;
         let segments_path = temporary.path().join("speakers.json");
         let output = run_nemo_diarize(&nemo, &wav_path, &segments_path, cancellation).await?;
         if !proves_cuda_device_zero(&output.stderr_tail) {
@@ -1184,8 +1436,15 @@ fn reject_linked_ancestors(path: &Path) -> Result<(), VideoCommandError> {
 }
 
 fn hash_file_exact(path: &Path, expected_len: u64) -> Result<String, VideoCommandError> {
-    let file = File::open(path).map_err(|_| nemo_unavailable())?;
-    let mut reader = file.take(expected_len.saturating_add(1));
+    let mut file = File::open(path).map_err(|_| nemo_unavailable())?;
+    hash_reader_exact(&mut file, expected_len)
+}
+
+fn hash_reader_exact(
+    reader: &mut impl Read,
+    expected_len: u64,
+) -> Result<String, VideoCommandError> {
+    let mut reader = reader.take(expected_len.saturating_add(1));
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; HASH_BUFFER_BYTES];
     let mut total = 0_u64;
@@ -2124,5 +2383,119 @@ mod piece_output_tests {
     fn out_of_order_runtime_words_are_still_rejected() {
         let bytes = timed(&[("late", 2.0, 2.4), ("early", 1.0, 1.2)]);
         assert!(parse_nemo_chunk(&bytes, &piece(0, 0, 3_000_000)).is_err());
+    }
+}
+
+/// Times each runtime check against the real pinned runtime and counts the
+/// bytes this process reads during it. Run alone, single-threaded, so no other
+/// test's reads are counted.
+#[cfg(all(test, windows))]
+mod runtime_check_cost {
+    use std::time::Instant;
+
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessIoCounters, IO_COUNTERS};
+
+    use super::*;
+
+    fn bytes_read() -> u64 {
+        let mut counters = IO_COUNTERS::default();
+        // SAFETY: the pseudo-handle is always valid for the current process and
+        // `counters` is a valid, writable out-parameter.
+        unsafe { GetProcessIoCounters(GetCurrentProcess(), &mut counters) }.unwrap();
+        counters.ReadTransferCount
+    }
+
+    fn measure<T>(label: &str, step: impl FnOnce() -> T) -> T {
+        let (bytes, started) = (bytes_read(), Instant::now());
+        let value = step();
+        println!(
+            "{label}: {:.1} ms, {} bytes read",
+            started.elapsed().as_secs_f64() * 1000.0,
+            bytes_read() - bytes
+        );
+        value
+    }
+
+    #[test]
+    #[ignore = "requires the pinned NeMo runtime folder in SUPA_VIDEO_REAL_ASR_RUNTIME"]
+    fn real_runtime_check_costs() {
+        let folder = std::env::var("SUPA_VIDEO_REAL_ASR_RUNTIME").unwrap();
+        let manifest = super::super::asr_runtime::pinned_manifest().unwrap();
+        let runtime = measure("verify folder when the job is started", || {
+            super::super::asr_runtime::verify_runtime_folder(Path::new(&folder), &manifest).unwrap()
+        });
+        let bytes: u64 = runtime.files().map(|file| file.byte_length).sum();
+        println!("runtime files: {}, {bytes} bytes", runtime.files().count());
+        let mut held = measure("hold + full hash at job start", || runtime.hold().unwrap());
+        let (bytes_before, started) = (bytes_read(), Instant::now());
+        for _ in 0..30 {
+            held.check_unchanged().unwrap();
+        }
+        println!(
+            "30 between-piece checks: {:.1} ms total, {} bytes read",
+            started.elapsed().as_secs_f64() * 1000.0,
+            bytes_read() - bytes_before
+        );
+        measure("full hash before the speaker pass", || {
+            held.verify_contents().unwrap()
+        });
+    }
+}
+
+#[cfg(all(test, windows))]
+mod held_runtime_lock_tests {
+    use super::*;
+
+    fn verified(path: &Path) -> VerifiedNemoFile {
+        let path = fs::canonicalize(path).unwrap();
+        let byte_length = fs::metadata(&path).unwrap().len();
+        let sha256 = hash_file_exact(&path, byte_length).unwrap();
+        VerifiedNemoFile {
+            path,
+            byte_length,
+            sha256,
+        }
+    }
+
+    /// Every way another process could change a file: write in place, rename
+    /// it away, delete it. `true` means it was refused.
+    fn change_attempts(path: &Path) -> [bool; 3] {
+        let moved = path.with_extension("moved");
+        [
+            fs::OpenOptions::new().write(true).open(path).is_err(),
+            fs::rename(path, &moved).is_err(),
+            fs::remove_file(path).is_err(),
+        ]
+    }
+
+    #[test]
+    fn a_held_runtime_file_cannot_be_written_renamed_or_deleted_but_can_be_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let folder = fs::canonicalize(directory.path()).unwrap();
+        let executable = folder.join("nemo-speech.exe");
+        let model = folder.join("model.gguf");
+        fs::write(&executable, b"fake executable").unwrap();
+        fs::write(&model, b"fake model bytes").unwrap();
+        let runtime = VerifiedNemoRuntime::new(
+            verified(&executable),
+            folder.clone(),
+            Vec::new(),
+            verified(&model),
+            None,
+        )
+        .unwrap();
+
+        let held = runtime.hold().unwrap();
+        for path in [&executable, &model] {
+            assert_eq!(change_attempts(path), [true; 3], "{}", path.display());
+            // Loading is only reading, which the hold still allows.
+            assert!(fs::read(path).is_ok(), "{}", path.display());
+        }
+        held.check_unchanged().unwrap();
+
+        // The lock is what refused the changes: once the job lets go, the same
+        // write succeeds.
+        drop(held);
+        assert!(fs::OpenOptions::new().write(true).open(&model).is_ok());
     }
 }

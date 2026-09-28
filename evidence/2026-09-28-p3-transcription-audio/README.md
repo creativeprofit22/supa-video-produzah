@@ -108,8 +108,13 @@ on `main` at the time of writing.
 - **Progress inside a long transcription** (resolved; see `15-long-file-transcription.md`, "Progress inside one
   transcription"). The job now reports audio preparation, each piece ("n of m items") and the speaker pass,
   without touching a pending cancel. This was proven on a real 5-minute run.
-- **Runtime re-check before every piece:** about 8 s per piece (1.9 GB re-hashed), roughly 4 of the 20 minutes
-  on a 2-hour file. A cheaper check needs a user decision.
+- **Runtime re-check before every piece** (resolved by user decision; see `15-long-file-transcription.md`,
+  "Cheaper runtime re-check"). The job now does a full hash at the start and holds the files open, locked
+  against writes, renames and deletes on Windows. Before each piece it runs a file-identity check, and before
+  the speaker pass a full re-hash. Measured on the real runtime: three full hashes take about 30 s per job,
+  and the 30 between-piece checks take 0.13 s in total and read 0 bytes. The non-NeMo overhead on 2 hours
+  fell from about 289 s to about 50 s. The job total fell only 16 s (1,180 s to 1,164 s), because the GPU ran
+  slower in that run.
 - **Accuracy coverage is narrow:** one clean two-speaker studio recording. Overlapping speech, 3–4 speakers and
   noisy rooms were not measured.
 

@@ -6383,8 +6383,10 @@ fn nemo_runner_honor_control_markers(cache: &Path, stage: &str) {
 
 /// Fake per-piece transcription: never given the speaker model. Word times
 /// are relative to the piece. `nemo-silent-pieces` (comma-separated piece
-/// indexes) makes those pieces print the runtime's real no-speech output, and
-/// `nemo-hang-piece-N` hangs piece N after writing `nemo-piece-N-running`.
+/// indexes) makes those pieces print the runtime's real no-speech output,
+/// `nemo-hang-piece-N` hangs piece N after writing `nemo-piece-N-running`, and
+/// `nemo-tamper-piece-N` makes piece N tamper with the model (see
+/// [`nemo_runner_tamper_with_model`]).
 fn nemo_runner_nemo_helper() {
     let arguments = nemo_runner_arguments();
     assert_eq!(arguments.len(), 10, "pieces run without the speaker model");
@@ -6409,6 +6411,9 @@ fn nemo_runner_nemo_helper() {
         .expect("request temporary directory must have cache parent");
     bump_helper_counter(&cache.join("nemo-count"));
     nemo_runner_honor_control_markers(cache, "nemo");
+    if let Ok(mode) = fs::read_to_string(cache.join(format!("nemo-tamper-piece-{piece_index}"))) {
+        nemo_runner_tamper_with_model(cache, Path::new(&arguments[5]), mode.trim());
+    }
     if cache
         .join(format!("nemo-hang-piece-{piece_index}"))
         .exists()
@@ -6463,6 +6468,43 @@ fn nemo_runner_nemo_helper() {
             ]
         })
     );
+}
+
+/// What another process might do to the model while a job runs:
+/// - `replace`: write a same-size copy with other bytes and rename it over the
+///   model (a new file at the same path);
+/// - `restamp`: overwrite the model in place with same-size bytes, then put its
+///   last-write time back;
+/// - `attempt`: try an in-place write, a rename away and a delete, and record
+///   in `nemo-tamper-result` which of them the job's hold blocked.
+fn nemo_runner_tamper_with_model(cache: &Path, model: &Path, mode: &str) {
+    let original = fs::read(model).unwrap();
+    let other: Vec<u8> = original.iter().map(|byte| byte ^ 0xff).collect();
+    match mode {
+        "replace" => {
+            let swap = model.with_extension("swap");
+            fs::write(&swap, &other).unwrap();
+            fs::rename(&swap, model).unwrap();
+        }
+        "restamp" => {
+            let modified = fs::metadata(model).unwrap().modified().unwrap();
+            let mut file = fs::OpenOptions::new().write(true).open(model).unwrap();
+            file.write_all(&other).unwrap();
+            file.set_modified(modified).unwrap();
+        }
+        "attempt" => {
+            let write = fs::OpenOptions::new().write(true).open(model).is_err();
+            let moved = model.with_extension("moved");
+            let rename = fs::rename(model, &moved).is_err();
+            let delete = fs::remove_file(model).is_err();
+            fs::write(
+                cache.join("nemo-tamper-result"),
+                format!("write_blocked={write} rename_blocked={rename} delete_blocked={delete}"),
+            )
+            .unwrap();
+        }
+        other => panic!("unknown tamper mode {other}"),
+    }
 }
 
 /// Fake whole-file speaker pass. In every 240 s block, speaker 2 speaks at
@@ -7364,14 +7406,37 @@ async fn run_diarized_reporting(
     cancellation: ProcessCancellation,
     on_progress: &(dyn Fn(super::nemo_transcription::TranscriptionProgress) + Sync),
 ) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
-    let runtime = VerifiedNemoRuntime::new(
+    let runtime = diarized_runtime(fixture, with_diarizer);
+    run_diarized_with_runtime(
+        fixture,
+        configuration,
+        runtime,
+        source_duration_us,
+        cancellation,
+        on_progress,
+    )
+    .await
+}
+
+fn diarized_runtime(fixture: &DiarizedRunnerFixture, with_diarizer: bool) -> VerifiedNemoRuntime {
+    VerifiedNemoRuntime::new(
         fixture.executable.clone(),
         fixture.runtime_directory.clone(),
         Vec::new(),
         fixture.model.clone(),
         with_diarizer.then(|| fixture.diarizer.clone()),
     )
-    .expect("runtime fixture must verify");
+    .expect("runtime fixture must verify")
+}
+
+async fn run_diarized_with_runtime(
+    fixture: &DiarizedRunnerFixture,
+    configuration: &AsrConfigurationV1,
+    runtime: VerifiedNemoRuntime,
+    source_duration_us: u64,
+    cancellation: ProcessCancellation,
+    on_progress: &(dyn Fn(super::nemo_transcription::TranscriptionProgress) + Sync),
+) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
     let jobs = MediaJobService::initialize(
         fixture.workspace.path().join("local-data"),
         fixture.cache_root.clone(),
@@ -7463,6 +7528,109 @@ fn long_configuration(fixture: &DiarizedRunnerFixture) -> AsrConfigurationV1 {
     let mut configuration = diarized_configuration(fixture, SpeakerDiarizationModeV1::Optional);
     configuration.chunk_duration_us = 240_000_000;
     configuration
+}
+
+/// Runs a 600 s (three-piece) diarized job with `tamper` applied during
+/// piece 0.
+async fn run_long_with_tamper(
+    fixture: &DiarizedRunnerFixture,
+    runtime: VerifiedNemoRuntime,
+    tamper: &str,
+) -> Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError> {
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    fs::write(fixture.cache_root.join("nemo-tamper-piece-0"), tamper).unwrap();
+    run_diarized_with_runtime(
+        fixture,
+        &long_configuration(fixture),
+        runtime,
+        600_000_000,
+        ProcessCancellation::new(),
+        &|_| {},
+    )
+    .await
+}
+
+fn assert_runtime_error(
+    result: Result<super::transcript::PublishedTranscriptArtifact, VideoCommandError>,
+) {
+    let error = result.expect_err("a tampered runtime must fail the job");
+    let mapped = super::transcription_job::transcription_job_error(&error);
+    assert_eq!(mapped.code, "nemo_unavailable");
+    assert!(!mapped.retryable);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_hashes_an_unchanged_runtime_only_at_start_and_before_speakers() {
+    let fixture = diarized_runner_fixture();
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    let runtime = diarized_runtime(&fixture, true);
+    let counter = runtime.clone();
+    run_diarized_with_runtime(
+        &fixture,
+        &long_configuration(&fixture),
+        runtime,
+        600_000_000,
+        ProcessCancellation::new(),
+        &|_| {},
+    )
+    .await
+    .expect("an unchanged runtime must publish");
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 3);
+    // Executable, model and diarizer, hashed once when held and once before
+    // the speaker pass; the three pieces only check file identity.
+    assert_eq!(counter.held_hash_count(), 3 * 2);
+}
+
+#[cfg(windows)]
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_holds_runtime_files_so_nobody_can_change_them() {
+    let fixture = diarized_runner_fixture();
+    let published = run_long_with_tamper(&fixture, diarized_runtime(&fixture, true), "attempt")
+        .await
+        .expect("a held runtime is unchanged, so the job must publish");
+    assert_eq!(
+        fs::read_to_string(fixture.cache_root.join("nemo-tamper-result")).unwrap(),
+        "write_blocked=true rename_blocked=true delete_blocked=true"
+    );
+    assert_eq!(published.artifact.chunks.len(), 3);
+    assert_eq!(
+        fs::read(&fixture.model.path).unwrap(),
+        b"nemo gguf fixture",
+        "the model must be untouched"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_fails_when_a_runtime_file_is_swapped_between_pieces() {
+    let fixture = diarized_runner_fixture();
+    // Without the Windows lock, as on other platforms: the swap succeeds and
+    // the identity check before the next piece must catch it.
+    let runtime = diarized_runtime(&fixture, true).without_file_locks();
+    assert_runtime_error(run_long_with_tamper(&fixture, runtime, "replace").await);
+    assert_eq!(
+        helper_count(&fixture.cache_root, "nemo-count"),
+        1,
+        "no piece may run on a swapped runtime"
+    );
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 0);
+    assert!(no_request_leftovers(&fixture.cache_root));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_catches_an_in_place_rewrite_with_its_time_put_back() {
+    let fixture = diarized_runner_fixture();
+    let runtime = diarized_runtime(&fixture, true).without_file_locks();
+    assert_runtime_error(run_long_with_tamper(&fixture, runtime, "restamp").await);
+    // Unix sees the inode change time move and stops before the next piece.
+    // Windows keeps no such time, so without its lock the full hash before the
+    // speaker pass is what catches it; the lock itself prevents the rewrite.
+    let expected_pieces = if cfg!(unix) { 1 } else { 3 };
+    assert_eq!(
+        helper_count(&fixture.cache_root, "nemo-count"),
+        expected_pieces
+    );
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 0);
+    assert!(no_request_leftovers(&fixture.cache_root));
 }
 
 #[tokio::test(flavor = "current_thread")]
