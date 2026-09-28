@@ -1,0 +1,125 @@
+transcribe: model=E:\nemo-runtime\runtime\nemotron-3.5-asr-streaming-0.6b.q8_0.gguf inputs=1 concurrency=1 device=0
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 8191 MiB):
+  Device 0: NVIDIA GeForce GTX 1080, compute capability 6.1, VMM: yes, VRAM: 8191 MiB
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:43:<init_backends> Found 2 devices.
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:50:<init_backends> Device 0: CUDA0
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:73:<init_backends> Using GPU backend: CUDA0
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:101:<init_backends> Using CPU backend
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:120:<init_backends> Buffer type: CUDA0
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:120:<init_backends> Buffer type: CPU_REPACK
+E:\nemo-runtime\src\src\runtime\ggml\backend.cpp:120:<init_backends> Buffer type: CPU
+E:\nemo-runtime\src\src\runtime\ggml\loader.cpp:246:<GGUFLoader> GGUF file size: 741548352
+E:\nemo-runtime\src\src\runtime\ggml\loader.cpp:249:<GGUFLoader> GGUF has 657 tensors
+E:\nemo-runtime\src\src\runtime\ggml\loader.cpp:270:<GGUFLoader> Max tensor size: 39 MB
+[asr_model] arch=asr head=rnnt d_model=1024 n_layers=24 n_heads=8 d_ff=4096 k=9 feat_in=128 sr=16000 vocab=13087
+[asr_model] rnnt vocab=13088 blank=13087 pred_hidden=640 joint_dim=640
+[asr_model] prompt fusion enabled: num_prompts=128 languages=121
+[recognizer] streaming cfg: chunk=0.16s left=1.92s right=1.92s
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture
+ggml_cuda_graph_set_enabled: disabling CUDA graphs due to GPU architecture

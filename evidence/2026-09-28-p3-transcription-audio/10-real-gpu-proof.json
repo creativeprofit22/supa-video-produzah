@@ -1,0 +1,37 @@
+{
+  "cudaProof": "runner rejects runs without stderr 'Using GPU backend: CUDA0'; the job completed",
+  "engineVersion": "5be7bfb104802131e61fe679b3f1401b27270216",
+  "gold": "And so my fellow Americans ask not what your country can do for you ask what you can do for your country.",
+  "job": {
+    "attempt": 1,
+    "id": "9e7843ec-2c85-4108-b2b7-36b1e9388e1e",
+    "maxAttempts": 2,
+    "state": "complete"
+  },
+  "jobWallClockMs": 18733,
+  "manifestSha256": "6bef2d7d6a533c73567db44867388851773fe65b03a1972cd3cf1169d5340d90",
+  "modelId": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+  "modelRevision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+  "path": "consent -> pinned manifest verify -> authorized ingest/probe -> durable transcription job (Gpu slot) -> FFmpeg 16 kHz mono WAV -> NeMo-Speech.cpp cuda:0 -> managed transcript artifact -> owner-scoped result read",
+  "providerSettings": {
+    "device": "cuda:0",
+    "gguf_sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae",
+    "quantization": "q8_0",
+    "runtime_manifest_sha256": "6bef2d7d6a533c73567db44867388851773fe65b03a1972cd3cf1169d5340d90",
+    "runtime_sha256": "4b1434ee5b4d099646df0392fc3c4e7fb397a12bc4c3b2adc48739bd03c92bf0"
+  },
+  "runtimeVerifyMs": 11325,
+  "secondStart": {
+    "elapsedMs": 5720,
+    "state": "complete",
+    "transcriptKey": "580ef99ad84454c47312e69b61fbc067b8705cb1ea806d111d7b3339abd420f2"
+  },
+  "sourceDurationUs": 12800000,
+  "test": "real_nemo_cuda_transcription_through_production_job_path",
+  "text": "And so my fellow Americans ask not what your country can do for you. Ask what you can do for your country.",
+  "transcriptKey": "580ef99ad84454c47312e69b61fbc067b8705cb1ea806d111d7b3339abd420f2",
+  "wer": 0.0,
+  "werThreshold": 0.15,
+  "wordCount": 22,
+  "wordsWithPositiveTiming": 22
+}

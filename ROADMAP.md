@@ -749,6 +749,16 @@ Completed foundation slices:
 
 Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
 
+## Implementation checkpoint — 28 September 2026 (uncommitted)
+
+Evidence: `evidence/2026-09-28-p3-transcription-audio/README.md`.
+
+- Production transcription: pinned NeMo runtime manifest (license fields, byte/SHA-256 verified folder, reparse and extra-executable rejection), consent bound to the manifest hash, provenance in the ASR configuration identity, media-state schema v3 `transcription` job kind on a one-permit GPU slot, bounded retry (crash/timeout only), and commands registered in production and IPC-test handlers. Transcript panel with setup, consent, start/cancel/retry and transcript-edit proposal.
+- Real NeMo/CUDA proof on a GTX 1080 through the production job path: JFK fixture WER 0.0, 22/22 timed words, VRAM 628 → 2,430 MiB. Long-form, noisy-dialogue and determinism benchmarks were not run.
+- Captions: "Generate captions" is one group of existing commands (`InsertTrack` + `ApplyCaptionArtifact`); style/retime produce validated new artifacts; exports now render caption artifacts with explicit fonts inside the safe area (TS↔Rust golden, real frames at three ratios); SRT/VTT/ASS sidecars.
+- Audio: optional track `audioRole` and sequence `loudnessTarget` with undo/redo/journal recovery; padded-key ducking, dialogue cleanup, two-pass `loudnorm` with reported mode, and a post-render `ebur128` report that fails exports outside ±1 LU or above -1 dBTP. Real exports met -14/-16/-23 LUFS.
+- Not yet shown: one continuous in-app native scenario; Phase 4 preview-sync parity specs still fail intermittently and remain Phase 4 work.
+
 ### Verification actually run for the closed trim-caption slice
 
 - `pnpm --filter @supa-video/project exec vitest run src/transcript-caption.test.ts src/transcript-caption-remap.test.ts src/trim-clip-caption-lifecycle.test.ts` — 70 passed
