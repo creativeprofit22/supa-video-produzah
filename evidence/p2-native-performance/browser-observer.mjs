@@ -47,6 +47,100 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
       corrupted: Number.isFinite(q.corruptedVideoFrames) ? q.corruptedVideoFrames : null,
     };
   };
+  // Visibility attribution for decoder counters. `visible` is the harness's classification:
+  // connected, not display:none, computed visibility "visible", opacity > 0, and not an
+  // app-marked inactive layer (`data-active="false"`). A single-video monitor has no data-active.
+  // `occluded` is separate: none of five probe points (centre and four points inset 10% from the
+  // corners of the element box, clipped to the viewport) reaches this element before an opaque
+  // video stacked above it. Hit-testing skips visibility:hidden and pointer-events:none layers.
+  // The element box is taken as the picture; fixture media match the 16:9 stage.
+  const probeFractions = [
+    [0.5, 0.5],
+    [0.1, 0.1],
+    [0.9, 0.1],
+    [0.1, 0.9],
+    [0.9, 0.9],
+  ];
+  const shownPoints = (v) => {
+    const r = v.getBoundingClientRect();
+    let shown = 0,
+      probed = 0;
+    for (const [fx, fy] of probeFractions) {
+      const x = r.left + r.width * fx,
+        y = r.top + r.height * fy;
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+      probed++;
+      for (const hit of document.elementsFromPoint(x, y)) {
+        if (hit === v) {
+          shown++;
+          break;
+        }
+        if (
+          hit instanceof HTMLVideoElement &&
+          Number.parseFloat(window.getComputedStyle(hit).opacity) >= 1
+        )
+          break;
+      }
+    }
+    return { shown, probed };
+  };
+  const attribution = (v) => {
+    const connected = v.isConnected;
+    const style = connected ? window.getComputedStyle(v) : null;
+    const opacity = style ? Number.parseFloat(style.opacity) : null;
+    const scope = v.closest(".monitor-stage") ?? document;
+    const active = v.dataset.active ?? null;
+    const visibility = style?.visibility ?? null;
+    const display = style?.display ?? null;
+    const points = connected ? shownPoints(v) : { shown: 0, probed: 0 };
+    return {
+      shownPoints: points.shown,
+      probedPoints: points.probed,
+      occluded: points.probed > 0 && points.shown === 0,
+      clipId: v.dataset.clipId ?? null,
+      active,
+      visibility,
+      display,
+      opacity: Number.isFinite(opacity) ? opacity : null,
+      isConnected: connected,
+      onlyVideo: connected && scope.querySelectorAll("video").length === 1,
+      visible:
+        connected &&
+        display !== "none" &&
+        visibility === "visible" &&
+        Number.isFinite(opacity) &&
+        opacity > 0 &&
+        active !== "false",
+    };
+  };
+  const sameAttribution = (a, b) =>
+    a !== null &&
+    ![
+      "clipId",
+      "active",
+      "visibility",
+      "display",
+      "opacity",
+      "isConnected",
+      "visible",
+      "occluded",
+    ].some((key) => a[key] !== b[key]);
+  // A state observation bounds a counter interval: the interval up to the next observation is
+  // attributed to this state. Emitted at attach, after a counter reset and on any state change.
+  const observeState = (v, e, reason) => {
+    const next = attribution(v);
+    if (reason === "change" && sameAttribution(e.attribution, next)) return;
+    e.attribution = next;
+    push({
+      type: "visibility",
+      id: e.id,
+      segment: e.segment,
+      at: performance.now(),
+      reason,
+      quality: e.lastQuality,
+      attribution: next,
+    });
+  };
   function attach(v) {
     if (videos.has(v)) return;
     if (videos.size >= 32) {
@@ -61,8 +155,10 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
       last: null,
       callback: null,
       supported: typeof v.requestVideoFrameCallback === "function",
+      attribution: null,
     };
     videos.set(v, e);
+    observeState(v, e, "attach");
     e.reset = () => {
       // emptied can occur after counters reset: retain the last frame observation rather
       // than subtracting reset counters or accidentally joining A -> B -> A.
@@ -74,15 +170,21 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
         final: e.lastQuality,
         reason: "emptied",
         endpointMayBeIncomplete: true,
+        attribution: e.attribution,
       });
       e.initial = quality(v);
       e.lastQuality = quality(v);
       e.last = null;
+      e.attribution = null;
+      observeState(v, e, "reset");
     };
     v.addEventListener("emptied", e.reset);
     function frame(now, metadata) {
       if (stopped) return;
+      // The interval since the previous observation belongs to the previous state; record the
+      // counters first, then any state change observed at this frame.
       e.lastQuality = quality(v);
+      const current = attribution(v);
       push({
         type: "frame",
         id: e.id,
@@ -91,7 +193,10 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
         mediaTime: metadata.mediaTime,
         presentedFrames: metadata.presentedFrames,
         gapMs: e.last === null ? null : now - e.last,
+        quality: e.lastQuality,
+        attribution: current,
       });
+      if (!sameAttribution(e.attribution, current)) observeState(v, e, "change");
       e.last = now;
       e.callback = v.requestVideoFrameCallback(frame);
     }
@@ -112,6 +217,7 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
         final: reset ? e.lastQuality : final,
         reason: "detached",
         endpointMayBeIncomplete: !!reset,
+        attribution: e.attribution,
       });
       v.removeEventListener("emptied", e.reset);
       if (e.callback !== null) v.cancelVideoFrameCallback(e.callback);
@@ -122,6 +228,27 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
   scan();
   const mutations = new MutationObserver(scan);
   mutations.observe(document.documentElement, { childList: true, subtree: true });
+  // State changes on any tracked video or an ancestor close the current counter interval of
+  // every connected video: a sibling layer's change can cover or uncover this one.
+  const stateChanges = new MutationObserver((records) => {
+    if (stopped) return;
+    const relevant = records.some(
+      (r) =>
+        r.target instanceof HTMLVideoElement ||
+        [...videos.keys()].some((v) => r.target !== v && r.target.contains(v)),
+    );
+    if (!relevant) return;
+    for (const [v, e] of videos) {
+      if (!v.isConnected) continue;
+      e.lastQuality = quality(v);
+      observeState(v, e, "change");
+    }
+  });
+  stateChanges.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["style", "class", "hidden", "data-active", "data-hidden"],
+    subtree: true,
+  });
   let longTasks = null;
   if (
     typeof PerformanceObserver !== "undefined" &&
@@ -297,6 +424,7 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
           initial: e.initial,
           final: quality(v),
           presentationCallbacks: e.supported,
+          attribution: attribution(v),
         })),
         videoTrackingCapReached,
         videosObserved: nextVideoId,
@@ -315,6 +443,7 @@ export function installObserver({ cap = 20000, leaseMs = 90000 } = {}) {
       stopped = true;
       clearTimeout(lease);
       mutations.disconnect();
+      stateChanges.disconnect();
       longTasks?.disconnect();
       armed?.cancel();
       for (const [v, e] of videos) {

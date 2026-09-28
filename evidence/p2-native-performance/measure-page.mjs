@@ -11,6 +11,7 @@ import {
   playbackCommitSummary,
   seededSeeks,
   seekSummary,
+  visibleDropAttribution,
 } from "./metrics.mjs";
 const save = (directory, name, value) => {
   const file = path.join(directory, name);
@@ -162,6 +163,7 @@ export async function playbackSamples(
       commits,
       frameGapMs: observer ? distribution(frames.map((e) => e.gapMs)) : null,
       decoderSegments: observer ? segments : null,
+      visibleDrops: observer ? visibleDropAttribution(raw.observer) : null,
       sparseQualityBefore: before.quality,
       sparseQualityAfter: raw.quality,
       longTaskDurationMs: observer

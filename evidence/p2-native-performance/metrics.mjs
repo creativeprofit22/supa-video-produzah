@@ -72,6 +72,104 @@ export function assertPlaybackAdvanced(videoFramesAdvanced, elapsedSeconds) {
       `Playback stalled: totalVideoFrames did not advance during the ${elapsedSeconds}-s window`,
     );
 }
+// Visible-layer decoder drop attribution over one observer snapshot. Each element/segment's
+// observations (state changes, frames, endpoint) are ordered as recorded; the counter delta
+// between two consecutive observations belongs to the earlier observation's state. Deltas that
+// go backwards (a counter reset) or lack a state are reported as unattributed, never visible.
+// CSS-visible layers fully covered by an opaque video above them (`occluded`) are counted in a
+// separate bucket; snapshots recorded before occlusion probing report `occlusionAvailable:false`.
+export const VISIBLE_DROP_TARGET = 0.01;
+export function visibleDropAttribution(snapshot) {
+  const bucket = () => ({ total: 0, dropped: 0 });
+  const result = {
+    attributionAvailable: false,
+    occlusionAvailable: false,
+    visible: bucket(),
+    occluded: bucket(),
+    hidden: bucket(),
+    unattributed: { intervals: 0 },
+    byClip: {},
+  };
+  const streams = new Map();
+  const add = (id, segment, observation) => {
+    const key = `${id}:${segment}`;
+    if (!streams.has(key)) streams.set(key, []);
+    streams.get(key).push(observation);
+  };
+  for (const event of snapshot?.events ?? []) {
+    if (event.type === "visibility" || event.type === "frame") {
+      if (event.attribution) result.attributionAvailable = true;
+      if (typeof event.attribution?.occluded === "boolean") result.occlusionAvailable = true;
+      add(event.id, event.segment, { quality: event.quality, state: event.attribution ?? null });
+    } else if (event.type === "decoder-segment") {
+      add(event.id, event.segment, { quality: event.final, state: null });
+    }
+  }
+  for (const video of snapshot?.videos ?? [])
+    add(video.id, video.segment, { quality: video.final, state: null });
+  const clip = (id) =>
+    (result.byClip[id ?? "(none)"] ??= { visible: bucket(), occluded: bucket(), hidden: bucket() });
+  for (const observations of streams.values()) {
+    for (let i = 1; i < observations.length; i++) {
+      const from = observations[i - 1],
+        to = observations[i];
+      const total = counterDelta(from.quality?.total, to.quality?.total);
+      const dropped = counterDelta(from.quality?.dropped, to.quality?.dropped);
+      if (from.state === null || total === null || dropped === null) {
+        result.unattributed.intervals++;
+        continue;
+      }
+      const side =
+        from.state.visible !== true
+          ? "hidden"
+          : from.state.occluded === true
+            ? "occluded"
+            : "visible";
+      result[side].total += total;
+      result[side].dropped += dropped;
+      clip(from.state.clipId)[side].total += total;
+      clip(from.state.clipId)[side].dropped += dropped;
+    }
+  }
+  result.byClip = Object.fromEntries(
+    Object.entries(result.byClip).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+  const rate = (b) => (b.total > 0 ? b.dropped / b.total : null);
+  result.visibleDropRate = rate(result.visible);
+  result.occludedDropRate = rate(result.occluded);
+  result.hiddenDropRate = rate(result.hidden);
+  result.meetsVisibleTarget =
+    result.visibleDropRate === null ? null : result.visibleDropRate <= VISIBLE_DROP_TARGET;
+  return result;
+}
+// Presentation cross-check for visibleDropAttribution: frame callbacks each clip presented while
+// visible, and the longest gap between them. Decoder counters attribute by the state at decode
+// time; this shows what the visible layer actually presented.
+export function visiblePresentation(snapshot) {
+  const byClip = {};
+  for (const event of snapshot?.events ?? []) {
+    if (
+      event.type !== "frame" ||
+      event.attribution?.visible !== true ||
+      event.attribution.occluded === true
+    )
+      continue;
+    (byClip[event.attribution.clipId ?? "(none)"] ??= []).push(event);
+  }
+  const clips = Object.entries(byClip)
+    .map(([clipId, frames]) => {
+      frames.sort((a, b) => a.at - b.at);
+      const gaps = frames.slice(1).map((f, i) => f.at - frames[i].at);
+      return {
+        clipId,
+        frames: frames.length,
+        firstAt: frames[0].at,
+        maxGapMs: gaps.length ? Math.max(...gaps) : null,
+      };
+    })
+    .sort((a, b) => a.firstAt - b.firstAt);
+  return { clips, visibleFrames: clips.reduce((sum, c) => sum + c.frames, 0) };
+}
 // Zero in-window commits is a valid result (p95 unavailable), but only when the profiler is
 // proven live by commits recorded for the same component before the window started.
 export function playbackCommitSummary({ ids, preWindowCounts, windowSamples, elapsedSeconds }) {
