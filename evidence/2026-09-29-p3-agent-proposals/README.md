@@ -27,8 +27,13 @@ Phase `d8678665-904d-4bd7-a4b2-7a4bf2eedd95`. Infrastructure built and tested; *
 
 Screenshots: `proposals-review.png` (desktop), `proposals-320px-200-percent-text.png`.
 
-## Not done / open
+## Criteria
 
-- **Criterion 1 not met**: production agent mutation remains disabled because Phase 4 (P2 editor controls) is still needs-attention (live preview/export timing is the remaining gap).
-- Real Tauri app with the switch on (`01-proposals-native-scenario.md`): propose, partial apply, restore, stale, reject and pending-after-restart all pass (6 of 6 runs). An earlier intermittent "close ignored" failure turned out to be the harness closing Tao's hidden message window instead of the app window. That's fixed in the harness; there's no app bug.
+- **Criterion 1 met**: the required Phase 2, 4 and 5 capabilities are done with current evidence. P2 editor controls (Phase 4) closed at roadmap revision 237 (`evidence/2026-09-29-p2-editor-controls-close/`), and P3 transcription and audio (Phase 5) is done.
+- Criteria 2 and 3: see "What exists" and the gate table above. Real Tauri app with the switch on (`01-proposals-native-scenario.md`): propose, partial apply, restore, stale, reject and pending-after-restart all pass (6 of 6 runs). An earlier intermittent "close ignored" failure turned out to be the harness closing Tao's hidden message window instead of the app window. That's fixed in the harness; there's no app bug.
+
+## Known limits
+
+- The `agentProposals` switch stays **off by default**. Production agent mutation is only enabled with `SUPA_VIDEO_AGENT_PROPOSALS=1`. This is a deliberate default, not a gap.
+- The real-app scenario ran on a debug build with the switch on. The production build and installer weren't exercised.
 - AI producer is out of scope (separate draft `2ceb2ea5-…`).
