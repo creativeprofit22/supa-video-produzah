@@ -486,7 +486,9 @@ function sourceDurationSeconds(clip: V2Clip): string {
 function videoTimingFilter(clip: V2Clip): string {
   if (!isRetimed(clip)) return "setpts=PTS-STARTPTS";
   const speed = clip.speed!;
-  return `trim=end_frame=${clip.sourceOut.value - clip.sourceIn.value},setpts=PTS-STARTPTS,setpts=PTS*${speed.denominator}/${speed.numerator}`;
+  // settb divides the timebase by the speed numerator so PTS*d/n stays exact; without it,
+  // 30000/1001 at 2x rounds each frame half a tick late and fps keeps source frame 2k+1.
+  return `trim=end_frame=${clip.sourceOut.value - clip.sourceIn.value},setpts=PTS-STARTPTS,settb=expr=intb/${speed.numerator},setpts=PTS*${speed.denominator}/${speed.numerator}`;
 }
 
 function audioTimingFilter(clip: V2Clip, duration: string): string {

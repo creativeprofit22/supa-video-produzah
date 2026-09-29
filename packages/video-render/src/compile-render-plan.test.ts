@@ -635,7 +635,7 @@ describe("V2 speed export", () => {
       ]);
       const filter = plan.argv[plan.argv.indexOf("-filter_complex") + 1]!;
       expect(filter).toContain(
-        `trim=end_frame=90,setpts=PTS-STARTPTS,setpts=PTS*${denominator}/${numerator},scale=`,
+        `trim=end_frame=90,setpts=PTS-STARTPTS,settb=expr=intb/${numerator},setpts=PTS*${denominator}/${numerator},scale=`,
       );
       const tempoFilter =
         numerator < denominator

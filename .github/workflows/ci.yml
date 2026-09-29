@@ -196,7 +196,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml --message-format=json-render-diagnostics | tee .cache/p1-security/hosted-glib/cargo-test.stdout.log
+          node scripts/test-native.mjs --message-format=json-render-diagnostics | tee .cache/p1-security/hosted-glib/cargo-test.stdout.log
           pipeline_status=("${PIPESTATUS[@]}")
           printf '%s %s\n' "${pipeline_status[0]}" "${pipeline_status[1]}" > .cache/p1-security/hosted-glib/test-exits.txt
           receipt_status=$?
@@ -308,7 +308,7 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
       - name: Test Windows native engine and process supervision
-        run: cargo test --locked --all-features --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: pnpm --dir apps/desktop test:native
 
       - name: Repeat Windows lock and crash-recovery proof
         shell: pwsh

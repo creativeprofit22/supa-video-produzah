@@ -6772,3 +6772,6 @@ fn tampered_caption_artifact_snapshot_fails_closed() {
         crate::video::error::VideoErrorCode::InvalidProject
     );
 }
+
+#[path = "journal_handle_tests.rs"]
+mod journal_handle_tests;

@@ -3499,7 +3499,7 @@ fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
         plan["argv"][10] = Value::from(source_seconds);
         let filter = multitrack_filter_mut(&mut plan);
         *filter = Value::String(filter.as_str().unwrap()
-            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
+            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,settb=expr=intb/{numerator},setpts=PTS*{denominator}/{numerator}"))
             .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={source_seconds},asetpts=PTS-STARTPTS,{tempo},atrim=duration=2.000000")));
         parse_and_validate_render_plan(plan.clone(), "owner", &grants).expect("exact speed plan");
         assert!(parse_and_validate_render_plan(plan.clone(), "other-owner", &grants).is_err());
@@ -3537,6 +3537,7 @@ fn render_speed_binds_source_trim_tempo_and_reciprocal_timestamps() {
                 format!("setpts=PTS*{denominator}/{numerator}"),
                 "setpts=PTS".to_owned(),
             ),
+            (format!("settb=expr=intb/{numerator},"), String::new()),
             (
                 format!("trim=end_frame={source_frames}"),
                 "trim=end_frame=1".to_owned(),
@@ -5515,7 +5516,7 @@ async fn render_speed_bundled_actual_media() {
         plan["argv"][10] = Value::from(seconds);
         let filter = multitrack_filter_mut(&mut plan);
         *filter = Value::String(filter.as_str().unwrap()
-            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,setpts=PTS*{denominator}/{numerator}"))
+            .replace("[0:v:0]setpts=PTS-STARTPTS", &format!("[0:v:0]trim=end_frame={source_frames},setpts=PTS-STARTPTS,settb=expr=intb/{numerator},setpts=PTS*{denominator}/{numerator}"))
             .replace("[0:a:0]asetpts=PTS-STARTPTS", &format!("[0:a:0]atrim=duration={seconds},asetpts=PTS-STARTPTS,{tempo},atrim=duration=2.000000")));
         let validated = parse_and_validate_render_plan(plan, "owner", &grants).unwrap();
         let (request, captured) = registered_render_worker(

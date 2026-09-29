@@ -1,0 +1,36 @@
+{
+  "clips": {
+    "speed-parity-30-1.mp4": {
+      "fpsNumerator": 30,
+      "fpsDenominator": 1,
+      "eventFrame": 42,
+      "audioEventFrame": 42,
+      "burstStartSeconds": 1.4,
+      "burstEndSeconds": 1.48
+    },
+    "speed-parity-negative-30-1.mp4": {
+      "fpsNumerator": 30,
+      "fpsDenominator": 1,
+      "eventFrame": 42,
+      "audioEventFrame": 45,
+      "burstStartSeconds": 1.5,
+      "burstEndSeconds": 1.58
+    },
+    "speed-parity-30000-1001.mp4": {
+      "fpsNumerator": 30000,
+      "fpsDenominator": 1001,
+      "eventFrame": 42,
+      "audioEventFrame": 42,
+      "burstStartSeconds": 1.4014,
+      "burstEndSeconds": 1.4814
+    },
+    "speed-parity-negative-30000-1001.mp4": {
+      "fpsNumerator": 30000,
+      "fpsDenominator": 1001,
+      "eventFrame": 42,
+      "audioEventFrame": 45,
+      "burstStartSeconds": 1.5015,
+      "burstEndSeconds": 1.5815000000000001
+    }
+  }
+}

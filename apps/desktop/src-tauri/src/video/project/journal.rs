@@ -140,9 +140,31 @@ pub fn append_with_failpoint(
     record: &JournalRecord,
     failpoint: AppendFailpoint,
 ) -> Result<JournalRecord, VideoCommandError> {
+    let mut file = open_append(path)?;
+    append_to(&mut file, record, failpoint)
+}
+
+/// Opens an existing journal for appending. Sessions keep this handle across appends so each
+/// durable command pays only for write + sync, not for a metadata lookup, open and close.
+pub fn open_append(path: &Path) -> Result<File, VideoCommandError> {
+    OpenOptions::new()
+        .append(true)
+        .open(path)
+        .map_err(|_| error(VideoErrorCode::ProjectIo, "open_append"))
+}
+
+/// Appends one record through an already-open append handle and syncs it before returning.
+/// After any error the caller must drop the handle: the file may end in a torn line, which
+/// only recovery at the next open may repair.
+pub fn append_to(
+    file: &mut File,
+    record: &JournalRecord,
+    failpoint: AppendFailpoint,
+) -> Result<JournalRecord, VideoCommandError> {
     let record = with_record_hash(record)?;
     let bytes = line_bytes(&record)?;
-    let current = fs::metadata(path)
+    let current = file
+        .metadata()
         .map_err(|_| error(VideoErrorCode::ProjectIo, "journal_metadata"))?
         .len();
     if current.saturating_add(bytes.len() as u64) > MAX_JOURNAL_BYTES {
@@ -151,10 +173,6 @@ pub fn append_with_failpoint(
     if failpoint == AppendFailpoint::BeforeAppend {
         return Err(error(VideoErrorCode::ProjectIo, "failpoint_before_append"));
     }
-    let mut file = OpenOptions::new()
-        .append(true)
-        .open(path)
-        .map_err(|_| error(VideoErrorCode::ProjectIo, "open_append"))?;
     if failpoint == AppendFailpoint::AfterPartialAppend {
         file.write_all(&bytes[..bytes.len() / 2])
             .and_then(|()| file.flush())

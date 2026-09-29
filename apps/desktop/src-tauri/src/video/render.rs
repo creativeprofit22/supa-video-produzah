@@ -1262,11 +1262,14 @@ fn expected_v2_filter(
         let mut video_timing = "setpts=PTS-STARTPTS".to_owned();
         let mut audio_timing = "asetpts=PTS-STARTPTS".to_owned();
         if let (Some(timing), Some(source_duration)) = (&input.timing, source_duration) {
+            // Divide the timebase by the speed numerator first so PTS*d/n stays an exact integer.
+            // Otherwise it rounds to the source timebase: at 30000/1001 and 2x, 500.5 ticks per
+            // frame round up, and the fps filter keeps source frame 2k+1 instead of 2k.
             video_timing = format!(
-                "trim=end_frame={},setpts=PTS-STARTPTS,setpts=PTS*{}/{}",
+                "trim=end_frame={},setpts=PTS-STARTPTS,settb=expr=intb/{n},setpts=PTS*{d}/{n}",
                 timing.source_out.value - timing.source_in.value,
-                timing.speed.denominator,
-                timing.speed.numerator
+                d = timing.speed.denominator,
+                n = timing.speed.numerator
             );
             let percent = timing.speed.numerator * 100 / timing.speed.denominator;
             let tempo = format!("{}.{:02}", percent / 100, percent % 100);

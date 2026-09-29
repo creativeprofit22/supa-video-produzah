@@ -18,8 +18,8 @@ use super::{
     },
     integrity::{is_canonical_uuid, trim_contract_text, validate_snapshot},
     journal::{
-        acquire_project_lock, append_and_sync, journal_path, record_line_bytes, scan,
-        MAX_JOURNAL_LINE_BYTES,
+        acquire_project_lock, append_to, journal_path, open_append, record_line_bytes, scan,
+        AppendFailpoint, MAX_JOURNAL_LINE_BYTES,
     },
     migration::migrate_v1_bytes,
     proposal::ProposalAudit,
@@ -65,6 +65,9 @@ struct ProjectSession {
     replayed_record_count: u64,
     last_command: Option<LastCommandMetadata>,
     idempotency: HashMap<String, IdempotencyEntry>,
+    /// Append handle, opened on the first append after open or a checkpoint. Dropped before
+    /// every checkpoint and after any append error, so a torn tail is never appended onto.
+    journal: Option<File>,
 }
 
 #[derive(Debug, Default)]
@@ -74,6 +77,8 @@ pub struct VideoProjectService {
     close_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
     #[cfg(test)]
     automatic_checkpoint_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
+    #[cfg(test)]
+    append_failpoints: Mutex<HashMap<String, AppendFailpoint>>,
     #[cfg(test)]
     proposal_store_failpoint: Mutex<super::proposal::StoreWriteFailpoint>,
 }
@@ -478,6 +483,7 @@ impl VideoProjectService {
             replayed_record_count: 0,
             last_command: None,
             idempotency: HashMap::new(),
+            journal: None,
         })
     }
 
@@ -535,6 +541,9 @@ impl VideoProjectService {
                 };
                 (snapshot, report, 0, None)
             } else if schema_version == 2 {
+                // Recovery may truncate a torn tail. The exclusive project lock above means no
+                // session in any process holds an append handle to this journal.
+                debug_assert!(!self.has_session_for_path(&path));
                 let recovered = recover(&path)?;
                 (
                     recovered.snapshot,
@@ -568,6 +577,7 @@ impl VideoProjectService {
             replayed_record_count,
             last_command,
             idempotency,
+            journal: None,
         })?;
         Ok(OpenedProjectV2 {
             projection,
@@ -642,12 +652,13 @@ impl VideoProjectService {
         if record_line_bytes(&record)? > MAX_JOURNAL_LINE_BYTES {
             return Err(error(VideoErrorCode::StorageLimit, "journal_record_bytes"));
         }
-        let durable_record = append_and_sync(&journal_path(&session.path)?, &record)?;
+        let durable_record = self.append_record(session, &record)?;
         transition.snapshot.last_record_hash = durable_record.record_hash;
         session.snapshot = transition.snapshot;
         session.sources = sources;
         session.last_command = Some(last_command);
         if record_number % CHECKPOINT_INTERVAL == 0 {
+            session.journal = None;
             if self.automatic_checkpoint(session).is_ok() {
                 session.snapshot_revision = session.snapshot.revision.number;
                 session.journal_health = JournalHealth::Healthy;
@@ -663,6 +674,64 @@ impl VideoProjectService {
         result.projection.journal_health = session.journal_health.clone();
         result.projection.snapshot_revision = session.snapshot_revision;
         Ok(result)
+    }
+
+    fn append_record(
+        &self,
+        session: &mut ProjectSession,
+        record: &JournalRecord,
+    ) -> Result<JournalRecord, VideoCommandError> {
+        #[cfg(test)]
+        let failpoint = self
+            .append_failpoints
+            .lock()
+            .map_err(|_| error(VideoErrorCode::ProjectIo, "append_failpoint_lock"))?
+            .get(&session.snapshot.id)
+            .copied()
+            .unwrap_or(AppendFailpoint::None);
+        #[cfg(not(test))]
+        let failpoint = AppendFailpoint::None;
+        if session.journal.is_none() {
+            session.journal = Some(open_append(&journal_path(&session.path)?)?);
+        }
+        let Some(file) = session.journal.as_mut() else {
+            return Err(error(VideoErrorCode::ProjectIo, "journal_handle"));
+        };
+        let appended = append_to(file, record, failpoint);
+        if appended.is_err() {
+            session.journal = None;
+        }
+        appended
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_append(&self, project_id: &str, failpoint: AppendFailpoint) {
+        self.append_failpoints
+            .lock()
+            .unwrap()
+            .insert(project_id.to_owned(), failpoint);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_open_journal_handle(&self, owner: &str, project_id: &str) -> bool {
+        let Ok(session) = self.session(owner, project_id) else {
+            return false;
+        };
+        let has_handle = session
+            .lock()
+            .map(|session| session.journal.is_some())
+            .unwrap_or(false);
+        has_handle
+    }
+
+    fn has_session_for_path(&self, path: &Path) -> bool {
+        self.sessions.lock().is_ok_and(|sessions| {
+            sessions.values().any(|handle| {
+                handle
+                    .lock()
+                    .is_ok_and(|session| !session.closed && session.path == path)
+            })
+        })
     }
 
     pub fn existing_group_result(
@@ -905,6 +974,7 @@ impl VideoProjectService {
         let mut session = handle
             .lock()
             .map_err(|_| error(VideoErrorCode::ProjectIo, "project_mutex"))?;
+        session.journal = None;
         self.checkpoint_on_close(&session)?;
         session.closed = true;
         drop(session);

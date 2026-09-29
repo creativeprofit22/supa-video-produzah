@@ -180,6 +180,15 @@ async fn render_speed_production_compiler_actual_parity() {
             let visual_onset = ids.iter().position(|id| *id >= 42).unwrap() as f64 * frame_seconds;
             println!("EXPORT_PARITY rate={rn}/{rd} speed={sn}/{sd} cadence_frames={cadence:.3} transient={onset:.6} visual={visual_onset:.6} hz={hz:.6} audio_duration={duration:.6} artifact={}", output.display());
             assert!(cadence <= 1.0, "wrong decoded frame identity/cadence");
+            // Where k*speed is a whole number of source frames the canonical mapping is exact:
+            // sequence frame k shows source frame source_in + floor(k*speed), with no rounding slack.
+            if sd == 1 || sn == 1 {
+                let expected: Vec<u32> = (0..60u32).map(|k| 30 + k * sn / sd).collect();
+                assert_eq!(
+                    ids, expected,
+                    "exact canonical source frames at {rn}/{rd} speed {sn}/{sd}"
+                );
+            }
             assert!(
                 (onset - 12.0 * frame_seconds / speed).abs() <= frame_seconds,
                 "transient timing"

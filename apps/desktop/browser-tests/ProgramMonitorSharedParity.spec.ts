@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { audioMediaTime, knownTimeGate, loadClipEvents, type PlaybackAnchor } from "./known-time";
 import { findVisualMarker } from "./visual-marker";
+
+// ProgramMonitor fixture clip source-in frame (program-monitor-speed.fixture.tsx).
+const sourceInFrame = 30;
 
 async function ready(page: Page) {
   await expect
@@ -88,7 +92,12 @@ for (const fractional of [false, true])
     for (const final of [false, true])
       test(`${label} ${final ? "final" : "preview"} live PCM pitch and aligned transient`, async ({
         page,
+        request,
       }, info) => {
+        const events = await loadClipEvents(
+          request,
+          `speed-parity-${fractional ? "30000-1001" : "30-1"}.mp4`,
+        );
         await page.goto(url);
         if (final) await page.getByRole("button", { name: "Final", exact: true }).click();
         await ready(page);
@@ -104,7 +113,16 @@ for (const fractional of [false, true])
             blocks: [] as { time: number; samples: number[] }[],
             frames: [] as { id: number; display: number; media: number }[],
             timestamps: [] as AudioTimestamp[],
+            anchors: [] as { context: number; media: number; rate: number }[],
           };
+          // Known-time anchor: context render clock and element media clock in one task.
+          v.addEventListener("playing", () =>
+            state.anchors.push({
+              context: context.currentTime,
+              media: v.currentTime,
+              rate: v.playbackRate,
+            }),
+          );
           capture.port.onmessage = (event) => {
             state.blocks.push(event.data);
             state.timestamps.push(context.getOutputTimestamp());
@@ -143,6 +161,7 @@ for (const fractional of [false, true])
                 blocks: { time: number; samples: number[] }[];
                 frames: { id: number; display: number; media: number }[];
                 timestamps: AudioTimestamp[];
+                anchors: { context: number; media: number; rate: number }[];
               };
             }
           ).parityCapture;
@@ -181,6 +200,7 @@ for (const fractional of [false, true])
             outputLatency: state.context.outputLatency,
             audioDisplay,
             onsetTime: onsetBlock?.time,
+            anchors: state.anchors,
             stamp,
             sampleRate,
             toneSamples: tone.length,
@@ -200,8 +220,30 @@ for (const fractional of [false, true])
           result.audioDisplay !== null && visualDisplay !== null
             ? (Math.abs(result.audioDisplay - visualDisplay) / 1000) * fps
             : null;
+        const eventFps = events.fpsNumerator / events.fpsDenominator;
+        // Preview plays source media at `speed`; final exports start at the clip source-in.
+        const expectedMediaSeconds = final
+          ? (events.eventFrame - sourceInFrame) / speed / eventFps
+          : events.eventFrame / eventFps;
+        const audioMapped =
+          result.onsetTime === undefined
+            ? null
+            : audioMediaTime(result.onsetTime, result.anchors satisfies PlaybackAnchor[]);
+        const knownTime =
+          visual && audioMapped
+            ? knownTimeGate({
+                expectedMediaSeconds,
+                videoMediaSeconds: visual.media,
+                audioMediaSeconds: audioMapped.mediaTime,
+                sequenceFramesPerMediaSecond: final ? eventFps : eventFps / speed,
+              })
+            : null;
         await info.attach("live-shared-parity.json", {
-          body: JSON.stringify({ ...result, visualDisplay, avFrames }, null, 2),
+          body: JSON.stringify(
+            { ...result, visualDisplay, avFrames, events, audioMapped, knownTime },
+            null,
+            2,
+          ),
           contentType: "application/json",
         });
         expect.soft(result.rate).toBe(final ? 1 : speed);
@@ -214,10 +256,33 @@ for (const fractional of [false, true])
           visual,
           "measurement validity: decoded visual frame 42 must be directly observed",
         ).not.toBeNull();
+        // Recorded, not asserted (user decision, 29 Sep 2026): the absolute output-clock delta
+        // includes this machine's audio output path, and a plain <video> exceeds one frame on it.
+        // The known-time gate below is the acceptance gate.
+        info.annotations.push({
+          type: "output-clock-frames",
+          description: avFrames === null ? "unmeasured" : avFrames.toFixed(3),
+        });
+        expect(
+          audioMapped,
+          "known-time audio onset must map through a playing anchor",
+        ).not.toBeNull();
         expect
           .soft(
-            avFrames ?? Infinity,
-            "actual output-clock aligned transient within one sequence frame",
+            Math.abs(knownTime?.videoErrorFrames ?? Infinity),
+            "known-time video frame 42 media time within one sequence frame",
+          )
+          .toBeLessThanOrEqual(1);
+        expect
+          .soft(
+            Math.abs(knownTime?.audioErrorFrames ?? Infinity),
+            "known-time audio onset media time within one sequence frame",
+          )
+          .toBeLessThanOrEqual(1);
+        expect
+          .soft(
+            Math.abs(knownTime?.differenceFrames ?? Infinity),
+            "known-time audio/video difference within one sequence frame",
           )
           .toBeLessThanOrEqual(1);
         expect.soft(result.paused).toBe(true);

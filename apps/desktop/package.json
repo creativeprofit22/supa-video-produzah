@@ -11,6 +11,7 @@
     "check": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false && tsc -p tsconfig.browser.json --pretty false",
     "test": "vitest run --exclude \"browser-tests/**\"",
     "test:browser": "playwright test",
+    "test:native": "node ../../scripts/test-native.mjs",
     "preview": "vite preview",
     "media:bootstrap:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1",
     "media:verify:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1 -VerifyOnly",
