@@ -1,3 +1,4 @@
+mod ai_account;
 pub mod video;
 
 #[cfg(any(
@@ -77,6 +78,9 @@ fn initialize_media_jobs<R: Runtime>(
 fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .plugin(tauri_plugin_dialog::init())
+        // Rust-only: native code opens the sign-in page it built itself; the
+        // renderer gets no opener permission.
+        .plugin(tauri_plugin_opener::init())
         .manage(video::VideoPathGrants::default())
         .manage(video::VideoProjectService::default())
         .manage(video::project::proposal_ipc::AgentProposalsSwitch::from_env())
@@ -86,6 +90,12 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
                 video::toolchain::MediaToolchainState::start_for_app(app.handle()),
             );
             initialize_media_jobs(app)?;
+            app.manage(ai_account::commands::AiAccountService::new(
+                ai_account::credential_store::CredentialStore::for_identifier(
+                    &app.config().identifier,
+                ),
+                app.path().app_data_dir().ok(),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,6 +138,11 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::asr_ipc::video_transcription_result,
             video::subtitle_export::video_pick_subtitle_path,
             video::subtitle_export::video_write_subtitles,
+            ai_account::commands::ai_account_status,
+            ai_account::commands::ai_account_start_sign_in,
+            ai_account::commands::ai_account_submit_code,
+            ai_account::commands::ai_account_cancel_sign_in,
+            ai_account::commands::ai_account_sign_out,
         ])
         .on_window_event(clean_up_video_state_on_destroyed)
 }
@@ -217,8 +232,8 @@ mod tests {
     };
 
     use super::{
-        clean_up_video_state_on_destroyed, clean_up_video_state_on_exit, manage_media_toolchain,
-        video,
+        ai_account, clean_up_video_state_on_destroyed, clean_up_video_state_on_exit,
+        manage_media_toolchain, video,
     };
 
     fn invoke_request(command: &str, body: Value) -> InvokeRequest {
@@ -470,6 +485,80 @@ mod tests {
             state.phase_for_test(),
             video::toolchain::MediaToolchainProblemOrPhase::Ready
         );
+    }
+
+    #[test]
+    fn ai_account_ipc_never_returns_tokens_and_enforces_the_terms_gate() {
+        use ai_account::credential_store::{
+            memory_backend::MemoryBackend, CredentialStore, StoredAnthropicCredential,
+        };
+
+        let store = CredentialStore::new(Box::new(MemoryBackend::default()));
+        store
+            .save(&StoredAnthropicCredential {
+                access_token: "sk-ant-oat-secret".to_owned(),
+                refresh_token: Some("sk-ant-ort-secret".to_owned()),
+                expires_at: Some(i64::MAX / 2),
+                account_email: Some("me@example.com".to_owned()),
+                needs_reauth: false,
+            })
+            .expect("seed credential");
+        let app = mock_builder()
+            .manage(ai_account::commands::AiAccountService::new(store, None))
+            .invoke_handler(tauri::generate_handler![
+                ai_account::commands::ai_account_status,
+                ai_account::commands::ai_account_start_sign_in,
+                ai_account::commands::ai_account_submit_code,
+                ai_account::commands::ai_account_cancel_sign_in,
+                ai_account::commands::ai_account_sign_out,
+            ])
+            .build(mock_context(noop_assets()))
+            .expect("AI account IPC app must build");
+        let webview = WebviewWindowBuilder::new(&app, "ai-account-ipc", Default::default())
+            .build()
+            .expect("AI account webview must build");
+        let call = |command: &str, body: Value| {
+            get_ipc_response(&webview, invoke_request(command, body))
+                .map(|response| response.deserialize::<Value>().expect("JSON response"))
+        };
+
+        let status = call("ai_account_status", json!({})).expect("status");
+        assert_eq!(
+            status,
+            json!({
+                "connected": true,
+                "email": "me@example.com",
+                "needsReauth": false,
+                "signInPending": false
+            })
+        );
+        assert!(!status.to_string().contains("secret"));
+
+        let refused = call(
+            "ai_account_start_sign_in",
+            json!({ "request": { "acknowledged": false } }),
+        )
+        .expect_err("sign-in without acknowledgement must be refused");
+        assert_eq!(refused["code"], "termsNotAcknowledged");
+
+        let invalid = call(
+            "ai_account_submit_code",
+            json!({ "request": { "code": "abc#s" } }),
+        )
+        .expect_err("no pending sign-in");
+        assert_eq!(invalid["code"], "invalidSignIn");
+
+        assert_eq!(
+            call("ai_account_cancel_sign_in", json!({})).expect("cancel"),
+            Value::Null
+        );
+        assert_eq!(
+            call("ai_account_sign_out", json!({})).expect("sign out"),
+            Value::Null
+        );
+        let signed_out = call("ai_account_status", json!({})).expect("status");
+        assert_eq!(signed_out["connected"], false);
+        assert_eq!(signed_out["email"], Value::Null);
     }
 
     #[test]
