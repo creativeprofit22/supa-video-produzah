@@ -2826,6 +2826,49 @@ video {
 .shortcut-dialog-footer > button {
   flex: 0 0 auto;
 }
+.ai-account-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 22px 20px;
+  border-block-start: 1px solid var(--border);
+}
+.ai-account-settings h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.ai-account-status,
+.ai-account-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ai-account-terms {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.ai-account-terms input {
+  margin-block-start: 3px;
+}
+.ai-account-code {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.ai-account-code label {
+  font-size: 0.8rem;
+}
+.ai-account-actions {
+  display: flex;
+  gap: 8px;
+}
 .transport-playback {
   flex-wrap: wrap;
 }

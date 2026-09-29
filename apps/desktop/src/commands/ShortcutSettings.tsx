@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 
+import { AiAccountSettings } from "../ai-account/AiAccountSettings";
 import {
   COMMAND_REGISTRY,
   formatShortcut,
@@ -278,6 +279,7 @@ export function ShortcutSettings({ open, onClose, returnFocusRef }: ShortcutSett
           {preferenceError}
         </p>
       )}
+      <AiAccountSettings active={open} />
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {status}
       </p>
