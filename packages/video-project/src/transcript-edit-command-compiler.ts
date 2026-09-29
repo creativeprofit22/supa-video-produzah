@@ -64,6 +64,10 @@ export function proposalSeed(
   },
   projection: ProjectProjection,
   selectedOccurrenceIds: readonly string[],
+  extra: { readonly gaps: readonly string[]; readonly producer: string | null } = {
+    gaps: [],
+    producer: null,
+  },
 ): Uint8Array {
   const encoder = new FramedSeedEncoder();
   encoder.string("supa-video/transcript-edit-proposal/v1");
@@ -75,6 +79,15 @@ export function proposalSeed(
   encoder.string(input.sequenceId);
   encoder.string(input.trackId);
   for (const occurrence of selectedOccurrenceIds) encoder.string(occurrence);
+  // Appended only when present so user word selections keep their v1 ids.
+  if (extra.gaps.length > 0) {
+    encoder.string("\u0000gaps");
+    for (const gap of extra.gaps) encoder.string(gap);
+  }
+  if (extra.producer !== null) {
+    encoder.string("\u0000producer");
+    encoder.string(extra.producer);
+  }
   return encoder.finish();
 }
 

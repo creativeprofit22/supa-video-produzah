@@ -4,6 +4,7 @@ import {
   projectProjectionSchema,
   rateOf,
   rescaleRationalTime,
+  transcriptEditProposalWireSchema,
   type CommandGroupRequest,
   type MediaContentIdentityV1,
   type ProjectClip,
@@ -13,6 +14,14 @@ import {
 } from "@supa-video/contracts";
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
+import {
+  err,
+  ok,
+  userSelectionProvenance,
+  type ProducerId,
+  type ProducerProvenance,
+  type Result,
+} from "./proposal-producer.js";
 import { prepareTranscriptEditCaptionLifecycleV1 } from "./split-clip-caption-lifecycle.js";
 import {
   compileCommandDrafts,
@@ -57,8 +66,34 @@ export interface TranscriptEditAssetIdentity {
   readonly contentIdentity: MediaContentIdentityV1;
 }
 
-export interface TranscriptEditProposal {
+/** A cut of non-speech media between words, in clip source frames `[start, end)`. */
+export interface TranscriptEditGapSelection {
+  readonly clipId: string;
+  readonly sourceStartFrame: number;
+  readonly sourceEndFrame: number;
+}
+
+/** Schema v1: proposals made before producer provenance was recorded. */
+export interface TranscriptEditProposalV1 extends TranscriptEditProposalBody {
   readonly schemaVersion: 1;
+}
+
+/** Why the producer proposed the cut with this range id (see `rangeIdOf`). */
+export interface TranscriptEditReason {
+  readonly rangeId: string;
+  readonly text: string;
+}
+
+export interface TranscriptEditProposal extends TranscriptEditProposalBody {
+  readonly schemaVersion: 2;
+  /** Which producer (user selection, rule or model) generated this proposal. */
+  readonly producer: ProducerProvenance;
+  readonly deletedGaps: readonly TranscriptEditGapSelection[];
+  /** Producer explanations per cut. Display only: never part of the proposal id. */
+  readonly reasons?: readonly TranscriptEditReason[] | undefined;
+}
+
+interface TranscriptEditProposalBody {
   readonly proposalId: string;
   readonly artifactIdentityKey: string;
   readonly sourceIdentity: MediaContentIdentityV1;
@@ -76,6 +111,23 @@ export interface TranscriptEditProposal {
 
 export interface CreateTranscriptEditProposalInput extends ProjectTranscriptScopeInput {
   readonly deletedOccurrenceIds: readonly string[];
+  /** Non-speech gaps to cut; each must lie inside its clip and overlap no word. */
+  readonly deletedGaps?: readonly TranscriptEditGapSelection[];
+  /** Defaults to the user's own selection. */
+  readonly producer?: ProducerProvenance;
+}
+
+/** Reads a v1 proposal as v2, attributing it to the user's own selection. */
+export function upgradeTranscriptEditProposal(
+  proposal: TranscriptEditProposalV1 | TranscriptEditProposal,
+): TranscriptEditProposal {
+  if (proposal.schemaVersion === 2) return proposal;
+  return Object.freeze({
+    ...proposal,
+    schemaVersion: 2,
+    producer: userSelectionProvenance,
+    deletedGaps: Object.freeze([]),
+  });
 }
 
 interface MergedDeletion {
@@ -198,6 +250,131 @@ function mergeSelectedOccurrences(
   );
 }
 
+function compareDeletions(left: MergedDeletion, right: MergedDeletion): number {
+  return (
+    left.originalTimelineStart - right.originalTimelineStart ||
+    left.originalTimelineEnd - right.originalTimelineEnd ||
+    compareStrings(left.clip.id, right.clip.id)
+  );
+}
+
+function canonicalGaps(
+  gaps: readonly TranscriptEditGapSelection[],
+): readonly TranscriptEditGapSelection[] {
+  const unique = new Map<string, TranscriptEditGapSelection>();
+  for (const gap of gaps) {
+    unique.set(
+      `${gap.clipId}:${gap.sourceStartFrame}:${gap.sourceEndFrame}`,
+      Object.freeze({
+        clipId: gap.clipId,
+        sourceStartFrame: gap.sourceStartFrame,
+        sourceEndFrame: gap.sourceEndFrame,
+      }),
+    );
+  }
+  return Object.freeze(
+    [...unique.values()].sort(
+      (left, right) =>
+        compareStrings(left.clipId, right.clipId) ||
+        left.sourceStartFrame - right.sourceStartFrame ||
+        left.sourceEndFrame - right.sourceEndFrame,
+    ),
+  );
+}
+
+/**
+ * Adds non-speech gap cuts to the word deletions and unions any cuts that touch
+ * or overlap in the same clip, so the compiled commands never overlap.
+ */
+function mergeGapDeletions(
+  wordDeletions: readonly MergedDeletion[],
+  gaps: readonly TranscriptEditGapSelection[],
+  all: readonly TranscriptTimelineOccurrence[],
+  selectedIds: ReadonlySet<string>,
+  scope: ReturnType<typeof resolveScope>,
+): MergedDeletion[] {
+  const candidates: MergedDeletion[] = [...wordDeletions];
+  for (const gap of gaps) {
+    const clip = scope.track.clips.find(({ id }) => id === gap.clipId);
+    if (clip === undefined || clip.source.kind !== "asset") {
+      throw transcriptError("invalid_project", "Gap cut targets a stale clip", "stale_clip", {
+        clipId: gap.clipId,
+      });
+    }
+    if (
+      !Number.isSafeInteger(gap.sourceStartFrame) ||
+      !Number.isSafeInteger(gap.sourceEndFrame) ||
+      gap.sourceStartFrame < clip.sourceIn.value ||
+      gap.sourceEndFrame > clip.sourceOut.value ||
+      gap.sourceEndFrame <= gap.sourceStartFrame
+    ) {
+      throw transcriptError("invalid_range", "Gap cut lies outside its clip", "gap_outside_clip", {
+        clipId: gap.clipId,
+      });
+    }
+    const overlapsWord = all.some(
+      (occurrence) =>
+        occurrence.clipId === gap.clipId &&
+        !selectedIds.has(occurrence.occurrenceId) &&
+        occurrence.sourceRange.end.value > gap.sourceStartFrame &&
+        occurrence.sourceRange.start.value < gap.sourceEndFrame,
+    );
+    if (overlapsWord) {
+      throw transcriptError(
+        "invalid_range",
+        "Gap cut would remove a kept word",
+        "gap_overlaps_word",
+        {
+          clipId: gap.clipId,
+        },
+      );
+    }
+    candidates.push({
+      clip,
+      assetId: clip.source.assetId,
+      sourceStart: gap.sourceStartFrame,
+      sourceEnd: gap.sourceEndFrame,
+      selectedWords: [],
+      originalTimelineStart: sourceFrameToTimelineFrame(
+        clip,
+        gap.sourceStartFrame,
+        scope.sequence.rate,
+      ),
+      originalTimelineEnd: sourceFrameToTimelineFrame(
+        clip,
+        gap.sourceEndFrame,
+        scope.sequence.rate,
+      ),
+    });
+  }
+  const merged: MergedDeletion[] = [];
+  const byClip = new Map<string, MergedDeletion[]>();
+  for (const deletion of candidates) {
+    const list = byClip.get(deletion.clip.id) ?? [];
+    list.push(deletion);
+    byClip.set(deletion.clip.id, list);
+  }
+  for (const list of byClip.values()) {
+    list.sort(
+      (left, right) => left.sourceStart - right.sourceStart || left.sourceEnd - right.sourceEnd,
+    );
+    let current: MergedDeletion | undefined;
+    for (const deletion of list) {
+      if (current !== undefined && deletion.sourceStart <= current.sourceEnd) {
+        if (deletion.sourceEnd > current.sourceEnd) {
+          current.sourceEnd = deletion.sourceEnd;
+          current.originalTimelineEnd = deletion.originalTimelineEnd;
+        }
+        (current.selectedWords as TranscriptEditWordSnapshot[]).push(...deletion.selectedWords);
+        continue;
+      }
+      current = { ...deletion, selectedWords: [...deletion.selectedWords] };
+      merged.push(current);
+    }
+  }
+  return merged.sort(compareDeletions);
+}
+
 function deletedDurationBefore(deletions: readonly MergedDeletion[], frame: number): number {
   return deletions.reduce(
     (total, deletion) =>
@@ -317,7 +494,9 @@ function buildPreviewRanges(deletions: readonly MergedDeletion[]): {
 export async function createTranscriptEditProposal(
   input: CreateTranscriptEditProposalInput,
 ): Promise<TranscriptEditProposal> {
-  if (input.deletedOccurrenceIds.length === 0) {
+  const gaps = canonicalGaps(input.deletedGaps ?? []);
+  const producer = input.producer ?? userSelectionProvenance;
+  if (input.deletedOccurrenceIds.length === 0 && gaps.length === 0) {
     throw transcriptError(
       "invalid_range",
       "Transcript deletion selection cannot be empty",
@@ -344,7 +523,17 @@ export async function createTranscriptEditProposal(
     }
     return occurrence;
   });
-  const deletions = mergeSelectedOccurrences(selected, timeline.occurrences, scope);
+  const wordDeletions = mergeSelectedOccurrences(selected, timeline.occurrences, scope);
+  const deletions =
+    gaps.length === 0
+      ? wordDeletions
+      : mergeGapDeletions(
+          wordDeletions,
+          gaps,
+          timeline.occurrences,
+          new Set(selectedOccurrenceIds),
+          scope,
+        );
   if (deletions.length === 0) {
     throw transcriptError(
       "invalid_range",
@@ -353,7 +542,10 @@ export async function createTranscriptEditProposal(
     );
   }
 
-  const seed = proposalSeed(input, scope.projection, selectedOccurrenceIds);
+  const seed = proposalSeed(input, scope.projection, selectedOccurrenceIds, {
+    gaps: gaps.map((gap) => `${gap.clipId}:${gap.sourceStartFrame}:${gap.sourceEndFrame}`),
+    producer: producer.id === userSelectionProvenance.id ? null : JSON.stringify(producer),
+  });
   const drafts = compileCommandDrafts(deletions, scope.sequence.id, scope.track.id);
   if (drafts.length > 100) {
     throw transcriptError(
@@ -380,7 +572,12 @@ export async function createTranscriptEditProposal(
   });
   const { keptRanges, deletedRanges } = buildPreviewRanges(deletions);
   const selectedWords = Object.freeze(selected.map(snapshot));
-  const usedAssetIds = [...new Set(selected.map(({ assetId }) => assetId))].sort(compareStrings);
+  const usedAssetIds = [
+    ...new Set([
+      ...selected.map(({ assetId }) => assetId),
+      ...deletions.map(({ assetId }) => assetId),
+    ]),
+  ].sort(compareStrings);
   const assetIdentities = Object.freeze(
     usedAssetIds.map((assetId) => {
       const asset = scope.projection.state.assets.find(({ id }) => id === assetId);
@@ -399,7 +596,9 @@ export async function createTranscriptEditProposal(
   );
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    producer,
+    deletedGaps: gaps,
     proposalId: await derivedUuid(seed, "proposal"),
     artifactIdentityKey: input.artifact.identity.key,
     sourceIdentity: input.artifact.identity.sourceIdentity,
@@ -417,7 +616,7 @@ export async function createTranscriptEditProposal(
 }
 
 export interface AssertTranscriptEditProposalCurrentInput {
-  readonly proposal: TranscriptEditProposal;
+  readonly proposal: TranscriptEditProposal | TranscriptEditProposalV1;
   readonly artifact: TranscriptArtifactV1;
   readonly projection: ProjectProjection;
 }
@@ -510,4 +709,26 @@ export function assertTranscriptEditProposalCurrent(
       );
     }
   }
+}
+
+/**
+ * Validates an untrusted proposal (IPC, storage) and upgrades schema v1 to v2.
+ * Structural validation only; use `assertTranscriptEditProposalCurrent` to
+ * check it still applies to the open project.
+ */
+export function parseTranscriptEditProposal(
+  value: unknown,
+): Result<TranscriptEditProposal, { readonly code: "invalid_proposal"; readonly message: string }> {
+  const parsed = transcriptEditProposalWireSchema.safeParse(value);
+  if (!parsed.success) {
+    return err({ code: "invalid_proposal", message: parsed.error.message });
+  }
+  const wire = parsed.data;
+  if (wire.schemaVersion === 1) return ok(upgradeTranscriptEditProposal(wire));
+  return ok(
+    Object.freeze({
+      ...wire,
+      producer: Object.freeze({ ...wire.producer, id: wire.producer.id as ProducerId }),
+    }),
+  );
 }

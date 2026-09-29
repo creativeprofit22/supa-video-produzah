@@ -38,6 +38,11 @@ export type {
 } from "./trim-clip-caption-lifecycle.js";
 export * from "./transcript-caption.js";
 export * from "./transcript-edit.js";
+export * from "./proposal-producer.js";
 export * from "./transcript-caption-apply.js";
 export * from "./caption-edit.js";
 export * from "./caption-export.js";
+export * from "./produce-proposal.js";
+export * from "./silence-gap-rule.js";
+export * from "./filler-words-rule.js";
+export * from "./proposal-lifecycle.js";

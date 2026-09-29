@@ -1,3 +1,4 @@
+export * from "./agent-proposal.js";
 export * from "./caption.js";
 export * from "./clip-timing.js";
 export * from "./commands.js";
