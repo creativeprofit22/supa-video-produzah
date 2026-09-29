@@ -108,7 +108,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("complete mocked Phase 2 workflow", () => {
+// Full-app renders pay heavy cold-start cost under the parallel suite; 5s is too tight.
+describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
   beforeEach(() => {
     invokeMock.mockReset();
     listenMock.mockReset().mockResolvedValue(vi.fn());

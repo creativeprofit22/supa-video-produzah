@@ -75,7 +75,11 @@ describe("ProposalsPanel", () => {
     const { onPreviewRanges } = await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
 
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
     const boxes = within(group).getAllByRole("checkbox");
     expect(boxes).toHaveLength(2);
     expect(boxes.every((box) => (box as HTMLInputElement).checked)).toBe(true);
@@ -99,7 +103,11 @@ describe("ProposalsPanel", () => {
     const backend = fakeBackend();
     const { runEdit, onPreviewRanges } = await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
     const [first] = within(group).getAllByRole("checkbox");
     fireEvent.click(first as HTMLElement);
     await waitFor(() =>
@@ -133,7 +141,11 @@ describe("ProposalsPanel", () => {
     const backend = fakeBackend();
     await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
     for (const box of within(group).getAllByRole("checkbox")) fireEvent.click(box);
     expect(
       (within(group).getByRole("button", { name: "Apply 0 of 2" }) as HTMLButtonElement).disabled,
@@ -148,7 +160,11 @@ describe("ProposalsPanel", () => {
     const backend = fakeBackend(true, { applyFails: true });
     const { rerender } = await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
     rerender({
       ...projection,
       revision: { ...projection.revision, number: 2, id: id(103), parentId: id(101) },
@@ -178,7 +194,11 @@ describe("ProposalsPanel", () => {
     const backend = fakeBackend();
     const { onPreviewRanges, rerender } = await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
     fireEvent.click(within(group).getAllByRole("checkbox")[0] as HTMLElement);
     await waitFor(() =>
       expect(onPreviewRanges).toHaveBeenLastCalledWith([
@@ -238,7 +258,11 @@ describe("ProposalsPanel", () => {
     });
     await renderPanel(backend);
     fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
-    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+    const group = await screen.findByRole(
+      "group",
+      { name: "Filler words: 2 cuts" },
+      { timeout: 5_000 },
+    );
 
     fireEvent.click(within(group).getByRole("button", { name: "Apply 2 of 2" }));
 
