@@ -1,5 +1,7 @@
 # One bounded native human-keyboard handoff — prepared, not run
 
+> **Out of scope since 29 September 2026 (AGENTS.md: verification is automated only).** Kept as history; do not run this handoff or ask the user to perform it.
+
 Wait for the performance agent to finish. This mode uses the existing isolated binary/config, disposable native project/profile, actual picker/import and 150% / −6 dB / 5–7 frame fades / source [30,120) setup. It makes one real-UI split at frame 30, selects the first of two clips, focuses **Speed (%)**, then stops automation. It does not play/export/capture or create any extra audio route.
 
 ## Parent launch (only after coordination)

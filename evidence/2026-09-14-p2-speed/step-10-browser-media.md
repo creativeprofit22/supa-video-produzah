@@ -40,7 +40,7 @@ Separate final-mode/control run: actual Final media/wall ratio **1.003359825**, 
 
 ## Remaining gates / Windows WebView handoff
 
-**Not complete steps 8/10:** native Windows Tauri WebView actual playback/pitch, save/reopen, assistive technology, multilayer clock switching, muted/hidden layers, fractional rates, numbered pixel/frame endpoint identification, aligned flash/transient one-frame A/V offset, captured PCM duration, and shared-fixture export parity remain unverified. This synthetic asset has moving test patterns and steady tone, **not numbered frames or aligned flash/transients**, and is not the native counterpart's shared fixture. Native counterpart in `video/tests.rs` / `step-10-native-export` must be reported separately. No assertion of full approved parity or universal preview reliability.
+**Not complete steps 8/10:** native Windows Tauri WebView actual playback/pitch, save/reopen, multilayer clock switching, muted/hidden layers, fractional rates, numbered pixel/frame endpoint identification, aligned flash/transient one-frame A/V offset, captured PCM duration, and shared-fixture export parity remain unverified. (Assistive technology, originally listed here, is out of scope since 29 September 2026 under AGENTS.md.) This synthetic asset has moving test patterns and steady tone, **not numbered frames or aligned flash/transients**, and is not the native counterpart's shared fixture. Native counterpart in `video/tests.rs` / `step-10-native-export` must be reported separately. No assertion of full approved parity or universal preview reliability.
 
 Playwright started/stopped Vite automatically; **port 4175 is not promised running after tests**. For a manual Windows WebView session start (repository root):
 

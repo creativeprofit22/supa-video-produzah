@@ -21,7 +21,7 @@ Independent retained-file verification `653a1aeb-3744-4103-8637-73f6f5e8cafd`, e
 
 ## Explicit limits
 
-This is a **tool-driven native interaction and persistence pass**, not a human keyboard or native assistive-technology pass. The driver contains no Play/Pause/end-frame assertions, so this run does not establish native playback, final end behavior or calibrated changed-flow parity. Step 9 as a whole remains incomplete until those required checks and the bounded human check are resolved; do not issue its completion marker on persistence evidence alone.
+This is a **tool-driven native interaction and persistence pass**, not a human keyboard or native assistive-technology pass. The driver contains no Play/Pause/end-frame assertions, so this run does not establish native playback, final end behavior or calibrated changed-flow parity. Step 9 as a whole remains incomplete until those required checks are resolved (the bounded human check once listed here is out of scope since 29 September 2026 under AGENTS.md); do not issue its completion marker on persistence evidence alone.
 
 ## Later independent verification correction
 

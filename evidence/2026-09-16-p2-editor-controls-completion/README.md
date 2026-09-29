@@ -12,7 +12,7 @@ The sections below are retained chronological checkpoints, not current instructi
 
 **Acceptance remains incomplete; implementation continues.** Steps 6–7 now have a reviewed, actual bounded digital calibration after fixing a timestamp-field protocol mismatch through offline replay, without changing samples, uncertainty or tolerance. See [calibration review](step-7-calibration-review.md). This does not establish production preview/final timing; step 8 remains open.
 
-Actual native editor edit/reopen/process-restart persistence checks later passed at revision 16, with exact saved state and history verified. See [native recovery evidence](step-9-native-recovery.md). Native playback/end behavior, changed-flow timing and the bounded human keyboard check are still open; step 9 is not wholly complete. Latest recorded ordinary browser suite is **90 passed / 12 failed**, superseding the earlier count below. Subsequent capture-harness edits require fresh affected checks. No Roadmap Done claim or takeover of another session.
+Actual native editor edit/reopen/process-restart persistence checks later passed at revision 16, with exact saved state and history verified. See [native recovery evidence](step-9-native-recovery.md). Native playback/end behavior and changed-flow timing are still open; step 9 is not wholly complete. The bounded human keyboard check that was listed here is out of scope since 29 September 2026 (AGENTS.md: verification is automated only) and is kept as history, not an open gate. Latest recorded ordinary browser suite is **90 passed / 12 failed**, superseding the earlier count below. Subsequent capture-harness edits require fresh affected checks. No Roadmap Done claim or takeover of another session.
 
 ## Earlier checkpoint — retained history
 
@@ -88,7 +88,7 @@ Commands/results:
 - Formatted only the edited workspace spec, reread, and repeated with output directory `editor-controls-completion-step3-formatted`: execution `5fefa5ba-010a-4a57-b4e4-dd9d648ee42f`, exit 1, **12 pass / 1 fail**, 33.0s. Both traces/error contexts remain in their distinct ignored output directories. No assertion disabled, tolerance changed or dependency upgraded.
 - `pnpm --filter @supa-video/desktop check`: `6cfba185-d368-4a34-bcfa-310ba54e3df3`, exit 0 after final spec formatting.
 
-RUNTIME: agent visually inspected `controls-desktop.png`, `controls-text-200.png` and `forced-colors-diagnostic.png`. Full-page narrow capture is very tall and downscaled by the viewer; detailed cropped inspection and remaining layout/multiselect screenshots are still required. Native rendered proof and human/assistive-technology checks have not run.
+RUNTIME: agent visually inspected `controls-desktop.png`, `controls-text-200.png` and `forced-colors-diagnostic.png`. Full-page narrow capture is very tall and downscaled by the viewer; detailed cropped inspection and remaining layout/multiselect screenshots are still required. Native rendered proof had not run at this checkpoint. Human and assistive-technology checks never ran and are out of scope since 29 September 2026 (AGENTS.md); this note is history, not an open gate.
 
 #### Forced-colors measurement diagnosis (retain red)
 
