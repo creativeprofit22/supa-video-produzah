@@ -17,7 +17,7 @@ Every command ran once, in sequence, on that commit; HEAD was unchanged after th
 | `cargo clippy --all-targets --all-features -- -D warnings` | 0 | clean |
 
 Native run 2 failure: `video::tests::race_actual_prepared_publication_and_completed_reuse` (cache.rs:1628, "publisher did not acknowledge upsert").
-This is the out-of-scope cache flake listed in `durable-ack.md`: before 3/10, after 0/10, split 8/10, alone 5/5 pass. Neither this work nor this plan touches the cache code.
+It was diagnosed in `cache-race.md`. The cause is a test timing assumption under load (the publisher arrives late but correctly), not a publisher race, and the direct cargo command fails the same way. The test now runs in the serial isolated pass, with no timeout or assertion changed, and passed 10/10 across 10 `pnpm test:native` runs.
 
 An earlier attempt at `2456978` found two defects, fixed before this run: `scripts/test-native.mjs` wasn't formatted, and `pnpm test` hit EACCES on reserved port 4173 because the port override wasn't set. Its later results were discarded.
 
