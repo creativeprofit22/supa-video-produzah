@@ -21,6 +21,7 @@ import {
 import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, AlertTriangle, FilePlus2, FolderOpen, RefreshCw, Save } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TranscriptArtifactV1 } from "@supa-video/media";
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
@@ -36,6 +37,7 @@ import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
+import { ProposalsPanel, type ProposalTimelineRange } from "./ProposalsPanel";
 import { ProgramMonitor, type ProgramMonitorLayer } from "./ProgramMonitor";
 import {
   activeCaptionCuesForTimelineFrame,
@@ -260,6 +262,8 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
+  const [transcriptArtifact, setTranscriptArtifact] = useState<TranscriptArtifactV1 | null>(null);
+  const [proposalRanges, setProposalRanges] = useState<readonly ProposalTimelineRange[]>([]);
   const transcriptTarget = useMemo((): TranscriptTarget | null => {
     const projectId = controller.projection?.projectId;
     const assetId = controller.source?.assetId;
@@ -1068,6 +1072,7 @@ export function VideoWorkspace({
               onRippleDeleteClip={rippleDeleteTimelineClip}
               onMoveClip={moveTimelineClip}
               onTrimClip={trimTimelineClip}
+              proposalRanges={proposalRanges}
             />
           ) : null}
           {sequence !== null && clip !== undefined && draft !== null ? (
@@ -1272,6 +1277,7 @@ export function VideoWorkspace({
             onCancelJob={(jobId) => onCancelMediaJob?.(jobId)}
             onOpenJobCenter={onOpenJobCenter}
             onApplyProposal={controller.applyTranscriptEditProposal}
+            onArtifactChange={setTranscriptArtifact}
             onSeekTimelineFrame={(frame) => commitMonitorFrame(frame, true)}
             playheadFrame={compositionPlayhead}
             playing={monitorPlaying}
@@ -1284,6 +1290,14 @@ export function VideoWorkspace({
                     language: "en",
                   })
             }
+          />
+          <ProposalsPanel
+            projection={controller.projection}
+            target={transcriptTarget}
+            artifact={transcriptArtifact}
+            disabled={editPending}
+            runEdit={controller.runProposalEdit}
+            onPreviewRanges={setProposalRanges}
           />
           <AudioPanel
             sequence={canonicalSequence}

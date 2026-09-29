@@ -43,6 +43,8 @@ interface TranscriptPanelProps {
     artifact: TranscriptArtifactV1,
   ) => Promise<boolean>;
   readonly onGenerateCaptions: (artifact: TranscriptArtifactV1) => Promise<boolean>;
+  /** Shares the loaded transcript (or null when none) with sibling panels. */
+  readonly onArtifactChange?: (artifact: TranscriptArtifactV1 | null) => void;
   /** Moves the monitor and timeline playhead to a timeline frame. */
   readonly onSeekTimelineFrame?: (frame: number) => void;
   /** The current timeline playhead frame, used to mark the spoken word. */
@@ -203,6 +205,7 @@ export function TranscriptPanel({
   onApplyProposal,
   onGenerateCaptions,
   onSeekTimelineFrame,
+  onArtifactChange,
   playheadFrame = null,
   playing = false,
 }: TranscriptPanelProps) {
@@ -264,6 +267,11 @@ export function TranscriptPanel({
       }
     })();
   }, [backend, job, load.phase, loadTranscript]);
+
+  const loadedArtifact = load.phase === "loaded" ? load.artifact : null;
+  useEffect(() => {
+    onArtifactChange?.(loadedArtifact);
+  }, [loadedArtifact, onArtifactChange]);
 
   const occurrences = useMemo((): readonly TranscriptTimelineOccurrence[] => {
     if (load.phase !== "loaded" || projection === null || target === null) return [];

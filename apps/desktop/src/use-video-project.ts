@@ -57,6 +57,7 @@ import {
   resolveManagedTranscriptArtifacts,
   selectAffectedCaptionReferences,
 } from "./managed-transcript-resolution";
+import type { ProposalEditOutcome } from "./proposal-ipc";
 import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
 
 export type PreparationState =
@@ -79,6 +80,7 @@ export type TimelineEditOperation =
   | "trim"
   | "ripple-delete"
   | "transcript-edit"
+  | "agent-proposal"
   | "generate-captions"
   | "caption-edit"
   | "audio-mix"
@@ -1200,6 +1202,61 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     [activateEditResult, backend],
   );
   /**
+   * Runs a native proposal edit (apply, or restore-to-before which may be
+   * several undo steps) under the editor's single-edit lock and adopts the
+   * final projection. The results must form an unbroken revision chain from
+   * the current projection, or nothing is adopted.
+   */
+  const runProposalEdit = useCallback(
+    async (
+      run: (projectId: string) => Promise<readonly CommandResult[]>,
+    ): Promise<ProposalEditOutcome> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current) return { ok: false, error: null };
+      const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
+      setEditOperation({ phase: "saving", operation: "agent-proposal" });
+      try {
+        const results = await run(base.projectId);
+        let revision = base.revision.number;
+        for (const result of results) {
+          if (result.projectId !== base.projectId || result.priorRevision.number !== revision)
+            throw new Error("The desktop service returned an out-of-order proposal edit");
+          revision = result.newRevision.number;
+        }
+        const last = results.at(-1);
+        if (
+          last === undefined ||
+          operation !== editOperationRef.current ||
+          stateRef.current.projection !== base
+        )
+          return { ok: false, error: null };
+        cancelRenderForProjectSwitch();
+        activateProjection(last.projection, {
+          projectPath: stateRef.current.projectPath,
+          ...(results.some((result) => result.cacheInvalidations.includes("asset_source"))
+            ? {}
+            : {
+                preparedAsset: stateRef.current.preparedAsset,
+                preparedAssetsById: stateRef.current.preparedAssetsById,
+                preparation: stateRef.current.preparation,
+              }),
+          checkpointWarning: checkpointWarningFromResult(last),
+        });
+        setEditOperation({ phase: "idle" });
+        return { ok: true };
+      } catch (error) {
+        const failure = asError(error);
+        if (operation === editOperationRef.current)
+          setEditOperation({ phase: "error", operation: "agent-proposal", error: failure });
+        return { ok: false, error: failure };
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
+      }
+    },
+    [activateProjection, cancelRenderForProjectSwitch],
+  );
+  /**
    * Generates captions from a transcript and applies them as one undoable group
    * (optional caption-track insert + ApplyCaptionArtifact). Undo/redo/recovery
    * are the existing caption lifecycle; no new command type is involved.
@@ -2124,6 +2181,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     trimTimelineClip,
     rippleDeleteTimelineClip,
     applyTranscriptEditProposal,
+    runProposalEdit,
     generateCaptionsFromTranscript,
     applyCaptionArtifactEdit,
     setTrackAudioRole,

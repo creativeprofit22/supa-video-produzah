@@ -34,6 +34,7 @@ import {
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { minimumTimelineTrimStart, sourceFrameAtTimelineDelta } from "./timeline-trim-mapping";
 import { usePlaybackClockSelector, type PlaybackClock } from "./playback-clock";
+import type { ProposalTimelineRange } from "./ProposalsPanel";
 
 import {
   createTimelineMoveSnapContext,
@@ -68,7 +69,11 @@ interface MultitrackTimelineProps {
     sourceOutFrame: number,
     timelineStartFrame: number,
   ) => void;
+  /** Suggested cuts under review, drawn as bands. Listed accessibly in the review panel. */
+  readonly proposalRanges?: readonly ProposalTimelineRange[];
 }
+
+const noProposalRanges: readonly ProposalTimelineRange[] = [];
 
 interface CanonicalTimelineClip {
   readonly clip: ProjectClip;
@@ -201,6 +206,7 @@ export function MultitrackTimeline({
   onRippleDeleteClip,
   onMoveClip,
   onTrimClip,
+  proposalRanges = noProposalRanges,
 }: MultitrackTimelineProps) {
   const panelRef = useRef<HTMLElement | null>(null);
   const scrollRegionRef = useRef<HTMLDivElement | null>(null);
@@ -719,6 +725,23 @@ export function MultitrackTimeline({
                 }}
               />
             )}
+            {proposalRanges.map((range) => (
+              <div
+                key={`${range.trackId}:${range.startFrame}:${range.endFrame}`}
+                className={`multitrack-proposal-range${range.accepted ? " is-accepted" : ""}`}
+                data-proposal-start={range.startFrame}
+                data-proposal-end={range.endFrame}
+                aria-hidden="true"
+                style={{
+                  left: `${frameToPixel(range.startFrame, geometryViewport)}px`,
+                  width: `${Math.max(
+                    2,
+                    frameToPixel(range.endFrame, geometryViewport) -
+                      frameToPixel(range.startFrame, geometryViewport),
+                  )}px`,
+                }}
+              />
+            ))}
             <div className="multitrack-ruler" aria-hidden="true">
               <span>{timeline.materializedRange.startFrame}</span>
               <span>{timeline.materializedRange.endFrameExclusive}</span>

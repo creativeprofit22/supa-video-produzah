@@ -9,10 +9,27 @@ import type {
 } from "@supa-video/contracts";
 import { captionArtifactV1Schema, transcriptArtifactV1Schema } from "@supa-video/media";
 import { createTranscriptEditProposal, projectTranscriptToTimeline } from "@supa-video/project";
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useVideoProject } from "./use-video-project";
+import { ProposalsPanel } from "./video/ProposalsPanel";
+import {
+  artifact as proposalArtifact,
+  fakeBackend as fakeProposalBackend,
+  id as proposalId,
+  projection as proposalProjection,
+  target as proposalTarget,
+} from "./video/proposals-panel-fixtures";
 import type { VideoBackend, VideoRenderNotification } from "./video-ipc";
 
 const id = (suffix: number): string =>
@@ -3178,5 +3195,125 @@ describe("canonical project controller", () => {
     resolveExecute(commandResult(first, clipProjection(1), id(70)));
     await act(() => importPromise);
     expect(result.current.projection?.projectId).toBe(second.projectId);
+  });
+});
+
+describe("runProposalEdit", () => {
+  afterEach(cleanup);
+
+  it("reports a refused native edit to the caller and records the agent-proposal error", async () => {
+    const opened = clipProjection(1);
+    const refusal = new VideoDomainError("invalid_command", "Native refused the proposal", {
+      category: "proposal_base_revision",
+    });
+    const backend = createBackend({ openVideoProject: vi.fn(async () => cleanOpenResult(opened)) });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: Awaited<ReturnType<typeof result.current.runProposalEdit>> | undefined;
+    await act(async () => {
+      outcome = await result.current.runProposalEdit(async () => {
+        throw refusal;
+      });
+    });
+
+    expect(outcome).toEqual({ ok: false, error: refusal });
+    expect(outcome?.ok === false ? outcome.error : null).toBe(refusal);
+    expect(result.current.projection).toBe(opened);
+    expect(result.current.editOperation).toEqual({
+      phase: "error",
+      operation: "agent-proposal",
+      error: refusal,
+    });
+  });
+
+  it("returns no error when the projection changed while the edit was running", async () => {
+    const opened = clipProjection(1);
+    const reopened = clipProjection(1);
+    const applied = clipProjection(2);
+    const backend = createBackend({
+      openVideoProject: vi
+        .fn()
+        .mockResolvedValueOnce(cleanOpenResult(opened))
+        .mockResolvedValueOnce(cleanOpenResult(reopened)),
+    });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: Awaited<ReturnType<typeof result.current.runProposalEdit>> | undefined;
+    await act(async () => {
+      outcome = await result.current.runProposalEdit(async () => {
+        await result.current.openProject();
+        return [commandResult(opened, applied, id(80))];
+      });
+    });
+
+    expect(outcome).toEqual({ ok: false, error: null });
+    expect(result.current.projection).toBe(reopened);
+  });
+
+  it("adopts the final projection and returns ok for a successful edit", async () => {
+    const opened = clipProjection(1);
+    const applied = clipProjection(2);
+    const backend = createBackend({ openVideoProject: vi.fn(async () => cleanOpenResult(opened)) });
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: Awaited<ReturnType<typeof result.current.runProposalEdit>> | undefined;
+    await act(async () => {
+      outcome = await result.current.runProposalEdit(async (projectId) => {
+        expect(projectId).toBe(opened.projectId);
+        return [commandResult(opened, applied, id(81))];
+      });
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    expect(result.current.projection).toBe(applied);
+    expect(result.current.editOperation).toEqual({ phase: "idle" });
+  });
+
+  it("shows the mapped alert in the panel when the real hook reports a native refusal", async () => {
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => cleanOpenResult(proposalProjection)),
+    });
+    const proposals = fakeProposalBackend(true, {
+      applyError: new VideoDomainError("invalid_command", "Native refused the proposal", {
+        category: "proposal_base_revision",
+      }),
+    });
+    const transcript = await proposalArtifact();
+    function Harness() {
+      const controller = useVideoProject(backend);
+      return (
+        <>
+          <button type="button" onClick={() => void controller.openProject()}>
+            Open project
+          </button>
+          <output data-testid="edit-operation">
+            {controller.editOperation.phase === "error" ? controller.editOperation.operation : ""}
+          </output>
+          <ProposalsPanel
+            projection={controller.projection}
+            target={proposalTarget}
+            artifact={transcript}
+            disabled={false}
+            runEdit={controller.runProposalEdit}
+            backend={proposals}
+            now={() => 1_000}
+            newOperationId={() => proposalId(900)}
+          />
+        </>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Open project" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Find filler words" }));
+    const group = await screen.findByRole("group", { name: "Filler words: 2 cuts" });
+
+    fireEvent.click(within(group).getByRole("button", { name: "Apply 2 of 2" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("The project changed");
+    expect(screen.getByTestId("edit-operation").textContent).toBe("agent-proposal");
+    expect(proposals.applyProposal.calls).toHaveLength(1);
   });
 });
