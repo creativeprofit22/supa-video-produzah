@@ -13,12 +13,15 @@ import { startOwned } from "../2026-09-28-p3-transcription-audio/13-owned.mjs";
 
 const { chromium } = createRequire(path.resolve("apps/desktop/package.json"))("@playwright/test");
 const exe = "E:/nemo-runtime/proof/hwhap-436/scenario/target/debug/supa-video-desktop.exe";
+// cdp | nocdp: close the window the launcher finds. tao-target: close Tao's internal
+// message window on purpose (expected: app keeps running, destroy fails).
 const mode = process.argv[2] ?? "cdp";
 const runDir = `E:\\nemo-runtime\\proof\\hwhap-436\\scenario\\close-probe-${mode}-${Date.now()}`;
 fs.mkdirSync(runDir, { recursive: true });
 const sleep = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 const t0 = Date.now();
-const out = (event, data = {}) => console.log(JSON.stringify({ t: Date.now() - t0, event, ...data }));
+const out = (event, data = {}) =>
+  console.log(JSON.stringify({ t: Date.now() - t0, event, ...data }));
 
 const port = await new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -49,7 +52,23 @@ try {
   await page.getByRole("button", { name: "New project", exact: true }).waitFor({ timeout: 30000 });
   await sleep(2000);
   if (mode === "nocdp") await browser.close().catch(() => {});
-  const { handle } = await owned.findWindow(identity);
+  let { handle } = await owned.findWindow(identity);
+  if (mode === "tao-target") {
+    const listed = JSON.parse(
+      execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-File",
+          path.resolve("evidence/2026-09-29-p3-agent-proposals/02-queue-probe.ps1"),
+          "-ProcessId",
+          String(identity.pid),
+        ],
+        { encoding: "utf8", timeout: 30000 },
+      ),
+    ).windows;
+    handle = String(listed.find((w) => w.class === "Tao Thread Event Target").handle);
+  }
   const res = execFileSync(
     "powershell.exe",
     [
@@ -60,15 +79,32 @@ try {
     { encoding: "utf8", timeout: 30000 },
   );
   out("wm-close", { handle, result: res.trim() });
-  if (mode === "cdp") {
+  if (mode !== "nocdp") {
     await sleep(2000);
+    const destroy = await page
+      .evaluate(() =>
+        globalThis.__TAURI_INTERNALS__.invoke("plugin:window|destroy", { label: "main" }).then(
+          (v) => `ok ${v}`,
+          (e) => `err ${e}`,
+        ),
+      )
+      .catch((e) => `page gone: ${e.message}`);
+    out("native-window-call", { destroy });
     const dialogs = await page
-      .evaluate(() => [...globalThis.document.querySelectorAll("dialog[open]")].map((d) => d.innerText.slice(0, 200)))
+      .evaluate(() =>
+        [...globalThis.document.querySelectorAll("dialog[open]")].map((d) =>
+          d.innerText.slice(0, 200),
+        ),
+      )
       .catch((e) => `page gone: ${e.message}`);
     out("open-dialogs", { dialogs });
   }
   const exit = await Promise.race([owned.exit, sleep(20000).then(() => null)]);
-  out("result", { exited: exit !== null, exit, closed: owned.events.find((e) => e.event === "closed") ?? null });
+  out("result", {
+    exited: exit !== null,
+    exit,
+    closed: owned.events.find((e) => e.event === "closed") ?? null,
+  });
 } finally {
   await owned.close();
 }

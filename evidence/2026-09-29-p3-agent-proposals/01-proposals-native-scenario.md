@@ -1,6 +1,6 @@
 # P3 agent proposals — real-app scenario with the switch on
 
-**Result: proposal flow PASS in the real app; app close is intermittently broken (FAIL, 4 of 11 runs).**
+**Result: PASS — all 7 steps pass in the real app, 6 of 6 runs after a harness fix.** The earlier intermittent "close ignored" failure was the test harness closing the wrong window, not an app bug (see below).
 
 - Build: isolated debug Tauri build from HEAD `2529099` (identifier `com.supavideo.p3-continuous-scenario-20260928`, target `E:\nemo-runtime\proof\hwhap-436\scenario\target`), WebView2, Windows. Frontend from the Vite dev server.
 - Switch: `SUPA_VIDEO_AGENT_PROPOSALS=1` in the launch environment (read at runtime, `proposal_ipc.rs`); the panel reported `{ enabled: true }`.
@@ -8,7 +8,7 @@
 - Source: `interview-102-400.mp4`, sha256 `050f0b09…2f0e51`. It matched before and after every run.
 - Transcription: real GPU transcription (about 11 s), 681 words, 2 speakers.
 
-## Steps (representative passing run: `runs/diag1-*`, same numbers in every run)
+## Steps (final run: `01-*`; `runs/fixed1`–`fixed5` identical)
 
 | Step | Result | Observed |
 |---|---|---|
@@ -17,28 +17,30 @@
 | 3 Partial approval | PASS | 2:08.47 cut unticked (its band shown as kept); "Apply 3 of 4" → revision 2, 3 cuts applied, 681 → 678 words, "Proposal applied. Undo reverses it." |
 | 4 Restore to before | PASS | Revision 3, clips and 681 words match pre-apply, history "Restored to before" |
 | 5 Stale proposal | PASS | New proposal at revision 3; ordinary transcript cut → revision 4; Apply disabled; "The project changed too much since this was suggested…"; revision and words unchanged after the attempt |
-| 6 Restart during approval | PASS in 7 of 11 runs, FAIL in 4 | When the close works: pending "Filler words: 3 cuts" comes back after relaunch with all 3 ticked, and revision 4 and state hash are unchanged. After relaunch the panel also says "Transcribe a track to get suggested cuts." because the source needs relinking in the new session. |
+| 6 Restart during approval | PASS | Clean close (exit code 0); pending "Filler words: 3 cuts" comes back after relaunch with all 3 ticked, and revision 4 and state hash are unchanged. After relaunch the panel also says "Transcribe a track to get suggested cuts." because the source needs relinking in the new session. |
 | 7 Reject | PASS | "Proposal rejected.", revision and state hash unchanged, native status `rejected` |
 
 Timings: steps 2–7 take about 2–10 s each.
 
-## Bug found: window close sometimes ignored (not fixed)
+## Resolved: "close ignored" was a harness bug
 
-Sending the normal window-close message (same as clicking X) left the app running in 4 of 11 full runs: attempt1, attempt3, diag2 and diag6. No confirmation dialog was open and the page stayed responsive. Other commands answered in 3 ms, but an explicit window destroy failed with Tauri's `failed to send message to the webview`. That error comes from the native event-loop proxy (`tauri-runtime-wry 2.11.4`, `destroy()` → `proxy.send_event`). On Windows it fails when the posted-message route to the UI thread is refused, for example when the queue is full or the loop has gone away.
+In the 15 runs before the fix, the close was ignored in 5 (attempt1, attempt3, diag2, diag6, rc1). While it was stuck, native window destroy failed with `failed to send message to the webview`.
 
-What is ruled out:
-- **The test driver:** it hangs with or without the DevTools connection attached.
-- **The app's unsaved-trim guard:** it only blocks the close when there's an unsaved trim, and no trim was pending.
-- **Closing a fresh app with no project:** that closed fine in 2 of 2 tries (`01-close-probe.mjs`).
+**Root cause:** the harness sent the close to the wrong window. The launcher's lookup (`13-OwnedLauncher.cpp`) returns the process's first visible, unowned top-level window. Tao's internal message window ("Tao Thread Event Target") is also created `WS_VISIBLE | WS_POPUP` (`tao 0.35.3`, `create_event_target_window`). When Windows lists it first, the close destroys the event loop's message target, not the app window. After that, every native-thread call (`EventLoopProxy::send_event` → `PostMessageW`) fails, so the app can never close itself.
 
-Cause not identified. Native code only sends media-job and render progress events, so a message flood is a hypothesis, not a finding. Only the process tree is killed at the end; the source file and project data were verified intact.
+Proof:
+- `02-queue-probe.ps1` lists the process's windows by class. In rc1 (failed), the close went to handle 1837386, the Tao target, and afterwards that window no longer exists. In rc2–rc4 (passed), it went to the "Tauri Window".
+- Sending the close to the Tao target on purpose (`01-close-probe.mjs tao-target`) hangs 4 of 4 times, and destroy returns the same `failed to send message to the webview` error.
+- Fix: the scenario keeps the identity check, then targets the window with class "Tauri Window". After the fix, 6 of 6 runs close cleanly with exit code 0.
+
+The app isn't affected by this: a user can only click the real window's close button. Older evidence harnesses that close via the same launcher lookup carry the same hidden risk; they weren't changed.
 
 ## What this does NOT prove
 
-- It doesn't show the close bug is limited to this scenario, and it isn't fixed.
+- In the six post-fix runs Windows happened to list the app window first, so none hit the old ordering. That the fix handles the reverse order rests on selecting by class plus the deliberate tao-target reproduction.
 - The production build and installer weren't exercised. This was a debug build with the switch on.
 - No keyboard-only or screen-reader pass.
 - Only the rule-based filler-word producer was used; there's no AI producer.
 - Crash in the middle of an apply (as opposed to a clean close) wasn't exercised here; unit and native tests cover it.
 
-Runs: `runs/attempt1` (the close hung), `runs/attempt2` and `runs/repeat` (passed), `runs/attempt3` (the close hung, first diagnostic), `runs/diag1`–`diag7` (diag2 and diag6 hung). Logs are in each `*-scenario-log.json`.
+Runs: `01-*` and `runs/fixed1`–`fixed5` (after the fix, all pass). Before the fix: `runs/attempt1`, `attempt3`, `diag2`, `diag6`, `rc1` (the close hung) and `runs/attempt2`, `repeat`, `diag1/3/4/5/7`, `rc2`–`rc4` (passed). Logs are in each `*-scenario-log.json`.

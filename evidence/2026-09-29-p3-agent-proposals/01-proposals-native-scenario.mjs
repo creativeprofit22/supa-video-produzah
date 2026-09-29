@@ -69,7 +69,11 @@ const step = async (name, fn) => {
     record(`${name}:done`, steps[name]);
     return result;
   } catch (error) {
-    steps[name] = { status: "FAIL", ms: Date.now() - started, error: String(error?.stack ?? error) };
+    steps[name] = {
+      status: "FAIL",
+      ms: Date.now() - started,
+      error: String(error?.stack ?? error),
+    };
     record(`${name}:fail`, steps[name]);
     throw error;
   }
@@ -88,7 +92,13 @@ const waitFor = async (predicate, ms, label) => {
 async function launch(tag) {
   const port = await freePort();
   process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}`;
-  record("launch", { tag, exe, port, project, agentProposalsEnv: process.env.SUPA_VIDEO_AGENT_PROPOSALS });
+  record("launch", {
+    tag,
+    exe,
+    port,
+    project,
+    agentProposalsEnv: process.env.SUPA_VIDEO_AGENT_PROPOSALS,
+  });
   const owned = startOwned(exe, [`--p3-agent-proposals-scenario-${tag}`], {
     leaseMs: 1800000,
     onEvent: (event) => record("owned", { tag, owned: event }),
@@ -122,7 +132,8 @@ try {
     page.evaluate(([c, a]) => globalThis.__TAURI_INTERNALS__.invoke(c, a), [cmd, args]);
   const projectId = () => JSON.parse(fs.readFileSync(project, "utf8")).id;
   // Read-only native views: head revision (inspector) and the stored proposals (list command).
-  const inspectRevision = async () => (await invoke("video_project_inspector", { projectId: projectId() })).revision;
+  const inspectRevision = async () =>
+    (await invoke("video_project_inspector", { projectId: projectId() })).revision;
   const nativeProposals = async () => {
     const listing = await invoke("video_list_proposals", { projectId: projectId() });
     return listing.proposals.map((p) => ({
@@ -175,16 +186,20 @@ try {
         clips: [...globalThis.document.querySelectorAll(".multitrack-clip-body")].map((node) =>
           node.getAttribute("aria-label"),
         ),
-        bands: [...globalThis.document.querySelectorAll(".multitrack-proposal-range")].map((node) => ({
-          start: Number(node.getAttribute("data-proposal-start")),
-          end: Number(node.getAttribute("data-proposal-end")),
-          accepted: node.classList.contains("is-accepted"),
-        })),
+        bands: [...globalThis.document.querySelectorAll(".multitrack-proposal-range")].map(
+          (node) => ({
+            start: Number(node.getAttribute("data-proposal-start")),
+            end: Number(node.getAttribute("data-proposal-end")),
+            accepted: node.classList.contains("is-accepted"),
+          }),
+        ),
       };
     });
   const alerts = async () =>
     page.evaluate(() =>
-      [...globalThis.document.querySelectorAll("[role=alert], .inline-error")].map((n) => n.textContent),
+      [...globalThis.document.querySelectorAll("[role=alert], .inline-error")].map(
+        (n) => n.textContent,
+      ),
     );
   const bind = () => {
     panel = page.locator("section.transcript-panel");
@@ -200,8 +215,11 @@ try {
     ranges: await proposals.locator(".proposals-range").allInnerTexts(),
     checked: await proposals.locator(".proposals-range input:checked").count(),
     history: await proposals.locator(".proposals-history-item").allInnerTexts(),
-    message: (await proposals.locator("[role=status], [role=alert]").allInnerTexts()).join(" | ") || null,
-    applyButtons: await proposals.getByRole("button", { name: /^Apply \d+ of \d+$/ }).allInnerTexts(),
+    message:
+      (await proposals.locator("[role=status], [role=alert]").allInnerTexts()).join(" | ") || null,
+    applyButtons: await proposals
+      .getByRole("button", { name: /^Apply \d+ of \d+$/ })
+      .allInnerTexts(),
   });
   const wordCount = async () => panel.locator("button.transcript-word").count();
   const snapshot = async () => ({
@@ -216,7 +234,8 @@ try {
     await waitFor(
       async () => {
         const s = await panelState();
-        if ((await proposals.locator("[role=alert]").count()) > 0) throw Error(`Proposal alert: ${s.message}`);
+        if ((await proposals.locator("[role=alert]").count()) > 0)
+          throw Error(`Proposal alert: ${s.message}`);
         if (/Nothing to suggest/.test(s.message ?? "")) throw Error(`No proposals: ${s.message}`);
         return s.pending.length > before && /suggested cuts ready/.test(s.message ?? "");
       },
@@ -226,12 +245,17 @@ try {
     await sleep(500);
   };
   const ensureTranscript = async () => {
-    await waitFor(async () => !(await panel.innerText()).includes("Checking the speech"), 30000, "asr status");
+    await waitFor(
+      async () => !(await panel.innerText()).includes("Checking the speech"),
+      30000,
+      "asr status",
+    );
     if ((await panel.getByRole("button", { name: "Choose runtime folder" }).count()) > 0) {
       await panel.getByRole("button", { name: "Choose runtime folder" }).click();
       dialog(runtimeFolder);
       await waitFor(
-        async () => (await panel.getByRole("button", { name: "Choose runtime folder" }).count()) === 0,
+        async () =>
+          (await panel.getByRole("button", { name: "Choose runtime folder" }).count()) === 0,
         600000,
         "runtime ready",
       );
@@ -285,12 +309,15 @@ try {
     await proposals.waitFor();
     await proposals.getByRole("button", { name: "Find filler words", exact: true }).waitFor();
     const s = await snapshot();
-    if (!status.enabled || !s.panel.present) throw Error("Proposals panel not present with switch on");
+    if (!status.enabled || !s.panel.present)
+      throw Error("Proposals panel not present with switch on");
     return {
       ...t,
       switchStatus: status,
       speakers: [...new Set(await panel.locator("h3.transcript-speaker").allInnerTexts())],
-      findFillerEnabled: await proposals.getByRole("button", { name: "Find filler words" }).isEnabled(),
+      findFillerEnabled: await proposals
+        .getByRole("button", { name: "Find filler words" })
+        .isEnabled(),
       ...s,
       screenshot: await shot("01-transcribed-panel.png"),
     };
@@ -352,7 +379,8 @@ try {
     await waitFor(
       async () => {
         const s = await panelState();
-        if ((await proposals.locator("[role=alert]").count()) > 0) throw Error(`Apply alert: ${s.message}`);
+        if ((await proposals.locator("[role=alert]").count()) > 0)
+          throw Error(`Apply alert: ${s.message}`);
         return /Proposal applied/.test(s.message ?? "") && (await revision()) > preApply.revision;
       },
       60000,
@@ -365,7 +393,8 @@ try {
       revisionAdvancedByOne: postApply.revision === preApply.revision + 1,
       noPending: postApply.panel.pending.length === 0,
       historyApplied: postApply.panel.history.some((h) => /Applied/.test(h)),
-      restoreOffered: (await proposals.getByRole("button", { name: "Restore to before" }).count()) === 1,
+      restoreOffered:
+        (await proposals.getByRole("button", { name: "Restore to before" }).count()) === 1,
       bandsCleared: postApply.timeline.bands.length === 0,
       wordsRemoved: postApply.wordCount === preApply.wordCount - (total - 1),
     };
@@ -400,8 +429,11 @@ try {
     await waitFor(
       async () => {
         const s = await panelState();
-        if ((await proposals.locator("[role=alert]").count()) > 0) throw Error(`Restore alert: ${s.message}`);
-        return /Restored to before/.test(s.message ?? "") && (await revision()) > postApply.revision;
+        if ((await proposals.locator("[role=alert]").count()) > 0)
+          throw Error(`Restore alert: ${s.message}`);
+        return (
+          /Restored to before/.test(s.message ?? "") && (await revision()) > postApply.revision
+        );
       },
       60000,
       "Restored",
@@ -410,7 +442,8 @@ try {
     const s = await snapshot();
     const checks = {
       revisionAdvanced: s.revision > postApply.revision,
-      clipsMatchPreApply: JSON.stringify(s.timeline.clips) === JSON.stringify(preApply.timeline.clips),
+      clipsMatchPreApply:
+        JSON.stringify(s.timeline.clips) === JSON.stringify(preApply.timeline.clips),
       visibleClipsMatchPreApply: s.timeline.visibleClips === preApply.timeline.visibleClips,
       wordCountMatchesPreApply: s.wordCount === preApply.wordCount,
       historyRestored: s.panel.history.some((h) => /Restored to before/.test(h)),
@@ -443,9 +476,9 @@ try {
     const at = /^(\S+) to /.exec(firstRange)?.[1];
     // Cut the transcript word at the first proposed filler's start time, plus its neighbour.
     const items = panel.locator("li.transcript-word-item");
-    const labels = await items.locator("button.transcript-seek").evaluateAll((nodes) =>
-      nodes.map((n) => n.getAttribute("aria-label")),
-    );
+    const labels = await items
+      .locator("button.transcript-seek")
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     const index = labels.findIndex((label) => label?.endsWith(` at ${at}`));
     if (index < 0) throw Error(`No transcript word at ${at}`);
     const words = panel.locator("button.transcript-word");
@@ -461,13 +494,16 @@ try {
     await sleep(2000);
     const afterEdit = await snapshot();
     const applyButton = proposals.getByRole("button", { name: /^Apply \d+ of \d+$/ });
-    const applyEnabledBeforeClick = (await applyButton.count()) > 0 && (await applyButton.isEnabled());
+    const applyEnabledBeforeClick =
+      (await applyButton.count()) > 0 && (await applyButton.isEnabled());
     if (applyEnabledBeforeClick) {
       await applyButton.click();
       await sleep(3000);
     }
     const after = await snapshot();
-    const staleText = (await proposals.locator(".proposals-fieldset [role=alert]").allInnerTexts()).join(" | ");
+    const staleText = (
+      await proposals.locator(".proposals-fieldset [role=alert]").allInnerTexts()
+    ).join(" | ");
     const checks = {
       editMovedRevision: afterEdit.revision === proposed.revision + 1,
       staleShown: /changed too much|out of date/i.test(`${staleText} ${after.panel.message ?? ""}`),
@@ -519,7 +555,10 @@ try {
         const invoke = globalThis.__TAURI_INTERNALS__.invoke;
         const timeout = () => new Promise((r) => globalThis.setTimeout(() => r("timeout"), 3000));
         const visible = await Promise.race([
-          invoke("plugin:window|is_visible", { label: "main" }).then((v) => `ok ${v}`, (e) => `err ${e}`),
+          invoke("plugin:window|is_visible", { label: "main" }).then(
+            (v) => `ok ${v}`,
+            (e) => `err ${e}`,
+          ),
           timeout(),
         ]);
         const listeners = Object.keys(globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__?.listeners ?? {});
@@ -527,7 +566,31 @@ try {
       })
       .catch((error) => ({ pageError: String(error) }));
     record("pre-close-probe", { preClose });
-    const { handle } = await session.owned.findWindow(identity);
+    const queueProbe = () =>
+      execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-File",
+          path.resolve("evidence/2026-09-29-p3-agent-proposals/02-queue-probe.ps1"),
+          "-ProcessId",
+          String(identity.pid),
+        ],
+        { encoding: "utf8", timeout: 30000 },
+      ).trim();
+    const preCloseWindows = queueProbe();
+    record("pre-close-queue", { probe: preCloseWindows });
+    // The launcher's lookup returns the first visible unowned window of the process. Tao's
+    // internal message window ("Tao Thread Event Target") is also WS_VISIBLE|WS_POPUP, so
+    // when Windows lists it first, WM_CLOSE destroys the event loop's target instead of the
+    // app window. Keep the identity check, then pick the app window by class.
+    await session.owned.findWindow(identity);
+    const appWindows = JSON.parse(preCloseWindows).windows.filter(
+      (w) => w.class === "Tauri Window",
+    );
+    if (appWindows.length !== 1)
+      throw Error(`Expected one Tauri Window, found ${appWindows.length}`);
+    const handle = String(appWindows[0].handle);
     execFileSync(
       "powershell.exe",
       [
@@ -543,13 +606,16 @@ try {
       // Still running: capture what the window is showing instead of the close.
       const held = await page
         .evaluate(() => ({
-          dialogs: [...globalThis.document.querySelectorAll("dialog[open], [role=alertdialog]")].map((d) =>
-            d.innerText.slice(0, 400),
-          ),
+          dialogs: [
+            ...globalThis.document.querySelectorAll("dialog[open], [role=alertdialog]"),
+          ].map((d) => d.innerText.slice(0, 400)),
           focused: globalThis.document.activeElement?.outerHTML.slice(0, 200) ?? null,
         }))
         .catch((error) => ({ pageError: String(error) }));
-      record("close-held", { held, screenshot: await shot("06x-close-held.png", proposals).catch(() => null) });
+      record("close-held", {
+        held,
+        screenshot: await shot("06x-close-held.png", proposals).catch(() => null),
+      });
       // Diagnose: can the webview still reach native, and does an explicit destroy work?
       const probe = await page
         .evaluate(async () => {
@@ -557,18 +623,27 @@ try {
           const timeout = () => new Promise((r) => globalThis.setTimeout(() => r("timeout"), 3000));
           const started = Date.now();
           const status = await Promise.race([
-            invoke("video_agent_proposals_status").then(() => "ok", (e) => `err ${e}`),
+            invoke("video_agent_proposals_status").then(
+              () => "ok",
+              (e) => `err ${e}`,
+            ),
             timeout(),
           ]);
           const pingMs = Date.now() - started;
           const destroy = await Promise.race([
-            invoke("plugin:window|destroy", { label: "main" }).then(() => "ok", (e) => `err ${e}`),
+            invoke("plugin:window|destroy", { label: "main" }).then(
+              () => "ok",
+              (e) => `err ${e}`,
+            ),
             timeout(),
           ]);
           return { status, pingMs, destroy };
         })
         .catch((error) => ({ pageError: String(error) }));
       record("close-held-probe", { probe });
+      record("close-held-queue", { first: queueProbe() });
+      await sleep(3000);
+      record("close-held-queue", { second: queueProbe() });
       exit = await Promise.race([session.owned.exit, sleep(25000).then(() => null)]);
     }
     await session.browser.close().catch(() => {});
@@ -628,7 +703,11 @@ try {
     const before = await snapshot();
     const inspectorBefore = await inspectRevision();
     await proposals.getByRole("button", { name: "Reject all" }).click();
-    await waitFor(async () => /Proposal rejected/.test((await panelState()).message ?? ""), 20000, "rejected");
+    await waitFor(
+      async () => /Proposal rejected/.test((await panelState()).message ?? ""),
+      20000,
+      "rejected",
+    );
     await sleep(1000);
     const after = await snapshot();
     const inspectorAfter = await inspectRevision();
@@ -638,7 +717,8 @@ try {
       historyRejected: /Rejected/.test(after.panel.history[0] ?? ""),
       revisionUnchanged: after.revision === before.revision,
       stateUnchanged: JSON.stringify(inspectorAfter) === JSON.stringify(inspectorBefore),
-      clipsUnchanged: JSON.stringify(after.timeline.clips) === JSON.stringify(before.timeline.clips),
+      clipsUnchanged:
+        JSON.stringify(after.timeline.clips) === JSON.stringify(before.timeline.clips),
       bandsCleared: after.timeline.bands.length === 0,
       nativeRejected: native.some((p) => p.status === "rejected"),
     };
