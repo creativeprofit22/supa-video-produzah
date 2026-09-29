@@ -4,7 +4,10 @@ use serde::Serialize;
 use tempfile::NamedTempFile;
 
 use super::{
-    history::{commit_transition, redo_transition, undo_transition, HistoryTransition},
+    history::{
+        attribute_commit, attributed_summary, commit_transition, redo_transition, undo_transition,
+        HistoryTransition,
+    },
     journal::{
         initialize_journal, journal_path, repair_to_prefix, scan, sidecar_path, JournalScan,
         TailClassification,
@@ -65,16 +68,28 @@ fn replay_record(
         return Err(error("record_base"));
     }
     let transition = match record.kind {
-        JournalRecordKind::Commit => commit_transition(
-            snapshot,
-            &CommandGroupRequest {
-                group_id: record.group_id.clone(),
-                project_id: snapshot.id.clone(),
-                base_revision: record.base_revision.number,
-                commands: record.replay_commands().to_vec(),
-            },
-            &record.committed_at,
-        )?,
+        JournalRecordKind::Commit => {
+            let mut transition = commit_transition(
+                snapshot,
+                &CommandGroupRequest {
+                    group_id: record.group_id.clone(),
+                    project_id: snapshot.id.clone(),
+                    base_revision: record.base_revision.number,
+                    commands: record.replay_commands().to_vec(),
+                },
+                &record.committed_at,
+            )?;
+            // Proposal commits carry their producer in the history summary.
+            // Records written before attribution existed keep the plain one.
+            if let Some(audit) = &record.proposal_audit {
+                let attributed =
+                    attributed_summary(&transition.history_group.summary, &audit.producer.id);
+                if record.history_group.summary == attributed {
+                    attribute_commit(&mut transition, &audit.producer.id)?;
+                }
+            }
+            transition
+        }
         JournalRecordKind::Undo => undo_transition(
             snapshot,
             record.base_revision.number,

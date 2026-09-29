@@ -1009,6 +1009,10 @@ pub struct JournalRecord {
     pub payload_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_result: Option<Box<CommandResult>>,
+    /// Present when this commit applied an edit proposal. Absent in older
+    /// journals and plain edits, so existing record hashes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal_audit: Option<super::proposal::ProposalAudit>,
     pub previous_record_hash: String,
     pub record_hash: String,
 }

@@ -7,7 +7,8 @@ use super::{
     integrity::{is_canonical_uuid, validate_snapshot},
     types::{
         CommandGroupRequest, JournalRecordKind, ProjectCommand, ProjectHistoryEntryV2,
-        ProjectRevisionDescriptorV2, VideoProjectSnapshotV2, MAX_HISTORY_ENTRIES, MAX_SAFE_INTEGER,
+        ProjectRevisionDescriptorV2, VideoProjectSnapshotV2, MAX_HISTORY_ENTRIES,
+        MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER,
     },
 };
 use crate::video::error::{VideoCommandError, VideoErrorCode};
@@ -162,6 +163,42 @@ pub fn commit_transition(
         applied,
         prior_revision,
     })
+}
+
+/// History summary for a commit that applied a rule or model proposal, so undo
+/// history and `lastCommand` show where the cut came from. Falls back to the
+/// plain summary when the attributed one would exceed the summary limit.
+pub fn attributed_summary(summary: &str, producer_id: &str) -> String {
+    let candidate = format!("{summary} (suggested by {producer_id})");
+    if candidate.encode_utf16().count() <= MAX_NON_BLANK_UTF16 {
+        candidate
+    } else {
+        summary.to_owned()
+    }
+}
+
+/// Marks a fresh commit transition as produced by `producer_id`. Rewrites the
+/// summary of the entry the commit pushed onto the undo stack; must run before
+/// the transition is journaled so the record, snapshot and replay agree.
+pub fn attribute_commit(
+    transition: &mut HistoryTransition,
+    producer_id: &str,
+) -> Result<(), VideoCommandError> {
+    if transition.kind != JournalRecordKind::Commit {
+        return Err(error(VideoErrorCode::InvalidCommand, "attribution_kind"));
+    }
+    let summary = attributed_summary(&transition.history_group.summary, producer_id);
+    let top = transition
+        .snapshot
+        .history
+        .undo_stack
+        .last_mut()
+        .filter(|entry| entry.group_id == transition.group_id)
+        .ok_or_else(|| error(VideoErrorCode::InvalidCommand, "attribution_entry"))?;
+    top.summary.clone_from(&summary);
+    transition.history_group.summary.clone_from(&summary);
+    transition.applied.summary = summary;
+    validate_snapshot(&transition.snapshot)
 }
 
 pub fn undo_transition(

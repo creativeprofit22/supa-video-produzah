@@ -599,7 +599,7 @@ fn set_sequence_frame_size(
     ))
 }
 
-fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
+pub(crate) fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
     match command {
         ProjectCommand::InsertClip {
             sequence_id,

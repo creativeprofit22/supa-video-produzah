@@ -79,6 +79,7 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
         .plugin(tauri_plugin_dialog::init())
         .manage(video::VideoPathGrants::default())
         .manage(video::VideoProjectService::default())
+        .manage(video::project::proposal_ipc::AgentProposalsSwitch::from_env())
         .setup(|app| {
             manage_media_toolchain(
                 app,
@@ -104,6 +105,13 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::project::ipc::video_project_inspector,
             video::project::ipc::video_relink_project_asset,
             video::project::ipc::video_close_project,
+            video::project::proposal_ipc::video_agent_proposals_status,
+            video::project::proposal_ipc::video_list_proposals,
+            video::project::proposal_ipc::video_submit_proposal,
+            video::project::proposal_ipc::video_apply_proposal,
+            video::project::proposal_ipc::video_reject_proposal,
+            video::project::proposal_ipc::video_mark_proposal_stale,
+            video::project::proposal_ipc::video_restore_before_proposal,
             video::project_io::video_regrant_project_source,
             video::project_io::video_pick_export_path,
             video::jobs::ipc::video_list_media_jobs,

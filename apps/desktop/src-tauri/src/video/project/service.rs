@@ -22,6 +22,7 @@ use super::{
         MAX_JOURNAL_LINE_BYTES,
     },
     migration::migrate_v1_bytes,
+    proposal::ProposalAudit,
     recovery::{create_journal_for_snapshot, recover},
     snapshot::{
         checkpoint, checkpoint_with_failpoint, previous_snapshot_path, restore_file_bytes,
@@ -73,7 +74,13 @@ pub struct VideoProjectService {
     close_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
     #[cfg(test)]
     automatic_checkpoint_failpoints: Mutex<HashMap<String, CheckpointFailpoint>>,
+    #[cfg(test)]
+    proposal_store_failpoint: Mutex<super::proposal::StoreWriteFailpoint>,
 }
+
+#[path = "proposal_service.rs"]
+mod proposal_service;
+pub use proposal_service::{ProposalListing, DEFAULT_PROPOSAL_TTL_MS};
 
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +261,7 @@ fn record_for_transition(
     idempotency_result: CommandResult,
     previous_record_hash: String,
     record_number: u64,
+    proposal_audit: Option<ProposalAudit>,
 ) -> JournalRecord {
     let summary = transition_summary(&transition.kind, &transition.history_group.summary);
     JournalRecord {
@@ -275,6 +283,7 @@ fn record_for_transition(
         resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
         payload_hash: Some(payload_hash),
         idempotency_result: Some(Box::new(idempotency_result)),
+        proposal_audit,
         previous_record_hash,
         record_hash: String::new(),
     }
@@ -572,6 +581,7 @@ impl VideoProjectService {
         mut transition: HistoryTransition,
         sources: Vec<VideoSourceRecord>,
         payload_hash: String,
+        proposal_audit: Option<ProposalAudit>,
     ) -> Result<CommandResult, VideoCommandError> {
         let record_number = session
             .snapshot
@@ -627,6 +637,7 @@ impl VideoProjectService {
             result.clone(),
             session.snapshot.last_record_hash.clone(),
             record_number,
+            proposal_audit,
         );
         if record_line_bytes(&record)? > MAX_JOURNAL_LINE_BYTES {
             return Err(error(VideoErrorCode::StorageLimit, "journal_record_bytes"));
@@ -696,8 +707,13 @@ impl VideoProjectService {
             grants,
         )?;
         grants.grant_opened_project_sources(owner, session.path.clone(), relative_grants)?;
-        let result =
-            self.finish_transition(&mut session, transition, sources, payload_hash.clone())?;
+        let result = self.finish_transition(
+            &mut session,
+            transition,
+            sources,
+            payload_hash.clone(),
+            None,
+        )?;
         session.idempotency.insert(
             request.group_id,
             IdempotencyEntry {
@@ -722,6 +738,27 @@ impl VideoProjectService {
         }
         let session = self.session(owner, project_id)?;
         let mut session = lock_open_session(&session)?;
+        self.history_step_locked(
+            &mut session,
+            owner,
+            base_revision,
+            operation_id,
+            redo,
+            grants,
+        )
+    }
+
+    /// One undo/redo step on an already locked session; idempotent per operation id.
+    fn history_step_locked(
+        &self,
+        session: &mut ProjectSession,
+        owner: &str,
+        base_revision: u64,
+        operation_id: &str,
+        redo: bool,
+        grants: &VideoPathGrants,
+    ) -> Result<CommandResult, VideoCommandError> {
+        let project_id = session.snapshot.id.clone();
         let payload_hash = canonical_hash(
             &json!({ "projectId": project_id, "baseRevision": base_revision, "operationId": operation_id, "redo": redo }),
         )?;
@@ -747,7 +784,7 @@ impl VideoProjectService {
         )?;
         grants.grant_opened_project_sources(owner, session.path.clone(), relative_grants)?;
         let result =
-            self.finish_transition(&mut session, transition, sources, payload_hash.clone())?;
+            self.finish_transition(session, transition, sources, payload_hash.clone(), None)?;
         session.idempotency.insert(
             operation_id.to_owned(),
             IdempotencyEntry {

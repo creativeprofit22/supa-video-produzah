@@ -7,6 +7,8 @@ pub mod integrity;
 pub mod ipc;
 pub mod journal;
 pub mod migration;
+pub mod proposal;
+pub mod proposal_ipc;
 pub mod recovery;
 pub mod service;
 pub mod snapshot;
@@ -18,6 +20,8 @@ mod audio_edit_tests;
 mod clip_speed_compatibility_tests;
 #[cfg(test)]
 mod editor_controls_persistence_tests;
+#[cfg(test)]
+mod proposal_tests;
 #[cfg(test)]
 mod speed_contract_tests;
 #[cfg(test)]

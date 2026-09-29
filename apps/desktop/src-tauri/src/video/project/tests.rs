@@ -4237,6 +4237,7 @@ fn generated_10k_record_journal_scans_correctly_and_meets_release_budget() {
             resulting_state_hash: snapshot.revision.state_hash.clone(),
             payload_hash: None,
             idempotency_result: None,
+            proposal_audit: None,
             previous_record_hash: previous_hash,
             record_hash: String::new(),
         })
@@ -6355,6 +6356,7 @@ fn tampered_caption_artifact_journal_fails_closed_without_repair() {
         resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
         payload_hash: None,
         idempotency_result: None,
+        proposal_audit: None,
         previous_record_hash: header.header_hash,
         record_hash: String::new(),
     })
@@ -6428,6 +6430,7 @@ fn caption_journal_record_value(
         resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
         payload_hash: None,
         idempotency_result: None,
+        proposal_audit: None,
         previous_record_hash,
         record_hash: String::new(),
     })
@@ -6604,6 +6607,7 @@ fn tampered_non_caption_journal_fails_closed_without_repair_or_session() {
         resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
         payload_hash: None,
         idempotency_result: None,
+        proposal_audit: None,
         previous_record_hash: header.header_hash,
         record_hash: String::new(),
     })
@@ -6694,6 +6698,7 @@ fn tampered_affected_range_journal_fails_closed_without_repair_or_session() {
         resulting_state_hash: transition.snapshot.revision.state_hash.clone(),
         payload_hash: None,
         idempotency_result: None,
+        proposal_audit: None,
         previous_record_hash: header.header_hash,
         record_hash: String::new(),
     })
