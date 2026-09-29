@@ -1,0 +1,81 @@
+  1) browser-tests\ProgramMonitorAudio.spec.ts:55:3 › reset effects then Raw audition is actual unity PCM at 1x  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.03
+          Received:   0.45730128349531163
+          > 125 |     expect(Math.abs(ratio - 1)).toBeLessThan(0.03);
+  2) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 50% preview live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.0683699999552847
+          > 222 |           .toBeLessThanOrEqual(1);
+  3) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 100% preview live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.5033300000447163
+          > 222 |           .toBeLessThanOrEqual(1);
+  4) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 100% final live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.6558199999999987
+          > 222 |           .toBeLessThanOrEqual(1);
+  5) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 200% preview live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    9.17261999997765
+          > 222 |           .toBeLessThanOrEqual(1);
+  6) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 50% preview live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.3792607391937477
+          > 222 |           .toBeLessThanOrEqual(1);
+  7) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 100% preview live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.305794205771873
+          > 222 |           .toBeLessThanOrEqual(1);
+  8) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 100% final live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.2056043956267153
+          > 222 |           .toBeLessThanOrEqual(1);
+  9) browser-tests\ProgramMonitorAudio.spec.ts:138:3 › real PCM gain, linear fades and reset 2x audioOnly=false  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.021666666666666667
+          Received:   0.028544075778867417
+            222 |     expect(lateIn).toBeGreaterThan(earlyIn * 2);
+  10) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 150% preview live PCM pitch and aligned transient  ||     Error: measurement validity: decoded visual frame 42 must be directly observed
+          Received: null
+  11) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 150% final live PCM pitch and aligned transient  ||     Error: actual output-clock aligned transient within one sequence frame
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.2931768231991574
+          > 222 |           .toBeLessThanOrEqual(1);
+  12) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 200% preview live PCM pitch and aligned transient  ||     Error: measurement validity: decoded visual frame 42 must be directly observed
+          Received: null
+  13) browser-tests\ProgramMonitorSpeed.spec.ts:4:3 › real ProgramMonitor 50% clock, decoded frames, pitch, seek and end  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.06666666666666667
+          Received:   0.18246666666741163
+          > 85 |     ).toBeLessThan(2 / 30);
+  14) browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 200% final live PCM pitch and aligned transient  ||     Error: measurement validity: decoded visual frame 42 must be directly observed
+          Received: null
+  15) browser-tests\ProgramMonitorSpeed.spec.ts:4:3 › real ProgramMonitor 150% clock, decoded frames, pitch, seek and end  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.08
+          Received:   0.4980942100098136
+          > 82 |     ).toBeLessThan(0.08);
+  16) browser-tests\ProgramMonitorSpeed.spec.ts:4:3 › real ProgramMonitor 100% clock, decoded frames, pitch, seek and end  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.08
+          Received:   0.5715135885733791
+          > 82 |     ).toBeLessThan(0.08);
+  17) browser-tests\ProgramMonitorSpeed.spec.ts:108:1 › final playback and wrong-speed pitch-shift measurement controls  ||     Error: expect(received).toBeLessThan(expected)
+          Error: expect(received).toBeLessThan(expected)
+          Expected: < 0.08
+          Received:   0.29307805596465386
+          > 150 |   expect(Math.abs(result.final.ratio - 1)).toBeLessThan(0.08);
+  18) browser-tests\RawMediaParity.spec.ts:7:1 › raw HTML video with capture graph output-clock alignment  ||     Error: unchanged one-frame output-clock gate, raw browser baseline
+          expect(received).toBeLessThanOrEqual(expected)
+          Expected: <= 1
+          Received:    1.3464300000447018
+          > 122 |   ).toBeLessThanOrEqual(1);
