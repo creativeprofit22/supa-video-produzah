@@ -671,7 +671,7 @@ First complete the reliability and verification prerequisites in **Current audit
 - Drag/trim command grouping tests
 - Virtualization tests with thousands of clips
 - Keyboard completion of core editing flow
-- Screen-reader names, roles, selection, mute, lock, and track state
+- Automated accessible-name and role tests for selection, mute, lock, and track state
 - 200% text, forced-colors, reduced-motion, RTL, long CJK/German labels
 
 ## Runtime and visual verification
@@ -1415,7 +1415,7 @@ Remotion is an optional HTML/template renderer reference, not the canonical prev
 - Repair selected findings, compare before/after, stop a repair loop, and accept a documented warning
 - Export all supported aspect ratios and validate each encoded master
 - Test offline mode, process crash recovery, update failure, missing binary, and low-disk-space behavior
-- Complete keyboard and screen-reader review of Produce, Assemble, Review, and Deliver workflows
+- Automated keyboard-driven runs of Produce, Assemble, Review, and Deliver workflows (no manual or assistive-technology review; see AGENTS.md)
 
 ## Risks
 

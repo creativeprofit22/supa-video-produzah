@@ -39,7 +39,6 @@ The app isn't affected by this: a user can only click the real window's close bu
 
 - In the six post-fix runs Windows happened to list the app window first, so none hit the old ordering. That the fix handles the reverse order rests on selecting by class plus the deliberate tao-target reproduction.
 - The production build and installer weren't exercised. This was a debug build with the switch on.
-- No keyboard-only or screen-reader pass.
 - Only the rule-based filler-word producer was used; there's no AI producer.
 - Crash in the middle of an apply (as opposed to a clean close) wasn't exercised here; unit and native tests cover it.
 

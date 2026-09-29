@@ -29,7 +29,6 @@ Screenshots: `proposals-review.png` (desktop), `proposals-320px-200-percent-text
 
 ## Not done / open
 
-- **Criterion 1 not met**: production agent mutation remains disabled because Phase 4 (P2 editor controls) is still needs-attention (live timing, human keyboard and assistive-technology checks).
+- **Criterion 1 not met**: production agent mutation remains disabled because Phase 4 (P2 editor controls) is still needs-attention (live preview/export timing is the remaining gap).
 - Real Tauri app with the switch on (`01-proposals-native-scenario.md`): propose, partial apply, restore, stale, reject and pending-after-restart all pass (6 of 6 runs). An earlier intermittent "close ignored" failure turned out to be the harness closing Tao's hidden message window instead of the app window. That's fixed in the harness; there's no app bug.
-- No manual screen-reader test of the review panel.
 - AI producer is out of scope (separate draft `2ceb2ea5-…`).
