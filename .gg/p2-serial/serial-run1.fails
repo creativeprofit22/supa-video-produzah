@@ -1,0 +1,13 @@
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 100% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 100% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 150% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 150% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 200% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 200% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30/1 50% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 100% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 100% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 150% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 200% final live PCM pitch and aligned transient 
+[live-timing] › browser-tests\ProgramMonitorSharedParity.spec.ts:89:7 › 30000/1001 200% preview live PCM pitch and aligned transient 
+[live-timing] › browser-tests\RawMediaParity.spec.ts:7:1 › raw HTML video with capture graph output-clock alignment 

@@ -1,0 +1,333 @@
+{
+  "config": {
+    "argv": [
+      "E:\\nodejs\\node.exe",
+      "E:\\Projects\\supa-video-produzah\\apps\\desktop\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--project=live-timing",
+      "--repeat-each=3",
+      "--reporter=json",
+      "RawMediaParity"
+    ],
+    "configFile": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\playwright.config.ts",
+    "rootDir": "E:/Projects/supa-video-produzah/apps/desktop/browser-tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/Projects/supa-video-produzah/test-results/desktop-browser",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "parallel",
+        "name": "parallel",
+        "testDir": "E:/Projects/supa-video-produzah/apps/desktop/browser-tests",
+        "testIgnore": [
+          "**/ProgramMonitorSharedParity.spec.ts",
+          "**/RawMediaParity.spec.ts",
+          "**/ProgramMonitorSpeed.spec.ts",
+          "**/ProgramMonitorAudio.spec.ts"
+        ],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "E:/Projects/supa-video-produzah/test-results/desktop-browser",
+        "repeatEach": 3,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "live-timing",
+        "name": "live-timing",
+        "testDir": "E:/Projects/supa-video-produzah/apps/desktop/browser-tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/ProgramMonitorSharedParity.spec.ts",
+          "**/RawMediaParity.spec.ts",
+          "**/ProgramMonitorSpeed.spec.ts",
+          "**/ProgramMonitorAudio.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.0",
+    "workers": 6,
+    "webServer": {
+      "command": "pnpm dev --host 127.0.0.1 --port 4173 --strictPort",
+      "url": "http://127.0.0.1:4173",
+      "reuseExistingServer": false,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "RawMediaParity.spec.ts",
+      "file": "RawMediaParity.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "raw HTML video with capture graph output-clock alignment",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "live-timing",
+              "projectName": "live-timing",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 4030,
+                  "error": {
+                    "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.2646600000000012\u001b[39m",
+                    "stack": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.2646600000000012\u001b[39m\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5",
+                    "location": {
+                      "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                      "column": 5,
+                      "line": 68
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 66 |\u001b[39m     (\u001b[33mMath\u001b[39m\u001b[33m.\u001b[39mabs(measurement\u001b[33m.\u001b[39mdeltaMs \u001b[33m?\u001b[39m\u001b[33m?\u001b[39m \u001b[33mInfinity\u001b[39m) \u001b[33m/\u001b[39m \u001b[35m1000\u001b[39m) \u001b[33m*\u001b[39m \u001b[35m30\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 67 |\u001b[39m     \u001b[32m\"unchanged one-frame output-clock gate, raw browser baseline\"\u001b[39m\u001b[33m,\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m   )\u001b[33m.\u001b[39mtoBeLessThanOrEqual(\u001b[35m1\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 70 |\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                        "column": 5,
+                        "line": 68
+                      },
+                      "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.2646600000000012\u001b[39m\n\n  66 |     (Math.abs(measurement.deltaMs ?? Infinity) / 1000) * 30,\n  67 |     \"unchanged one-frame output-clock gate, raw browser baseline\",\n> 68 |   ).toBeLessThanOrEqual(1);\n     |     ^\n  69 | });\n  70 |\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-29T14:44:55.992Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "raw-control.json",
+                      "contentType": "application/json",
+                      "body": "ewogICJhdWRpbyI6IDExNjcuMjU1MzMzMzMzMzMzMywKICAib25zZXRUaW1lIjogMC40NjEzMzMzMzMzMzMzMzMzLAogICJhbmNob3JzIjogWwogICAgewogICAgICAiY29udGV4dCI6IDAuMDcyLAogICAgICAibWVkaWEiOiAwLjAxMDY2NywKICAgICAgInJhdGUiOiAxCiAgICB9CiAgXSwKICAiZnJhbWVzIjogWwogICAgewogICAgICAiaWQiOiAzMSwKICAgICAgImRpc3BsYXkiOiA3NDEuOCwKICAgICAgIm5vdyI6IDcyNS4yLAogICAgICAibWVkaWEiOiAwLjAzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDIsCiAgICAgICJwcmVzZW50YXRpb24iOiA3MjUuOAogICAgfSwKICAgIHsKICAgICAgImlkIjogMzIsCiAgICAgICJkaXNwbGF5IjogNzkxLjgsCiAgICAgICJub3ciOiA3OTEuOSwKICAgICAgIm1lZGlhIjogMC4wNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAzLAogICAgICAicHJlc2VudGF0aW9uIjogNzc1LjgKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDMzLAogICAgICAiZGlzcGxheSI6IDgyNS4yLAogICAgICAibm93IjogODA4LjYsCiAgICAgICJtZWRpYSI6IDAuMSwKICAgICAgInByZXNlbnRlZCI6IDQsCiAgICAgICJwcmVzZW50YXRpb24iOiA4MDguOQogICAgfSwKICAgIHsKICAgICAgImlkIjogMzQsCiAgICAgICJkaXNwbGF5IjogODU4LjUsCiAgICAgICJub3ciOiA4NTguNSwKICAgICAgIm1lZGlhIjogMC4xMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1LAogICAgICAicHJlc2VudGF0aW9uIjogODQyLjkKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM1LAogICAgICAiZGlzcGxheSI6IDg5MS44LAogICAgICAibm93IjogODc1LjE2NiwKICAgICAgIm1lZGlhIjogMC4xNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA2LAogICAgICAicHJlc2VudGF0aW9uIjogODc1LjkKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM2LAogICAgICAiZGlzcGxheSI6IDkyNS4xLAogICAgICAibm93IjogOTI1LjIsCiAgICAgICJtZWRpYSI6IDAuMiwKICAgICAgInByZXNlbnRlZCI6IDcsCiAgICAgICJwcmVzZW50YXRpb24iOiA5MDkuOQogICAgfSwKICAgIHsKICAgICAgImlkIjogMzcsCiAgICAgICJkaXNwbGF5IjogOTU4LjUsCiAgICAgICJub3ciOiA5NDEuOSwKICAgICAgIm1lZGlhIjogMC4yMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA4LAogICAgICAicHJlc2VudGF0aW9uIjogOTQyLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM4LAogICAgICAiZGlzcGxheSI6IDk5MS45LAogICAgICAibm93IjogOTkxLjkzMiwKICAgICAgIm1lZGlhIjogMC4yNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA5LAogICAgICAicHJlc2VudGF0aW9uIjogOTc1LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM5LAogICAgICAiZGlzcGxheSI6IDEwMjUuMiwKICAgICAgIm5vdyI6IDEwMDguNTk4LAogICAgICAibWVkaWEiOiAwLjMsCiAgICAgICJwcmVzZW50ZWQiOiAxMCwKICAgICAgInByZXNlbnRhdGlvbiI6IDEwMTAuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogNDAsCiAgICAgICJkaXNwbGF5IjogMTA1OC41LAogICAgICAibm93IjogMTA0MS45LAogICAgICAibWVkaWEiOiAwLjMzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDExLAogICAgICAicHJlc2VudGF0aW9uIjogMTA0Mi4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA0MSwKICAgICAgImRpc3BsYXkiOiAxMDkxLjgsCiAgICAgICJub3ciOiAxMDkxLjgsCiAgICAgICJtZWRpYSI6IDAuMzY2NjY3LAogICAgICAicHJlc2VudGVkIjogMTIsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMDc2LjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQyLAogICAgICAiZGlzcGxheSI6IDExMjUuMSwKICAgICAgIm5vdyI6IDExMjUuMiwKICAgICAgIm1lZGlhIjogMC40LAogICAgICAicHJlc2VudGVkIjogMTMsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMTEwLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQzLAogICAgICAiZGlzcGxheSI6IDExNTguNSwKICAgICAgIm5vdyI6IDExNTguNSwKICAgICAgIm1lZGlhIjogMC40MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAxNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDExNDIuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNDQsCiAgICAgICJkaXNwbGF5IjogMTE5MS44LAogICAgICAibm93IjogMTE3NS4yLAogICAgICAibWVkaWEiOiAwLjQ2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDE1LAogICAgICAicHJlc2VudGF0aW9uIjogMTE3NS40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0NSwKICAgICAgImRpc3BsYXkiOiAxMjI1LjIsCiAgICAgICJub3ciOiAxMjI1LjIsCiAgICAgICJtZWRpYSI6IDAuNSwKICAgICAgInByZXNlbnRlZCI6IDE2LAogICAgICAicHJlc2VudGF0aW9uIjogMTIxMC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0NiwKICAgICAgImRpc3BsYXkiOiAxMjU4LjUsCiAgICAgICJub3ciOiAxMjU4LjUsCiAgICAgICJtZWRpYSI6IDAuNTMzMzMzLAogICAgICAicHJlc2VudGVkIjogMTcsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMjQzLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQ3LAogICAgICAiZGlzcGxheSI6IDEyOTEuOCwKICAgICAgIm5vdyI6IDEyOTEuOSwKICAgICAgIm1lZGlhIjogMC41NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAxOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDEyNzYuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNDgsCiAgICAgICJkaXNwbGF5IjogMTMyNS4yLAogICAgICAibm93IjogMTMyNS4yLAogICAgICAibWVkaWEiOiAwLjYsCiAgICAgICJwcmVzZW50ZWQiOiAxOSwKICAgICAgInByZXNlbnRhdGlvbiI6IDEzMDkuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNDksCiAgICAgICJkaXNwbGF5IjogMTM1OC41LAogICAgICAibm93IjogMTM1OC41LAogICAgICAibWVkaWEiOiAwLjYzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDIwLAogICAgICAicHJlc2VudGF0aW9uIjogMTM0Mi4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA1MCwKICAgICAgImRpc3BsYXkiOiAxMzkxLjksCiAgICAgICJub3ciOiAxMzkxLjgsCiAgICAgICJtZWRpYSI6IDAuNjY2NjY3LAogICAgICAicHJlc2VudGVkIjogMjEsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMzc2LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUxLAogICAgICAiZGlzcGxheSI6IDE0MjUuMSwKICAgICAgIm5vdyI6IDE0MjUuMSwKICAgICAgIm1lZGlhIjogMC43LAogICAgICAicHJlc2VudGVkIjogMjIsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNDEwCiAgICB9LAogICAgewogICAgICAiaWQiOiA1MiwKICAgICAgImRpc3BsYXkiOiAxNDU4LjUsCiAgICAgICJub3ciOiAxNDU4LjUsCiAgICAgICJtZWRpYSI6IDAuNzMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjMsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNDQyLjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUzLAogICAgICAiZGlzcGxheSI6IDE0OTEuOCwKICAgICAgIm5vdyI6IDE0OTEuOSwKICAgICAgIm1lZGlhIjogMC43NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAyNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE0NzcuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNTQsCiAgICAgICJkaXNwbGF5IjogMTUyNS4xLAogICAgICAibm93IjogMTUyNS4xLAogICAgICAibWVkaWEiOiAwLjgsCiAgICAgICJwcmVzZW50ZWQiOiAyNSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE1MDkuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNTUsCiAgICAgICJkaXNwbGF5IjogMTU1OC41LAogICAgICAibm93IjogMTU1OC41LAogICAgICAibWVkaWEiOiAwLjgzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDI2LAogICAgICAicHJlc2VudGF0aW9uIjogMTU0My4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA1NiwKICAgICAgImRpc3BsYXkiOiAxNTkxLjksCiAgICAgICJub3ciOiAxNTc1LjIsCiAgICAgICJtZWRpYSI6IDAuODY2NjY3LAogICAgICAicHJlc2VudGVkIjogMjcsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNTc2LjIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU3LAogICAgICAiZGlzcGxheSI6IDE2MjUuMiwKICAgICAgIm5vdyI6IDE2MjUuMiwKICAgICAgIm1lZGlhIjogMC45LAogICAgICAicHJlc2VudGVkIjogMjgsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNjA5LjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU4LAogICAgICAiZGlzcGxheSI6IDE2NTguNSwKICAgICAgIm5vdyI6IDE2NTguNSwKICAgICAgIm1lZGlhIjogMC45MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAyOSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE2NDMuMgogICAgfSwKICAgIHsKICAgICAgImlkIjogNTksCiAgICAgICJkaXNwbGF5IjogMTY5MS45LAogICAgICAibm93IjogMTY5MS44LAogICAgICAibWVkaWEiOiAwLjk2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDMwLAogICAgICAicHJlc2VudGF0aW9uIjogMTY3Ni4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA2MCwKICAgICAgImRpc3BsYXkiOiAxNzI1LjIsCiAgICAgICJub3ciOiAxNzI1LjEsCiAgICAgICJtZWRpYSI6IDEsCiAgICAgICJwcmVzZW50ZWQiOiAzMSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE3MTAuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNjEsCiAgICAgICJkaXNwbGF5IjogMTc1OC41LAogICAgICAibm93IjogMTc1OC41LAogICAgICAibWVkaWEiOiAxLjAzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDMyLAogICAgICAicHJlc2VudGF0aW9uIjogMTc0My4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA2MiwKICAgICAgImRpc3BsYXkiOiAxNzkxLjgsCiAgICAgICJub3ciOiAxNzkxLjg2NiwKICAgICAgIm1lZGlhIjogMS4wNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAzMywKICAgICAgInByZXNlbnRhdGlvbiI6IDE3NzYuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNjMsCiAgICAgICJkaXNwbGF5IjogMTgyNS4yLAogICAgICAibm93IjogMTgyNS4xLAogICAgICAibWVkaWEiOiAxLjEsCiAgICAgICJwcmVzZW50ZWQiOiAzNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE4MTAuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNjQsCiAgICAgICJkaXNwbGF5IjogMTg1OC41LAogICAgICAibm93IjogMTg1OC41LAogICAgICAibWVkaWEiOiAxLjEzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDM1LAogICAgICAicHJlc2VudGF0aW9uIjogMTg0Mi4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA2NSwKICAgICAgImRpc3BsYXkiOiAxODkxLjgsCiAgICAgICJub3ciOiAxODkxLjksCiAgICAgICJtZWRpYSI6IDEuMTY2NjY3LAogICAgICAicHJlc2VudGVkIjogMzYsCiAgICAgICJwcmVzZW50YXRpb24iOiAxODc2LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY2LAogICAgICAiZGlzcGxheSI6IDE5MjUuMiwKICAgICAgIm5vdyI6IDE5MjUuMiwKICAgICAgIm1lZGlhIjogMS4yLAogICAgICAicHJlc2VudGVkIjogMzcsCiAgICAgICJwcmVzZW50YXRpb24iOiAxOTEwLjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY3LAogICAgICAiZGlzcGxheSI6IDE5NTguNSwKICAgICAgIm5vdyI6IDE5NDEuOCwKICAgICAgIm1lZGlhIjogMS4yMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAzOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE5NDIuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNjgsCiAgICAgICJkaXNwbGF5IjogMTk5MS44LAogICAgICAibm93IjogMTk5MS44NjYsCiAgICAgICJtZWRpYSI6IDEuMjY2NjY3LAogICAgICAicHJlc2VudGVkIjogMzksCiAgICAgICJwcmVzZW50YXRpb24iOiAxOTc2LjIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY5LAogICAgICAiZGlzcGxheSI6IDIwMjUuMSwKICAgICAgIm5vdyI6IDIwMDguNSwKICAgICAgIm1lZGlhIjogMS4zLAogICAgICAicHJlc2VudGVkIjogNDAsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMDEwLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDcwLAogICAgICAiZGlzcGxheSI6IDIwNTguNCwKICAgICAgIm5vdyI6IDIwNTguNSwKICAgICAgIm1lZGlhIjogMS4zMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA0MSwKICAgICAgInByZXNlbnRhdGlvbiI6IDIwNDMuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogNzEsCiAgICAgICJkaXNwbGF5IjogMjA5MS44LAogICAgICAibm93IjogMjA3NS4yLAogICAgICAibWVkaWEiOiAxLjM2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDQyLAogICAgICAicHJlc2VudGF0aW9uIjogMjA3NgogICAgfSwKICAgIHsKICAgICAgImlkIjogNzIsCiAgICAgICJkaXNwbGF5IjogMjEyNS4yLAogICAgICAibm93IjogMjEyNS4xLAogICAgICAibWVkaWEiOiAxLjQsCiAgICAgICJwcmVzZW50ZWQiOiA0MywKICAgICAgInByZXNlbnRhdGlvbiI6IDIxMTAuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNzMsCiAgICAgICJkaXNwbGF5IjogMjE1OC41LAogICAgICAibm93IjogMjE0MS44LAogICAgICAibWVkaWEiOiAxLjQzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDQ0LAogICAgICAicHJlc2VudGF0aW9uIjogMjE0MwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzQsCiAgICAgICJkaXNwbGF5IjogMjE5MS44LAogICAgICAibm93IjogMjE5MS44LAogICAgICAibWVkaWEiOiAxLjQ2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDQ1LAogICAgICAicHJlc2VudGF0aW9uIjogMjE3NwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzUsCiAgICAgICJkaXNwbGF5IjogMjIyNS4xLAogICAgICAibm93IjogMjIwOC41LAogICAgICAibWVkaWEiOiAxLjUsCiAgICAgICJwcmVzZW50ZWQiOiA0NiwKICAgICAgInByZXNlbnRhdGlvbiI6IDIyMDkuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzYsCiAgICAgICJkaXNwbGF5IjogMjI1OC41LAogICAgICAibm93IjogMjI1OC40LAogICAgICAibWVkaWEiOiAxLjUzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDQ3LAogICAgICAicHJlc2VudGF0aW9uIjogMjI0My4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA3NywKICAgICAgImRpc3BsYXkiOiAyMjkxLjgsCiAgICAgICJub3ciOiAyMjc1LjEsCiAgICAgICJtZWRpYSI6IDEuNTY2NjY3LAogICAgICAicHJlc2VudGVkIjogNDgsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMjc3LjIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDc4LAogICAgICAiZGlzcGxheSI6IDIzMjUuMSwKICAgICAgIm5vdyI6IDIzMjUuMSwKICAgICAgIm1lZGlhIjogMS42LAogICAgICAicHJlc2VudGVkIjogNDksCiAgICAgICJwcmVzZW50YXRpb24iOiAyMzEwLjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDc5LAogICAgICAiZGlzcGxheSI6IDIzNTguNSwKICAgICAgIm5vdyI6IDIzNDEuOCwKICAgICAgIm1lZGlhIjogMS42MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1MCwKICAgICAgInByZXNlbnRhdGlvbiI6IDIzNDMuMgogICAgfSwKICAgIHsKICAgICAgImlkIjogODAsCiAgICAgICJkaXNwbGF5IjogMjM5MS44LAogICAgICAibm93IjogMjM5MS44LAogICAgICAibWVkaWEiOiAxLjY2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDUxLAogICAgICAicHJlc2VudGF0aW9uIjogMjM3Ni4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA4MSwKICAgICAgImRpc3BsYXkiOiAyNDI1LjIsCiAgICAgICJub3ciOiAyNDA4LjUsCiAgICAgICJtZWRpYSI6IDEuNywKICAgICAgInByZXNlbnRlZCI6IDUyLAogICAgICAicHJlc2VudGF0aW9uIjogMjQwOQogICAgfSwKICAgIHsKICAgICAgImlkIjogODIsCiAgICAgICJkaXNwbGF5IjogMjQ1OC40LAogICAgICAibm93IjogMjQ1OC41LAogICAgICAibWVkaWEiOiAxLjczMzMzMywKICAgICAgInByZXNlbnRlZCI6IDUzLAogICAgICAicHJlc2VudGF0aW9uIjogMjQ0Mi45CiAgICB9LAogICAgewogICAgICAiaWQiOiA4MywKICAgICAgImRpc3BsYXkiOiAyNDkxLjcsCiAgICAgICJub3ciOiAyNDc1LjIsCiAgICAgICJtZWRpYSI6IDEuNzY2NjY3LAogICAgICAicHJlc2VudGVkIjogNTQsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNDc1LjYKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg0LAogICAgICAiZGlzcGxheSI6IDI1MjUuMSwKICAgICAgIm5vdyI6IDI1MjUuMSwKICAgICAgIm1lZGlhIjogMS44LAogICAgICAicHJlc2VudGVkIjogNTUsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNTA5LjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg1LAogICAgICAiZGlzcGxheSI6IDI1NTguNCwKICAgICAgIm5vdyI6IDI1NDEuNywKICAgICAgIm1lZGlhIjogMS44MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1NiwKICAgICAgInByZXNlbnRhdGlvbiI6IDI1NDIuNQogICAgfSwKICAgIHsKICAgICAgImlkIjogODYsCiAgICAgICJkaXNwbGF5IjogMjU5MS44LAogICAgICAibm93IjogMjU5MS44LAogICAgICAibWVkaWEiOiAxLjg2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDU3LAogICAgICAicHJlc2VudGF0aW9uIjogMjU3NgogICAgfSwKICAgIHsKICAgICAgImlkIjogODcsCiAgICAgICJkaXNwbGF5IjogMjYyNS4xLAogICAgICAibm93IjogMjYwOC40LAogICAgICAibWVkaWEiOiAxLjksCiAgICAgICJwcmVzZW50ZWQiOiA1OCwKICAgICAgInByZXNlbnRhdGlvbiI6IDI2MDkuOAogICAgfSwKICAgIHsKICAgICAgImlkIjogODgsCiAgICAgICJkaXNwbGF5IjogMjY1OC40LAogICAgICAibm93IjogMjY1OC41LAogICAgICAibWVkaWEiOiAxLjkzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDU5LAogICAgICAicHJlc2VudGF0aW9uIjogMjY0Mi41CiAgICB9LAogICAgewogICAgICAiaWQiOiA4OSwKICAgICAgImRpc3BsYXkiOiAyNjkxLjgsCiAgICAgICJub3ciOiAyNjc1LjEsCiAgICAgICJtZWRpYSI6IDEuOTY2NjY3LAogICAgICAicHJlc2VudGVkIjogNjAsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNjc1LjYKICAgIH0KICBdLAogICJiYXNlTGF0ZW5jeSI6IDAuMDEsCiAgIm91dHB1dExhdGVuY3kiOiAwLjA0LAogICJ1c2VyQWdlbnQiOiAiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgSGVhZGxlc3NDaHJvbWUvMTUxLjAuNzkyMi4zNCBTYWZhcmkvNTM3LjM2IiwKICAidmlzdWFsIjogewogICAgImlkIjogNDIsCiAgICAiZGlzcGxheSI6IDExMjUuMSwKICAgICJub3ciOiAxMTI1LjIsCiAgICAibWVkaWEiOiAwLjQsCiAgICAicHJlc2VudGVkIjogMTMsCiAgICAicHJlc2VudGF0aW9uIjogMTExMC40CiAgfSwKICAiZGVsdGFNcyI6IDQyLjE1NTMzMzMzMzMzMzM3NCwKICAiZXZlbnRzIjogewogICAgImZwc051bWVyYXRvciI6IDMwLAogICAgImZwc0Rlbm9taW5hdG9yIjogMSwKICAgICJldmVudEZyYW1lIjogNDIsCiAgICAiYXVkaW9FdmVudEZyYW1lIjogNDIsCiAgICAiYnVyc3RTdGFydFNlY29uZHMiOiAxLjQsCiAgICAiYnVyc3RFbmRTZWNvbmRzIjogMS40OAogIH0sCiAgImF1ZGlvTWFwcGVkIjogewogICAgIm1lZGlhVGltZSI6IDAuNDAwMDAwMzMzMzMzMzMzMywKICAgICJhbmNob3IiOiB7CiAgICAgICJjb250ZXh0IjogMC4wNzIsCiAgICAgICJtZWRpYSI6IDAuMDEwNjY3LAogICAgICAicmF0ZSI6IDEKICAgIH0KICB9LAogICJrbm93blRpbWUiOiB7CiAgICAiZXhwZWN0ZWRNZWRpYVNlY29uZHMiOiAwLjQsCiAgICAidmlkZW9FcnJvckZyYW1lcyI6IDAsCiAgICAiYXVkaW9FcnJvckZyYW1lcyI6IDAuMDAwMDA5OTk5OTk5OTk4MDY3MTEsCiAgICAiZGlmZmVyZW5jZUZyYW1lcyI6IDAuMDAwMDA5OTk5OTk5OTk4MDY3MTEKICB9Cn0="
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                    "column": 5,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "49907da5658da253408b-921b380942d261368be5",
+          "file": "RawMediaParity.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "raw HTML video with capture graph output-clock alignment",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "live-timing",
+              "projectName": "live-timing",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 4019,
+                  "error": {
+                    "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.3612599999776491\u001b[39m",
+                    "stack": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.3612599999776491\u001b[39m\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5",
+                    "location": {
+                      "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                      "column": 5,
+                      "line": 68
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 66 |\u001b[39m     (\u001b[33mMath\u001b[39m\u001b[33m.\u001b[39mabs(measurement\u001b[33m.\u001b[39mdeltaMs \u001b[33m?\u001b[39m\u001b[33m?\u001b[39m \u001b[33mInfinity\u001b[39m) \u001b[33m/\u001b[39m \u001b[35m1000\u001b[39m) \u001b[33m*\u001b[39m \u001b[35m30\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 67 |\u001b[39m     \u001b[32m\"unchanged one-frame output-clock gate, raw browser baseline\"\u001b[39m\u001b[33m,\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m   )\u001b[33m.\u001b[39mtoBeLessThanOrEqual(\u001b[35m1\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 70 |\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                        "column": 5,
+                        "line": 68
+                      },
+                      "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.3612599999776491\u001b[39m\n\n  66 |     (Math.abs(measurement.deltaMs ?? Infinity) / 1000) * 30,\n  67 |     \"unchanged one-frame output-clock gate, raw browser baseline\",\n> 68 |   ).toBeLessThanOrEqual(1);\n     |     ^\n  69 | });\n  70 |\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-29T14:45:01.240Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "raw-control.json",
+                      "contentType": "application/json",
+                      "body": "ewogICJhdWRpbyI6IDExNDAuOTc1MzMzMzMyNTg4MiwKICAib25zZXRUaW1lIjogMC40NjEzMzMzMzMzMzMzMzMzLAogICJhbmNob3JzIjogWwogICAgewogICAgICAiY29udGV4dCI6IDAuMDYxMzMzMzMzMzMzMzMzMzMsCiAgICAgICJtZWRpYSI6IDAsCiAgICAgICJyYXRlIjogMQogICAgfQogIF0sCiAgImZyYW1lcyI6IFsKICAgIHsKICAgICAgImlkIjogMzEsCiAgICAgICJkaXNwbGF5IjogNzI5LAogICAgICAibm93IjogNzEyLjMsCiAgICAgICJtZWRpYSI6IDAuMDMzMzMzLAogICAgICAicHJlc2VudGVkIjogMiwKICAgICAgInByZXNlbnRhdGlvbiI6IDcxNC4yCiAgICB9LAogICAgewogICAgICAiaWQiOiAzMiwKICAgICAgImRpc3BsYXkiOiA3NjIuMywKICAgICAgIm5vdyI6IDc2Mi4zLAogICAgICAibWVkaWEiOiAwLjA2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDMsCiAgICAgICJwcmVzZW50YXRpb24iOiA3NDYuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogMzMsCiAgICAgICJkaXNwbGF5IjogNzk1LjYsCiAgICAgICJub3ciOiA3NzguOSwKICAgICAgIm1lZGlhIjogMC4xLAogICAgICAicHJlc2VudGVkIjogNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDc3OS4yCiAgICB9LAogICAgewogICAgICAiaWQiOiAzNCwKICAgICAgImRpc3BsYXkiOiA4MjguOSwKICAgICAgIm5vdyI6IDgyOSwKICAgICAgIm1lZGlhIjogMC4xMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1LAogICAgICAicHJlc2VudGF0aW9uIjogODEzLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM1LAogICAgICAiZGlzcGxheSI6IDg2Mi4yLAogICAgICAibm93IjogODQ1LjYsCiAgICAgICJtZWRpYSI6IDAuMTY2NjY3LAogICAgICAicHJlc2VudGVkIjogNiwKICAgICAgInByZXNlbnRhdGlvbiI6IDg0Ni4xCiAgICB9LAogICAgewogICAgICAiaWQiOiAzNiwKICAgICAgImRpc3BsYXkiOiA4OTUuNywKICAgICAgIm5vdyI6IDg5NS42LAogICAgICAibWVkaWEiOiAwLjIsCiAgICAgICJwcmVzZW50ZWQiOiA3LAogICAgICAicHJlc2VudGF0aW9uIjogODgwLjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM3LAogICAgICAiZGlzcGxheSI6IDkyOC45LAogICAgICAibm93IjogOTEyLjIsCiAgICAgICJtZWRpYSI6IDAuMjMzMzMzLAogICAgICAicHJlc2VudGVkIjogOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDkxNC4yCiAgICB9LAogICAgewogICAgICAiaWQiOiAzOCwKICAgICAgImRpc3BsYXkiOiA5NjIuMywKICAgICAgIm5vdyI6IDk0NS42LAogICAgICAibWVkaWEiOiAwLjI2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDksCiAgICAgICJwcmVzZW50YXRpb24iOiA5NDcuMgogICAgfSwKICAgIHsKICAgICAgImlkIjogMzksCiAgICAgICJkaXNwbGF5IjogOTk1LjYsCiAgICAgICJub3ciOiA5OTUuNiwKICAgICAgIm1lZGlhIjogMC4zLAogICAgICAicHJlc2VudGVkIjogMTAsCiAgICAgICJwcmVzZW50YXRpb24iOiA5NzkuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNDAsCiAgICAgICJkaXNwbGF5IjogMTAyOC45LAogICAgICAibm93IjogMTAyOC45LAogICAgICAibWVkaWEiOiAwLjMzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDExLAogICAgICAicHJlc2VudGF0aW9uIjogMTAxMy4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA0MSwKICAgICAgImRpc3BsYXkiOiAxMDYyLjIsCiAgICAgICJub3ciOiAxMDYyLjMsCiAgICAgICJtZWRpYSI6IDAuMzY2NjY3LAogICAgICAicHJlc2VudGVkIjogMTIsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMDQ3LjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQyLAogICAgICAiZGlzcGxheSI6IDEwOTUuNiwKICAgICAgIm5vdyI6IDEwNzguOSwKICAgICAgIm1lZGlhIjogMC40LAogICAgICAicHJlc2VudGVkIjogMTMsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMDc5LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQzLAogICAgICAiZGlzcGxheSI6IDExMjguOSwKICAgICAgIm5vdyI6IDExMTIuMywKICAgICAgIm1lZGlhIjogMC40MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAxNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDExMTQuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNDQsCiAgICAgICJkaXNwbGF5IjogMTE2Mi4zLAogICAgICAibm93IjogMTE0NS42LAogICAgICAibWVkaWEiOiAwLjQ2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDE1LAogICAgICAicHJlc2VudGF0aW9uIjogMTE0Ni4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA0NSwKICAgICAgImRpc3BsYXkiOiAxMTk1LjYsCiAgICAgICJub3ciOiAxMTk1LjYsCiAgICAgICJtZWRpYSI6IDAuNSwKICAgICAgInByZXNlbnRlZCI6IDE2LAogICAgICAicHJlc2VudGF0aW9uIjogMTE4MQogICAgfSwKICAgIHsKICAgICAgImlkIjogNDYsCiAgICAgICJkaXNwbGF5IjogMTIyOC45LAogICAgICAibm93IjogMTIyOC45LAogICAgICAibWVkaWEiOiAwLjUzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDE3LAogICAgICAicHJlc2VudGF0aW9uIjogMTIxNC4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA0NywKICAgICAgImRpc3BsYXkiOiAxMjYyLjMsCiAgICAgICJub3ciOiAxMjYyLjIzMiwKICAgICAgIm1lZGlhIjogMC41NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAxOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDEyNDYuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNDgsCiAgICAgICJkaXNwbGF5IjogMTI5NS42LAogICAgICAibm93IjogMTI3OSwKICAgICAgIm1lZGlhIjogMC42LAogICAgICAicHJlc2VudGVkIjogMTksCiAgICAgICJwcmVzZW50YXRpb24iOiAxMjgwCiAgICB9LAogICAgewogICAgICAiaWQiOiA0OSwKICAgICAgImRpc3BsYXkiOiAxMzI4LjksCiAgICAgICJub3ciOiAxMzI5LAogICAgICAibWVkaWEiOiAwLjYzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDIwLAogICAgICAicHJlc2VudGF0aW9uIjogMTMxNAogICAgfSwKICAgIHsKICAgICAgImlkIjogNTAsCiAgICAgICJkaXNwbGF5IjogMTM2Mi4zLAogICAgICAibm93IjogMTM2Mi4yLAogICAgICAibWVkaWEiOiAwLjY2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDIxLAogICAgICAicHJlc2VudGF0aW9uIjogMTM0Ni4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA1MSwKICAgICAgImRpc3BsYXkiOiAxMzk1LjUsCiAgICAgICJub3ciOiAxMzk1LjYsCiAgICAgICJtZWRpYSI6IDAuNywKICAgICAgInByZXNlbnRlZCI6IDIyLAogICAgICAicHJlc2VudGF0aW9uIjogMTM3OS4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA1MiwKICAgICAgImRpc3BsYXkiOiAxNDI4LjksCiAgICAgICJub3ciOiAxNDI4LjksCiAgICAgICJtZWRpYSI6IDAuNzMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjMsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNDE0LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUzLAogICAgICAiZGlzcGxheSI6IDE0NjIuMywKICAgICAgIm5vdyI6IDE0NjIuMiwKICAgICAgIm1lZGlhIjogMC43NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAyNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE0NDcuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNTQsCiAgICAgICJkaXNwbGF5IjogMTQ5NS42LAogICAgICAibm93IjogMTQ5NS41NjYsCiAgICAgICJtZWRpYSI6IDAuOCwKICAgICAgInByZXNlbnRlZCI6IDI1LAogICAgICAicHJlc2VudGF0aW9uIjogMTQ3OS4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA1NSwKICAgICAgImRpc3BsYXkiOiAxNTI4LjksCiAgICAgICJub3ciOiAxNTI4LjksCiAgICAgICJtZWRpYSI6IDAuODMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjYsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNTEzLjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU2LAogICAgICAiZGlzcGxheSI6IDE1NjIuMywKICAgICAgIm5vdyI6IDE1NjIuMiwKICAgICAgIm1lZGlhIjogMC44NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAyNywKICAgICAgInByZXNlbnRhdGlvbiI6IDE1NDYuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNTcsCiAgICAgICJkaXNwbGF5IjogMTU5NS42LAogICAgICAibm93IjogMTU5NS42LAogICAgICAibWVkaWEiOiAwLjksCiAgICAgICJwcmVzZW50ZWQiOiAyOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE1NzkKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU4LAogICAgICAiZGlzcGxheSI6IDE2MjguOSwKICAgICAgIm5vdyI6IDE2MjguOSwKICAgICAgIm1lZGlhIjogMC45MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAyOSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE2MTMuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNTksCiAgICAgICJkaXNwbGF5IjogMTY2Mi4yLAogICAgICAibm93IjogMTY2Mi4zLAogICAgICAibWVkaWEiOiAwLjk2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDMwLAogICAgICAicHJlc2VudGF0aW9uIjogMTY0Ni4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA2MCwKICAgICAgImRpc3BsYXkiOiAxNjk1LjYsCiAgICAgICJub3ciOiAxNjk1LjYsCiAgICAgICJtZWRpYSI6IDEsCiAgICAgICJwcmVzZW50ZWQiOiAzMSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE2ODAuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNjEsCiAgICAgICJkaXNwbGF5IjogMTcyOC45LAogICAgICAibm93IjogMTcyOC45LAogICAgICAibWVkaWEiOiAxLjAzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDMyLAogICAgICAicHJlc2VudGF0aW9uIjogMTcxMy4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA2MiwKICAgICAgImRpc3BsYXkiOiAxNzYyLjIsCiAgICAgICJub3ciOiAxNzYyLjIsCiAgICAgICJtZWRpYSI6IDEuMDY2NjY3LAogICAgICAicHJlc2VudGVkIjogMzMsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNzQ2LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDYzLAogICAgICAiZGlzcGxheSI6IDE3OTUuNSwKICAgICAgIm5vdyI6IDE3OTUuNTMyLAogICAgICAibWVkaWEiOiAxLjEsCiAgICAgICJwcmVzZW50ZWQiOiAzNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE3ODAuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogNjQsCiAgICAgICJkaXNwbGF5IjogMTgyOC45LAogICAgICAibm93IjogMTgyOC45LAogICAgICAibWVkaWEiOiAxLjEzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDM1LAogICAgICAicHJlc2VudGF0aW9uIjogMTgxNC4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA2NSwKICAgICAgImRpc3BsYXkiOiAxODYyLjIsCiAgICAgICJub3ciOiAxODYyLjIsCiAgICAgICJtZWRpYSI6IDEuMTY2NjY3LAogICAgICAicHJlc2VudGVkIjogMzYsCiAgICAgICJwcmVzZW50YXRpb24iOiAxODQ2LjIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY2LAogICAgICAiZGlzcGxheSI6IDE4OTUuNiwKICAgICAgIm5vdyI6IDE4NzguOSwKICAgICAgIm1lZGlhIjogMS4yLAogICAgICAicHJlc2VudGVkIjogMzcsCiAgICAgICJwcmVzZW50YXRpb24iOiAxODc5LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY3LAogICAgICAiZGlzcGxheSI6IDE5MjguOSwKICAgICAgIm5vdyI6IDE5MjguOSwKICAgICAgIm1lZGlhIjogMS4yMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAzOCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE5MTMuMgogICAgfSwKICAgIHsKICAgICAgImlkIjogNjgsCiAgICAgICJkaXNwbGF5IjogMTk2Mi4zLAogICAgICAibm93IjogMTk2Mi4zLAogICAgICAibWVkaWEiOiAxLjI2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDM5LAogICAgICAicHJlc2VudGF0aW9uIjogMTk0Ny4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA2OSwKICAgICAgImRpc3BsYXkiOiAxOTk1LjYsCiAgICAgICJub3ciOiAxOTk1LjYsCiAgICAgICJtZWRpYSI6IDEuMywKICAgICAgInByZXNlbnRlZCI6IDQwLAogICAgICAicHJlc2VudGF0aW9uIjogMTk3OS4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA3MCwKICAgICAgImRpc3BsYXkiOiAyMDI4LjksCiAgICAgICJub3ciOiAyMDEyLjMsCiAgICAgICJtZWRpYSI6IDEuMzMzMzMzLAogICAgICAicHJlc2VudGVkIjogNDEsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMDEzLjIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDcxLAogICAgICAiZGlzcGxheSI6IDIwNjIuMiwKICAgICAgIm5vdyI6IDIwNjIuMywKICAgICAgIm1lZGlhIjogMS4zNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA0MiwKICAgICAgInByZXNlbnRhdGlvbiI6IDIwNDcuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzIsCiAgICAgICJkaXNwbGF5IjogMjA5NS42LAogICAgICAibm93IjogMjA3OC45LAogICAgICAibWVkaWEiOiAxLjQsCiAgICAgICJwcmVzZW50ZWQiOiA0MywKICAgICAgInByZXNlbnRhdGlvbiI6IDIwNzkuNgogICAgfSwKICAgIHsKICAgICAgImlkIjogNzMsCiAgICAgICJkaXNwbGF5IjogMjEyOC45LAogICAgICAibm93IjogMjEyOC45LAogICAgICAibWVkaWEiOiAxLjQzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDQ0LAogICAgICAicHJlc2VudGF0aW9uIjogMjExMi44CiAgICB9LAogICAgewogICAgICAiaWQiOiA3NCwKICAgICAgImRpc3BsYXkiOiAyMTYyLjIsCiAgICAgICJub3ciOiAyMTQ1LjYsCiAgICAgICJtZWRpYSI6IDEuNDY2NjY3LAogICAgICAicHJlc2VudGVkIjogNDUsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMTQ1LjkKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDc1LAogICAgICAiZGlzcGxheSI6IDIxOTUuNiwKICAgICAgIm5vdyI6IDIxOTUuNiwKICAgICAgIm1lZGlhIjogMS41LAogICAgICAicHJlc2VudGVkIjogNDYsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMTc5LjgKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDc2LAogICAgICAiZGlzcGxheSI6IDIyMjguOSwKICAgICAgIm5vdyI6IDIyMTIuMywKICAgICAgIm1lZGlhIjogMS41MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA0NywKICAgICAgInByZXNlbnRhdGlvbiI6IDIyMTMuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzcsCiAgICAgICJkaXNwbGF5IjogMjI2Mi4yLAogICAgICAibm93IjogMjI2Mi4zLAogICAgICAibWVkaWEiOiAxLjU2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDQ4LAogICAgICAicHJlc2VudGF0aW9uIjogMjI0Ny4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA3OCwKICAgICAgImRpc3BsYXkiOiAyMjk1LjYsCiAgICAgICJub3ciOiAyMjc4LjgsCiAgICAgICJtZWRpYSI6IDEuNiwKICAgICAgInByZXNlbnRlZCI6IDQ5LAogICAgICAicHJlc2VudGF0aW9uIjogMjI4MAogICAgfSwKICAgIHsKICAgICAgImlkIjogNzksCiAgICAgICJkaXNwbGF5IjogMjMyOC45LAogICAgICAibm93IjogMjMyOC45LAogICAgICAibWVkaWEiOiAxLjYzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDUwLAogICAgICAicHJlc2VudGF0aW9uIjogMjMxMi43CiAgICB9LAogICAgewogICAgICAiaWQiOiA4MCwKICAgICAgImRpc3BsYXkiOiAyMzYyLjIsCiAgICAgICJub3ciOiAyMzQ1LjUsCiAgICAgICJtZWRpYSI6IDEuNjY2NjY3LAogICAgICAicHJlc2VudGVkIjogNTEsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMzQ2LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDgxLAogICAgICAiZGlzcGxheSI6IDIzOTUuNSwKICAgICAgIm5vdyI6IDIzOTUuNiwKICAgICAgIm1lZGlhIjogMS43LAogICAgICAicHJlc2VudGVkIjogNTIsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMzgwLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDgyLAogICAgICAiZGlzcGxheSI6IDI0MjguOCwKICAgICAgIm5vdyI6IDI0MTIuMiwKICAgICAgIm1lZGlhIjogMS43MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1MywKICAgICAgInByZXNlbnRhdGlvbiI6IDI0MTQuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogODMsCiAgICAgICJkaXNwbGF5IjogMjQ2Mi4yLAogICAgICAibm93IjogMjQ0NS42LAogICAgICAibWVkaWEiOiAxLjc2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDU0LAogICAgICAicHJlc2VudGF0aW9uIjogMjQ0Ni43CiAgICB9LAogICAgewogICAgICAiaWQiOiA4NCwKICAgICAgImRpc3BsYXkiOiAyNDk1LjYsCiAgICAgICJub3ciOiAyNDk1LjYsCiAgICAgICJtZWRpYSI6IDEuOCwKICAgICAgInByZXNlbnRlZCI6IDU1LAogICAgICAicHJlc2VudGF0aW9uIjogMjQ4MC42CiAgICB9LAogICAgewogICAgICAiaWQiOiA4NSwKICAgICAgImRpc3BsYXkiOiAyNTI4LjgsCiAgICAgICJub3ciOiAyNTEyLjIsCiAgICAgICJtZWRpYSI6IDEuODMzMzMzLAogICAgICAicHJlc2VudGVkIjogNTYsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNTE0LjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg2LAogICAgICAiZGlzcGxheSI6IDI1NjIuMiwKICAgICAgIm5vdyI6IDI1NjIuMiwKICAgICAgIm1lZGlhIjogMS44NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA1NywKICAgICAgInByZXNlbnRhdGlvbiI6IDI1NDUuOQogICAgfSwKICAgIHsKICAgICAgImlkIjogODcsCiAgICAgICJkaXNwbGF5IjogMjU5NS42LAogICAgICAibm93IjogMjU3OC45LAogICAgICAibWVkaWEiOiAxLjksCiAgICAgICJwcmVzZW50ZWQiOiA1OCwKICAgICAgInByZXNlbnRhdGlvbiI6IDI1ODEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg4LAogICAgICAiZGlzcGxheSI6IDI2MjguOSwKICAgICAgIm5vdyI6IDI2MjguOSwKICAgICAgIm1lZGlhIjogMS45MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1OSwKICAgICAgInByZXNlbnRhdGlvbiI6IDI2MTMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg5LAogICAgICAiZGlzcGxheSI6IDI2NjIuMiwKICAgICAgIm5vdyI6IDI2NDUuNiwKICAgICAgIm1lZGlhIjogMS45NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA2MCwKICAgICAgInByZXNlbnRhdGlvbiI6IDI2NDYuMQogICAgfQogIF0sCiAgImJhc2VMYXRlbmN5IjogMC4wMSwKICAib3V0cHV0TGF0ZW5jeSI6IDAuMDQsCiAgInVzZXJBZ2VudCI6ICJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBIZWFkbGVzc0Nocm9tZS8xNTEuMC43OTIyLjM0IFNhZmFyaS81MzcuMzYiLAogICJ2aXN1YWwiOiB7CiAgICAiaWQiOiA0MiwKICAgICJkaXNwbGF5IjogMTA5NS42LAogICAgIm5vdyI6IDEwNzguOSwKICAgICJtZWRpYSI6IDAuNCwKICAgICJwcmVzZW50ZWQiOiAxMywKICAgICJwcmVzZW50YXRpb24iOiAxMDc5LjEKICB9LAogICJkZWx0YU1zIjogNDUuMzc1MzMzMzMyNTg4MywKICAiZXZlbnRzIjogewogICAgImZwc051bWVyYXRvciI6IDMwLAogICAgImZwc0Rlbm9taW5hdG9yIjogMSwKICAgICJldmVudEZyYW1lIjogNDIsCiAgICAiYXVkaW9FdmVudEZyYW1lIjogNDIsCiAgICAiYnVyc3RTdGFydFNlY29uZHMiOiAxLjQsCiAgICAiYnVyc3RFbmRTZWNvbmRzIjogMS40OAogIH0sCiAgImF1ZGlvTWFwcGVkIjogewogICAgIm1lZGlhVGltZSI6IDAuMzk5OTk5OTk5OTk5OTk5OTcsCiAgICAiYW5jaG9yIjogewogICAgICAiY29udGV4dCI6IDAuMDYxMzMzMzMzMzMzMzMzMzMsCiAgICAgICJtZWRpYSI6IDAsCiAgICAgICJyYXRlIjogMQogICAgfQogIH0sCiAgImtub3duVGltZSI6IHsKICAgICJleHBlY3RlZE1lZGlhU2Vjb25kcyI6IDAuNCwKICAgICJ2aWRlb0Vycm9yRnJhbWVzIjogMCwKICAgICJhdWRpb0Vycm9yRnJhbWVzIjogLTEuNjY1MzM0NTM2OTM3NzM0OGUtMTUsCiAgICAiZGlmZmVyZW5jZUZyYW1lcyI6IC0xLjY2NTMzNDUzNjkzNzczNDhlLTE1CiAgfQp9"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing-repeat1\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing-repeat1\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                    "column": 5,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "49907da5658da253408b-347aeb56e78fcfc6d0d1",
+          "file": "RawMediaParity.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "raw HTML video with capture graph output-clock alignment",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "live-timing",
+              "projectName": "live-timing",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 4086,
+                  "error": {
+                    "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.484190000044705\u001b[39m",
+                    "stack": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.484190000044705\u001b[39m\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5",
+                    "location": {
+                      "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                      "column": 5,
+                      "line": 68
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 66 |\u001b[39m     (\u001b[33mMath\u001b[39m\u001b[33m.\u001b[39mabs(measurement\u001b[33m.\u001b[39mdeltaMs \u001b[33m?\u001b[39m\u001b[33m?\u001b[39m \u001b[33mInfinity\u001b[39m) \u001b[33m/\u001b[39m \u001b[35m1000\u001b[39m) \u001b[33m*\u001b[39m \u001b[35m30\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 67 |\u001b[39m     \u001b[32m\"unchanged one-frame output-clock gate, raw browser baseline\"\u001b[39m\u001b[33m,\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m   )\u001b[33m.\u001b[39mtoBeLessThanOrEqual(\u001b[35m1\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 70 |\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                        "column": 5,
+                        "line": 68
+                      },
+                      "message": "Error: unchanged one-frame output-clock gate, raw browser baseline\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1.484190000044705\u001b[39m\n\n  66 |     (Math.abs(measurement.deltaMs ?? Infinity) / 1000) * 30,\n  67 |     \"unchanged one-frame output-clock gate, raw browser baseline\",\n> 68 |   ).toBeLessThanOrEqual(1);\n     |     ^\n  69 | });\n  70 |\n    at E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts:68:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-29T14:45:06.495Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "raw-control.json",
+                      "contentType": "application/json",
+                      "body": "ewogICJhdWRpbyI6IDExNjIuNzczMDAwMDAxNDkwMSwKICAib25zZXRUaW1lIjogMC40NzIsCiAgImFuY2hvcnMiOiBbCiAgICB7CiAgICAgICJjb250ZXh0IjogMC4wNzIsCiAgICAgICJtZWRpYSI6IDAsCiAgICAgICJyYXRlIjogMQogICAgfQogIF0sCiAgImZyYW1lcyI6IFsKICAgIHsKICAgICAgImlkIjogMzEsCiAgICAgICJkaXNwbGF5IjogNzQ2LjYsCiAgICAgICJub3ciOiA3MzAuMDMyLAogICAgICAibWVkaWEiOiAwLjAzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDIsCiAgICAgICJwcmVzZW50YXRpb24iOiA3MzAuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogMzIsCiAgICAgICJkaXNwbGF5IjogNzgwLAogICAgICAibm93IjogNzgwLAogICAgICAibWVkaWEiOiAwLjA2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDMsCiAgICAgICJwcmVzZW50YXRpb24iOiA3NjMuNQogICAgfSwKICAgIHsKICAgICAgImlkIjogMzMsCiAgICAgICJkaXNwbGF5IjogODEzLjQsCiAgICAgICJub3ciOiA3OTYuNiwKICAgICAgIm1lZGlhIjogMC4xLAogICAgICAicHJlc2VudGVkIjogNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDc5Ny40CiAgICB9LAogICAgewogICAgICAiaWQiOiAzNCwKICAgICAgImRpc3BsYXkiOiA4NDYuNywKICAgICAgIm5vdyI6IDg0Ni42LAogICAgICAibWVkaWEiOiAwLjEzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDUsCiAgICAgICJwcmVzZW50YXRpb24iOiA4MzEuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogMzUsCiAgICAgICJkaXNwbGF5IjogODgwLAogICAgICAibm93IjogODYzLjMsCiAgICAgICJtZWRpYSI6IDAuMTY2NjY3LAogICAgICAicHJlc2VudGVkIjogNiwKICAgICAgInByZXNlbnRhdGlvbiI6IDg2My41CiAgICB9LAogICAgewogICAgICAiaWQiOiAzNiwKICAgICAgImRpc3BsYXkiOiA5MTMuMywKICAgICAgIm5vdyI6IDkxMy4zLAogICAgICAibWVkaWEiOiAwLjIsCiAgICAgICJwcmVzZW50ZWQiOiA3LAogICAgICAicHJlc2VudGF0aW9uIjogODk4LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM3LAogICAgICAiZGlzcGxheSI6IDk0Ni43LAogICAgICAibm93IjogOTMwLAogICAgICAibWVkaWEiOiAwLjIzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDgsCiAgICAgICJwcmVzZW50YXRpb24iOiA5MzEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM4LAogICAgICAiZGlzcGxheSI6IDk4MCwKICAgICAgIm5vdyI6IDk4MCwKICAgICAgIm1lZGlhIjogMC4yNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA5LAogICAgICAicHJlc2VudGF0aW9uIjogOTY0LjUKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDM5LAogICAgICAiZGlzcGxheSI6IDEwMTMuMywKICAgICAgIm5vdyI6IDEwMTMuMzMyLAogICAgICAibWVkaWEiOiAwLjMsCiAgICAgICJwcmVzZW50ZWQiOiAxMCwKICAgICAgInByZXNlbnRhdGlvbiI6IDk5Ny40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0MCwKICAgICAgImRpc3BsYXkiOiAxMDQ2LjYsCiAgICAgICJub3ciOiAxMDQ2LjYsCiAgICAgICJtZWRpYSI6IDAuMzMzMzMzLAogICAgICAicHJlc2VudGVkIjogMTEsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMDMwLjUKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQxLAogICAgICAiZGlzcGxheSI6IDEwODAsCiAgICAgICJub3ciOiAxMDgwLAogICAgICAibWVkaWEiOiAwLjM2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDEyLAogICAgICAicHJlc2VudGF0aW9uIjogMTA2NC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0MiwKICAgICAgImRpc3BsYXkiOiAxMTEzLjMsCiAgICAgICJub3ciOiAxMTEzLjMsCiAgICAgICJtZWRpYSI6IDAuNCwKICAgICAgInByZXNlbnRlZCI6IDEzLAogICAgICAicHJlc2VudGF0aW9uIjogMTA5Ny40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0MywKICAgICAgImRpc3BsYXkiOiAxMTQ2LjYsCiAgICAgICJub3ciOiAxMTQ2LjYsCiAgICAgICJtZWRpYSI6IDAuNDMzMzMzLAogICAgICAicHJlc2VudGVkIjogMTQsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMTMxLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQ0LAogICAgICAiZGlzcGxheSI6IDExNzkuOSwKICAgICAgIm5vdyI6IDExODAsCiAgICAgICJtZWRpYSI6IDAuNDY2NjY3LAogICAgICAicHJlc2VudGVkIjogMTUsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMTY0LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQ1LAogICAgICAiZGlzcGxheSI6IDEyMTMuMywKICAgICAgIm5vdyI6IDEyMTMuMywKICAgICAgIm1lZGlhIjogMC41LAogICAgICAicHJlc2VudGVkIjogMTYsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMTk3LjUKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQ2LAogICAgICAiZGlzcGxheSI6IDEyNDYuNywKICAgICAgIm5vdyI6IDEyMzAsCiAgICAgICJtZWRpYSI6IDAuNTMzMzMzLAogICAgICAicHJlc2VudGVkIjogMTcsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMjMxLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDQ3LAogICAgICAiZGlzcGxheSI6IDEyNzkuOSwKICAgICAgIm5vdyI6IDEyNzkuOTMyLAogICAgICAibWVkaWEiOiAwLjU2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDE4LAogICAgICAicHJlc2VudGF0aW9uIjogMTI2NS40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0OCwKICAgICAgImRpc3BsYXkiOiAxMzEzLjMsCiAgICAgICJub3ciOiAxMzEzLjMsCiAgICAgICJtZWRpYSI6IDAuNiwKICAgICAgInByZXNlbnRlZCI6IDE5LAogICAgICAicHJlc2VudGF0aW9uIjogMTI5OC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA0OSwKICAgICAgImRpc3BsYXkiOiAxMzQ2LjcsCiAgICAgICJub3ciOiAxMzQ2LjcsCiAgICAgICJtZWRpYSI6IDAuNjMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjAsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMzMxLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUwLAogICAgICAiZGlzcGxheSI6IDEzNzkuOSwKICAgICAgIm5vdyI6IDEzODAsCiAgICAgICJtZWRpYSI6IDAuNjY2NjY3LAogICAgICAicHJlc2VudGVkIjogMjEsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMzY0LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUxLAogICAgICAiZGlzcGxheSI6IDE0MTMuMywKICAgICAgIm5vdyI6IDE0MTMuMywKICAgICAgIm1lZGlhIjogMC43LAogICAgICAicHJlc2VudGVkIjogMjIsCiAgICAgICJwcmVzZW50YXRpb24iOiAxMzk3LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDUyLAogICAgICAiZGlzcGxheSI6IDE0NDYuNiwKICAgICAgIm5vdyI6IDE0NDYuNiwKICAgICAgIm1lZGlhIjogMC43MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAyMywKICAgICAgInByZXNlbnRhdGlvbiI6IDE0MzAuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNTMsCiAgICAgICJkaXNwbGF5IjogMTQ3OS45LAogICAgICAibm93IjogMTQ4MCwKICAgICAgIm1lZGlhIjogMC43NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAyNCwKICAgICAgInByZXNlbnRhdGlvbiI6IDE0NjQuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogNTQsCiAgICAgICJkaXNwbGF5IjogMTUxMy4zLAogICAgICAibm93IjogMTUxMy4zLAogICAgICAibWVkaWEiOiAwLjgsCiAgICAgICJwcmVzZW50ZWQiOiAyNSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE0OTguMwogICAgfSwKICAgIHsKICAgICAgImlkIjogNTUsCiAgICAgICJkaXNwbGF5IjogMTU0Ni42LAogICAgICAibm93IjogMTU0Ni42MzIsCiAgICAgICJtZWRpYSI6IDAuODMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjYsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNTMxLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU2LAogICAgICAiZGlzcGxheSI6IDE1ODAsCiAgICAgICJub3ciOiAxNTgwLAogICAgICAibWVkaWEiOiAwLjg2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDI3LAogICAgICAicHJlc2VudGF0aW9uIjogMTU2NC41CiAgICB9LAogICAgewogICAgICAiaWQiOiA1NywKICAgICAgImRpc3BsYXkiOiAxNjEzLjIsCiAgICAgICJub3ciOiAxNjEzLjMsCiAgICAgICJtZWRpYSI6IDAuOSwKICAgICAgInByZXNlbnRlZCI6IDI4LAogICAgICAicHJlc2VudGF0aW9uIjogMTU5OC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA1OCwKICAgICAgImRpc3BsYXkiOiAxNjQ2LjYsCiAgICAgICJub3ciOiAxNjI5LjksCiAgICAgICJtZWRpYSI6IDAuOTMzMzMzLAogICAgICAicHJlc2VudGVkIjogMjksCiAgICAgICJwcmVzZW50YXRpb24iOiAxNjMwLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDU5LAogICAgICAiZGlzcGxheSI6IDE2ODAsCiAgICAgICJub3ciOiAxNjc5LjksCiAgICAgICJtZWRpYSI6IDAuOTY2NjY3LAogICAgICAicHJlc2VudGVkIjogMzAsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNjY1LjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDYwLAogICAgICAiZGlzcGxheSI6IDE3MTMuMiwKICAgICAgIm5vdyI6IDE3MTMuMywKICAgICAgIm1lZGlhIjogMSwKICAgICAgInByZXNlbnRlZCI6IDMxLAogICAgICAicHJlc2VudGF0aW9uIjogMTY5Ny4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA2MSwKICAgICAgImRpc3BsYXkiOiAxNzQ2LjYsCiAgICAgICJub3ciOiAxNzMwLAogICAgICAibWVkaWEiOiAxLjAzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDMyLAogICAgICAicHJlc2VudGF0aW9uIjogMTczMC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA2MiwKICAgICAgImRpc3BsYXkiOiAxNzc5LjksCiAgICAgICJub3ciOiAxNzgwLAogICAgICAibWVkaWEiOiAxLjA2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDMzLAogICAgICAicHJlc2VudGF0aW9uIjogMTc2NS41CiAgICB9LAogICAgewogICAgICAiaWQiOiA2MywKICAgICAgImRpc3BsYXkiOiAxODEzLjMsCiAgICAgICJub3ciOiAxODEzLjMzMiwKICAgICAgIm1lZGlhIjogMS4xLAogICAgICAicHJlc2VudGVkIjogMzQsCiAgICAgICJwcmVzZW50YXRpb24iOiAxNzk3LjUKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY0LAogICAgICAiZGlzcGxheSI6IDE4NDYuNiwKICAgICAgIm5vdyI6IDE4NDYuNiwKICAgICAgIm1lZGlhIjogMS4xMzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiAzNSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE4MzAuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogNjUsCiAgICAgICJkaXNwbGF5IjogMTg3OS45LAogICAgICAibm93IjogMTg3OS45LAogICAgICAibWVkaWEiOiAxLjE2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDM2LAogICAgICAicHJlc2VudGF0aW9uIjogMTg2NC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA2NiwKICAgICAgImRpc3BsYXkiOiAxOTEzLjMsCiAgICAgICJub3ciOiAxOTEzLjMsCiAgICAgICJtZWRpYSI6IDEuMiwKICAgICAgInByZXNlbnRlZCI6IDM3LAogICAgICAicHJlc2VudGF0aW9uIjogMTg5OC40CiAgICB9LAogICAgewogICAgICAiaWQiOiA2NywKICAgICAgImRpc3BsYXkiOiAxOTQ2LjYsCiAgICAgICJub3ciOiAxOTQ2LjYsCiAgICAgICJtZWRpYSI6IDEuMjMzMzMzLAogICAgICAicHJlc2VudGVkIjogMzgsCiAgICAgICJwcmVzZW50YXRpb24iOiAxOTMxLjMKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDY4LAogICAgICAiZGlzcGxheSI6IDE5NzkuOSwKICAgICAgIm5vdyI6IDE5NjMuMiwKICAgICAgIm1lZGlhIjogMS4yNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiAzOSwKICAgICAgInByZXNlbnRhdGlvbiI6IDE5NjMuNgogICAgfSwKICAgIHsKICAgICAgImlkIjogNjksCiAgICAgICJkaXNwbGF5IjogMjAxMy4yLAogICAgICAibm93IjogMTk5Ni42NjYsCiAgICAgICJtZWRpYSI6IDEuMywKICAgICAgInByZXNlbnRlZCI6IDQwLAogICAgICAicHJlc2VudGF0aW9uIjogMTk5OC42CiAgICB9LAogICAgewogICAgICAiaWQiOiA3MCwKICAgICAgImRpc3BsYXkiOiAyMDQ2LjYsCiAgICAgICJub3ciOiAyMDQ2LjYsCiAgICAgICJtZWRpYSI6IDEuMzMzMzMzLAogICAgICAicHJlc2VudGVkIjogNDEsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMDMwLjYKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDcxLAogICAgICAiZGlzcGxheSI6IDIwNzkuOSwKICAgICAgIm5vdyI6IDIwNjMuMiwKICAgICAgIm1lZGlhIjogMS4zNjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA0MiwKICAgICAgInByZXNlbnRhdGlvbiI6IDIwNjMuNQogICAgfSwKICAgIHsKICAgICAgImlkIjogNzIsCiAgICAgICJkaXNwbGF5IjogMjExMy4yLAogICAgICAibm93IjogMjExMy4yLAogICAgICAibWVkaWEiOiAxLjQsCiAgICAgICJwcmVzZW50ZWQiOiA0MywKICAgICAgInByZXNlbnRhdGlvbiI6IDIwOTguNgogICAgfSwKICAgIHsKICAgICAgImlkIjogNzMsCiAgICAgICJkaXNwbGF5IjogMjE0Ni42LAogICAgICAibm93IjogMjEyOS45LAogICAgICAibWVkaWEiOiAxLjQzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDQ0LAogICAgICAicHJlc2VudGF0aW9uIjogMjEzMC42CiAgICB9LAogICAgewogICAgICAiaWQiOiA3NCwKICAgICAgImRpc3BsYXkiOiAyMTgwLAogICAgICAibm93IjogMjE3OS45LAogICAgICAibWVkaWEiOiAxLjQ2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDQ1LAogICAgICAicHJlc2VudGF0aW9uIjogMjE2My43CiAgICB9LAogICAgewogICAgICAiaWQiOiA3NSwKICAgICAgImRpc3BsYXkiOiAyMjEzLjMsCiAgICAgICJub3ciOiAyMTk2LjYsCiAgICAgICJtZWRpYSI6IDEuNSwKICAgICAgInByZXNlbnRlZCI6IDQ2LAogICAgICAicHJlc2VudGF0aW9uIjogMjE5OC43CiAgICB9LAogICAgewogICAgICAiaWQiOiA3NiwKICAgICAgImRpc3BsYXkiOiAyMjQ2LjYsCiAgICAgICJub3ciOiAyMjQ2LjYsCiAgICAgICJtZWRpYSI6IDEuNTMzMzMzLAogICAgICAicHJlc2VudGVkIjogNDcsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMjMwLjYKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDc3LAogICAgICAiZGlzcGxheSI6IDIyNzkuOSwKICAgICAgIm5vdyI6IDIyNjMuMiwKICAgICAgIm1lZGlhIjogMS41NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA0OCwKICAgICAgInByZXNlbnRhdGlvbiI6IDIyNjMuNwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzgsCiAgICAgICJkaXNwbGF5IjogMjMxMy4zLAogICAgICAibm93IjogMjMxMy4yLAogICAgICAibWVkaWEiOiAxLjYsCiAgICAgICJwcmVzZW50ZWQiOiA0OSwKICAgICAgInByZXNlbnRhdGlvbiI6IDIyOTcuNwogICAgfSwKICAgIHsKICAgICAgImlkIjogNzksCiAgICAgICJkaXNwbGF5IjogMjM0Ni42LAogICAgICAibm93IjogMjMyOS45LAogICAgICAibWVkaWEiOiAxLjYzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDUwLAogICAgICAicHJlc2VudGF0aW9uIjogMjMzMS4xCiAgICB9LAogICAgewogICAgICAiaWQiOiA4MCwKICAgICAgImRpc3BsYXkiOiAyMzc5LjksCiAgICAgICJub3ciOiAyMzc5LjksCiAgICAgICJtZWRpYSI6IDEuNjY2NjY3LAogICAgICAicHJlc2VudGVkIjogNTEsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMzY0LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDgxLAogICAgICAiZGlzcGxheSI6IDI0MTMuMiwKICAgICAgIm5vdyI6IDIzOTYuNiwKICAgICAgIm1lZGlhIjogMS43LAogICAgICAicHJlc2VudGVkIjogNTIsCiAgICAgICJwcmVzZW50YXRpb24iOiAyMzk4LjEKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDgyLAogICAgICAiZGlzcGxheSI6IDI0NDYuNiwKICAgICAgIm5vdyI6IDI0NDYuNiwKICAgICAgIm1lZGlhIjogMS43MzMzMzMsCiAgICAgICJwcmVzZW50ZWQiOiA1MywKICAgICAgInByZXNlbnRhdGlvbiI6IDI0MzAuMwogICAgfSwKICAgIHsKICAgICAgImlkIjogODMsCiAgICAgICJkaXNwbGF5IjogMjQ3OS45LAogICAgICAibm93IjogMjQ2My4yLAogICAgICAibWVkaWEiOiAxLjc2NjY2NywKICAgICAgInByZXNlbnRlZCI6IDU0LAogICAgICAicHJlc2VudGF0aW9uIjogMjQ2NC4zCiAgICB9LAogICAgewogICAgICAiaWQiOiA4NCwKICAgICAgImRpc3BsYXkiOiAyNTEzLjMsCiAgICAgICJub3ciOiAyNTEzLjMsCiAgICAgICJtZWRpYSI6IDEuOCwKICAgICAgInByZXNlbnRlZCI6IDU1LAogICAgICAicHJlc2VudGF0aW9uIjogMjQ5Ny4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA4NSwKICAgICAgImRpc3BsYXkiOiAyNTQ2LjUsCiAgICAgICJub3ciOiAyNTI5LjksCiAgICAgICJtZWRpYSI6IDEuODMzMzMzLAogICAgICAicHJlc2VudGVkIjogNTYsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNTMxLjQKICAgIH0sCiAgICB7CiAgICAgICJpZCI6IDg2LAogICAgICAiZGlzcGxheSI6IDI1NzkuOSwKICAgICAgIm5vdyI6IDI1NzkuOSwKICAgICAgIm1lZGlhIjogMS44NjY2NjcsCiAgICAgICJwcmVzZW50ZWQiOiA1NywKICAgICAgInByZXNlbnRhdGlvbiI6IDI1NjQuNAogICAgfSwKICAgIHsKICAgICAgImlkIjogODcsCiAgICAgICJkaXNwbGF5IjogMjYxMy4zLAogICAgICAibm93IjogMjU5Ni42LAogICAgICAibWVkaWEiOiAxLjksCiAgICAgICJwcmVzZW50ZWQiOiA1OCwKICAgICAgInByZXNlbnRhdGlvbiI6IDI1OTcuMQogICAgfSwKICAgIHsKICAgICAgImlkIjogODgsCiAgICAgICJkaXNwbGF5IjogMjY0Ni42LAogICAgICAibm93IjogMjY0Ni42LAogICAgICAibWVkaWEiOiAxLjkzMzMzMywKICAgICAgInByZXNlbnRlZCI6IDU5LAogICAgICAicHJlc2VudGF0aW9uIjogMjYzMC4yCiAgICB9LAogICAgewogICAgICAiaWQiOiA4OSwKICAgICAgImRpc3BsYXkiOiAyNjc5LjksCiAgICAgICJub3ciOiAyNjYzLjIsCiAgICAgICJtZWRpYSI6IDEuOTY2NjY3LAogICAgICAicHJlc2VudGVkIjogNjAsCiAgICAgICJwcmVzZW50YXRpb24iOiAyNjY1LjMKICAgIH0KICBdLAogICJiYXNlTGF0ZW5jeSI6IDAuMDEsCiAgIm91dHB1dExhdGVuY3kiOiAwLjA0LAogICJ1c2VyQWdlbnQiOiAiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgSGVhZGxlc3NDaHJvbWUvMTUxLjAuNzkyMi4zNCBTYWZhcmkvNTM3LjM2IiwKICAidmlzdWFsIjogewogICAgImlkIjogNDIsCiAgICAiZGlzcGxheSI6IDExMTMuMywKICAgICJub3ciOiAxMTEzLjMsCiAgICAibWVkaWEiOiAwLjQsCiAgICAicHJlc2VudGVkIjogMTMsCiAgICAicHJlc2VudGF0aW9uIjogMTA5Ny40CiAgfSwKICAiZGVsdGFNcyI6IDQ5LjQ3MzAwMDAwMTQ5MDE2LAogICJldmVudHMiOiB7CiAgICAiZnBzTnVtZXJhdG9yIjogMzAsCiAgICAiZnBzRGVub21pbmF0b3IiOiAxLAogICAgImV2ZW50RnJhbWUiOiA0MiwKICAgICJhdWRpb0V2ZW50RnJhbWUiOiA0MiwKICAgICJidXJzdFN0YXJ0U2Vjb25kcyI6IDEuNCwKICAgICJidXJzdEVuZFNlY29uZHMiOiAxLjQ4CiAgfSwKICAiYXVkaW9NYXBwZWQiOiB7CiAgICAibWVkaWFUaW1lIjogMC4zOTk5OTk5OTk5OTk5OTk5NywKICAgICJhbmNob3IiOiB7CiAgICAgICJjb250ZXh0IjogMC4wNzIsCiAgICAgICJtZWRpYSI6IDAsCiAgICAgICJyYXRlIjogMQogICAgfQogIH0sCiAgImtub3duVGltZSI6IHsKICAgICJleHBlY3RlZE1lZGlhU2Vjb25kcyI6IDAuNCwKICAgICJ2aWRlb0Vycm9yRnJhbWVzIjogMCwKICAgICJhdWRpb0Vycm9yRnJhbWVzIjogLTEuNjY1MzM0NTM2OTM3NzM0OGUtMTUsCiAgICAiZGlmZmVyZW5jZUZyYW1lcyI6IC0xLjY2NTMzNDUzNjkzNzczNDhlLTE1CiAgfQp9"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing-repeat2\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\Projects\\supa-video-produzah\\test-results\\desktop-browser\\RawMediaParity-raw-HTML-vi-53178-raph-output-clock-alignment-live-timing-repeat2\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\Projects\\supa-video-produzah\\apps\\desktop\\browser-tests\\RawMediaParity.spec.ts",
+                    "column": 5,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "49907da5658da253408b-c3ee041895f55b687b8b",
+          "file": "RawMediaParity.spec.ts",
+          "line": 12,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-29T14:44:52.950Z",
+    "duration": 18103.411,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 3,
+    "flaky": 0
+  }
+}
