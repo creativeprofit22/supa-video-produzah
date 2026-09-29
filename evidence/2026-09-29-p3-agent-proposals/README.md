@@ -19,7 +19,7 @@ Phase `d8678665-904d-4bd7-a4b2-7a4bf2eedd95`. Infrastructure built and tested; *
 | `pnpm check` | pass |
 | `pnpm lint` | pass |
 | `pnpm format:check` | pass |
-| `pnpm test` | pass (contracts 288, media 48, render 88, project 213, desktop 451). Two earlier parallel runs exited 1 with no captured output; a serial run and a later parallel run passed. Treated as intermittent, cause not identified. |
+| `pnpm test` | pass (contracts 288, media 48, render 88, project 213, desktop 451). The earlier parallel failures were load-induced timeouts in full-app tests (5/5 reproduced) and were fixed in `2529099` (3/3 passed after). |
 | `cargo fmt --check` | pass |
 | `cargo clippy --all-targets --all-features -D warnings` | pass |
 | `cargo test --features tauri-ipc-test` | pass (481 + 5, 22 ignored pre-existing) |
@@ -30,6 +30,6 @@ Screenshots: `proposals-review.png` (desktop), `proposals-320px-200-percent-text
 ## Not done / open
 
 - **Criterion 1 not met**: production agent mutation remains disabled because Phase 4 (P2 editor controls) is still needs-attention (live timing, human keyboard and assistive-technology checks).
-- Browser checks run against a fixture with a fake native side; the full Tauri app was not exercised with the switch on.
+- Real Tauri app with the switch on (`01-proposals-native-scenario.md`): propose, partial apply, restore, stale, reject and pending-after-restart all pass. **The app close is intermittently ignored (4 of 11 runs)**: native window destroy fails with `failed to send message to the webview`. The cause isn't identified and it isn't fixed.
 - No manual screen-reader test of the review panel.
 - AI producer is out of scope (separate draft `2ceb2ea5-…`).
