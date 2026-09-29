@@ -54,15 +54,7 @@ report(parallel);
 
 const isolated = await run(
   "isolated",
-  [
-    ...cargoBase,
-    "--lib",
-    "--",
-    isolatedTest,
-    "--exact",
-    "--test-threads=1",
-    "--show-output",
-  ],
+  [...cargoBase, "--lib", "--", isolatedTest, "--exact", "--test-threads=1", "--show-output"],
   jsonStdout ? process.stderr : process.stdout,
 );
 const ranExactlyOne =
