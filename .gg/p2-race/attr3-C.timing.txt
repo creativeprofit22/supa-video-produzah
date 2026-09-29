@@ -1,0 +1,5 @@
+Some(SourceObject),false,gate_ms=81
+Some(SourceObject),true,gate_ms=37
+Some(Proxy),false,late_ms=22120
+None,false,gate_ms=24
+None,true,gate_ms=49

@@ -1,0 +1,18 @@
+Process check — 2026-09-29 ~18:11Z (step 1)
+Source: Get-CimInstance Win32_Process full dump in processes-raw.txt (tasklist /v and wmic output were
+UTF-16/unreadable in this shell; PowerShell CIM gives the same fields: PID, PPID, CommandLine).
+
+Searched for: ffmpeg, ffprobe, desktop (test binary desktop-*.exe / supa-video), cargo, rustc, findstr,
+cmd.exe, node, vite, chrome-headless-shell.
+
+Orphans from this session's earlier test runs: NONE.
+- No desktop-*.exe test binaries, cargo, rustc, ffmpeg, ffprobe, findstr, or chrome-headless-shell.
+- node/vite present: PIDs 18296/19576/9372/20484 = `pnpm --filter gg-app dev` in E:\Projects\gg-framework-fork
+  (the agent host app, started 10:40 local) — NOT ours, not stopped.
+- Diffusion Studio (14504 + helpers incl. esbuild 6304) — user desktop app, not ours, not stopped.
+
+Stopped PIDs: none.
+
+Background load (cumulative CPU seconds, top): msedgewebview2 17236 (12438 s), Diffusion Studio 14504 (6397 s),
+msedgewebview2 16584 (5828 s), Discord 7044 (3496 s). CPU: 6 cores / 12 logical.
+These long-running user apps are the plausible machine-state variable between the morning and afternoon runs.
