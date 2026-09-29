@@ -1,0 +1,1054 @@
+[
+  {
+    "t": 332,
+    "at": "2026-09-29T00:03:23.057Z",
+    "event": "source-hash-before",
+    "hashBefore": "050f0b0958e2d56638d58e21e99b35d708d91acc81226b90c510c2926a2f0e51",
+    "matches": true
+  },
+  {
+    "t": 339,
+    "at": "2026-09-29T00:03:23.064Z",
+    "event": "launch",
+    "exe": "E:/nemo-runtime/proof/hwhap-436/scenario/target/debug/supa-video-desktop.exe",
+    "port": 38498,
+    "project": "E:\\nemo-runtime\\proof\\hwhap-436\\scenario\\run4-preview-captions\\scenario.svpvideo"
+  },
+  {
+    "t": 1060,
+    "at": "2026-09-29T00:03:23.785Z",
+    "event": "owned",
+    "owned": {
+      "event": "identity",
+      "pid": 17564,
+      "creation": "134351138037805254"
+    }
+  },
+  {
+    "t": 6385,
+    "at": "2026-09-29T00:03:29.110Z",
+    "event": "page",
+    "url": "http://localhost:1420/",
+    "pid": 17564
+  },
+  {
+    "t": 6431,
+    "at": "2026-09-29T00:03:29.156Z",
+    "event": "1-import:start"
+  },
+  {
+    "t": 19553,
+    "at": "2026-09-29T00:03:42.278Z",
+    "event": "native-dialog",
+    "file": "E:\\nemo-runtime\\proof\\hwhap-436\\scenario\\run4-preview-captions\\scenario.svpvideo",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "t": 22889,
+    "at": "2026-09-29T00:03:45.614Z",
+    "event": "native-dialog",
+    "file": "E:\\nemo-runtime\\proof\\hwhap-436\\interview-102-400.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "t": 27184,
+    "at": "2026-09-29T00:03:49.909Z",
+    "event": "screenshot",
+    "file": "16-01-imported.png"
+  },
+  {
+    "t": 27184,
+    "at": "2026-09-29T00:03:49.909Z",
+    "event": "1-import:done",
+    "status": "PASS",
+    "ms": 20753,
+    "revision": 1,
+    "timeline": {
+      "visibleClips": "1 visible clips",
+      "range": "Frames 0–8970",
+      "clips": [
+        "interview-102-400.mp4, frames 0 through 8970, end exclusive"
+      ],
+      "transcriptHelp": null
+    },
+    "screenshot": "16-01-imported.png"
+  },
+  {
+    "t": 27185,
+    "at": "2026-09-29T00:03:49.910Z",
+    "event": "2-transcribe:start"
+  },
+  {
+    "t": 50203,
+    "at": "2026-09-29T00:04:12.928Z",
+    "event": "screenshot",
+    "file": "16-02-transcribed.png"
+  },
+  {
+    "t": 50203,
+    "at": "2026-09-29T00:04:12.928Z",
+    "event": "2-transcribe:done",
+    "status": "PASS",
+    "ms": 23018,
+    "transcribeMs": 9500,
+    "speakers": [
+      "Speaker 1",
+      "Speaker 2"
+    ],
+    "wordCount": 681,
+    "help": "Select words to remove from the timeline. 681 words on the timeline. Speaker names are detected automatically and may be wrong.",
+    "revision": 1,
+    "screenshot": "16-02-transcribed.png"
+  },
+  {
+    "t": 50203,
+    "at": "2026-09-29T00:04:12.928Z",
+    "event": "3-preview-captions:start"
+  },
+  {
+    "t": 51912,
+    "at": "2026-09-29T00:04:14.637Z",
+    "event": "screenshot",
+    "file": "16-03a-preview-16x9.png"
+  },
+  {
+    "t": 53151,
+    "at": "2026-09-29T00:04:15.876Z",
+    "event": "screenshot",
+    "file": "16-03b-preview-1x1.png"
+  },
+  {
+    "t": 54411,
+    "at": "2026-09-29T00:04:17.136Z",
+    "event": "screenshot",
+    "file": "16-03c-preview-9x16.png"
+  },
+  {
+    "t": 54412,
+    "at": "2026-09-29T00:04:17.137Z",
+    "event": "3-preview-captions:done",
+    "status": "PASS",
+    "ms": 4209,
+    "cueCount": 78,
+    "firstCues": [
+      "Carlos, thank you so much for being on Houston Meap podcast.\n\n0:00.30 – 0:03.60\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+      "First, we'd like to know how you got here.\n\n0:03.67 – 0:05.33 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+      "Can you tell us a little bit about yourself and what you do here at NASA?\n\n0:05.33 – 0:08.80 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f"
+    ],
+    "seekLabel": "Seek to to at 2:20.53",
+    "frameReadout": "Frame 4216",
+    "shapes": [
+      {
+        "name": "Widescreen 16:9",
+        "revision": 2,
+        "frameText": "1280 x 720",
+        "orientation": "landscape",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 57.40625,
+          "y": -2738,
+          "width": 764.9375,
+          "height": 430.265625
+        },
+        "overlay": [
+          "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+        ],
+        "overlayBox": {
+          "x": 111.796875,
+          "y": -2702.75,
+          "width": 656.15625,
+          "height": 359.765625
+        },
+        "overlayInsideStage": true,
+        "screenshot": "16-03a-preview-16x9.png"
+      },
+      {
+        "name": "Square 1:1",
+        "revision": 3,
+        "frameText": "720 x 720",
+        "orientation": "landscape",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 57.40625,
+          "y": -3787,
+          "width": 764.9375,
+          "height": 764.9375
+        },
+        "overlay": [
+          "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+        ],
+        "overlayBox": {
+          "x": 111.796875,
+          "y": -3724.96875,
+          "width": 656.15625,
+          "height": 640.875
+        },
+        "overlayInsideStage": true,
+        "screenshot": "16-03b-preview-1x1.png"
+      },
+      {
+        "name": "Vertical 9:16",
+        "revision": 4,
+        "frameText": "720 x 1280",
+        "orientation": "portrait",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 282.375,
+          "y": -3755,
+          "width": 315,
+          "height": 560
+        },
+        "overlay": [
+          "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+        ],
+        "overlayBox": {
+          "x": 305.28125,
+          "y": -3709.375,
+          "width": 269.1875,
+          "height": 468.75
+        },
+        "overlayInsideStage": true,
+        "screenshot": "16-03c-preview-9x16.png"
+      }
+    ]
+  },
+  {
+    "t": 54412,
+    "at": "2026-09-29T00:04:17.137Z",
+    "event": "steps",
+    "steps": {
+      "1-import": {
+        "status": "PASS",
+        "ms": 20753,
+        "revision": 1,
+        "timeline": {
+          "visibleClips": "1 visible clips",
+          "range": "Frames 0–8970",
+          "clips": [
+            "interview-102-400.mp4, frames 0 through 8970, end exclusive"
+          ],
+          "transcriptHelp": null
+        },
+        "screenshot": "16-01-imported.png"
+      },
+      "2-transcribe": {
+        "status": "PASS",
+        "ms": 23018,
+        "transcribeMs": 9500,
+        "speakers": [
+          "Speaker 1",
+          "Speaker 2"
+        ],
+        "wordCount": 681,
+        "help": "Select words to remove from the timeline. 681 words on the timeline. Speaker names are detected automatically and may be wrong.",
+        "revision": 1,
+        "screenshot": "16-02-transcribed.png"
+      },
+      "3-preview-captions": {
+        "status": "PASS",
+        "ms": 4209,
+        "cueCount": 78,
+        "firstCues": [
+          "Carlos, thank you so much for being on Houston Meap podcast.\n\n0:00.30 – 0:03.60\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+          "First, we'd like to know how you got here.\n\n0:03.67 – 0:05.33 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+          "Can you tell us a little bit about yourself and what you do here at NASA?\n\n0:05.33 – 0:08.80 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f"
+        ],
+        "seekLabel": "Seek to to at 2:20.53",
+        "frameReadout": "Frame 4216",
+        "shapes": [
+          {
+            "name": "Widescreen 16:9",
+            "revision": 2,
+            "frameText": "1280 x 720",
+            "orientation": "landscape",
+            "frameReadout": "Frame 4216",
+            "stageBox": {
+              "x": 57.40625,
+              "y": -2738,
+              "width": 764.9375,
+              "height": 430.265625
+            },
+            "overlay": [
+              "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+            ],
+            "overlayBox": {
+              "x": 111.796875,
+              "y": -2702.75,
+              "width": 656.15625,
+              "height": 359.765625
+            },
+            "overlayInsideStage": true,
+            "screenshot": "16-03a-preview-16x9.png"
+          },
+          {
+            "name": "Square 1:1",
+            "revision": 3,
+            "frameText": "720 x 720",
+            "orientation": "landscape",
+            "frameReadout": "Frame 4216",
+            "stageBox": {
+              "x": 57.40625,
+              "y": -3787,
+              "width": 764.9375,
+              "height": 764.9375
+            },
+            "overlay": [
+              "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+            ],
+            "overlayBox": {
+              "x": 111.796875,
+              "y": -3724.96875,
+              "width": 656.15625,
+              "height": 640.875
+            },
+            "overlayInsideStage": true,
+            "screenshot": "16-03b-preview-1x1.png"
+          },
+          {
+            "name": "Vertical 9:16",
+            "revision": 4,
+            "frameText": "720 x 1280",
+            "orientation": "portrait",
+            "frameReadout": "Frame 4216",
+            "stageBox": {
+              "x": 282.375,
+              "y": -3755,
+              "width": 315,
+              "height": 560
+            },
+            "overlay": [
+              "I did it in school that was pretty close\nto the Kennedy Space Center, Florida"
+            ],
+            "overlayBox": {
+              "x": 305.28125,
+              "y": -3709.375,
+              "width": 269.1875,
+              "height": 468.75
+            },
+            "overlayInsideStage": true,
+            "screenshot": "16-03c-preview-9x16.png"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "t": 54454,
+    "at": "2026-09-29T00:04:17.179Z",
+    "event": "owned",
+    "owned": {
+      "event": "closing-job"
+    }
+  },
+  {
+    "t": 54455,
+    "at": "2026-09-29T00:04:17.180Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17564
+    }
+  },
+  {
+    "t": 54455,
+    "at": "2026-09-29T00:04:17.180Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 28856
+    }
+  },
+  {
+    "t": 54455,
+    "at": "2026-09-29T00:04:17.180Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30272
+    }
+  },
+  {
+    "t": 54465,
+    "at": "2026-09-29T00:04:17.190Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29608
+    }
+  },
+  {
+    "t": 54466,
+    "at": "2026-09-29T00:04:17.191Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 14004
+    }
+  },
+  {
+    "t": 54478,
+    "at": "2026-09-29T00:04:17.203Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 28660
+    }
+  },
+  {
+    "t": 54479,
+    "at": "2026-09-29T00:04:17.204Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 7972
+    }
+  },
+  {
+    "t": 54480,
+    "at": "2026-09-29T00:04:17.205Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12788
+    }
+  },
+  {
+    "t": 54481,
+    "at": "2026-09-29T00:04:17.206Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29488
+    }
+  },
+  {
+    "t": 54492,
+    "at": "2026-09-29T00:04:17.217Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12788
+    }
+  },
+  {
+    "t": 54494,
+    "at": "2026-09-29T00:04:17.219Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29488
+    }
+  },
+  {
+    "t": 54495,
+    "at": "2026-09-29T00:04:17.220Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30236
+    }
+  },
+  {
+    "t": 54495,
+    "at": "2026-09-29T00:04:17.220Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 16336
+    }
+  },
+  {
+    "t": 54496,
+    "at": "2026-09-29T00:04:17.221Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 16336
+    }
+  },
+  {
+    "t": 54505,
+    "at": "2026-09-29T00:04:17.230Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30236
+    }
+  },
+  {
+    "t": 54506,
+    "at": "2026-09-29T00:04:17.231Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 26884
+    }
+  },
+  {
+    "t": 54516,
+    "at": "2026-09-29T00:04:17.241Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 11648
+    }
+  },
+  {
+    "t": 54516,
+    "at": "2026-09-29T00:04:17.241Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27044
+    }
+  },
+  {
+    "t": 54517,
+    "at": "2026-09-29T00:04:17.242Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27176
+    }
+  },
+  {
+    "t": 54525,
+    "at": "2026-09-29T00:04:17.250Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 26884
+    }
+  },
+  {
+    "t": 54526,
+    "at": "2026-09-29T00:04:17.251Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 11648
+    }
+  },
+  {
+    "t": 54526,
+    "at": "2026-09-29T00:04:17.251Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25768
+    }
+  },
+  {
+    "t": 54533,
+    "at": "2026-09-29T00:04:17.258Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 14160
+    }
+  },
+  {
+    "t": 54540,
+    "at": "2026-09-29T00:04:17.265Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27044
+    }
+  },
+  {
+    "t": 54540,
+    "at": "2026-09-29T00:04:17.265Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27176
+    }
+  },
+  {
+    "t": 54549,
+    "at": "2026-09-29T00:04:17.274Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27196
+    }
+  },
+  {
+    "t": 54550,
+    "at": "2026-09-29T00:04:17.275Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 25768
+    }
+  },
+  {
+    "t": 54550,
+    "at": "2026-09-29T00:04:17.275Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 28180
+    }
+  },
+  {
+    "t": 54556,
+    "at": "2026-09-29T00:04:17.281Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 14160
+    }
+  },
+  {
+    "t": 54556,
+    "at": "2026-09-29T00:04:17.281Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27196
+    }
+  },
+  {
+    "t": 54563,
+    "at": "2026-09-29T00:04:17.288Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 28180
+    }
+  },
+  {
+    "t": 54564,
+    "at": "2026-09-29T00:04:17.289Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27908
+    }
+  },
+  {
+    "t": 54571,
+    "at": "2026-09-29T00:04:17.296Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27908
+    }
+  },
+  {
+    "t": 54571,
+    "at": "2026-09-29T00:04:17.296Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17688
+    }
+  },
+  {
+    "t": 54578,
+    "at": "2026-09-29T00:04:17.303Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 17688
+    }
+  },
+  {
+    "t": 54586,
+    "at": "2026-09-29T00:04:17.311Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 24756
+    }
+  },
+  {
+    "t": 54586,
+    "at": "2026-09-29T00:04:17.311Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 24756
+    }
+  },
+  {
+    "t": 54586,
+    "at": "2026-09-29T00:04:17.311Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29704
+    }
+  },
+  {
+    "t": 54595,
+    "at": "2026-09-29T00:04:17.320Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29704
+    }
+  },
+  {
+    "t": 54595,
+    "at": "2026-09-29T00:04:17.320Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18680
+    }
+  },
+  {
+    "t": 54603,
+    "at": "2026-09-29T00:04:17.328Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15532
+    }
+  },
+  {
+    "t": 54604,
+    "at": "2026-09-29T00:04:17.329Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 15532
+    }
+  },
+  {
+    "t": 54764,
+    "at": "2026-09-29T00:04:17.489Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 7972,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54766,
+    "at": "2026-09-29T00:04:17.491Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 11648,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54766,
+    "at": "2026-09-29T00:04:17.491Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12788,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54776,
+    "at": "2026-09-29T00:04:17.501Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 14004,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54784,
+    "at": "2026-09-29T00:04:17.509Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 14160,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54784,
+    "at": "2026-09-29T00:04:17.509Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15532,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54790,
+    "at": "2026-09-29T00:04:17.515Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 16336,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54798,
+    "at": "2026-09-29T00:04:17.523Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17564,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54799,
+    "at": "2026-09-29T00:04:17.524Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17688,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54805,
+    "at": "2026-09-29T00:04:17.530Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18680,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54813,
+    "at": "2026-09-29T00:04:17.538Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 24756,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54813,
+    "at": "2026-09-29T00:04:17.538Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25768,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54819,
+    "at": "2026-09-29T00:04:17.544Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 26884,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54819,
+    "at": "2026-09-29T00:04:17.544Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27044,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54826,
+    "at": "2026-09-29T00:04:17.551Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27176,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54826,
+    "at": "2026-09-29T00:04:17.551Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27196,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54827,
+    "at": "2026-09-29T00:04:17.552Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27908,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54835,
+    "at": "2026-09-29T00:04:17.560Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 28180,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54835,
+    "at": "2026-09-29T00:04:17.560Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 28660,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54844,
+    "at": "2026-09-29T00:04:17.569Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 28856,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54845,
+    "at": "2026-09-29T00:04:17.570Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29488,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54852,
+    "at": "2026-09-29T00:04:17.577Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29608,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54859,
+    "at": "2026-09-29T00:04:17.584Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29704,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54859,
+    "at": "2026-09-29T00:04:17.584Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30236,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54866,
+    "at": "2026-09-29T00:04:17.591Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30272,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 54867,
+    "at": "2026-09-29T00:04:17.592Z",
+    "event": "owned",
+    "owned": {
+      "event": "closed",
+      "rootExit": 0,
+      "empty": true
+    }
+  },
+  {
+    "t": 54874,
+    "at": "2026-09-29T00:04:17.599Z",
+    "event": "owned",
+    "owned": {
+      "event": "launcher-exit",
+      "pid": 29764,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "t": 54884,
+    "at": "2026-09-29T00:04:17.609Z",
+    "event": "closed",
+    "exit": {
+      "event": "launcher-exit",
+      "pid": 29764,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "t": 54916,
+    "at": "2026-09-29T00:04:17.641Z",
+    "event": "source-hash-after",
+    "hashAfter": "050f0b0958e2d56638d58e21e99b35d708d91acc81226b90c510c2926a2f0e51",
+    "unchanged": true
+  }
+]

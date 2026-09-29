@@ -91,15 +91,27 @@ on `main` at the time of writing.
 
 ## Not done / known gaps
 
-- **Full desktop browser suite does not pass — carried to Phase 4, not counted as passing.** 100 passed, 12 failed
-  on 2026-09-28. The failures are live-playback timing gates in `ProgramMonitorSharedParity`,
+- **Full desktop browser suite does not pass — carried to Phase 4, not counted as passing.** Latest run, after
+  the step-18 caption fit (2026-09-29): **104 passed, 14 failed of 118** (112 before plus the 6 new
+  `MonitorCaptions` tests, all 6 passing). All 14 failures are in the same four files: SharedParity 9, Audio 2,
+  Speed 2, Raw 1. Two of them passed in the previous full run: the 2x audio "running with input" check and the
+  Speed 100% clock check (0.086 against a 0.08 limit). Those two were run 3 times each with the fit and 3 times
+  with the committed `ProgramMonitor.tsx` and `App.css` restored. Both ways gave 5 failed and 1 passed, so the
+  caption change does not cause them. Raw results: `browser-suite-run2-after-fit.json/.log` in
+  `E:/nemo-runtime/proof/hwhap-436/scenario/`. Earlier runs: 103/9 after step 16, and 100 passed, 12 failed
+  on 2026-09-28 before it. The failures are live-playback timing gates in `ProgramMonitorSharedParity`,
   `ProgramMonitorAudio`, `ProgramMonitorSpeed` and `RawMediaParity`, and the failing set changes between runs.
   On a rerun of just `ProgramMonitorSharedParity` + `RawMediaParity` with the **committed** `ProgramMonitor.tsx`
   restored, the same 14 still failed, so this pass's monitor change does not cause them. These gates were already
   failing before this work (first pass: 100/10; P2: 90/12) and belong to the P2 editor-controls phase's open
   preview/export sync acceptance. By user decision they are recorded here as a carried Phase 4 gap; the plan's
   step-18 browser-suite item is therefore not met in P3.
-- **Live-preview caption overlay not independently verified.** Captions are proven in the exported video only.
+- **Live-preview caption overlay** (resolved; see "Step 16" below). The preview showed no generated captions; it was
+  fixed and then proven in the real app at 16:9, 1:1 and 9:16.
+- **Captions at 200% text on top of 200% zoom overflowed the 9:16 preview** (resolved; see "Step 18"). Found in
+  step 17, where the first line of a two-line 9:16 caption went above the top of the preview
+  (`17-before-fix-monitor-captions-9x16-zoom200-text200.png`). The preview and the burned-in export now both
+  shrink caption text until the whole block fits the safe area.
 - **GPU memory for long files** (was "VRAM headroom is thin"; resolved by `15-long-file-transcription.md`).
   Long files now run in pieces of at most 240 s plus one separate speaker pass. Peak total GPU memory was
   6,149 MB for 5 min, 6,144 MB for 50 min and 5,892 MB for 2 h, against 7,165 MB before for 5 min. The
@@ -117,6 +129,134 @@ on `main` at the time of writing.
   slower in that run.
 - **Accuracy coverage is narrow:** one clean two-speaker studio recording. Overlapping speech, 3–4 speakers and
   noisy rooms were not measured.
+
+## Step 16: captions in the live preview (bug found and fixed)
+
+Step 13 only proved captions in the exported file. Its live-preview record showed an **empty** caption
+overlay at all three frame shapes, and its screenshots show no caption. Step 16 reproduced this in the
+real app (`16-preview-captions-native-scenario.mjs`, isolated build from `a52d65a`): 78 captions
+generated, playhead on a spoken word (frame 4216), preview overlay empty at 16:9, 1:1 and 9:16
+(`16-attempt1-*`, `16-attempt2-*`, `16-attempt3-*`). The monitor's live props showed an empty caption list.
+
+**Cause:** generated captions are stored as the caption track's active caption artifact. Export reads
+that artifact; the live preview read only the older per-item caption list, which generated captions
+leave empty.
+
+**Fix:** the preview's caption lookup now reads both sources, the same way export does
+(`apps/desktop/src/video/playback-structure.ts`), with a new unit test that failed before the fix.
+
+**Re-run (real app, after the fix):** `16-scenario-log.json`, `16-03a/b/c-preview-*.png`. The overlay shows
+"I did it in school that was pretty close / to the Kennedy Space Center, Florida" at 1280x720, 720x720
+and 720x1280, fully inside the frame each time. The 9:16 preview wraps the two lines into four, which is
+still readable.
+
+**Rerun after the step-18 caption fit (2026-09-29):** same script, same isolated app with a fresh project, and
+the workspace packages rebuilt first. PASS: 78 captions, and the overlay shows the same two lines at frame 4216
+at 16:9, 1:1 and 9:16, inside the frame each time. The source hash was unchanged. I checked the fresh
+`16-03a/b/c-preview-*.png` myself: the caption is visible and not cut off in all three, and at 9:16 it wraps
+to four lines. The overlay box in the log is now taller because it spans the whole safe area; the text still
+sits at the bottom. The pre-fit screenshots and log are kept as `16-prefit-*`; the raw run log is
+`16-rerun-after-fit-stdout.log` in `E:/nemo-runtime/proof/hwhap-436/scenario/`.
+
+Checks after the fix: `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (1,011 tests) all pass. Rust
+was unchanged; `cargo fmt`, `cargo clippy -D warnings` and `cargo test` passed on `a52d65a` before the fix.
+
+**Full desktop browser suite rerun after the fix** (`pnpm --filter @supa-video/desktop test:browser`,
+2026-09-28, working tree = `a52d65a` + the preview caption fix): **103 passed, 9 failed** of 112. The earlier
+recorded run was 100 passed / 12 failed of the same 112. All 9 failures are in the four known files and are the
+known kinds of live-playback timing and audio-measurement checks:
+
+- `ProgramMonitorSharedParity` (6): 3 "output-clock aligned transient within one sequence frame" and
+  3 "decoded visual frame 42 must be directly observed" (30/1 100% and 200% preview; 30000/1001 150% and
+  200% preview and final).
+- `ProgramMonitorAudio` (1): "reset effects then Final is actual unity PCM at 1x" (0.327, limit 0.03).
+- `ProgramMonitorSpeed` (1): "final playback and wrong-speed pitch-shift measurement controls" (0.273, limit 0.08).
+- `RawMediaParity` (1): the raw browser video baseline, which doesn't load the app at all.
+
+No new failing file or failure kind appeared. **Same run without the fix:** I temporarily swapped in the
+committed `playback-structure.ts` and ran only those four files. Result: 22 passed, **14 failed**, with the same five
+failure kinds (8 aligned-transient, 2 frame-42, 2 Audio, 1 Speed, 1 Raw). The fix was put back afterwards. The
+failing count moves between runs whether or not the fix is present, so this is the known variability carried to
+Phase 4, not a regression. The fix only changes which captions the preview shows, and none of the four failing test
+files sets up caption tracks. The only browser tests that generate captions (`TranscriptPanel.spec.ts`) passed. Raw results stay outside the repo in `E:/nemo-runtime/proof/hwhap-436/scenario/`
+(`browser-suite-run1.json/.log`, `browser-suite-baseline-4files.json/.log`).
+
+## Step 17: gate checks added for source safety and 200% zoom
+
+**Source media is never changed by transcription.** Two new Rust tests take the bytes, SHA-256 and
+modification time of both the imported original and the app's managed copy, run transcription, and require
+all three to be unchanged. They also check the audio-extraction step read the managed copy and wrote only
+inside the job's own temporary folder.
+
+- `nemo_runner_long_file_never_changes_the_source_media` uses the long-file path (3 pieces plus the speaker
+  pass) and also checks no file was added next to the source.
+- `transcription_job_never_changes_the_source_media` goes through the full job service, from submit to
+  complete.
+
+Both pass. As a check that they can catch a real problem, I temporarily made the fake FFmpeg append one byte
+to its input. Both tests then failed, and the change was reverted.
+
+**Captions at 200% zoom.** `apps/desktop/browser-tests/MonitorCaptions.spec.ts` renders the real program
+monitor with a two-line caption at 16:9, 1:1 and 9:16. It uses a 640x400 page at pixel density 2, which is
+what a 1280x800 window looks like at 200% browser zoom. Each caption line must be unclipped and fully inside
+the preview, and the page must not scroll sideways. All 3 pass (`17-monitor-captions-*-zoom200.png`). Step 18
+adds the same check with 200% text on top.
+
+**Loudness and true-peak on real audio.** These tests already existed and pass (`video::tests::audio_mix_export`,
+bundled FFmpeg on generated dialogue and music):
+
+- `render_role_mix_ducks_music_and_meets_each_loudness_target` exports at -14, -16 and -23 LUFS. Each measured
+  output must be within 1 LU of its target, with a true peak of -1.0 dBTP or lower.
+- `render_ducking_music_is_attenuated_while_dialogue_plays` compares the decoded audio with and without ducking.
+
+The test's true-peak limit (-1.0 dBTP) is looser than the -1.5 dBTP the product aims for.
+
+## Step 18: captions shrink to fit the safe area (preview and export)
+
+**Rule, same in both:** a caption keeps its size when it fits. When the whole block is taller than the safe
+area, the text shrinks until it fits, and the existing position clamp then keeps it inside. Shrinking was chosen
+over clamping alone because the clamp already existed and could not help once the block was taller than the
+safe area.
+
+- **Preview** (`apps/desktop/src/video/MonitorCaptionOverlay.tsx`, `App.css`): the caption overlay now spans
+  the safe area (7% sides, 8% top and bottom, as before), with the lines at the bottom. After each render or
+  resize, it measures the lines and lowers a text-scale factor until they fit. The text re-wraps as it
+  shrinks, and the factor never goes below 20% of the normal size.
+- **Export** (`packages/video-render/src/caption-render.ts`, `fitCaptionStyleToSafeArea`, applied per cue in
+  `artifactRenderCaptions`, which `compile-render-plan` uses): if a cue's worst-case height does not fit the
+  safe area, its font size and line spacing are scaled down together (minimum 8 px). The worst case is 1.2 em
+  for the first line plus 1.45 em for each extra line, plus the box border. These factors come from measuring
+  all 20 caption fonts with the bundled FFmpeg; the tallest, Segoe UI, measured 1.17 em and 1.41 em. Styles
+  that fit are passed through unchanged, so existing golden outputs don't change. The Rust side only turns
+  the plan into an FFmpeg filter, so it needed no change.
+
+**Preview checks** (`MonitorCaptions.spec.ts`, the "known gap" comment replaced by assertions): 6 of 6 pass, at
+16:9, 1:1 and 9:16, each at 200% zoom and at 200% zoom plus 200% text. Each check requires both caption lines
+unclipped and inside the safe area, the safe area inside the preview, no sideways page scroll, and text at least
+8 px (`17-monitor-captions-*-zoom200.png`, `17-monitor-captions-*-zoom200-text200.png`). With the fit
+temporarily disabled, the 9:16 200%-text case failed; the fit was then restored and all 6 passed again.
+
+**Export checks:**
+
+- Unit tests in `caption-render.test.ts`: a caption that fits is returned unchanged. An 8-line, 400 px cue
+  shrinks to fit at 16:9, 1:1 and 9:16, keeping its other style fields.
+- Real FFmpeg (`18-export-caption-fit.mjs`, results in `18-export-caption-fit.json`, run after building
+  `contracts` and `render`): it draws the actual caption filter on a green frame and finds the box by pixel.
+  An 8-line cue at the largest style (256 px, 400 px spacing) was drawn in five fonts at all three shapes. Every
+  fitted version is inside the safe area; every unfitted one runs off the frame. A normal 2-line 48 px cue is
+  unchanged and inside. PNGs: `18-export-*-fitted.png` and `18-export-*-unfitted.png`.
+
+**Reruns after the change:** caption lifecycle tests (split, trim, move, ripple delete): 46/46. Desktop
+`playback-structure` plus `ProgramMonitor` unit tests: 61/61. `video-render`: 88/88, including
+`compile-render-plan` 71/71.
+
+**Real app rerun after this change:** the step-16 real-app scenario was run again with the fit in place. It
+passes at all three shapes, with captions visible and not clipped (see the step-16 rerun note). Desktop unit
+tests: 440/440, including `ProgramMonitor` 49/49. For the full browser suite, see the first known-gaps entry.
+
+**Difference that remains:** the preview's safe area is a fixed 7%/8% inset, while export uses the
+artifact's own safe-area setting. Both now keep the whole caption inside their own safe area, but a caption
+can still shrink a little earlier in one than the other.
 
 ## Corpus references used
 

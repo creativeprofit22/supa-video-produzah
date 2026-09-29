@@ -1,6 +1,6 @@
 # Supa Video Producer Roadmap
 
-- **Status:** Active implementation; Phases 1–3 are complete, Phase 4 foundations remain open, and Phase 5 transcript/caption foundations are partially implemented
+- **Status:** Active implementation; Phases 1–3 and Phase 5 are complete, and Phase 4 foundations remain open
 - **Research baseline:** 24 July 2026
 - **Implementation audit:** 5 September 2026 at `7771df653acecbb60d605e9ee74cb9479c3b6136`; current findings and ordered next work are below. Earlier dated checkpoints remain historical evidence, not verification of this revision.
 - **Product and implementation root:** `E:\Projects\supa-video-produzah`
@@ -64,7 +64,7 @@ Not reverified: packaged Windows runtime/signing, installed FFmpeg output parity
 5. [ ] **P2 — Close lifecycle/repeatability gaps (A4, A5).** Prove checkpoint failure recovery and bounded cancellation settlement before claiming broader reliability completion.
 6. [ ] **P2 — Resume P4-S05, one bounded control at a time.** Default next feature: speed; then volume/fades, source-range controls, multiselect and layout completion. Each control needs canonical revisions, undo/redo/recovery, lock handling, keyboard/ARIA, 320px/200% text, and real preview/export parity where applicable. Completed transform/opacity work remains closed except for regressions.
 7. [ ] **P2 — Close the Phase 4 hard gate (including A6).** Measure stress playback/seek and long-session resource behavior; collect current native runtime, browser/accessibility and render evidence. Only then mark Milestone A achieved.
-8. [ ] **P3 — Finish Phase 5 on those foundations.** Integrate local transcription through the existing durable job/provider boundary with consent and model/runtime provenance; verify actual NeMo/CUDA execution or a supported alternative. Then complete caption styling/retiming and production audio. Phase 6 agents, Phase 7 acquisition, Phase 8 assembly and Phase 9 native preview remain deferred to their existing dependency and measurement gates.
+8. [x] **P3 — Finish Phase 5 on those foundations.** Complete 29 September 2026; the full desktop browser-suite live-playback timing failures carry to Phase 4 (see `evidence/2026-09-28-p3-transcription-audio/README.md`). Integrate local transcription through the existing durable job/provider boundary with consent and model/runtime provenance; verify actual NeMo/CUDA execution or a supported alternative. Then complete caption styling/retiming and production audio. Phase 6 agents, Phase 7 acquisition, Phase 8 assembly and Phase 9 native preview remain deferred to their existing dependency and measurement gates.
 
 ## Lifecycle completion reconciliation — 10 September 2026
 
@@ -730,6 +730,8 @@ menu, shortcut, accessibility action, and agent all resolve the same command
 
 # Phase 5 — Transcript editing, captions, and production audio
 
+**Status:** Complete (29 September 2026). The full desktop browser-suite live-playback timing failures carry to Phase 4, per `evidence/2026-09-28-p3-transcription-audio/README.md`.
+
 **Dependency status:** Implemented transcript/caption foundations depend on Phase 3 durable media and the verified Phase 4 V2 project, command, and projection primitives; remaining production-audio work retains its dependency on unfinished Phase 4 audio-envelope and fade primitives.
 
 ## Audited implementation checkpoint — 9 August 2026
@@ -747,7 +749,7 @@ Completed foundation slices:
 - Exact-key managed transcript read boundary: desktop callers can request one lowercase SHA-256 artifact key through a deny-unknown-fields Tauri command registered in production and test invoke handlers. The command derives the artifact path only from the initialized managed cache root, preserves bounded reads and identity verification, and returns the typed transcript artifact. Frontend IPC validates the key, parses the response with the shared transcript artifact schema, exposes the required method through `VideoBackend`, and sanitizes unstructured command failures. Arbitrary paths, publishing, ASR execution, and UI remain excluded.
 - Automatic managed-transcript resolution: standalone split, move, trim, and ripple-delete controller edits derive exact transcript keys from active caption artifacts, deduplicate managed reads in deterministic first-reference order, reject missing or mismatched artifacts before submission, and keep edit ownership across asynchronous preparation. Manual transcript inputs are removed from those edit APIs. Ripple affected-caption selection is shared with the canonical project lifecycle selector, preserving suffix source-lineage matching and sequence caption-track order without a duplicate desktop implementation.
 
-Open Phase 5 scope remains planned; this checkpoint does not claim completion of the phase.
+Open Phase 5 scope at this checkpoint was completed by the 28 September 2026 checkpoint below.
 
 ## Implementation checkpoint — 28 September 2026
 
@@ -760,7 +762,7 @@ Evidence: `evidence/2026-09-28-p3-transcription-audio/README.md`.
 - Speaker labels (Sortformer diarizer, pinned and consent-bound) and word-level seek in the transcript panel; real two-speaker recording through the production path: 2 speakers, 99.4 % speaker attribution, WER 0.067. "Remove selected words" opens a cut preview that changes nothing until Apply. Frame shape (16:9 / 9:16 / 1:1) is an undoable command.
 - One continuous scenario in the real launched app passed all 7 steps: import → transcribe with speakers → word seek → cut with preview → undo → captions at three ratios → fades + −16 LUFS → 9:16 export. It exposed six product bugs, all fixed (including fade-out ending at the file's real audio end and FFmpeg drawtext escaping).
 - Final checks: `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (1,006), cargo fmt/clippy `-D warnings`/test (431) pass.
-- Open: the full desktop browser suite is 100/12; the 12 are pre-existing, run-to-run variable Phase 4 live-playback sync gates (they fail identically with the prior `ProgramMonitor`), carried to Phase 4 rather than counted as passing. Fixed since: deleting a sentence now removes the pauses inside it (2 clips, not 9; undo restores the identical state hash). Also open: live-preview caption overlay is not independently verified, and accuracy is measured on one clean two-speaker recording only.
+- Open: the full desktop browser suite is 100/12; the 12 are pre-existing, run-to-run variable Phase 4 live-playback sync gates (they fail identically with the prior `ProgramMonitor`), carried to Phase 4 rather than counted as passing. Fixed since: deleting a sentence now removes the pauses inside it (2 clips, not 9; undo restores the identical state hash). Fixed since: the live preview now shows generated captions, proven in the real app at 16:9, 1:1 and 9:16. Fixed since: captions no longer overflow the 9:16 preview at 200% text plus 200% zoom; the preview and the burned-in export both shrink captions to fit the safe area. Also open: accuracy is measured on one clean two-speaker recording only.
 - Long-file transcription (`15-long-file-transcription.md`): pieces of at most 240 s, cut in the quietest moment, plus one whole-file streaming speaker pass. Real runs through the production job path: 5 min peaks at 6,149 MB (was 7,165) with WER 0.041 and 99.4 % speakers; 50 min WER 0.071 and 99.51 % speakers (the old single run gave 85.6 %) at 6,144 MB, which misses the 6,000 MB target by 144 MB and is recorded by user decision; a 2-hour file with a silent stretch completes at 5,892 MB, with the speaker pass flat at about 2.3 GB and the silence kept as a zero-word chunk. Old cached transcripts are transcribed again, not reused. Follow-up: the job now shows per-piece progress (`transcribing` n of m items, then `identifying_speakers`) through the existing job stage and progress fields, without clearing a pending cancel; a real 5-minute run recorded the steps and kept its accuracy. Follow-up (user decision): the runtime is hashed in full at job start and before the speaker pass, and held open (on Windows locked against writes, renames and deletes) with a file-identity check before each piece; a swapped file fails the job with `nemo_unavailable`. On the 2-hour file the non-NeMo overhead fell from about 289 s to about 50 s (job total 1,164 s, with slower GPU stages that run).
 
 ### Verification actually run for the closed trim-caption slice

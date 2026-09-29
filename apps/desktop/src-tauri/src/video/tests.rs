@@ -6352,6 +6352,12 @@ fn nemo_runner_ffmpeg_helper() {
         .join("ffmpeg-count");
     bump_helper_counter(&counter);
     let cache = counter.parent().unwrap();
+    // Lets tests check which file was read and which one was written.
+    fs::write(
+        cache.join("ffmpeg-io"),
+        format!("{}\n{}", arguments[5], output.display()),
+    )
+    .expect("FFmpeg input/output record must write");
     nemo_runner_honor_control_markers(cache, "ffmpeg");
     // `nemo-pcm-seconds` makes the extracted audio that long and loud
     // throughout, so pieces are cut exactly at each 240 s limit.
@@ -6775,6 +6781,7 @@ async fn nemo_cuda_transcription_runner_publishes_reuses_and_cleans_temporary_au
 struct TranscriptionJobFixture {
     _workspace: tempfile::TempDir,
     cache_root: PathBuf,
+    source_object_path: PathBuf,
     jobs: MediaJobService,
     worker: Arc<dyn MediaJobWorker>,
 }
@@ -6792,6 +6799,7 @@ async fn transcription_job_fixture() -> TranscriptionJobFixture {
         cache_root.clone(),
     )
     .expect("source fixture must ingest");
+    let source_object_path = source.object_path.clone();
     let runtime_directory = workspace.path().join("runtime");
     fs::create_dir_all(&runtime_directory).expect("runtime directory must exist");
     let executable_path = runtime_directory.join("nemo-speech.exe");
@@ -6827,6 +6835,7 @@ async fn transcription_job_fixture() -> TranscriptionJobFixture {
     TranscriptionJobFixture {
         _workspace: workspace,
         cache_root,
+        source_object_path,
         jobs,
         worker,
     }
@@ -7729,6 +7738,104 @@ async fn nemo_runner_transcribes_a_long_file_in_bounded_pieces_on_one_timeline()
         ]
     );
     assert!(no_request_leftovers(&fixture.cache_root));
+}
+
+/// Bytes, SHA-256 and modification time of a file, for before/after checks.
+#[derive(Debug, PartialEq, Eq)]
+struct FileSnapshot {
+    bytes: Vec<u8>,
+    sha256: String,
+    modified: std::time::SystemTime,
+}
+
+fn snapshot_file(path: &Path) -> FileSnapshot {
+    let bytes = fs::read(path).expect("snapshot file must be readable");
+    FileSnapshot {
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+        bytes,
+        modified: fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .expect("snapshot file must have a modification time"),
+    }
+}
+
+/// Plain files directly in `directory` (not folders the job service creates).
+fn sorted_file_names(directory: &Path) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(directory)
+        .expect("directory must list")
+        .filter(|entry| entry.as_ref().unwrap().file_type().unwrap().is_file())
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// The FFmpeg step must read the managed copy and write only inside the
+/// job's own temporary folder.
+fn assert_ffmpeg_read_source_and_wrote_elsewhere(cache_root: &Path, managed_source: &Path) {
+    let record = fs::read_to_string(cache_root.join("ffmpeg-io")).unwrap();
+    let (input, output) = record.split_once('\n').unwrap();
+    assert_eq!(Path::new(input), managed_source);
+    let output = Path::new(output);
+    assert_ne!(output, managed_source);
+    let request_folder = output.parent().unwrap();
+    assert_eq!(request_folder.parent().unwrap(), cache_root);
+    assert!(request_folder
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .starts_with(".nemo-transcribe-"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nemo_runner_long_file_never_changes_the_source_media() {
+    let fixture = diarized_runner_fixture();
+    let original = fixture.workspace.path().join("source.media");
+    fs::write(fixture.cache_root.join("nemo-pcm-seconds"), b"600").unwrap();
+    let original_before = snapshot_file(&original);
+    let managed_before = snapshot_file(&fixture.source.object_path);
+    let files_beside_source = sorted_file_names(fixture.workspace.path());
+
+    let published = run_diarized_for(
+        &fixture,
+        &long_configuration(&fixture),
+        true,
+        600_000_000,
+        ProcessCancellation::new(),
+    )
+    .await
+    .expect("a long file must publish");
+
+    // Three pieces plus the speaker pass all ran.
+    assert_eq!(published.artifact.chunks.len(), 3);
+    assert_eq!(helper_count(&fixture.cache_root, "nemo-count"), 3);
+    assert_eq!(helper_count(&fixture.cache_root, "diarize-count"), 1);
+    assert_eq!(snapshot_file(&original), original_before);
+    assert_eq!(snapshot_file(&fixture.source.object_path), managed_before);
+    assert_eq!(
+        sorted_file_names(fixture.workspace.path()),
+        files_beside_source,
+        "nothing may be written next to the source"
+    );
+    assert_ffmpeg_read_source_and_wrote_elsewhere(&fixture.cache_root, &fixture.source.object_path);
+    assert!(no_request_leftovers(&fixture.cache_root));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcription_job_never_changes_the_source_media() {
+    let fixture = transcription_job_fixture().await;
+    let original = fixture._workspace.path().join("source.media");
+    let managed = fixture.source_object_path.clone();
+    let original_before = snapshot_file(&original);
+    let managed_before = snapshot_file(&managed);
+
+    let id = submit_transcription_job(&fixture, "transcribe-source-untouched").await;
+    let job = wait_for_transcription_state(&fixture, &id, is_settled).await;
+
+    assert_eq!(job.state, MediaJobState::Complete);
+    assert_eq!(snapshot_file(&original), original_before);
+    assert_eq!(snapshot_file(&managed), managed_before);
+    assert_ffmpeg_read_source_and_wrote_elsewhere(&fixture.cache_root, &managed);
 }
 
 #[tokio::test(flavor = "current_thread")]

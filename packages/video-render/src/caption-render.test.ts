@@ -6,6 +6,7 @@ import {
   captionDrawtextFilter,
   captionFontKey,
   escapeDrawtextPath,
+  fitCaptionStyleToSafeArea,
 } from "./caption-render.js";
 
 const seconds = (microseconds: number): string =>
@@ -82,5 +83,33 @@ describe("caption render", () => {
     );
     expect(filter).toContain(`x=max(w*0.050+12\\,min(${rawX}\\,w*(1-0.050)-12-text_w))`);
     expect(filter).toContain(`y=max(h*0.050+12\\,min(${rawY}\\,h*(1-0.050)-12-text_h))`);
+  });
+
+  const goldenStyle = STYLED_CAPTION_GOLDEN_INPUT.style!;
+
+  it("leaves a caption that already fits the safe area unchanged", () => {
+    const frame = { width: 1920, height: 1080 };
+    expect(fitCaptionStyleToSafeArea(goldenStyle, 2, frame)).toBe(goldenStyle);
+  });
+
+  it.each([
+    ["16:9", { width: 1920, height: 1080 }],
+    ["1:1", { width: 1080, height: 1080 }],
+    ["9:16", { width: 1080, height: 1920 }],
+  ] as const)("shrinks an 8-line 400 px cue to fit the %s safe area", (_, frame) => {
+    const large = { ...goldenStyle, fontSizePx: 400, lineSpacingPx: 100 };
+    const fitted = fitCaptionStyleToSafeArea(large, 8, frame);
+    const safeHeight = frame.height * 0.9 - 24;
+    // Worst measured drawtext height: 1.2 em first line + 1.45 em per extra line.
+    const worstCase = fitted.fontSizePx * (1.2 + 1.45 * 7) + fitted.lineSpacingPx * 7;
+    expect(fitted.fontSizePx).toBeLessThan(400);
+    expect(fitted.fontSizePx).toBeGreaterThanOrEqual(8);
+    expect(worstCase).toBeLessThanOrEqual(safeHeight);
+    expect(fitted.lineSpacingPx / fitted.fontSizePx).toBeCloseTo(0.25, 1);
+    expect({ ...fitted, fontSizePx: 0, lineSpacingPx: 0 }).toEqual({
+      ...large,
+      fontSizePx: 0,
+      lineSpacingPx: 0,
+    });
   });
 });

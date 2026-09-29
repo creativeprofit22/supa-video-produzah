@@ -79,6 +79,44 @@ export function renderCaptionStyle(
   };
 }
 
+/**
+ * Upper bound on drawtext's text height, in font-size units: each line after
+ * the first adds at most 1.45 em, and the first line at most 1.2 em. Measured
+ * with the bundled FFmpeg on all 20 caption font files (tallest is Segoe UI:
+ * 1.17 em for one line with accents and descenders, 1.41 em per extra line);
+ * see `evidence/2026-09-28-p3-transcription-audio/18-export-caption-fit.mjs`.
+ */
+const LINE_ADVANCE_EM = 1.45;
+const FIRST_LINE_EM = 1.2;
+const MIN_CAPTION_FONT_PX = 8;
+
+function estimatedTextHeight(fontSizePx: number, lineSpacingPx: number, lines: number): number {
+  return fontSizePx * (FIRST_LINE_EM + LINE_ADVANCE_EM * (lines - 1)) + lineSpacingPx * (lines - 1);
+}
+
+/**
+ * Shrinks font size and line spacing together so a cue of `lines` lines, with
+ * its background box, fits the safe area's height. Styles that already fit are
+ * returned unchanged. Below the 8 px minimum the position clamp takes over.
+ */
+export function fitCaptionStyleToSafeArea(
+  style: RenderCaptionStyleV1,
+  lines: number,
+  frame: CaptionFrame,
+): RenderCaptionStyleV1 {
+  const safeHeight =
+    (frame.height * (1_000 - style.safeTopPermille - style.safeBottomPermille)) / 1_000;
+  const available = safeHeight - 2 * CAPTION_BOX_BORDER_PX;
+  const needed = estimatedTextHeight(style.fontSizePx, style.lineSpacingPx, lines);
+  if (needed <= available) return style;
+  const scale = Math.max(0, available) / needed;
+  return {
+    ...style,
+    fontSizePx: Math.max(MIN_CAPTION_FONT_PX, Math.floor(style.fontSizePx * scale)),
+    lineSpacingPx: Math.floor(style.lineSpacingPx * scale),
+  };
+}
+
 /** Render inputs for every cue of an active caption artifact, in cue order. */
 export function artifactRenderCaptions(
   trackId: string,
@@ -91,7 +129,7 @@ export function artifactRenderCaptions(
     captionId: trackId,
     cueId: cue.cueId,
     style: {
-      ...style,
+      ...fitCaptionStyleToSafeArea(style, cue.lines.length, frame),
       anchorXPermille: cue.anchor.xPermille,
       anchorYPermille: cue.anchor.yPermille,
     },

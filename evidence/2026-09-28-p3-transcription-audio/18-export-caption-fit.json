@@ -1,0 +1,686 @@
+[
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 98,
+      "bottom": 1025,
+      "left": 849,
+      "right": 1069
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 347,
+      "right": 1571
+    },
+    "inside": false
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 132,
+      "bottom": 1025,
+      "left": 842,
+      "right": 1076
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 306,
+      "right": 1613
+    },
+    "inside": false
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 157,
+      "bottom": 1025,
+      "left": 847,
+      "right": 1071
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 336,
+      "right": 1582
+    },
+    "inside": false
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 157,
+      "bottom": 1025,
+      "left": 854,
+      "right": 1065
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 375,
+      "right": 1544
+    },
+    "inside": false
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 152,
+      "bottom": 1025,
+      "left": 844,
+      "right": 1075
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 314,
+      "right": 1604
+    },
+    "inside": false
+  },
+  {
+    "aspect": "16x9",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 879,
+      "bottom": 1025,
+      "left": 582,
+      "right": 1337
+    },
+    "inside": true
+  },
+  {
+    "aspect": "16x9",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 879,
+      "bottom": 1025,
+      "left": 582,
+      "right": 1337
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 98,
+      "bottom": 1025,
+      "left": 429,
+      "right": 649
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 132,
+      "bottom": 1025,
+      "left": 422,
+      "right": 656
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 157,
+      "bottom": 1025,
+      "left": 427,
+      "right": 651
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 157,
+      "bottom": 1025,
+      "left": 434,
+      "right": 645
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": true,
+    "fontSizePx": 42,
+    "lineSpacingPx": 66,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 152,
+      "bottom": 1025,
+      "left": 424,
+      "right": 655
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 54,
+      "bottom": 1079,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "1x1",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 879,
+      "bottom": 1025,
+      "left": 162,
+      "right": 917
+    },
+    "inside": true
+  },
+  {
+    "aspect": "1x1",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 54,
+      "bottom": 1025
+    },
+    "box": {
+      "top": 879,
+      "bottom": 1025,
+      "left": 162,
+      "right": 917
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 76,
+    "lineSpacingPx": 119,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 172,
+      "bottom": 1823,
+      "left": 349,
+      "right": 729
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 96,
+      "bottom": 1919,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": true,
+    "fontSizePx": 76,
+    "lineSpacingPx": 119,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 232,
+      "bottom": 1823,
+      "left": 337,
+      "right": 741
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "verdana-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 96,
+      "bottom": 1919,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": true,
+    "fontSizePx": 76,
+    "lineSpacingPx": 119,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 272,
+      "bottom": 1823,
+      "left": 346,
+      "right": 733
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "arial-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 96,
+      "bottom": 1919,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": true,
+    "fontSizePx": 76,
+    "lineSpacingPx": 119,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 280,
+      "bottom": 1823,
+      "left": 357,
+      "right": 721
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "georgia-regular",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 96,
+      "bottom": 1919,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": true,
+    "fontSizePx": 76,
+    "lineSpacingPx": 119,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 262,
+      "bottom": 1823,
+      "left": 339,
+      "right": 739
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "8-lines-max-style",
+    "font": "consolas-bold",
+    "fitted": false,
+    "fontSizePx": 256,
+    "lineSpacingPx": 400,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 96,
+      "bottom": 1919,
+      "left": 54,
+      "right": 1079
+    },
+    "inside": false
+  },
+  {
+    "aspect": "9x16",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": true,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 1677,
+      "bottom": 1823,
+      "left": 162,
+      "right": 917
+    },
+    "inside": true
+  },
+  {
+    "aspect": "9x16",
+    "case": "2-lines-default",
+    "font": "segoe-ui-bold",
+    "fitted": false,
+    "fontSizePx": 48,
+    "lineSpacingPx": 12,
+    "safe": {
+      "top": 96,
+      "bottom": 1823
+    },
+    "box": {
+      "top": 1677,
+      "bottom": 1823,
+      "left": 162,
+      "right": 917
+    },
+    "inside": true
+  }
+]

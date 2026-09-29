@@ -176,4 +176,31 @@ describe("playback structure key", () => {
     ]);
     expect(activeCaptionCuesForTimelineFrame(sequence, 9)).toEqual([]);
   });
+
+  it("reports generated caption cues, which export also burns in", () => {
+    const time = (value: number) => ({
+      value,
+      rateNumerator: rate30.numerator,
+      rateDenominator: rate30.denominator,
+    });
+    const sequence = captionSequence(rate30, []);
+    const withArtifact = {
+      ...sequence,
+      tracks: [
+        {
+          ...sequence.tracks[0],
+          activeCaptionArtifact: {
+            timelineRate: rate30,
+            cues: [{ cueId: "generated", start: time(5), end: time(9), lines: ["Hello", "there"] }],
+          },
+        },
+      ],
+    } as unknown as VideoSequenceV2;
+
+    expect(activeCaptionCuesForTimelineFrame(withArtifact, 4)).toEqual([]);
+    expect(activeCaptionCuesForTimelineFrame(withArtifact, 5)).toEqual([
+      { captionId: "generated", text: "Hello\nthere" },
+    ]);
+    expect(activeCaptionCuesForTimelineFrame(withArtifact, 9)).toEqual([]);
+  });
 });

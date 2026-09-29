@@ -1,0 +1,1135 @@
+[
+  {
+    "t": 34,
+    "at": "2026-09-28T22:49:49.164Z",
+    "event": "source-hash-before",
+    "hashBefore": "050f0b0958e2d56638d58e21e99b35d708d91acc81226b90c510c2926a2f0e51",
+    "matches": true
+  },
+  {
+    "t": 41,
+    "at": "2026-09-28T22:49:49.171Z",
+    "event": "launch",
+    "exe": "E:/nemo-runtime/proof/hwhap-436/scenario/target/debug/supa-video-desktop.exe",
+    "port": 33795,
+    "project": "E:\\nemo-runtime\\proof\\hwhap-436\\scenario\\run4-preview-captions\\scenario.svpvideo"
+  },
+  {
+    "t": 78,
+    "at": "2026-09-28T22:49:49.208Z",
+    "event": "owned",
+    "owned": {
+      "event": "identity",
+      "pid": 8056,
+      "creation": "134351093892043503"
+    }
+  },
+  {
+    "t": 4058,
+    "at": "2026-09-28T22:49:53.188Z",
+    "event": "page",
+    "url": "http://localhost:1420/",
+    "pid": 8056
+  },
+  {
+    "t": 4096,
+    "at": "2026-09-28T22:49:53.226Z",
+    "event": "1-import:start"
+  },
+  {
+    "t": 8802,
+    "at": "2026-09-28T22:49:57.932Z",
+    "event": "native-dialog",
+    "file": "E:\\nemo-runtime\\proof\\hwhap-436\\scenario\\run4-preview-captions\\scenario.svpvideo",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "t": 10233,
+    "at": "2026-09-28T22:49:59.363Z",
+    "event": "native-dialog",
+    "file": "E:\\nemo-runtime\\proof\\hwhap-436\\interview-102-400.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "t": 14165,
+    "at": "2026-09-28T22:50:03.295Z",
+    "event": "screenshot",
+    "file": "16-01-imported.png"
+  },
+  {
+    "t": 14166,
+    "at": "2026-09-28T22:50:03.296Z",
+    "event": "1-import:done",
+    "status": "PASS",
+    "ms": 10070,
+    "revision": 1,
+    "timeline": {
+      "visibleClips": "1 visible clips",
+      "range": "Frames 0–8970",
+      "clips": [
+        "interview-102-400.mp4, frames 0 through 8970, end exclusive"
+      ],
+      "transcriptHelp": null
+    },
+    "screenshot": "16-01-imported.png"
+  },
+  {
+    "t": 14167,
+    "at": "2026-09-28T22:50:03.297Z",
+    "event": "2-transcribe:start"
+  },
+  {
+    "t": 27532,
+    "at": "2026-09-28T22:50:16.662Z",
+    "event": "screenshot",
+    "file": "16-02-transcribed.png"
+  },
+  {
+    "t": 27533,
+    "at": "2026-09-28T22:50:16.663Z",
+    "event": "2-transcribe:done",
+    "status": "PASS",
+    "ms": 13366,
+    "transcribeMs": 9521,
+    "speakers": [
+      "Speaker 1",
+      "Speaker 2"
+    ],
+    "wordCount": 681,
+    "help": "Select words to remove from the timeline. 681 words on the timeline. Speaker names are detected automatically and may be wrong.",
+    "revision": 1,
+    "screenshot": "16-02-transcribed.png"
+  },
+  {
+    "t": 27533,
+    "at": "2026-09-28T22:50:16.663Z",
+    "event": "3-preview-captions:start"
+  },
+  {
+    "t": 39451,
+    "at": "2026-09-28T22:50:28.581Z",
+    "event": "screenshot",
+    "file": "16-03a-preview-16x9.png"
+  },
+  {
+    "t": 50972,
+    "at": "2026-09-28T22:50:40.102Z",
+    "event": "screenshot",
+    "file": "16-03b-preview-1x1.png"
+  },
+  {
+    "t": 62445,
+    "at": "2026-09-28T22:50:51.575Z",
+    "event": "screenshot",
+    "file": "16-03c-preview-9x16.png"
+  },
+  {
+    "t": 62465,
+    "at": "2026-09-28T22:50:51.595Z",
+    "event": "inspector",
+    "projectId": "e17a3fdf-0174-4aa3-9f14-bde0561fe075",
+    "revision": {
+      "number": 4,
+      "id": "c0ad7613-7111-4cd5-b918-1d9a53a7e93a",
+      "parentId": "647b6787-fb6b-4c53-9a1a-9c8e64187135",
+      "committedAt": "2026-09-28T22:50:40.308Z",
+      "operationId": "8d4e88c0-502c-4fe9-bbda-830030f70e9a",
+      "stateHash": "54329106f885912c8f70ca761f82510fa6b7505067cbff493b8d1cb421703dd8"
+    }
+  },
+  {
+    "t": 62466,
+    "at": "2026-09-28T22:50:51.596Z",
+    "event": "preview-caption-checks-failed",
+    "cueCount": 78,
+    "firstCues": [
+      "Carlos, thank you so much for being on Houston Meap podcast.\n\n0:00.30 – 0:03.60\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+      "First, we'd like to know how you got here.\n\n0:03.67 – 0:05.33 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f",
+      "Can you tell us a little bit about yourself and what you do here at NASA?\n\n0:05.33 – 0:08.80 · Reads fast\n\nStart −1f\nStart +1f\nEnd −1f\nEnd +1f"
+    ],
+    "seekLabel": "Seek to to at 2:20.53",
+    "frameReadout": "Frame 4216",
+    "shapes": [
+      {
+        "name": "Widescreen 16:9",
+        "revision": 2,
+        "frameText": "1280 x 720",
+        "orientation": "landscape",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 57.40625,
+          "y": -2738,
+          "width": 764.9375,
+          "height": 430.265625
+        },
+        "overlay": [],
+        "overlayBox": null,
+        "overlayInsideStage": false,
+        "screenshot": "16-03a-preview-16x9.png"
+      },
+      {
+        "name": "Square 1:1",
+        "revision": 3,
+        "frameText": "720 x 720",
+        "orientation": "landscape",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 57.40625,
+          "y": -3787,
+          "width": 764.9375,
+          "height": 764.9375
+        },
+        "overlay": [],
+        "overlayBox": null,
+        "overlayInsideStage": false,
+        "screenshot": "16-03b-preview-1x1.png"
+      },
+      {
+        "name": "Vertical 9:16",
+        "revision": 4,
+        "frameText": "720 x 1280",
+        "orientation": "portrait",
+        "frameReadout": "Frame 4216",
+        "stageBox": {
+          "x": 282.375,
+          "y": -3755,
+          "width": 315,
+          "height": 560
+        },
+        "overlay": [],
+        "overlayBox": null,
+        "overlayInsideStage": false,
+        "screenshot": "16-03c-preview-9x16.png"
+      }
+    ],
+    "monitorProps": {
+      "previewMode": null,
+      "activeCaptions": [],
+      "compositionPlayhead": null,
+      "layers": [
+        {
+          "clipId": "5fa35f17-8a6b-46e9-b21e-460be744afee",
+          "start": 0,
+          "dur": 8970,
+          "in": 0,
+          "out": 8970,
+          "hidden": false,
+          "audioOnly": false
+        }
+      ],
+      "propKeys": [
+        "activeCaptions",
+        "convertCachePath",
+        "finalPreviewPath",
+        "frame",
+        "hasAudio",
+        "onPlayheadChange",
+        "onPlayingChange",
+        "playhead",
+        "proxyPath",
+        "rate",
+        "sourceLayers",
+        "timelineAudioMuted",
+        "timelineVideoHidden",
+        "trimIn",
+        "trimOut",
+        "unsupportedReason"
+      ]
+    },
+    "savedSequence": {
+      "inspectorKeys": []
+    }
+  },
+  {
+    "t": 62467,
+    "at": "2026-09-28T22:50:51.597Z",
+    "event": "3-preview-captions:fail",
+    "status": "FAIL",
+    "ms": 34934,
+    "error": "Error: Live preview caption overlay missing or outside the frame\n    at file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:354:13\n    at async step (file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:68:20)\n    at async file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:243:3"
+  },
+  {
+    "t": 62474,
+    "at": "2026-09-28T22:50:51.604Z",
+    "event": "scenario-error",
+    "error": "Error: Live preview caption overlay missing or outside the frame\n    at file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:354:13\n    at async step (file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:68:20)\n    at async file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:243:3"
+  },
+  {
+    "t": 62480,
+    "at": "2026-09-28T22:50:51.610Z",
+    "event": "steps",
+    "steps": {
+      "1-import": {
+        "status": "PASS",
+        "ms": 10070,
+        "revision": 1,
+        "timeline": {
+          "visibleClips": "1 visible clips",
+          "range": "Frames 0–8970",
+          "clips": [
+            "interview-102-400.mp4, frames 0 through 8970, end exclusive"
+          ],
+          "transcriptHelp": null
+        },
+        "screenshot": "16-01-imported.png"
+      },
+      "2-transcribe": {
+        "status": "PASS",
+        "ms": 13366,
+        "transcribeMs": 9521,
+        "speakers": [
+          "Speaker 1",
+          "Speaker 2"
+        ],
+        "wordCount": 681,
+        "help": "Select words to remove from the timeline. 681 words on the timeline. Speaker names are detected automatically and may be wrong.",
+        "revision": 1,
+        "screenshot": "16-02-transcribed.png"
+      },
+      "3-preview-captions": {
+        "status": "FAIL",
+        "ms": 34934,
+        "error": "Error: Live preview caption overlay missing or outside the frame\n    at file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:354:13\n    at async step (file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:68:20)\n    at async file:///E:/Projects/supa-video-produzah/evidence/2026-09-28-p3-transcription-audio/16-preview-captions-native-scenario.mjs:243:3"
+      }
+    }
+  },
+  {
+    "t": 62495,
+    "at": "2026-09-28T22:50:51.625Z",
+    "event": "owned",
+    "owned": {
+      "event": "closing-job"
+    }
+  },
+  {
+    "t": 62501,
+    "at": "2026-09-28T22:50:51.631Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 8056
+    }
+  },
+  {
+    "t": 62502,
+    "at": "2026-09-28T22:50:51.632Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15860
+    }
+  },
+  {
+    "t": 62511,
+    "at": "2026-09-28T22:50:51.641Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 4884
+    }
+  },
+  {
+    "t": 62511,
+    "at": "2026-09-28T22:50:51.641Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25860
+    }
+  },
+  {
+    "t": 62512,
+    "at": "2026-09-28T22:50:51.642Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 6004
+    }
+  },
+  {
+    "t": 62525,
+    "at": "2026-09-28T22:50:51.655Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 13396
+    }
+  },
+  {
+    "t": 62526,
+    "at": "2026-09-28T22:50:51.656Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25020
+    }
+  },
+  {
+    "t": 62539,
+    "at": "2026-09-28T22:50:51.669Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17968
+    }
+  },
+  {
+    "t": 62539,
+    "at": "2026-09-28T22:50:51.669Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12364
+    }
+  },
+  {
+    "t": 62540,
+    "at": "2026-09-28T22:50:51.670Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22048
+    }
+  },
+  {
+    "t": 62541,
+    "at": "2026-09-28T22:50:51.671Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17324
+    }
+  },
+  {
+    "t": 62541,
+    "at": "2026-09-28T22:50:51.671Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 17968
+    }
+  },
+  {
+    "t": 62542,
+    "at": "2026-09-28T22:50:51.672Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12364
+    }
+  },
+  {
+    "t": 62554,
+    "at": "2026-09-28T22:50:51.684Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22048
+    }
+  },
+  {
+    "t": 62569,
+    "at": "2026-09-28T22:50:51.699Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 17324
+    }
+  },
+  {
+    "t": 62569,
+    "at": "2026-09-28T22:50:51.699Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18660
+    }
+  },
+  {
+    "t": 62583,
+    "at": "2026-09-28T22:50:51.713Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 16272
+    }
+  },
+  {
+    "t": 62584,
+    "at": "2026-09-28T22:50:51.714Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 1804
+    }
+  },
+  {
+    "t": 62585,
+    "at": "2026-09-28T22:50:51.715Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 18660
+    }
+  },
+  {
+    "t": 62585,
+    "at": "2026-09-28T22:50:51.715Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 26148
+    }
+  },
+  {
+    "t": 62596,
+    "at": "2026-09-28T22:50:51.726Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 16272
+    }
+  },
+  {
+    "t": 62607,
+    "at": "2026-09-28T22:50:51.737Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 16504
+    }
+  },
+  {
+    "t": 62608,
+    "at": "2026-09-28T22:50:51.738Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 1804
+    }
+  },
+  {
+    "t": 62615,
+    "at": "2026-09-28T22:50:51.745Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17704
+    }
+  },
+  {
+    "t": 62625,
+    "at": "2026-09-28T22:50:51.755Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 26148
+    }
+  },
+  {
+    "t": 62625,
+    "at": "2026-09-28T22:50:51.755Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 23444
+    }
+  },
+  {
+    "t": 62638,
+    "at": "2026-09-28T22:50:51.768Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 16504
+    }
+  },
+  {
+    "t": 62646,
+    "at": "2026-09-28T22:50:51.776Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19340
+    }
+  },
+  {
+    "t": 62646,
+    "at": "2026-09-28T22:50:51.776Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 17704
+    }
+  },
+  {
+    "t": 62647,
+    "at": "2026-09-28T22:50:51.777Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 23444
+    }
+  },
+  {
+    "t": 62657,
+    "at": "2026-09-28T22:50:51.787Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 19340
+    }
+  },
+  {
+    "t": 62665,
+    "at": "2026-09-28T22:50:51.795Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19532
+    }
+  },
+  {
+    "t": 62665,
+    "at": "2026-09-28T22:50:51.795Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 19532
+    }
+  },
+  {
+    "t": 62666,
+    "at": "2026-09-28T22:50:51.796Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25596
+    }
+  },
+  {
+    "t": 62675,
+    "at": "2026-09-28T22:50:51.805Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 25596
+    }
+  },
+  {
+    "t": 62683,
+    "at": "2026-09-28T22:50:51.813Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18352
+    }
+  },
+  {
+    "t": 62690,
+    "at": "2026-09-28T22:50:51.820Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 18352
+    }
+  },
+  {
+    "t": 62691,
+    "at": "2026-09-28T22:50:51.821Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 14160
+    }
+  },
+  {
+    "t": 62697,
+    "at": "2026-09-28T22:50:51.827Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 14160
+    }
+  },
+  {
+    "t": 62698,
+    "at": "2026-09-28T22:50:51.828Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22196
+    }
+  },
+  {
+    "t": 62698,
+    "at": "2026-09-28T22:50:51.828Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15964
+    }
+  },
+  {
+    "t": 62706,
+    "at": "2026-09-28T22:50:51.836Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 15964
+    }
+  },
+  {
+    "t": 62707,
+    "at": "2026-09-28T22:50:51.837Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 13496
+    }
+  },
+  {
+    "t": 62707,
+    "at": "2026-09-28T22:50:51.837Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 13496
+    }
+  },
+  {
+    "t": 62713,
+    "at": "2026-09-28T22:50:51.843Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 21164
+    }
+  },
+  {
+    "t": 62722,
+    "at": "2026-09-28T22:50:51.852Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 21164
+    }
+  },
+  {
+    "t": 62722,
+    "at": "2026-09-28T22:50:51.852Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19312
+    }
+  },
+  {
+    "t": 62722,
+    "at": "2026-09-28T22:50:51.852Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 19312
+    }
+  },
+  {
+    "t": 62729,
+    "at": "2026-09-28T22:50:51.859Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 13320
+    }
+  },
+  {
+    "t": 62729,
+    "at": "2026-09-28T22:50:51.859Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 13320
+    }
+  },
+  {
+    "t": 62819,
+    "at": "2026-09-28T22:50:51.949Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 1804,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62820,
+    "at": "2026-09-28T22:50:51.950Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 4884,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62821,
+    "at": "2026-09-28T22:50:51.951Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 6004,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62822,
+    "at": "2026-09-28T22:50:51.952Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 8056,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62832,
+    "at": "2026-09-28T22:50:51.962Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12364,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62840,
+    "at": "2026-09-28T22:50:51.970Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 13320,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62848,
+    "at": "2026-09-28T22:50:51.978Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 13396,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62855,
+    "at": "2026-09-28T22:50:51.985Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 13496,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62863,
+    "at": "2026-09-28T22:50:51.993Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 14160,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62871,
+    "at": "2026-09-28T22:50:52.001Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15860,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62878,
+    "at": "2026-09-28T22:50:52.008Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15964,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62878,
+    "at": "2026-09-28T22:50:52.008Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 16272,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62885,
+    "at": "2026-09-28T22:50:52.015Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 16504,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62893,
+    "at": "2026-09-28T22:50:52.023Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17324,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62899,
+    "at": "2026-09-28T22:50:52.029Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17704,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62907,
+    "at": "2026-09-28T22:50:52.037Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17968,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62913,
+    "at": "2026-09-28T22:50:52.043Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18352,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62914,
+    "at": "2026-09-28T22:50:52.044Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18660,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62922,
+    "at": "2026-09-28T22:50:52.052Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19312,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62928,
+    "at": "2026-09-28T22:50:52.058Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19340,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62929,
+    "at": "2026-09-28T22:50:52.059Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19532,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62929,
+    "at": "2026-09-28T22:50:52.059Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 21164,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62937,
+    "at": "2026-09-28T22:50:52.067Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22048,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62943,
+    "at": "2026-09-28T22:50:52.073Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22196,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62943,
+    "at": "2026-09-28T22:50:52.073Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 23444,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62951,
+    "at": "2026-09-28T22:50:52.081Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25020,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62961,
+    "at": "2026-09-28T22:50:52.091Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25596,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62972,
+    "at": "2026-09-28T22:50:52.102Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25860,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62972,
+    "at": "2026-09-28T22:50:52.102Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 26148,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "t": 62979,
+    "at": "2026-09-28T22:50:52.109Z",
+    "event": "owned",
+    "owned": {
+      "event": "closed",
+      "rootExit": 0,
+      "empty": true
+    }
+  },
+  {
+    "t": 62988,
+    "at": "2026-09-28T22:50:52.118Z",
+    "event": "owned",
+    "owned": {
+      "event": "launcher-exit",
+      "pid": 3736,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "t": 62995,
+    "at": "2026-09-28T22:50:52.125Z",
+    "event": "closed",
+    "exit": {
+      "event": "launcher-exit",
+      "pid": 3736,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "t": 63025,
+    "at": "2026-09-28T22:50:52.155Z",
+    "event": "source-hash-after",
+    "hashAfter": "050f0b0958e2d56638d58e21e99b35d708d91acc81226b90c510c2926a2f0e51",
+    "unchanged": true
+  }
+]

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { seekMediaTime } from "./mediaSeek";
+import { MonitorCaptionOverlay } from "./MonitorCaptionOverlay";
 import { PreviewAudioGraph } from "./preview-audio";
 import { clockLayerAtTimelineFrame, layerIsActiveAtTimelineFrame } from "./layer-clock";
 import { previewMediaWindow } from "./preview-media-window";
@@ -1042,17 +1043,7 @@ function PlayableProgramMonitor({
             {previewMode === "source" &&
             (!compositionActive || primaryLayer !== null) &&
             activeCaptions.length > 0 ? (
-              <div
-                className="monitor-caption-overlay"
-                aria-label="Active captions"
-                aria-live="polite"
-              >
-                {activeCaptions.map((caption) => (
-                  <p key={caption.captionId} data-caption-id={caption.captionId}>
-                    {caption.text}
-                  </p>
-                ))}
-              </div>
+              <MonitorCaptionOverlay captions={activeCaptions} />
             ) : null}
           </>
         ) : (

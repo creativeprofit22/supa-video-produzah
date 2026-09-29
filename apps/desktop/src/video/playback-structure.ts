@@ -2,6 +2,7 @@ import {
   isTrackHidden,
   rescaleRationalTime,
   type RationalRate,
+  type RationalTime,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 
@@ -14,15 +15,20 @@ export function activeCaptionCuesForTimelineFrame(
   timelineFrame: number | null,
 ): readonly ProgramMonitorCaption[] {
   if (sequence === null || timelineFrame === null) return [];
+  const isActive = (start: RationalTime, end: RationalTime): boolean =>
+    rescaleRationalTime(start, sequence.rate, "floor").value <= timelineFrame &&
+    timelineFrame < rescaleRationalTime(end, sequence.rate, "ceil").value;
+  // Same sources as export (compile-render-plan trackRenderCaptions): legacy items plus the
+  // active caption artifact, which is where generated captions live.
   return sequence.tracks.flatMap((track) => {
     if (track.kind !== "caption" || isTrackHidden(track)) return [];
-    return track.captions.flatMap((caption) => {
-      const startFrame = rescaleRationalTime(caption.start, sequence.rate, "floor").value;
-      const endFrameExclusive = rescaleRationalTime(caption.end, sequence.rate, "ceil").value;
-      return startFrame <= timelineFrame && timelineFrame < endFrameExclusive
-        ? [{ captionId: caption.id, text: caption.text }]
-        : [];
-    });
+    const legacy = track.captions.flatMap((caption) =>
+      isActive(caption.start, caption.end) ? [{ captionId: caption.id, text: caption.text }] : [],
+    );
+    const generated = (track.activeCaptionArtifact?.cues ?? []).flatMap((cue) =>
+      isActive(cue.start, cue.end) ? [{ captionId: cue.cueId, text: cue.lines.join("\n") }] : [],
+    );
+    return [...legacy, ...generated];
   });
 }
 
