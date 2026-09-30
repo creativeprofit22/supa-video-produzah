@@ -27,6 +27,7 @@
     "@supa-video/media": "workspace:*",
     "@supa-video/project": "workspace:*",
     "@supa-video/render": "workspace:*",
+    "@supa-video/produce": "workspace:*",
     "@supa-video/rights": "workspace:*",
     "@tauri-apps/api": "2.11.1",
     "lucide-react": "1.26.0",

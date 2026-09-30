@@ -46,3 +46,4 @@ export * from "./produce-proposal.js";
 export * from "./silence-gap-rule.js";
 export * from "./filler-words-rule.js";
 export * from "./proposal-lifecycle.js";
+export { derivedUuid } from "./transcript-edit-command-compiler.js";

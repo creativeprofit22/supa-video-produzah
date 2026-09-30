@@ -1,0 +1,648 @@
+{
+  "embeddings": {
+    "clusters": {
+      "sha256:0101010101010101010101010101010101010101010101010101010101010101": "cluster-river",
+      "sha256:0303030303030303030303030303030303030303030303030303030303030303": "cluster-bridge",
+      "sha256:0909090909090909090909090909090909090909090909090909090909090909": "cluster-river"
+    },
+    "content": {
+      "sha256:0101010101010101010101010101010101010101010101010101010101010101": [0.9, 0.1, 0],
+      "sha256:0303030303030303030303030303030303030303030303030303030303030303": [0.1, 0.9, 0],
+      "sha256:0909090909090909090909090909090909090909090909090909090909090909": [0.8, 0.2, 0]
+    },
+    "modelId": "fixture-embedding",
+    "modelVersion": "1",
+    "text": {
+      "El río vuelve al cañón al final del día.": [1, 0, 0]
+    }
+  },
+  "fixtureVersion": 1,
+  "intendedUse": "commercial-online",
+  "language": "es",
+  "name": "explainer-es-rivers",
+  "nowMs": 1790000000000,
+  "projectId": "000000e0-0000-4000-8000-000000000001",
+  "projectRevision": 3,
+  "receipts": [
+    {
+      "acquiredAtMs": 1789913600000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "BY",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "Snowy peaks"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "0505050505050505050505050505050505050505050505050505050505050505",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "by",
+        "url": null,
+        "version": "4.0"
+      },
+      "lastRefreshAtMs": 1789913600000,
+      "lastRefreshStatus": "unchanged",
+      "license": {
+        "code": "by",
+        "url": null,
+        "version": "4.0"
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "wikimedia-commons",
+      "providerItemId": "File:000000e2-0000-4000-8000-000000000005.webm",
+      "receiptId": "000000e2-0000-4000-8000-000000000005",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1789913600000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    },
+    {
+      "acquiredAtMs": 1789913600000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "UNKNOWN",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "Snow river"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "0606060606060606060606060606060606060606060606060606060606060606",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "unknown",
+        "url": null,
+        "version": null
+      },
+      "lastRefreshAtMs": 1789913600000,
+      "lastRefreshStatus": "unchanged",
+      "license": {
+        "code": "unknown",
+        "url": null,
+        "version": null
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "openverse",
+      "providerItemId": "File:000000e2-0000-4000-8000-000000000006.webm",
+      "receiptId": "000000e2-0000-4000-8000-000000000006",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1789913600000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    },
+    {
+      "acquiredAtMs": 1789913600000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "BY-NC",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "City crowd"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "0707070707070707070707070707070707070707070707070707070707070707",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "by-nc",
+        "url": null,
+        "version": "4.0"
+      },
+      "lastRefreshAtMs": 1789913600000,
+      "lastRefreshStatus": "unchanged",
+      "license": {
+        "code": "by-nc",
+        "url": null,
+        "version": "4.0"
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "openverse",
+      "providerItemId": "File:000000e2-0000-4000-8000-000000000007.webm",
+      "receiptId": "000000e2-0000-4000-8000-000000000007",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1789913600000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    },
+    {
+      "acquiredAtMs": 1789913600000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "CC0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "Forest stream"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "0808080808080808080808080808080808080808080808080808080808080808",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "cc0",
+        "url": null,
+        "version": null
+      },
+      "lastRefreshAtMs": 1789913600000,
+      "lastRefreshStatus": "withdrawn",
+      "license": {
+        "code": "cc0",
+        "url": null,
+        "version": null
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "wikimedia-commons",
+      "providerItemId": "File:000000e2-0000-4000-8000-000000000008.webm",
+      "receiptId": "000000e2-0000-4000-8000-000000000008",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1789913600000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    },
+    {
+      "acquiredAtMs": 1782224000000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "CC0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "Old city archive"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "cc0",
+        "url": null,
+        "version": null
+      },
+      "lastRefreshAtMs": 1782224000000,
+      "lastRefreshStatus": "unchanged",
+      "license": {
+        "code": "cc0",
+        "url": null,
+        "version": null
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "wikimedia-commons",
+      "providerItemId": "File:000000e2-0000-4000-8000-00000000000a.webm",
+      "receiptId": "000000e2-0000-4000-8000-00000000000a",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1782224000000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "script": "# Los ríos del oeste\nEl río atraviesa el cañón durante millones de años.\nLos kayaks bajan por los rápidos. [show: kayak]\nUn puente cruza el río al atardecer. [avoid: multitud]\nMap: cuenca del río Colorado\nLa nieve de la montaña alimenta cada río. [show: nieve]\nLower third: Dra. Ana Ruiz, hidróloga\nUna ciudad llena de gente depende del agua. [show: ciudad]\nEl río vuelve al cañón al final del día. [portrait]",
+    "wordsPerMinute": 150,
+    "workflow": "explainer"
+  },
+  "state": {
+    "activeSequenceId": "000000e1-0000-4000-8000-000000000064",
+    "assets": [
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0101010101010101010101010101010101010101010101010101010101010101",
+          "schemaVersion": 1
+        },
+        "displayName": "river canyon aerial.mp4",
+        "id": "000000e1-0000-4000-8000-000000000001",
+        "locator": {
+          "relativePath": "media/river canyon aerial.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 30000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0202020202020202020202020202020202020202020202020202020202020202",
+          "schemaVersion": 1
+        },
+        "displayName": "kayak rapids.mp4",
+        "id": "000000e1-0000-4000-8000-000000000002",
+        "locator": {
+          "relativePath": "media/kayak rapids.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 12000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0303030303030303030303030303030303030303030303030303030303030303",
+          "schemaVersion": 1
+        },
+        "displayName": "Brücke bei Sonnenuntergang.mov",
+        "id": "000000e1-0000-4000-8000-000000000003",
+        "locator": {
+          "relativePath": "media/Brücke bei Sonnenuntergang.mov"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0303030303030303030303030303030303030303030303030303030303030303",
+          "schemaVersion": 1
+        },
+        "displayName": "Brücke copy.mov",
+        "id": "000000e1-0000-4000-8000-000000000004",
+        "locator": {
+          "relativePath": "media/Brücke copy.mov"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0505050505050505050505050505050505050505050505050505050505050505",
+          "schemaVersion": 1
+        },
+        "displayName": "snowy peaks.webm",
+        "id": "000000e1-0000-4000-8000-000000000005",
+        "locator": {
+          "relativePath": "media/snowy peaks.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000e2-0000-4000-8000-000000000005",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 15000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0606060606060606060606060606060606060606060606060606060606060606",
+          "schemaVersion": 1
+        },
+        "displayName": "snow river.webm",
+        "id": "000000e1-0000-4000-8000-000000000006",
+        "locator": {
+          "relativePath": "media/snow river.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000e2-0000-4000-8000-000000000006",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 15000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0707070707070707070707070707070707070707070707070707070707070707",
+          "schemaVersion": 1
+        },
+        "displayName": "city crowd.webm",
+        "id": "000000e1-0000-4000-8000-000000000007",
+        "locator": {
+          "relativePath": "media/city crowd.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000e2-0000-4000-8000-000000000007",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 15000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0808080808080808080808080808080808080808080808080808080808080808",
+          "schemaVersion": 1
+        },
+        "displayName": "forest stream.webm",
+        "id": "000000e1-0000-4000-8000-000000000008",
+        "locator": {
+          "relativePath": "media/forest stream.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000e2-0000-4000-8000-000000000008",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 15000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0909090909090909090909090909090909090909090909090909090909090909",
+          "schemaVersion": 1
+        },
+        "displayName": "river phone vertical.mp4",
+        "id": "000000e1-0000-4000-8000-000000000009",
+        "locator": {
+          "relativePath": "media/river phone vertical.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 30000000,
+          "fileSizeBytes": 1000,
+          "height": 1920,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1080
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+          "schemaVersion": 1
+        },
+        "displayName": "old city archive.webm",
+        "id": "000000e1-0000-4000-8000-00000000000a",
+        "locator": {
+          "relativePath": "media/old city archive.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000e2-0000-4000-8000-00000000000a",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 15000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      }
+    ],
+    "sequences": [
+      {
+        "audioSampleRate": 48000,
+        "height": 1080,
+        "id": "000000e1-0000-4000-8000-000000000064",
+        "markers": [],
+        "name": "Sequence 1",
+        "rate": {
+          "denominator": 1,
+          "numerator": 30
+        },
+        "tracks": [],
+        "width": 1920
+      }
+    ]
+  },
+  "tags": {
+    "000000e1-0000-4000-8000-000000000001": ["cañón"],
+    "000000e1-0000-4000-8000-000000000005": ["nieve", "montaña"]
+  },
+  "transcripts": []
+}

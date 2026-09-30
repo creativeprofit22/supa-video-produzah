@@ -1,0 +1,1220 @@
+{
+  "compiled": {
+    "captionCount": 4,
+    "clipCount": 5,
+    "markerCount": 2,
+    "request": {
+      "baseRevision": 3,
+      "commands": [
+        {
+          "commandId": "382ed69d-aee5-49e7-a52e-2196f2f9aeac",
+          "index": 0,
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "track": {
+            "clips": [
+              {
+                "gainMilliDecibels": 0,
+                "id": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+                "source": {
+                  "assetId": "000000e1-0000-4000-8000-000000000001",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 108
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 90
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              },
+              {
+                "gainMilliDecibels": 0,
+                "id": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+                "source": {
+                  "assetId": "000000e1-0000-4000-8000-000000000002",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 72
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 198
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              },
+              {
+                "gainMilliDecibels": 0,
+                "id": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+                "source": {
+                  "assetId": "000000e1-0000-4000-8000-000000000003",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 84
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 270
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              },
+              {
+                "gainMilliDecibels": 0,
+                "id": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+                "source": {
+                  "assetId": "000000e1-0000-4000-8000-000000000005",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 96
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 444
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              },
+              {
+                "gainMilliDecibels": 0,
+                "id": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+                "source": {
+                  "assetId": "000000e1-0000-4000-8000-000000000009",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 108
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 726
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              }
+            ],
+            "id": "9835c6c7-4a57-458a-98a6-3517dfc78bc1",
+            "kind": "video",
+            "name": "First cut"
+          },
+          "type": "InsertTrack"
+        },
+        {
+          "commandId": "b22e88ae-d7eb-4a32-b737-179057243db7",
+          "index": 1,
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "track": {
+            "captions": [
+              {
+                "end": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 90
+                },
+                "id": "a38f81bf-5d13-4ce5-a749-f104fba2b738",
+                "language": "es",
+                "start": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "text": "Los ríos del oeste"
+              },
+              {
+                "end": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 444
+                },
+                "id": "aa9460e1-5f00-41cc-829d-aa327c1648d5",
+                "language": "es",
+                "start": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 354
+                },
+                "text": "map needed: cuenca del río Colorado"
+              },
+              {
+                "end": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 630
+                },
+                "id": "bed3a07a-d5e9-4476-b7a6-ad0a3fb62808",
+                "language": "es",
+                "start": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 540
+                },
+                "text": "Dra. Ana Ruiz, hidróloga"
+              },
+              {
+                "end": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 726
+                },
+                "id": "8e13fe88-8028-4104-bd69-e4d217881082",
+                "language": "es",
+                "start": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 630
+                },
+                "text": "Footage needed: Una ciudad llena de gente depende del agua."
+              }
+            ],
+            "id": "db4501ea-0bef-4c22-8187-22b281b276c2",
+            "kind": "caption",
+            "name": "First cut titles"
+          },
+          "type": "InsertTrack"
+        },
+        {
+          "commandId": "2e7eeecb-2c24-40f5-8afe-32e5ea6919dc",
+          "index": 0,
+          "marker": {
+            "color": "orange",
+            "id": "2f16ac28-0d5a-4b72-9eac-bf1ff7cbdf83",
+            "label": "Unresolved · Beat 5: cuenca del río Colorado",
+            "time": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 354
+            }
+          },
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "type": "AddMarker"
+        },
+        {
+          "commandId": "1a662934-7d3d-4a38-8787-582305dadeef",
+          "index": 1,
+          "marker": {
+            "color": "orange",
+            "id": "91a53c5f-e255-4758-96f5-754cfd834140",
+            "label": "Unresolved · Beat 8: Una ciudad llena de gente depende del agua.",
+            "time": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 630
+            }
+          },
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "type": "AddMarker"
+        }
+      ],
+      "groupId": "ae2072c3-a557-465c-b1cf-df073e68effc",
+      "projectId": "000000e0-0000-4000-8000-000000000001"
+    },
+    "titleTrackId": "db4501ea-0bef-4c22-8187-22b281b276c2",
+    "videoTrackId": "9835c6c7-4a57-458a-98a6-3517dfc78bc1"
+  },
+  "proposal": {
+    "beats": [
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 3000000,
+          "id": "beat-b48187b036fe0dd6",
+          "intent": {
+            "kind": "title",
+            "text": "Los ríos del oeste"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 0,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 0,
+          "text": "Los ríos del oeste"
+        },
+        "coverage": {
+          "fallback": {
+            "intentKind": "title",
+            "template": "title",
+            "text": "Los ríos del oeste"
+          },
+          "kind": "graphic"
+        },
+        "rejected": [],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [
+          {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000009",
+              "displayName": "river phone vertical.mp4",
+              "identityKey": "sha256:0909090909090909090909090909090909090909090909090909090909090909",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 3600000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.12,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": ["Name/tags match: river.", "Owned media (preferred)."],
+              "repetitionPenalty": 0,
+              "total": 0.372667
+            }
+          }
+        ],
+        "beat": {
+          "endUs": 6600000,
+          "id": "beat-6a9bf337ec794226",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 1,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 3000000,
+          "text": "El río atraviesa el cañón durante millones de años."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000001",
+              "displayName": "river canyon aerial.mp4",
+              "identityKey": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 3600000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.12,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.666667,
+                "transcript": 0
+              },
+              "explanation": ["Name/tags match: canyon, river.", "Owned media (preferred)."],
+              "repetitionPenalty": 0,
+              "total": 0.489333
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "kayak rapids.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "Brücke bei Sonnenuntergang.mov",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "Brücke copy.mov",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000005",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "snowy peaks.webm",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 9000000,
+          "id": "beat-ff9aa0cdf69ca125",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": ["kayak"],
+          "order": 2,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 6600000,
+          "text": "Los kayaks bajan por los rápidos."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000002",
+              "displayName": "kayak rapids.mp4",
+              "identityKey": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 2400000,
+              "visualClusterId": null
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.2,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: kayak.",
+                "Owned media (preferred).",
+                "Shows required: kayak."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.376667
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000001",
+            "detail": "Missing required term: kayak.",
+            "displayName": "river canyon aerial.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000003",
+            "detail": "Missing required term: kayak.",
+            "displayName": "Brücke bei Sonnenuntergang.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000004",
+            "detail": "Missing required term: kayak.",
+            "displayName": "Brücke copy.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000005",
+            "detail": "Missing required term: kayak.",
+            "displayName": "snowy peaks.webm",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000009",
+            "detail": "Missing required term: kayak.",
+            "displayName": "river phone vertical.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [
+          {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000009",
+              "displayName": "river phone vertical.mp4",
+              "identityKey": "sha256:0909090909090909090909090909090909090909090909090909090909090909",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 2800000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 0.5,
+                "durationFit": 0.093333,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: river.",
+                "Owned media (preferred).",
+                "Visually similar to a recent shot."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.346333
+            }
+          },
+          {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000001",
+              "displayName": "river canyon aerial.mp4",
+              "identityKey": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 3600000,
+              "sourceOutUs": 6400000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 0.5,
+                "durationFit": 0.093333,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: river.",
+                "Owned media (preferred).",
+                "Visually similar to a recent shot.",
+                "Reused 1 time(s); repetition penalty 0.15."
+              ],
+              "repetitionPenalty": 0.15,
+              "total": 0.196333
+            }
+          }
+        ],
+        "beat": {
+          "endUs": 11800000,
+          "id": "beat-a2ea08e82e63e2ac",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": ["multitud"],
+          "mustShow": [],
+          "order": 3,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 9000000,
+          "text": "Un puente cruza el río al atardecer."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000003",
+              "displayName": "Brücke bei Sonnenuntergang.mov",
+              "identityKey": "sha256:0303030303030303030303030303030303030303030303030303030303030303",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 2800000,
+              "visualClusterId": "cluster-bridge"
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.14,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.666667,
+                "transcript": 0
+              },
+              "explanation": ["Name/tags match: bridge, sunset.", "Owned media (preferred)."],
+              "repetitionPenalty": 0,
+              "total": 0.490333
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "kayak rapids.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000005",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "snowy peaks.webm",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 14800000,
+          "id": "beat-2e5fbc64ceaf3c83",
+          "intent": {
+            "kind": "map",
+            "subject": "cuenca del río Colorado"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 4,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 11800000,
+          "text": "cuenca del río Colorado"
+        },
+        "coverage": {
+          "fallback": {
+            "intentKind": "map",
+            "template": "unresolved-note",
+            "text": "map needed: cuenca del río Colorado"
+          },
+          "kind": "unresolved"
+        },
+        "rejected": [],
+        "status": "unresolved",
+        "unresolvedReason": "A map graphic is not rendered in this version."
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 18000000,
+          "id": "beat-394a2bf01f8227a8",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": ["nieve"],
+          "order": 5,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 14800000,
+          "text": "La nieve de la montaña alimenta cada río."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000005",
+              "displayName": "snowy peaks.webm",
+              "identityKey": "sha256:0505050505050505050505050505050505050505050505050505050505050505",
+              "provenance": "acquired",
+              "providerId": "wikimedia-commons",
+              "receiptId": "000000e2-0000-4000-8000-000000000005",
+              "sourceInUs": 0,
+              "sourceOutUs": 3200000,
+              "visualClusterId": null
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.213333,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 0.8,
+                "semantic": 0.666667,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: mountain, snow.",
+                "Acquired media, receipt 000000e2-0000-4000-8000-000000000005; policy allow.",
+                "Shows required: snow."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.474
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000001",
+            "detail": "Missing required term: snow.",
+            "displayName": "river canyon aerial.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000002",
+            "detail": "Missing required term: snow.",
+            "displayName": "kayak rapids.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000003",
+            "detail": "Missing required term: snow.",
+            "displayName": "Brücke bei Sonnenuntergang.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000004",
+            "detail": "Missing required term: snow.",
+            "displayName": "Brücke copy.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000009",
+            "detail": "Missing required term: snow.",
+            "displayName": "river phone vertical.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 21000000,
+          "id": "beat-21a81a891ffd7780",
+          "intent": {
+            "kind": "lower-third",
+            "text": "Dra. Ana Ruiz, hidróloga"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 6,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 18000000,
+          "text": "Dra. Ana Ruiz, hidróloga"
+        },
+        "coverage": {
+          "fallback": {
+            "intentKind": "lower-third",
+            "template": "lower-third",
+            "text": "Dra. Ana Ruiz, hidróloga"
+          },
+          "kind": "graphic"
+        },
+        "rejected": [],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": {
+          "query": "city depende llena people water",
+          "reason": "Search stock media in the Rights panel; nothing is acquired automatically."
+        },
+        "alternatives": [],
+        "beat": {
+          "endUs": 24200000,
+          "id": "beat-ea1cf29db98395dd",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": ["ciudad"],
+          "order": 7,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 21000000,
+          "text": "Una ciudad llena de gente depende del agua."
+        },
+        "coverage": {
+          "fallback": {
+            "intentKind": "owned-footage",
+            "template": "unresolved-note",
+            "text": "Footage needed: Una ciudad llena de gente depende del agua."
+          },
+          "kind": "unresolved"
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000001",
+            "detail": "Missing required term: city.",
+            "displayName": "river canyon aerial.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000002",
+            "detail": "Missing required term: city.",
+            "displayName": "kayak rapids.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000003",
+            "detail": "Missing required term: city.",
+            "displayName": "Brücke bei Sonnenuntergang.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000004",
+            "detail": "Missing required term: city.",
+            "displayName": "Brücke copy.mov",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000005",
+            "detail": "Missing required term: city.",
+            "displayName": "snowy peaks.webm",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000009",
+            "detail": "Missing required term: city.",
+            "displayName": "river phone vertical.mp4",
+            "reason": "must-show-missing"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "unresolved",
+        "unresolvedReason": "No rights-safe media shows: ciudad."
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [
+          {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000001",
+              "displayName": "river canyon aerial.mp4",
+              "identityKey": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 3600000,
+              "sourceOutUs": 7200000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.12,
+                "embedding": 0.993884,
+                "orientation": 0,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.666667,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: canyon, river.",
+                "Visual similarity 0.993884 (ranking signal only; not rights or quality proof).",
+                "Owned media (preferred).",
+                "Orientation mismatch: wants portrait, clip is landscape.",
+                "Reused 1 time(s); repetition penalty 0.15."
+              ],
+              "repetitionPenalty": 0.15,
+              "total": 0.438416
+            }
+          }
+        ],
+        "beat": {
+          "endUs": 27800000,
+          "id": "beat-670e5c51b2ce4b6e",
+          "intent": {
+            "kind": "owned-footage"
+          },
+          "language": "es",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 8,
+          "orientation": "portrait",
+          "schemaVersion": 1,
+          "startUs": 24200000,
+          "text": "El río vuelve al cañón al final del día."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000e1-0000-4000-8000-000000000009",
+              "displayName": "river phone vertical.mp4",
+              "identityKey": "sha256:0909090909090909090909090909090909090909090909090909090909090909",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 3600000,
+              "visualClusterId": "cluster-river"
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.12,
+                "embedding": 0.970143,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: river.",
+                "Visual similarity 0.970143 (ranking signal only; not rights or quality proof).",
+                "Owned media (preferred)."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.518188
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "kayak rapids.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0.110432 is below 0.2.",
+            "displayName": "Brücke bei Sonnenuntergang.mov",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0.110432 is below 0.2.",
+            "displayName": "Brücke copy.mov",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000005",
+            "detail": "Relevance 0 is below 0.2.",
+            "displayName": "snowy peaks.webm",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000006",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "snow river.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000007",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "city crowd.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-000000000008",
+            "detail": "upstream-withdrawn: The provider no longer offers this item. Remove it from the timeline.",
+            "displayName": "forest stream.webm",
+            "reason": "rights"
+          },
+          {
+            "assetId": "000000e1-0000-4000-8000-00000000000a",
+            "detail": "refresh-stale: License evidence is out of date. Refresh it in the rights inspector.",
+            "displayName": "old city archive.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      }
+    ],
+    "embeddingModel": {
+      "modelId": "fixture-embedding",
+      "modelVersion": "1"
+    },
+    "endUs": 27800000,
+    "indexVersion": "asset-index/1",
+    "intendedUse": "commercial-online",
+    "normalizerVersion": "text-normalize/1",
+    "plannerVersion": "first-cut/1",
+    "projectId": "000000e0-0000-4000-8000-000000000001",
+    "projectRevision": 3,
+    "proposalId": "first-cut-33cb3dbf5dbee88ee78c803c22b173cacb8f9f60e0c47f485098b00ff97faaec",
+    "rankingConfigVersion": "ranking/1",
+    "rightsDecisions": [
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000001",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000002",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000003",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000004",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000005",
+        "eligible": true,
+        "policyOutcome": "allow",
+        "receiptId": "000000e2-0000-4000-8000-000000000005",
+        "rightsConfidence": 0.8
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000006",
+        "eligible": false,
+        "message": "Its license does not allow this export's intended use.",
+        "reason": "use-blocked",
+        "receiptId": "000000e2-0000-4000-8000-000000000006"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000007",
+        "eligible": false,
+        "message": "Its license does not allow this export's intended use.",
+        "reason": "use-blocked",
+        "receiptId": "000000e2-0000-4000-8000-000000000007"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000008",
+        "eligible": false,
+        "message": "The provider no longer offers this item. Remove it from the timeline.",
+        "reason": "upstream-withdrawn",
+        "receiptId": "000000e2-0000-4000-8000-000000000008"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000009",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-00000000000a",
+        "eligible": false,
+        "message": "License evidence is out of date. Refresh it in the rights inspector.",
+        "reason": "refresh-stale",
+        "receiptId": "000000e2-0000-4000-8000-00000000000a"
+      }
+    ],
+    "schemaVersion": 1,
+    "startUs": 0,
+    "workflow": "explainer"
+  }
+}

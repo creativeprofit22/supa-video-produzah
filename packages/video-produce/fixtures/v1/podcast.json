@@ -1,0 +1,457 @@
+{
+  "embeddings": null,
+  "fixtureVersion": 1,
+  "intendedUse": "commercial-online",
+  "language": "de",
+  "name": "podcast-de-episode-12",
+  "nowMs": 1790000000000,
+  "projectId": "000000d0-0000-4000-8000-000000000001",
+  "projectRevision": 9,
+  "receipts": [
+    {
+      "acquiredAtMs": 1789913600000,
+      "attribution": {
+        "creator": "Jane Example",
+        "creatorUrl": null,
+        "licenseName": "UNKNOWN",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "providerName": "Wikimedia Commons",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Clip.webm",
+        "title": "Microphone"
+      },
+      "collectionLicense": null,
+      "content": {
+        "algorithm": "sha256",
+        "byteLength": 1000,
+        "digest": "1515151515151515151515151515151515151515151515151515151515151515",
+        "schemaVersion": 1
+      },
+      "etag": null,
+      "intendedUse": "commercial-online",
+      "itemLicense": {
+        "code": "unknown",
+        "url": null,
+        "version": null
+      },
+      "lastRefreshAtMs": 1789913600000,
+      "lastRefreshStatus": "unchanged",
+      "license": {
+        "code": "unknown",
+        "url": null,
+        "version": null
+      },
+      "mediaKind": "video",
+      "mediaType": "video/webm",
+      "policy": {
+        "outcome": "allow",
+        "reasons": []
+      },
+      "projectId": "00000000-0000-4000-8000-00000000b001",
+      "providerId": "wikimedia-commons",
+      "providerItemId": "File:000000d2-0000-4000-8000-000000000005.webm",
+      "receiptId": "000000d2-0000-4000-8000-000000000005",
+      "schemaVersion": 1,
+      "snapshots": [
+        {
+          "byteLength": 1,
+          "digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "fetchedAtMs": 1789913600000,
+          "kind": "api-record",
+          "mediaType": "application/json",
+          "url": "https://commons.wikimedia.org/w/api.php"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "aRollClipId": "000000d1-0000-4000-8000-000000000032",
+    "workflow": "podcast"
+  },
+  "state": {
+    "activeSequenceId": "000000d1-0000-4000-8000-000000000064",
+    "assets": [
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "schemaVersion": 1
+        },
+        "displayName": "episode 12 host camera.mp4",
+        "id": "000000d1-0000-4000-8000-000000000001",
+        "locator": {
+          "relativePath": "media/episode 12 host camera.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 60000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "1212121212121212121212121212121212121212121212121212121212121212",
+          "schemaVersion": 1
+        },
+        "displayName": "river drone.mp4",
+        "id": "000000d1-0000-4000-8000-000000000002",
+        "locator": {
+          "relativePath": "media/river drone.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "1313131313131313131313131313131313131313131313131313131313131313",
+          "schemaVersion": 1
+        },
+        "displayName": "bridge detail.mp4",
+        "id": "000000d1-0000-4000-8000-000000000003",
+        "locator": {
+          "relativePath": "media/bridge detail.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "1414141414141414141414141414141414141414141414141414141414141414",
+          "schemaVersion": 1
+        },
+        "displayName": "snow mountains.mp4",
+        "id": "000000d1-0000-4000-8000-000000000004",
+        "locator": {
+          "relativePath": "media/snow mountains.mp4"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      },
+      {
+        "contentIdentity": {
+          "algorithm": "sha256",
+          "byteLength": 1000,
+          "digest": "1515151515151515151515151515151515151515151515151515151515151515",
+          "schemaVersion": 1
+        },
+        "displayName": "microphone closeup.webm",
+        "id": "000000d1-0000-4000-8000-000000000005",
+        "locator": {
+          "relativePath": "media/microphone closeup.webm"
+        },
+        "origin": {
+          "acquisitionReceiptId": "000000d2-0000-4000-8000-000000000005",
+          "kind": "acquired"
+        },
+        "probe": {
+          "audio": null,
+          "averageFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "durationMicroseconds": 20000000,
+          "fileSizeBytes": 1000,
+          "height": 1080,
+          "realFrameRate": {
+            "denominator": 1,
+            "numerator": 30
+          },
+          "variableFrameRate": false,
+          "videoCodecName": "h264",
+          "width": 1920
+        }
+      }
+    ],
+    "sequences": [
+      {
+        "audioSampleRate": 48000,
+        "height": 1080,
+        "id": "000000d1-0000-4000-8000-000000000064",
+        "markers": [],
+        "name": "Sequence 1",
+        "rate": {
+          "denominator": 1,
+          "numerator": 30
+        },
+        "tracks": [
+          {
+            "clips": [
+              {
+                "gainMilliDecibels": 0,
+                "id": "000000d1-0000-4000-8000-000000000032",
+                "source": {
+                  "assetId": "000000d1-0000-4000-8000-000000000001",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 546
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              }
+            ],
+            "id": "000000d1-0000-4000-8000-000000000065",
+            "kind": "video",
+            "name": "Video 1"
+          }
+        ],
+        "width": 1920
+      }
+    ]
+  },
+  "tags": {},
+  "transcripts": [
+    {
+      "assetId": "000000d1-0000-4000-8000-000000000001",
+      "language": "de",
+      "words": [
+        {
+          "sourceEndUs": 850000,
+          "sourceStartUs": 500000,
+          "text": "Willkommen"
+        },
+        {
+          "sourceEndUs": 1250000,
+          "sourceStartUs": 900000,
+          "text": "zurück"
+        },
+        {
+          "sourceEndUs": 1650000,
+          "sourceStartUs": 1300000,
+          "text": "zu"
+        },
+        {
+          "sourceEndUs": 2050000,
+          "sourceStartUs": 1700000,
+          "text": "unserer"
+        },
+        {
+          "sourceEndUs": 2450000,
+          "sourceStartUs": 2100000,
+          "text": "Sendung."
+        },
+        {
+          "sourceEndUs": 3750000,
+          "sourceStartUs": 3400000,
+          "text": "Heute"
+        },
+        {
+          "sourceEndUs": 4150000,
+          "sourceStartUs": 3800000,
+          "text": "reden"
+        },
+        {
+          "sourceEndUs": 4550000,
+          "sourceStartUs": 4200000,
+          "text": "wir"
+        },
+        {
+          "sourceEndUs": 4950000,
+          "sourceStartUs": 4600000,
+          "text": "über"
+        },
+        {
+          "sourceEndUs": 5350000,
+          "sourceStartUs": 5000000,
+          "text": "den"
+        },
+        {
+          "sourceEndUs": 5750000,
+          "sourceStartUs": 5400000,
+          "text": "Fluss"
+        },
+        {
+          "sourceEndUs": 6150000,
+          "sourceStartUs": 5800000,
+          "text": "und"
+        },
+        {
+          "sourceEndUs": 6550000,
+          "sourceStartUs": 6200000,
+          "text": "seine"
+        },
+        {
+          "sourceEndUs": 6950000,
+          "sourceStartUs": 6600000,
+          "text": "Brücke."
+        },
+        {
+          "sourceEndUs": 8250000,
+          "sourceStartUs": 7900000,
+          "text": "Im"
+        },
+        {
+          "sourceEndUs": 8650000,
+          "sourceStartUs": 8300000,
+          "text": "Winter"
+        },
+        {
+          "sourceEndUs": 9050000,
+          "sourceStartUs": 8700000,
+          "text": "liegt"
+        },
+        {
+          "sourceEndUs": 9450000,
+          "sourceStartUs": 9100000,
+          "text": "Schnee"
+        },
+        {
+          "sourceEndUs": 9850000,
+          "sourceStartUs": 9500000,
+          "text": "auf"
+        },
+        {
+          "sourceEndUs": 10250000,
+          "sourceStartUs": 9900000,
+          "text": "den"
+        },
+        {
+          "sourceEndUs": 10650000,
+          "sourceStartUs": 10300000,
+          "text": "Bergen."
+        },
+        {
+          "sourceEndUs": 11950000,
+          "sourceStartUs": 11600000,
+          "text": "Mein"
+        },
+        {
+          "sourceEndUs": 12350000,
+          "sourceStartUs": 12000000,
+          "text": "Mikrofon"
+        },
+        {
+          "sourceEndUs": 12750000,
+          "sourceStartUs": 12400000,
+          "text": "rauscht"
+        },
+        {
+          "sourceEndUs": 13150000,
+          "sourceStartUs": 12800000,
+          "text": "heute"
+        },
+        {
+          "sourceEndUs": 13550000,
+          "sourceStartUs": 13200000,
+          "text": "ein"
+        },
+        {
+          "sourceEndUs": 13950000,
+          "sourceStartUs": 13600000,
+          "text": "wenig."
+        },
+        {
+          "sourceEndUs": 15250000,
+          "sourceStartUs": 14900000,
+          "text": "Danke"
+        },
+        {
+          "sourceEndUs": 15650000,
+          "sourceStartUs": 15300000,
+          "text": "fürs"
+        },
+        {
+          "sourceEndUs": 16050000,
+          "sourceStartUs": 15700000,
+          "text": "Zuhören"
+        },
+        {
+          "sourceEndUs": 16450000,
+          "sourceStartUs": 16100000,
+          "text": "und"
+        },
+        {
+          "sourceEndUs": 16850000,
+          "sourceStartUs": 16500000,
+          "text": "bis"
+        },
+        {
+          "sourceEndUs": 17250000,
+          "sourceStartUs": 16900000,
+          "text": "bald."
+        }
+      ]
+    }
+  ]
+}
