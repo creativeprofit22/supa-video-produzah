@@ -1,8 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
+import { evidencePath } from "./evidence-path";
 import { expect, test, type Page } from "@playwright/test";
 
 const fixturePath = "/browser-tests/proposals-panel.html";
-const evidence = "../../evidence/2026-09-29-p3-agent-proposals";
+const evidenceDir = "2026-09-29-p3-agent-proposals";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const result = await page.evaluate(() => {
@@ -47,7 +48,9 @@ test("proposal review works by keyboard and passes axe", async ({ page }) => {
     .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
     .analyze();
   expect(results.violations, results.violations.map(({ id }) => id).join(", ")).toEqual([]);
-  await page.locator(".proposals-panel").screenshot({ path: `${evidence}/proposals-review.png` });
+  await page
+    .locator(".proposals-panel")
+    .screenshot({ path: evidencePath(evidenceDir, `proposals-review.png`) });
 
   const apply = group.getByRole("button", { name: "Apply 1 of 2" });
   await apply.focus();
@@ -74,6 +77,6 @@ test("proposal review reflows at 320px with 200% text", async ({ page }) => {
   await reviewWithKeyboard(page);
   await expectNoHorizontalOverflow(page);
   await page.locator(".proposals-panel").screenshot({
-    path: `${evidence}/proposals-320px-200-percent-text.png`,
+    path: evidencePath(evidenceDir, `proposals-320px-200-percent-text.png`),
   });
 });
