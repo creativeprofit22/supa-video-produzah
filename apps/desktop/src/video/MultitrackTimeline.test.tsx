@@ -4,6 +4,7 @@ import {
   act,
   cleanup,
   fireEvent,
+  queryHelpers,
   render as testingLibraryRender,
   screen,
   waitFor,
@@ -178,6 +179,16 @@ afterEach(() => {
   else Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
 });
 
+/**
+ * Elements whose `aria-label` matches, using Testing Library's text matching.
+ * `getByLabelText` also resolves `<label>` and `aria-labelledby` associations by
+ * walking every element, which costs seconds on the 10,000-clip fixture; these
+ * targets are labelled by `aria-label`, so checking that attribute is exact.
+ */
+function ariaLabelled(container: HTMLElement, label: string | RegExp): HTMLElement[] {
+  return queryHelpers.queryAllByAttribute("aria-label", container, label);
+}
+
 function materializedClipIds(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll<HTMLElement>("[data-clip-id]")).map(
     (element) => element.dataset.clipId!,
@@ -245,7 +256,9 @@ describe("MultitrackTimeline", () => {
     expect(
       rendered.container.querySelector("[data-start-frame='0'][data-end-frame-exclusive='2']"),
     ).toBeTruthy();
-    expect(screen.getByLabelText(/camera-a\.mp4, frames 0 through 2, end exclusive/)).toBeTruthy();
+    expect(
+      ariaLabelled(rendered.container, /camera-a\.mp4, frames 0 through 2, end exclusive/),
+    ).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Split at playhead" })).toBeTruthy();
 
     rendered.rerender(<MultitrackTimeline {...timelineProps({ projection, convertCachePath })} />);
@@ -264,7 +277,7 @@ describe("MultitrackTimeline", () => {
     expect(convertCachePath).toHaveBeenCalledTimes(1);
     expect(scrolledIds).not.toContain(id(100_000));
     expect(scrolledIds).not.toContain(id(200_000));
-    expect(screen.getByLabelText(`${scrolledIds.length} visible clips`)).toBeTruthy();
+    expect(ariaLabelled(rendered.container, `${scrolledIds.length} visible clips`)).toHaveLength(1);
   }, 30_000);
 
   it("keeps pointer and keyboard selection controlled and enables split only inside the clip", () => {
