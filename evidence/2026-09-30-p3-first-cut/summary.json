@@ -1,0 +1,236 @@
+[
+  {
+    "fixture": "explainer",
+    "proposalId": "first-cut-33cb3dbf5dbee88ee78c803c22b173cacb8f9f60e0c47f485098b00ff97faaec",
+    "reproducible": true,
+    "run1Sha256": "03742a47496fc9d163125132aa777bb17fa885ecd04c25ffb9a03e4ea3d7b149",
+    "run2Sha256": "03742a47496fc9d163125132aa777bb17fa885ecd04c25ffb9a03e4ea3d7b149",
+    "beats": 9,
+    "covered": 7,
+    "unresolved": 2,
+    "everyBeatCoveredOrUnresolved": true,
+    "plannedDurationUs": 27800000,
+    "proposalDurationUs": 27800000,
+    "durationMatchesPlan": true,
+    "rightsRejected": [
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000006",
+        "reason": "use-blocked"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000007",
+        "reason": "use-blocked"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-000000000008",
+        "reason": "upstream-withdrawn"
+      },
+      {
+        "assetId": "000000e1-0000-4000-8000-00000000000a",
+        "reason": "refresh-stale"
+      }
+    ],
+    "commands": [
+      "InsertTrack",
+      "InsertTrack",
+      "AddMarker",
+      "AddMarker"
+    ],
+    "clipCount": 5,
+    "captionCount": 4,
+    "markerCount": 2,
+    "coverage": [
+      {
+        "order": 0,
+        "startUs": 0,
+        "endUs": 3000000,
+        "intent": "title",
+        "status": "covered",
+        "coverage": "graphic",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 1,
+        "startUs": 3000000,
+        "endUs": 6600000,
+        "intent": "owned-footage",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "river canyon aerial.mp4",
+        "alternatives": [
+          "river phone vertical.mp4"
+        ],
+        "unresolvedReason": null
+      },
+      {
+        "order": 2,
+        "startUs": 6600000,
+        "endUs": 9000000,
+        "intent": "owned-footage",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "kayak rapids.mp4",
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 3,
+        "startUs": 9000000,
+        "endUs": 11800000,
+        "intent": "owned-footage",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "Brücke bei Sonnenuntergang.mov",
+        "alternatives": [
+          "river phone vertical.mp4",
+          "river canyon aerial.mp4"
+        ],
+        "unresolvedReason": null
+      },
+      {
+        "order": 4,
+        "startUs": 11800000,
+        "endUs": 14800000,
+        "intent": "map",
+        "status": "unresolved",
+        "coverage": "unresolved",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": "A map graphic is not rendered in this version."
+      },
+      {
+        "order": 5,
+        "startUs": 14800000,
+        "endUs": 18000000,
+        "intent": "owned-footage",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "snowy peaks.webm",
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 6,
+        "startUs": 18000000,
+        "endUs": 21000000,
+        "intent": "lower-third",
+        "status": "covered",
+        "coverage": "graphic",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 7,
+        "startUs": 21000000,
+        "endUs": 24200000,
+        "intent": "owned-footage",
+        "status": "unresolved",
+        "coverage": "unresolved",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": "No rights-safe media shows: ciudad."
+      },
+      {
+        "order": 8,
+        "startUs": 24200000,
+        "endUs": 27800000,
+        "intent": "owned-footage",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "river phone vertical.mp4",
+        "alternatives": [
+          "river canyon aerial.mp4"
+        ],
+        "unresolvedReason": null
+      }
+    ]
+  },
+  {
+    "fixture": "podcast",
+    "proposalId": "first-cut-dcec21df6b46c81a3ac5217e599c1f2b586c8d0f3536bb1426194cfdf2293723",
+    "reproducible": true,
+    "run1Sha256": "5aa74791ceb0de4918a41329f24335a5cdc60288976b07daac634d64a660f12a",
+    "run2Sha256": "5aa74791ceb0de4918a41329f24335a5cdc60288976b07daac634d64a660f12a",
+    "beats": 5,
+    "covered": 5,
+    "unresolved": 0,
+    "everyBeatCoveredOrUnresolved": true,
+    "plannedDurationUs": 18200000,
+    "proposalDurationUs": 18200000,
+    "durationMatchesPlan": true,
+    "rightsRejected": [
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000005",
+        "reason": "use-blocked"
+      }
+    ],
+    "commands": [
+      "InsertTrack"
+    ],
+    "clipCount": 2,
+    "captionCount": 0,
+    "markerCount": 0,
+    "coverage": [
+      {
+        "order": 0,
+        "startUs": 0,
+        "endUs": 3400000,
+        "intent": "a-roll",
+        "status": "covered",
+        "coverage": "a-roll",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 1,
+        "startUs": 3400000,
+        "endUs": 7900000,
+        "intent": "a-roll",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "river drone.mp4",
+        "alternatives": [
+          "bridge detail.mp4"
+        ],
+        "unresolvedReason": null
+      },
+      {
+        "order": 2,
+        "startUs": 7900000,
+        "endUs": 11600000,
+        "intent": "a-roll",
+        "status": "covered",
+        "coverage": "footage",
+        "shot": "snow mountains.mp4",
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 3,
+        "startUs": 11600000,
+        "endUs": 14900000,
+        "intent": "a-roll",
+        "status": "covered",
+        "coverage": "a-roll",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": null
+      },
+      {
+        "order": 4,
+        "startUs": 14900000,
+        "endUs": 18200000,
+        "intent": "a-roll",
+        "status": "covered",
+        "coverage": "a-roll",
+        "shot": null,
+        "alternatives": [],
+        "unresolvedReason": null
+      }
+    ]
+  }
+]

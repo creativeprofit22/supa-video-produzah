@@ -1,0 +1,517 @@
+{
+  "compiled": {
+    "captionCount": 0,
+    "clipCount": 2,
+    "markerCount": 0,
+    "request": {
+      "baseRevision": 9,
+      "commands": [
+        {
+          "commandId": "994615bb-6d33-4674-93b4-463918131263",
+          "index": 1,
+          "sequenceId": "000000d1-0000-4000-8000-000000000064",
+          "track": {
+            "clips": [
+              {
+                "gainMilliDecibels": 0,
+                "id": "308b82f9-2a3c-479a-a2e3-12ca18da677c",
+                "source": {
+                  "assetId": "000000d1-0000-4000-8000-000000000002",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 135
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 102
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              },
+              {
+                "gainMilliDecibels": 0,
+                "id": "8ea8a166-8128-491e-bc0e-cc32ebc529a9",
+                "source": {
+                  "assetId": "000000d1-0000-4000-8000-000000000004",
+                  "kind": "asset"
+                },
+                "sourceIn": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 0
+                },
+                "sourceOut": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 111
+                },
+                "timelineStart": {
+                  "rateDenominator": 1,
+                  "rateNumerator": 30,
+                  "value": 237
+                },
+                "transform": {
+                  "opacityPermille": 1000,
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "rotationMilliDegrees": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000
+                }
+              }
+            ],
+            "id": "0cd06aad-9e2e-41aa-9589-c447fa5cd0d7",
+            "kind": "video",
+            "name": "First cut"
+          },
+          "type": "InsertTrack"
+        }
+      ],
+      "groupId": "41df0416-bb3b-440a-a16f-26647ec852a7",
+      "projectId": "000000d0-0000-4000-8000-000000000001"
+    },
+    "titleTrackId": null,
+    "videoTrackId": "0cd06aad-9e2e-41aa-9589-c447fa5cd0d7"
+  },
+  "proposal": {
+    "beats": [
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 3400000,
+          "id": "beat-cc59af72b6bfce8b",
+          "intent": {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "clipId": "000000d1-0000-4000-8000-000000000032",
+            "kind": "a-roll"
+          },
+          "language": "de",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 0,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 0,
+          "text": "Willkommen zurück zu unserer Sendung."
+        },
+        "coverage": {
+          "assetId": "000000d1-0000-4000-8000-000000000001",
+          "clipId": "000000d1-0000-4000-8000-000000000032",
+          "kind": "a-roll"
+        },
+        "rejected": [
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "detail": "This is the A-roll clip itself.",
+            "displayName": "episode 12 host camera.mp4",
+            "reason": "a-roll-source"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "river drone.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "bridge detail.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "snow mountains.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000005",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "microphone closeup.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [
+          {
+            "candidate": {
+              "assetId": "000000d1-0000-4000-8000-000000000003",
+              "displayName": "bridge detail.mp4",
+              "identityKey": "sha256:1313131313131313131313131313131313131313131313131313131313131313",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 4500000,
+              "visualClusterId": null
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.225,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: bridge.",
+                "Owned media (preferred)."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.377917
+            }
+          }
+        ],
+        "beat": {
+          "endUs": 7900000,
+          "id": "beat-72d3b72469b58112",
+          "intent": {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "clipId": "000000d1-0000-4000-8000-000000000032",
+            "kind": "a-roll"
+          },
+          "language": "de",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 1,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 3400000,
+          "text": "Heute reden wir über den Fluss und seine Brücke."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000d1-0000-4000-8000-000000000002",
+              "displayName": "river drone.mp4",
+              "identityKey": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 4500000,
+              "visualClusterId": null
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.225,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: river.",
+                "Owned media (preferred)."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.377917
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "detail": "This is the A-roll clip itself.",
+            "displayName": "episode 12 host camera.mp4",
+            "reason": "a-roll-source"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "snow mountains.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000005",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "microphone closeup.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 11600000,
+          "id": "beat-97ed855a1820c954",
+          "intent": {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "clipId": "000000d1-0000-4000-8000-000000000032",
+            "kind": "a-roll"
+          },
+          "language": "de",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 2,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 7900000,
+          "text": "Im Winter liegt Schnee auf den Bergen."
+        },
+        "coverage": {
+          "kind": "footage",
+          "selected": {
+            "candidate": {
+              "assetId": "000000d1-0000-4000-8000-000000000004",
+              "displayName": "snow mountains.mp4",
+              "identityKey": "sha256:1414141414141414141414141414141414141414141414141414141414141414",
+              "provenance": "owned",
+              "providerId": "local",
+              "receiptId": null,
+              "sourceInUs": 0,
+              "sourceOutUs": 3700000,
+              "visualClusterId": null
+            },
+            "score": {
+              "components": {
+                "diversity": 1,
+                "durationFit": 0.185,
+                "embedding": 0,
+                "orientation": 1,
+                "quality": 1,
+                "rightsConfidence": 1,
+                "semantic": 0.333333,
+                "transcript": 0
+              },
+              "explanation": [
+                "Name/tags match: snow.",
+                "Owned media (preferred)."
+              ],
+              "repetitionPenalty": 0,
+              "total": 0.375917
+            }
+          }
+        },
+        "rejected": [
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "detail": "This is the A-roll clip itself.",
+            "displayName": "episode 12 host camera.mp4",
+            "reason": "a-roll-source"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "river drone.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "bridge detail.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000005",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "microphone closeup.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 14900000,
+          "id": "beat-b73cc89f4cba9a3c",
+          "intent": {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "clipId": "000000d1-0000-4000-8000-000000000032",
+            "kind": "a-roll"
+          },
+          "language": "de",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 3,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 11600000,
+          "text": "Mein Mikrofon rauscht heute ein wenig."
+        },
+        "coverage": {
+          "assetId": "000000d1-0000-4000-8000-000000000001",
+          "clipId": "000000d1-0000-4000-8000-000000000032",
+          "kind": "a-roll"
+        },
+        "rejected": [
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "detail": "This is the A-roll clip itself.",
+            "displayName": "episode 12 host camera.mp4",
+            "reason": "a-roll-source"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "river drone.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "bridge detail.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "snow mountains.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000005",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "microphone closeup.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      },
+      {
+        "acquisitionSuggestion": null,
+        "alternatives": [],
+        "beat": {
+          "endUs": 18200000,
+          "id": "beat-e57f76ce84af1d6b",
+          "intent": {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "clipId": "000000d1-0000-4000-8000-000000000032",
+            "kind": "a-roll"
+          },
+          "language": "de",
+          "mustNotShow": [],
+          "mustShow": [],
+          "order": 4,
+          "orientation": "any",
+          "schemaVersion": 1,
+          "startUs": 14900000,
+          "text": "Danke fürs Zuhören und bis bald."
+        },
+        "coverage": {
+          "assetId": "000000d1-0000-4000-8000-000000000001",
+          "clipId": "000000d1-0000-4000-8000-000000000032",
+          "kind": "a-roll"
+        },
+        "rejected": [
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000001",
+            "detail": "This is the A-roll clip itself.",
+            "displayName": "episode 12 host camera.mp4",
+            "reason": "a-roll-source"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000002",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "river drone.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000003",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "bridge detail.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000004",
+            "detail": "Relevance 0 is below 0.3.",
+            "displayName": "snow mountains.mp4",
+            "reason": "low-relevance"
+          },
+          {
+            "assetId": "000000d1-0000-4000-8000-000000000005",
+            "detail": "use-blocked: Its license does not allow this export's intended use.",
+            "displayName": "microphone closeup.webm",
+            "reason": "rights"
+          }
+        ],
+        "status": "covered",
+        "unresolvedReason": null
+      }
+    ],
+    "embeddingModel": null,
+    "endUs": 18200000,
+    "indexVersion": "asset-index/1",
+    "intendedUse": "commercial-online",
+    "normalizerVersion": "text-normalize/1",
+    "plannerVersion": "first-cut/1",
+    "projectId": "000000d0-0000-4000-8000-000000000001",
+    "projectRevision": 9,
+    "proposalId": "first-cut-dcec21df6b46c81a3ac5217e599c1f2b586c8d0f3536bb1426194cfdf2293723",
+    "rankingConfigVersion": "ranking/1",
+    "rightsDecisions": [
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000001",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000002",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000003",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000004",
+        "eligible": true,
+        "policyOutcome": "owned",
+        "receiptId": null,
+        "rightsConfidence": 1
+      },
+      {
+        "assetId": "000000d1-0000-4000-8000-000000000005",
+        "eligible": false,
+        "message": "Its license does not allow this export's intended use.",
+        "reason": "use-blocked",
+        "receiptId": "000000d2-0000-4000-8000-000000000005"
+      }
+    ],
+    "schemaVersion": 1,
+    "startUs": 0,
+    "workflow": "podcast"
+  }
+}
