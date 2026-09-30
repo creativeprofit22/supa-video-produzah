@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe("test port validation", () => {
   test("defaults only when the override is absent", () => {
-    expect(parseTestPort(undefined)).toBe(4173);
+    expect(parseTestPort(undefined)).toBe(5183);
   });
   test.each(["1024", "4183", "65535", "04183"])("accepts decimal port %s", (value) => {
     expect(parseTestPort(value)).toBe(Number(value));

@@ -2,7 +2,7 @@ import process from "node:process";
 
 // Shared by configuration and evidence drivers; no Playwright or fixture side effects.
 export function parseTestPort(value) {
-  if (value === undefined) return 4173;
+  if (value === undefined) return 5183;
   if (typeof value !== "string" || value.length === 0 || /[^0-9]/.test(value))
     throw new Error("SUPA_VIDEO_TEST_PORT must be a decimal integer from 1024 to 65535");
   const port = Number(value);
