@@ -293,6 +293,53 @@ pub(crate) async fn probe_trusted_media_with_program(
     })
 }
 
+/// Lists the `codec_type` of every stream (e.g. "video", "audio"). Used to verify
+/// acquired images and audio, which the full video probe intentionally rejects.
+pub(crate) async fn probe_stream_types_with_program(
+    trusted_path: &Path,
+    ffprobe_program: OsString,
+    cancellation: ProcessCancellation,
+    operation: &'static str,
+) -> Result<Vec<String>, VideoCommandError> {
+    let spec = ProcessSpec {
+        program: ffprobe_program,
+        args: vec![
+            OsString::from("-v"),
+            OsString::from("error"),
+            OsString::from("-output_format"),
+            OsString::from("json"),
+            OsString::from("-show_entries"),
+            OsString::from("stream=codec_type"),
+            OsString::from("-i"),
+            trusted_path.as_os_str().to_owned(),
+        ],
+        current_dir: None,
+        operation,
+        timeout: MEDIA_PROBE_TIMEOUT,
+        stdout_limit: MEDIA_PROBE_STDOUT_LIMIT,
+        stderr_tail_limit: MEDIA_PROBE_STDERR_TAIL_LIMIT,
+    };
+    let output = run_supervised(spec, cancellation)
+        .await
+        .map_err(map_probe_process_failure)?;
+    let value: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|_| VideoCommandError::invalid_media(operation, "invalid_json"))?;
+    let mut kinds: Vec<String> = value
+        .get("streams")
+        .and_then(Value::as_array)
+        .map(|streams| {
+            streams
+                .iter()
+                .filter_map(|s| s.get("codec_type").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    kinds.sort();
+    kinds.dedup();
+    Ok(kinds)
+}
+
 pub(crate) async fn probe_thumbnail_artifact_with_program(
     trusted_path: &Path,
     ffprobe_program: OsString,

@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
+pub(crate) use super::types::{MediaContentAlgorithm, MediaContentIdentityV1};
 use super::{
     error::VideoCommandError,
     grants::{GrantCategory, VideoPathGrants},
-    types::{MediaContentAlgorithm, MediaContentIdentityV1},
 };
 
 pub(crate) const MEDIA_STORE_NAMESPACE: &str = "supa-video-media-v1";
@@ -711,6 +711,128 @@ pub(crate) async fn acquire_source_object(
     })
     .await
     .map_err(|_| invalid("worker"))?
+}
+
+/// Directory for rights-acquisition quarantine files, inside the source store.
+/// Quarantine files are `NamedTempFile`s here, so any error or cancel deletes them.
+pub(crate) fn quarantine_directory_blocking(
+    app_cache_root: &Path,
+) -> Result<PathBuf, VideoCommandError> {
+    let cache_root = canonical_owned_root(app_cache_root, "acquire_source")?;
+    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, "acquire_source")?;
+    ensure_direct_directory(&store_root, "quarantine", "acquire_source")
+}
+
+/// Outcome of promoting quarantined bytes into the content-addressed source store.
+#[derive(Debug)]
+pub(crate) struct PromotedSource {
+    pub(crate) guarded: GuardedIngestedSource,
+    /// True when this call published the object (false when identical bytes already existed).
+    pub(crate) newly_published: bool,
+}
+
+/// Publishes an already-hashed quarantine file as a source object. The caller supplies the
+/// digest it computed while streaming; bytes are re-verified before and after publication.
+pub(crate) fn promote_quarantined_blocking(
+    quarantine: NamedTempFile,
+    app_cache_root: &Path,
+    expected: &MediaContentIdentityV1,
+) -> Result<PromotedSource, VideoCommandError> {
+    let fail = |category| invalid_for("acquire_source", category);
+    let digest = expected.digest.as_str();
+    let mut reader = File::open(quarantine.path()).map_err(|_| fail("quarantine_read"))?;
+    let (actual_digest, actual_length) = hash_reader(&mut reader)?;
+    drop(reader);
+    if actual_digest != digest || actual_length != expected.byte_length {
+        return Err(fail("quarantine_changed"));
+    }
+    let cache_root = canonical_owned_root(app_cache_root, "acquire_source")?;
+    let store_root = ensure_direct_directory(&cache_root, MEDIA_STORE_NAMESPACE, "acquire_source")?;
+    let objects = ensure_direct_directory(&store_root, "objects", "acquire_source")?;
+    let sha256 = ensure_direct_directory(&objects, "sha256", "acquire_source")?;
+    let prefix = digest.get(..2).ok_or_else(|| fail("digest"))?;
+    let object_directory = ensure_direct_directory(&sha256, prefix, "acquire_source")?;
+    let object_path = object_directory.join(format!("{digest}.blob"));
+    let lock = acquire_source_lock_blocking(&cache_root, digest)?;
+    let mut newly_published = false;
+    if !validate_object(&object_path, digest, expected.byte_length) {
+        // Move into the object directory first so publication stays a same-directory rename.
+        let staged = TempFileBuilder::new()
+            .prefix(".acquire-")
+            .suffix(".part")
+            .tempfile_in(&object_directory)
+            .map_err(|_| fail("temporary_file"))?;
+        let staged_path = staged.into_temp_path();
+        let quarantine_path = quarantine.into_temp_path();
+        fs::rename(&quarantine_path, &staged_path).map_err(|_| fail("quarantine_move"))?;
+        // The quarantine TempPath now points at nothing; dropping it is harmless.
+        drop(quarantine_path);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&staged_path)
+            .map_err(|_| fail("temporary_file"))?;
+        let staged = NamedTempFile::from_parts(file, staged_path);
+        durable_publish(
+            staged,
+            &object_directory,
+            &object_path,
+            PublicationFailpoint::None,
+        )
+        .map_err(ingest_publication_error)?;
+        if !validate_object(&object_path, digest, expected.byte_length) {
+            remove_failed_publication(&object_path, &object_directory);
+            return Err(fail("object_validation"));
+        }
+        newly_published = true;
+    }
+    sync_publication_directory(&object_directory).map_err(ingest_publication_error)?;
+    let metadata = fs::metadata(&object_path).map_err(|_| fail("object_metadata"))?;
+    let facts = source_facts(&metadata)?;
+    let fingerprint = source_fingerprint(&object_path, facts)?;
+    Ok(PromotedSource {
+        guarded: GuardedIngestedSource {
+            source: IngestedSource {
+                object_path,
+                identity: expected.clone(),
+                fingerprint,
+            },
+            _lock: lock,
+        },
+        newly_published,
+    })
+}
+
+/// Removes a source object this process just published, while still holding its lock.
+/// Used to roll back an acquisition whose receipt commit failed.
+pub(crate) fn remove_promoted_source(promoted: PromotedSource) -> Result<(), VideoCommandError> {
+    let path = promoted.guarded.source.object_path.clone();
+    if promoted.newly_published {
+        let directory = path
+            .parent()
+            .ok_or_else(|| invalid_for("acquire_source", "object_path"))?
+            .to_owned();
+        remove_failed_publication(&path, &directory);
+    }
+    drop(promoted);
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn source_object_path_blocking(
+    app_cache_root: &Path,
+    digest: &str,
+) -> Result<PathBuf, VideoCommandError> {
+    let cache_root = canonical_owned_root(app_cache_root, "acquire_source")?;
+    let prefix = digest
+        .get(..2)
+        .ok_or_else(|| invalid_for("acquire_source", "digest"))?;
+    Ok(cache_root
+        .join(MEDIA_STORE_NAMESPACE)
+        .join("objects")
+        .join("sha256")
+        .join(prefix)
+        .join(format!("{digest}.blob")))
 }
 
 pub(crate) async fn ingest_source_guarded(

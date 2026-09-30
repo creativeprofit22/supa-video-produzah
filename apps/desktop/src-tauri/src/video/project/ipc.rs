@@ -118,6 +118,7 @@ fn execute_project_group_with_native_imports(
     mut request: CommandGroupRequest,
     grants: &VideoPathGrants,
     native_imports: Vec<NativeImport>,
+    rights_store: Option<&crate::rights::store::ReceiptStore>,
 ) -> Result<CommandResult, VideoCommandError> {
     if let Some(existing) = service.existing_group_result(owner, &request)? {
         return Ok(existing);
@@ -142,6 +143,11 @@ fn execute_project_group_with_native_imports(
                 "content_identity_mismatch",
             ));
         }
+        crate::rights::service::validate_asset_origin(
+            rights_store,
+            asset.origin.as_ref(),
+            &native_import.content_identity,
+        )?;
         let absolute_path = native_import
             .canonical_path
             .to_str()
@@ -235,12 +241,14 @@ pub async fn video_execute_project_group<R: Runtime>(
     run_project_worker("execute_project_group", move || {
         let service = app.state::<VideoProjectService>();
         let grants = app.state::<VideoPathGrants>();
+        let rights = app.try_state::<crate::rights::service::RightsService>();
         execute_project_group_with_native_imports(
             &service,
             &owner,
             request,
             &grants,
             native_imports,
+            rights.as_ref().map(|r| r.store()),
         )
     })
     .await
@@ -656,6 +664,7 @@ mod tests {
             tampered_request,
             &grants,
             native_imports,
+            None,
         )
         .expect_err("caller probe tampering must be rejected");
         assert_eq!(error.code, VideoErrorCode::InvalidMedia);
@@ -696,6 +705,7 @@ mod tests {
                 probe: probe.clone(),
                 content_identity: import_identity(),
             }],
+            None,
         )
         .expect_err("caller content identity tampering must be rejected");
         assert_eq!(identity_error.code, VideoErrorCode::InvalidMedia);
@@ -724,6 +734,7 @@ mod tests {
             canonical_request.clone(),
             &grants,
             native_imports,
+            None,
         )
         .expect("native-bound grouped import must commit");
 
@@ -760,6 +771,7 @@ mod tests {
             canonical_request,
             &grants,
             vec![],
+            None,
         )
         .expect("an idempotent retry must return before source revalidation");
         assert_eq!(duplicate, result);

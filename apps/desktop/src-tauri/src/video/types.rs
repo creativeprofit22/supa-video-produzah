@@ -128,7 +128,7 @@ pub struct MediaContentIdentityV1 {
     pub byte_length: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct ProjectUuid(String);
 
@@ -585,10 +585,28 @@ pub struct RenderPlanV2 {
         deserialize_with = "deserialize_optional_non_null"
     )]
     pub audio_mix: Option<super::project::types::SequenceLoudnessTarget>,
+    /// Optional rights context. Advisory claims only: the release gate always looks
+    /// inputs up by content digest, so omitting this cannot bypass the gate.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub rights: Option<RenderRightsContext>,
     pub output_path: String,
     #[serde(deserialize_with = "deserialize_render_expectation_v2")]
     pub expected: RenderExpectation,
     pub argv: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderRightsContext {
+    /// Intended use of this export, checked against each acquired input's license.
+    pub intended_use: crate::rights::types::UsePolicyProfile,
+    /// Receipt ids the project claims for acquired assets (from asset `origin`).
+    #[serde(default)]
+    pub acquisition_receipt_ids_by_asset_id: std::collections::BTreeMap<ProjectUuid, uuid::Uuid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -802,6 +820,21 @@ pub struct VideoAsset {
         skip_serializing_if = "Option::is_none"
     )]
     pub content_identity: Option<MediaContentIdentityV1>,
+    /// Present only for assets created by the rights acquisition command.
+    /// Render validation never trusts it alone: inputs are looked up by digest.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub origin: Option<AssetOrigin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum AssetOrigin {
+    #[serde(rename_all = "camelCase")]
+    Acquired { acquisition_receipt_id: uuid::Uuid },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

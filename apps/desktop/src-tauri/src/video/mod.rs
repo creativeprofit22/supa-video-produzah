@@ -8,13 +8,13 @@ mod caption;
 mod caption_render;
 #[allow(dead_code)]
 pub(crate) mod derived;
-mod error;
-mod grants;
+pub(crate) mod error;
+pub(crate) mod grants;
 pub(crate) mod jobs;
 pub(crate) mod media_store;
 mod nemo_transcription;
 pub(crate) mod probe;
-mod process;
+pub(crate) mod process;
 pub mod project;
 pub(crate) mod project_io;
 pub(crate) mod render;
@@ -22,7 +22,7 @@ pub(crate) mod subtitle_export;
 pub(crate) mod toolchain;
 mod transcript;
 pub(crate) mod transcription_job;
-mod types;
+pub(crate) mod types;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

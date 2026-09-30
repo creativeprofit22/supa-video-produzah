@@ -1,4 +1,6 @@
 mod ai_account;
+#[allow(dead_code)]
+pub(crate) mod rights;
 pub mod video;
 
 #[cfg(any(
@@ -90,6 +92,10 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
                 video::toolchain::MediaToolchainState::start_for_app(app.handle()),
             );
             initialize_media_jobs(app)?;
+            app.manage(rights::service::RightsService::initialize(
+                &app.path().app_local_data_dir()?,
+                &app.path().app_cache_dir()?,
+            )?);
             app.manage(ai_account::commands::AiAccountService::new(
                 ai_account::credential_store::CredentialStore::for_identifier(
                     &app.config().identifier,
@@ -124,6 +130,13 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::project::proposal_ipc::video_restore_before_proposal,
             video::project_io::video_regrant_project_source,
             video::project_io::video_pick_export_path,
+            rights::ipc::rights_search,
+            rights::ipc::rights_provider_status,
+            rights::ipc::rights_acquire,
+            rights::ipc::rights_cancel_acquire,
+            rights::ipc::rights_refresh_receipt,
+            rights::ipc::rights_inspect_receipt,
+            rights::ipc::rights_list_receipts,
             video::jobs::ipc::video_list_media_jobs,
             video::jobs::ipc::video_get_media_job_events,
             video::jobs::ipc::video_cancel_media_job,
