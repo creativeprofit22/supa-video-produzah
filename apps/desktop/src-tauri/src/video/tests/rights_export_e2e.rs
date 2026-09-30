@@ -132,7 +132,19 @@ async fn rights_export_end_to_end_with_withdrawal() {
             "-i",
         ])
         .arg("testsrc2=size=320x180:rate=25:duration=2")
-        .args(["-c:v", "libvpx-vp9", "-b:v", "200k", "-n"])
+        // Realtime VP9 keeps this fixture cheap inside the parallel suite, where
+        // timing-sensitive scheduler and cache tests share the CPU.
+        .args([
+            "-c:v",
+            "libvpx-vp9",
+            "-b:v",
+            "200k",
+            "-deadline",
+            "realtime",
+            "-cpu-used",
+            "8",
+            "-n",
+        ])
         .arg(&clip)
         .status()
         .unwrap();
@@ -365,45 +377,30 @@ async fn rights_export_end_to_end_with_withdrawal() {
     println!("RIGHTS_E2E {}", serde_json::to_string(&evidence).unwrap());
 }
 
-/// Opt-in live acquisition from Internet Archive through the production network
-/// policy (HTTPS allowlist + storage-node redirect), with real ffprobe checks.
-/// `cargo test --lib live_internet_archive_acquisition -- --ignored --nocapture`
-#[cfg(windows)]
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "contacts the live Internet Archive"]
-async fn live_internet_archive_acquisition() {
+/// Shared body of the opt-in live acquisition tests. Candidates come from a fixed
+/// discovery step (no user input); each is acquired through the production
+/// network policy, quarantine, streamed SHA-256, MIME sniffing, real ffprobe,
+/// promotion and receipt commit. Items the app cannot use (formats ffprobe or
+/// the policy rejects, oversize files) are recorded and the next one is tried.
+async fn live_acquisition(
+    test_name: &'static str,
+    provider: ProviderId,
+    evidence_env: &'static str,
+    discover: fn() -> Vec<String>,
+) {
     let (_, _, ffprobe) = toolchain().await;
     let work = tempdir().unwrap().keep();
     let store = ReceiptStore::open(&work.join("rights")).unwrap();
     let cache = work.join("cache");
     fs::create_dir_all(&cache).unwrap();
-    let result = tokio::task::spawn_blocking(move || {
-        // Small, CC BY video items only, discovered live (fixed query, no user input).
-        let client = crate::rights::net::build_client(FetchLimits::METADATA).unwrap();
-        let mut url = url::Url::parse("https://archive.org/advancedsearch.php").unwrap();
-        url.query_pairs_mut()
-            .append_pair(
-                "q",
-                "mediatype:movies AND licenseurl:\"https://creativecommons.org/licenses/by/4.0/\" AND item_size:[100000 TO 20000000]",
-            )
-            .append_pair("fl[]", "identifier")
-            .append_pair("rows", "10")
-            .append_pair("output", "json");
-        let request = crate::rights::net::FetchRequest {
-            url,
-            credential: crate::rights::net::Credential::None,
-            limits: FetchLimits::METADATA,
-        };
-        let policy = NetPolicy::for_provider(ProviderId::InternetArchive);
-        let (_, body) =
-            crate::rights::net::fetch_bytes(&client, &policy, &request, &CancelToken::new()).unwrap();
-        let docs: Value = serde_json::from_slice(&body).unwrap();
-        let ids: Vec<String> = docs["response"]["docs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|doc| doc["identifier"].as_str().map(str::to_owned))
-            .collect();
+    let worker_store = store.clone();
+    let (attempts, acquired) = tokio::task::spawn_blocking(move || {
+        let store = worker_store;
+        let ids = discover();
+        assert!(
+            !ids.is_empty(),
+            "{test_name}: live discovery returned no candidates"
+        );
         let verifier = FfprobeVerifier {
             ffprobe: ffprobe.into_os_string(),
         };
@@ -426,25 +423,37 @@ async fn live_internet_archive_acquisition() {
                     on_stage: &|_| {},
                 },
                 &AcquireRequest {
-                    provider_id: ProviderId::InternetArchive,
+                    provider_id: provider,
                     provider_item_id: id.clone(),
                     intended_use: UsePolicyProfile::CommercialOnline,
                     project_id: uuid::Uuid::from_u128(42),
                 },
             );
             match outcome {
-                Ok(done) => return (attempts, Some(done.receipt)),
-                // Some items hold only formats the app cannot verify; try the next one.
-                Err(error) => attempts.push(serde_json::json!({ "identifier": id, "error": error.code() })),
+                Ok(done) => return (attempts, Some(done)),
+                Err(error) => {
+                    attempts.push(serde_json::json!({ "itemId": id, "error": error.code() }))
+                }
             }
         }
         (attempts, None)
     })
     .await
     .unwrap();
-    let (attempts, receipt) = result;
-    let receipt = receipt.unwrap_or_else(|| panic!("no live item could be acquired: {attempts:?}"));
-    assert_eq!(receipt.license.code, crate::rights::types::LicenseCode::By);
+    let acquired = acquired
+        .unwrap_or_else(|| panic!("{test_name}: no live item could be acquired: {attempts:?}"));
+    let receipt = &acquired.receipt;
+    assert_eq!(receipt.provider_id, provider);
+    assert!(
+        matches!(
+            receipt.license.code,
+            crate::rights::types::LicenseCode::Cc0
+                | crate::rights::types::LicenseCode::Pdm
+                | crate::rights::types::LicenseCode::By
+        ),
+        "{test_name}: acquired license must be allowed for commercial use: {:?}",
+        receipt.license
+    );
     assert_eq!(
         receipt.policy.outcome,
         crate::rights::types::PolicyOutcome::Allow
@@ -452,25 +461,152 @@ async fn live_internet_archive_acquisition() {
     assert!(receipt
         .snapshots
         .iter()
+        .any(|s| s.kind == crate::rights::types::SnapshotKind::ApiRecord));
+    assert!(receipt
+        .snapshots
+        .iter()
         .all(|s| s.url.starts_with("https://")));
+    // The promoted object is exactly the receipted bytes.
+    let object = fs::read(&acquired.object_path).unwrap();
+    assert_eq!(object.len() as u64, receipt.content.byte_length);
+    assert_eq!(
+        crate::rights::store::sha256_hex(&object),
+        receipt.content.digest
+    );
+    assert!(store.receipt(&receipt.receipt_id).unwrap().as_ref() == Some(receipt));
     let evidence = serde_json::json!({
-        "test": "live_internet_archive_acquisition",
+        "test": test_name,
+        "provider": provider.as_str(),
         "skippedItems": attempts,
+        "promotedObjectRehashMatches": true,
         "receipt": {
             "providerItemId": receipt.provider_item_id,
+            "mediaKind": receipt.media_kind,
+            "mediaType": receipt.media_type,
             "license": receipt.license,
             "policy": receipt.policy,
-            "mediaType": receipt.media_type,
             "contentDigest": receipt.content.digest,
             "byteLength": receipt.content.byte_length,
             "attribution": receipt.attribution,
+            "etag": receipt.etag,
             "snapshots": receipt.snapshots.iter().map(|s| serde_json::json!({
                 "kind": s.kind, "url": s.url, "digest": s.digest, "bytes": s.byte_length
             })).collect::<Vec<_>>(),
         },
     });
     println!("RIGHTS_LIVE_ACQUIRE {evidence}");
-    if let Ok(path) = std::env::var("SUPA_VIDEO_RIGHTS_LIVE_ACQUIRE_EVIDENCE") {
+    if let Ok(path) = std::env::var(evidence_env) {
         fs::write(path, serde_json::to_vec_pretty(&evidence).unwrap()).unwrap();
     }
+}
+
+/// Runs the production search adapter live and keeps candidates whose advisory
+/// policy allows commercial-online use (acquisition re-checks independently).
+fn discover_allowed(provider: ProviderId, query: &str, kind: MediaKind) -> Vec<String> {
+    let request = providers::search_request(
+        &ProviderEndpoints::production(),
+        provider,
+        query,
+        kind,
+        None,
+    )
+    .unwrap();
+    let client = crate::rights::net::build_client(request.limits).unwrap();
+    let (_, body) = crate::rights::net::fetch_bytes(
+        &client,
+        &NetPolicy::for_provider(provider),
+        &request,
+        &CancelToken::new(),
+    )
+    .unwrap();
+    providers::parse_search(provider, kind, &body)
+        .unwrap()
+        .iter()
+        .map(|item| providers::candidate_for(item, UsePolicyProfile::CommercialOnline))
+        .filter(|candidate| {
+            candidate.advisory_policy.outcome == crate::rights::types::PolicyOutcome::Allow
+        })
+        .map(|candidate| candidate.provider_item_id)
+        .take(10)
+        .collect()
+}
+
+/// Opt-in live acquisition from Internet Archive through the production network
+/// policy (HTTPS allowlist + storage-node redirect), with real ffprobe checks.
+/// `cargo test --lib live_internet_archive_acquisition -- --ignored --nocapture`
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "contacts the live Internet Archive"]
+async fn live_internet_archive_acquisition() {
+    live_acquisition(
+        "live_internet_archive_acquisition",
+        ProviderId::InternetArchive,
+        "SUPA_VIDEO_RIGHTS_LIVE_ACQUIRE_EVIDENCE",
+        || {
+            // Small, CC BY video items only (fixed query, no user input).
+            let client = crate::rights::net::build_client(FetchLimits::METADATA).unwrap();
+            let mut url = url::Url::parse("https://archive.org/advancedsearch.php").unwrap();
+            url.query_pairs_mut()
+                .append_pair(
+                    "q",
+                    "mediatype:movies AND licenseurl:\"https://creativecommons.org/licenses/by/4.0/\" AND item_size:[100000 TO 20000000]",
+                )
+                .append_pair("fl[]", "identifier")
+                .append_pair("rows", "10")
+                .append_pair("output", "json");
+            let request = crate::rights::net::FetchRequest {
+                url,
+                credential: crate::rights::net::Credential::None,
+                limits: FetchLimits::METADATA,
+            };
+            let policy = NetPolicy::for_provider(ProviderId::InternetArchive);
+            let (_, body) =
+                crate::rights::net::fetch_bytes(&client, &policy, &request, &CancelToken::new()).unwrap();
+            let docs: Value = serde_json::from_slice(&body).unwrap();
+            docs["response"]["docs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|doc| doc["identifier"].as_str().map(str::to_owned))
+                .collect()
+        },
+    )
+    .await;
+}
+
+/// Opt-in live acquisition from Wikimedia Commons (video, allowed license).
+/// `cargo test --lib live_wikimedia_commons_acquisition -- --ignored --nocapture`
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "contacts the live Wikimedia Commons API"]
+async fn live_wikimedia_commons_acquisition() {
+    live_acquisition(
+        "live_wikimedia_commons_acquisition",
+        ProviderId::WikimediaCommons,
+        "SUPA_VIDEO_RIGHTS_LIVE_ACQUIRE_COMMONS_EVIDENCE",
+        || {
+            discover_allowed(
+                ProviderId::WikimediaCommons,
+                "sunrise timelapse",
+                MediaKind::Video,
+            )
+        },
+    )
+    .await;
+}
+
+/// Opt-in live acquisition from Openverse (image, allowed license; Openverse has
+/// no video). The file host must also be on the Openverse allowlist.
+/// `cargo test --lib live_openverse_acquisition -- --ignored --nocapture`
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "contacts the live Openverse API"]
+async fn live_openverse_acquisition() {
+    live_acquisition(
+        "live_openverse_acquisition",
+        ProviderId::Openverse,
+        "SUPA_VIDEO_RIGHTS_LIVE_ACQUIRE_OPENVERSE_EVIDENCE",
+        || discover_allowed(ProviderId::Openverse, "sunrise", MediaKind::Image),
+    )
+    .await;
 }

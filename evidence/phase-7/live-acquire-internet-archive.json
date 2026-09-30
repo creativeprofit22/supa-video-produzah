@@ -1,21 +1,25 @@
 {
+  "promotedObjectRehashMatches": true,
+  "provider": "internet-archive",
   "receipt": {
     "attribution": {
-      "creator": "MP",
+      "creator": "Lic. Horus Ruiseco Jacobo",
       "creatorUrl": null,
       "licenseName": "CC BY 4.0",
       "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
       "providerName": "Internet Archive",
-      "sourceUrl": "https://archive.org/details/download_20251006_2303",
-      "title": "Download"
+      "sourceUrl": "https://archive.org/details/museo-de-las-culturas-mayas-cancun-lic-horus-ruiseco-jacobo-cultura-mayas-zonaturistica-museum",
+      "title": "Museo De Las Culturas Mayas Cancún Lic Horus Ruiseco Jacobo #cultura #mayas #zonaturistica #museum"
     },
-    "byteLength": 748560,
-    "contentDigest": "6f92eb2ce646ec229c9e59621db8499abacf3210a37b104f8d3cb1bddf4aa544",
+    "byteLength": 8627583,
+    "contentDigest": "d98eeb1f0f5e64cf62f5fd949dc36e2583e3f375f044188c80202ffc22a96ebc",
+    "etag": null,
     "license": {
       "code": "by",
       "url": "https://creativecommons.org/licenses/by/4.0/",
       "version": "4.0"
     },
+    "mediaKind": "video",
     "mediaType": "video/mp4",
     "policy": {
       "outcome": "allow",
@@ -23,19 +27,19 @@
         "attribution-required"
       ]
     },
-    "providerItemId": "download_20251006_2303",
+    "providerItemId": "museo-de-las-culturas-mayas-cancun-lic-horus-ruiseco-jacobo-cultura-mayas-zonaturistica-museum",
     "snapshots": [
       {
-        "bytes": 2515,
-        "digest": "72c6757a7eae42f57a002d3b761689cd9178f43abf92f4d47221cdf23d966b50",
+        "bytes": 6360,
+        "digest": "42da0f8d73cbbbc78624effe9c1ef01c7de8b7f9fa81b8f5db6446f7750ac7ea",
         "kind": "api-record",
-        "url": "https://archive.org/metadata/download_20251006_2303"
+        "url": "https://archive.org/metadata/museo-de-las-culturas-mayas-cancun-lic-horus-ruiseco-jacobo-cultura-mayas-zonaturistica-museum"
       },
       {
-        "bytes": 191628,
-        "digest": "fa82b5b0bb7ec9d2c9ebd89e23625949e3aa2c6956d7d3711ad30a922c04946d",
+        "bytes": 199488,
+        "digest": "b96a0f03c2ca81c381fc50188b13c716178910190e2afe7b18e98d8c2448c4eb",
         "kind": "landing-page",
-        "url": "https://archive.org/details/download_20251006_2303"
+        "url": "https://archive.org/details/museo-de-las-culturas-mayas-cancun-lic-horus-ruiseco-jacobo-cultura-mayas-zonaturistica-museum"
       },
       {
         "bytes": 32165,

@@ -1,0 +1,52 @@
+{
+  "promotedObjectRehashMatches": true,
+  "provider": "openverse",
+  "receipt": {
+    "attribution": {
+      "creator": "CapeHatterasNPS",
+      "creatorUrl": "https://www.flickr.com/photos/106602675@N05",
+      "licenseName": "Public Domain Mark 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "providerName": "Openverse",
+      "sourceUrl": "https://www.flickr.com/photos/106602675@N05/52043975697",
+      "title": "Sunrise at Ramp 25"
+    },
+    "byteLength": 98275,
+    "contentDigest": "3e00e96af14450e5b0a235b2ba225f6adaf2de0936567b325378f88391ad1269",
+    "etag": null,
+    "license": {
+      "code": "pdm",
+      "url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "version": "1.0"
+    },
+    "mediaKind": "image",
+    "mediaType": "image/jpeg",
+    "policy": {
+      "outcome": "allow",
+      "reasons": []
+    },
+    "providerItemId": "image:a434d427-8a9c-4e39-aa61-cfe5bea37310",
+    "snapshots": [
+      {
+        "bytes": 1177,
+        "digest": "3a25189b4ddab1e33b76d8888180f64a0a17f16fc9e0c58a23f199a2c3084556",
+        "kind": "api-record",
+        "url": "https://api.openverse.org/v1/images/a434d427-8a9c-4e39-aa61-cfe5bea37310/"
+      },
+      {
+        "bytes": 525956,
+        "digest": "01a3a12c561aaba9208d12e4a8e73f9aa16f04f07ef48012dc7685a1aa7cd67e",
+        "kind": "landing-page",
+        "url": "https://www.flickr.com/photos/106602675@N05/52043975697"
+      },
+      {
+        "bytes": 31592,
+        "digest": "2dad28e3aa65b6030affc5d61192b13854159105e939fc2c8522f2fa8af2b174",
+        "kind": "license-page",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/"
+      }
+    ]
+  },
+  "skippedItems": [],
+  "test": "live_openverse_acquisition"
+}

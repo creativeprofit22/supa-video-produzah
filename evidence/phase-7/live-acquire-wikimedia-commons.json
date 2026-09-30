@@ -1,0 +1,52 @@
+{
+  "promotedObjectRehashMatches": true,
+  "provider": "wikimedia-commons",
+  "receipt": {
+    "attribution": {
+      "creator": "ShenandoahNPS",
+      "creatorUrl": null,
+      "licenseName": "Public Domain Mark 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "providerName": "Wikimedia Commons",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sunrise_Timelapse_(30174294051).webm",
+      "title": "Sunrise Timelapse (30174294051)"
+    },
+    "byteLength": 7046837,
+    "contentDigest": "e34aec261a6b1d8005b5493bd9e2026dd6ee754f5e5007dfbba773f014a8720a",
+    "etag": null,
+    "license": {
+      "code": "pdm",
+      "url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "version": "1.0"
+    },
+    "mediaKind": "video",
+    "mediaType": "video/webm",
+    "policy": {
+      "outcome": "allow",
+      "reasons": []
+    },
+    "providerItemId": "File:Sunrise Timelapse (30174294051).webm",
+    "snapshots": [
+      {
+        "bytes": 2906,
+        "digest": "ffb7d30f828a901da1e7a3000b4a9fd2668e093171d1dc6594a8b64f6fc905c4",
+        "kind": "api-record",
+        "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=imageinfo&iiprop=url%7Cmime%7Csize%7Cextmetadata%7Cmediatype&iiurlwidth=320&titles=File%3ASunrise+Timelapse+%2830174294051%29.webm"
+      },
+      {
+        "bytes": 121751,
+        "digest": "2b0cb0bef6a193bade391ed75d1e1019c4ed3abc2f4c9312c11b6ed1a1c78868",
+        "kind": "landing-page",
+        "url": "https://commons.wikimedia.org/wiki/File:Sunrise_Timelapse_(30174294051).webm"
+      },
+      {
+        "bytes": 31592,
+        "digest": "2dad28e3aa65b6030affc5d61192b13854159105e939fc2c8522f2fa8af2b174",
+        "kind": "license-page",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/"
+      }
+    ]
+  },
+  "skippedItems": [],
+  "test": "live_wikimedia_commons_acquisition"
+}
