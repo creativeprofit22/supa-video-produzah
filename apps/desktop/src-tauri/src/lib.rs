@@ -279,6 +279,17 @@ mod tests {
         .expect("test media job service must initialize")
     }
 
+    /// Rights service as the real app registers it at startup, backed by an empty
+    /// temporary receipt store (no receipts, so every input is a local import).
+    fn test_rights_service(label: &str) -> crate::rights::service::RightsService {
+        let root = std::env::temp_dir().join(format!(
+            "supa-video-rights-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        crate::rights::service::RightsService::initialize(&root.join("local"), &root.join("cache"))
+            .expect("test rights service must initialize")
+    }
+
     fn persist_failed_final_render(jobs: &video::jobs::MediaJobService, owner: &str) -> String {
         use video::jobs::{
             model::{
@@ -373,6 +384,7 @@ mod tests {
         let app = mock_builder()
             .manage(video::VideoPathGrants::default())
             .manage(test_media_jobs("mock"))
+            .manage(test_rights_service("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(
                 video::toolchain::MediaToolchain::from_test_programs(
@@ -423,6 +435,7 @@ mod tests {
         mock_builder()
             .manage(video::VideoPathGrants::default())
             .manage(test_media_jobs("mock"))
+            .manage(test_rights_service("mock"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(toolchain))
             .invoke_handler(tauri::generate_handler![
