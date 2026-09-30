@@ -1,0 +1,47 @@
+{
+  "afterWithdrawal": {
+    "blocked": [
+      {
+        "fresh": "rights_upstream_withdrawn",
+        "originStripped": false,
+        "persisted": "rights_upstream_withdrawn"
+      },
+      {
+        "fresh": "rights_upstream_withdrawn",
+        "originStripped": true,
+        "persisted": "rights_upstream_withdrawn"
+      }
+    ],
+    "refreshStatus": "withdrawn"
+  },
+  "elapsedMs": 9504,
+  "export": {
+    "completed": true,
+    "creditsText": "Credits\n\n\"Rights clip\" by Fixture Author\n  License: CC BY 4.0 <https://creativecommons.org/licenses/by/4.0/>\n  Source: https://commons.wikimedia.org/wiki/File:Rights_clip.webm (via Wikimedia Commons)\n",
+    "outputBytes": 52177
+  },
+  "provider": "local fixture server (wikimedia-commons adapter)",
+  "receipt": {
+    "byteLength": 38907,
+    "contentDigest": "71f52b7da116f5cb0c7768d99cda40fa89227fa484d6cfb064fe996a52d7f438",
+    "license": {
+      "code": "by",
+      "url": "https://creativecommons.org/licenses/by/4.0/",
+      "version": "4.0"
+    },
+    "policy": {
+      "outcome": "allow",
+      "reasons": [
+        "attribution-required"
+      ]
+    },
+    "receiptId": "11192a21-4724-4b98-881b-c95b357bf012",
+    "snapshotKinds": [
+      "api-record",
+      "landing-page",
+      "license-page"
+    ]
+  },
+  "searchCandidates": 1,
+  "test": "rights_export_end_to_end_with_withdrawal"
+}

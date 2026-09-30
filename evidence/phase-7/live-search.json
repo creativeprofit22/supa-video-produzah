@@ -1,0 +1,102 @@
+{
+  "providers": [
+    {
+      "candidates": 14,
+      "elapsedMs": 514,
+      "licenses": [
+        "pdm",
+        "pdm",
+        "pdm",
+        "cc0",
+        "by-sa",
+        "by",
+        "by",
+        "by",
+        "pdm",
+        "by",
+        "by",
+        "by",
+        "pdm",
+        "by"
+      ],
+      "provider": "wikimedia-commons",
+      "query": "sunrise timelapse",
+      "status": "ok"
+    },
+    {
+      "candidates": 20,
+      "elapsedMs": 157,
+      "licenses": [
+        "by-sa",
+        "by-sa",
+        "pdm",
+        "by",
+        "pdm",
+        "by-nc-sa",
+        "by-nc-sa",
+        "by-nc-nd",
+        "by-nc-nd",
+        "by",
+        "by-nc-nd",
+        "by-nc-nd",
+        "by-sa",
+        "by-nd",
+        "by-nc-nd",
+        "by-sa",
+        "by-nc-nd",
+        "by-nc-sa",
+        "by-nc",
+        "by-nc-nd"
+      ],
+      "provider": "openverse",
+      "query": "sunrise",
+      "status": "ok"
+    },
+    {
+      "provider": "smithsonian",
+      "status": "skipped-no-key"
+    },
+    {
+      "provider": "pexels",
+      "status": "skipped-no-key"
+    },
+    {
+      "provider": "pixabay",
+      "status": "skipped-no-key"
+    },
+    {
+      "provider": "freesound",
+      "status": "skipped-no-key"
+    },
+    {
+      "candidates": 20,
+      "elapsedMs": 917,
+      "licenses": [
+        "by-nc",
+        "by",
+        "by",
+        "by-nc",
+        "by-nc-sa",
+        "by",
+        "by-nc-sa",
+        "by-nc-nd",
+        "by-nc",
+        "by-nc-sa",
+        "by-nd",
+        "unknown",
+        "by-nc-nd",
+        "by-nc-sa",
+        "by-nc-sa",
+        "by-nc",
+        "by-nc-sa",
+        "by-nc",
+        "by-nc",
+        "by-nd"
+      ],
+      "provider": "internet-archive",
+      "query": "sunrise timelapse",
+      "status": "ok"
+    }
+  ],
+  "test": "live_three_provider_search"
+}
