@@ -1,0 +1,43 @@
+{
+  "id": 3571264,
+  "width": 3840,
+  "height": 2160,
+  "duration": 33,
+  "url": "https://www.pexels.com/video/drone-footage-of-a-forest-3571264/",
+  "image": "https://images.pexels.com/videos/3571264/free-video-3571264.jpg",
+  "user": { "id": 1, "name": "Pat Photographer", "url": "https://www.pexels.com/@pat" },
+  "video_files": [
+    {
+      "id": 1,
+      "quality": "uhd",
+      "file_type": "video/mp4",
+      "width": 3840,
+      "height": 2160,
+      "link": "https://videos.pexels.com/video-files/3571264/uhd.mp4"
+    },
+    {
+      "id": 2,
+      "quality": "hd",
+      "file_type": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "link": "https://videos.pexels.com/video-files/3571264/hd.mp4"
+    },
+    {
+      "id": 3,
+      "quality": "sd",
+      "file_type": "video/mp4",
+      "width": 640,
+      "height": 360,
+      "link": "https://videos.pexels.com/video-files/3571264/sd.mp4"
+    },
+    {
+      "id": 4,
+      "quality": "hls",
+      "file_type": "application/x-mpegURL",
+      "width": null,
+      "height": null,
+      "link": "https://player.vimeo.com/x.m3u8"
+    }
+  ]
+}

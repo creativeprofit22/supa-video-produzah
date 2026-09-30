@@ -1,0 +1,17 @@
+{
+  "id": "4bc43a04-ef46-4544-a0c1-63c63f56e276",
+  "title": "Tree in fog",
+  "foreign_landing_url": "https://www.flickr.com/photos/someone/1234",
+  "url": "https://live.staticflickr.com/65535/1234_abcd_b.jpg",
+  "creator": "someone",
+  "creator_url": "https://www.flickr.com/photos/someone",
+  "license": "by",
+  "license_version": "2.0",
+  "license_url": "https://creativecommons.org/licenses/by/2.0/",
+  "provider": "flickr",
+  "source": "flickr",
+  "filetype": "jpg",
+  "width": 1024,
+  "height": 768,
+  "thumbnail": "https://api.openverse.org/v1/images/4bc43a04-ef46-4544-a0c1-63c63f56e276/thumb/"
+}

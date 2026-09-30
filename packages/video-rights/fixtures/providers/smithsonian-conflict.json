@@ -1,0 +1,21 @@
+{
+  "response": {
+    "id": "edanmdm-conflict_1",
+    "content": {
+      "descriptiveNonRepeating": {
+        "record_link": "https://collections.si.edu/search/detail/edanmdm:conflict_1",
+        "title": { "content": "Mixed rights" },
+        "metadata_usage": { "access": "Usage conditions apply" },
+        "online_media": {
+          "media": [
+            {
+              "type": "Images",
+              "content": "https://ids.si.edu/ids/deliveryService?id=X",
+              "usage": { "access": "CC0" }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

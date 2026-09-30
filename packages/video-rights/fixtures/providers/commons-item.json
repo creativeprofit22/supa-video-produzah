@@ -1,0 +1,39 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 12345,
+        "ns": 6,
+        "title": "File:Sunrise over hills.webm",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 2048,
+            "width": 1280,
+            "height": 720,
+            "duration": 4.5,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Sunrise.webm/320px--Sunrise.webm.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Sunrise_over_hills.webm",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Sunrise_over_hills.webm",
+            "mime": "video/webm",
+            "mediatype": "VIDEO",
+            "extmetadata": {
+              "ObjectName": { "value": "Sunrise over hills", "source": "mediawiki-metadata" },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Jane\" title=\"User:Jane\">Jane &amp; Co</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": { "value": "CC BY-SA 4.0", "source": "commons-desc-page" },
+              "LicenseUrl": {
+                "value": "https://creativecommons.org/licenses/by-sa/4.0",
+                "source": "commons-desc-page"
+              },
+              "AttributionRequired": { "value": "true", "source": "commons-desc-page" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

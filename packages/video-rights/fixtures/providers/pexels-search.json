@@ -1,0 +1,23 @@
+{
+  "page": 1,
+  "per_page": 20,
+  "total_results": 1,
+  "videos": [
+    {
+      "id": 3571264,
+      "duration": 33,
+      "url": "https://www.pexels.com/video/drone-footage-of-a-forest-3571264/",
+      "image": "https://images.pexels.com/videos/3571264/free-video-3571264.jpg",
+      "user": { "name": "Pat Photographer", "url": "https://www.pexels.com/@pat" },
+      "video_files": [
+        {
+          "file_type": "video/mp4",
+          "width": 1280,
+          "height": 720,
+          "link": "https://videos.pexels.com/video-files/3571264/hd.mp4"
+        }
+      ]
+    },
+    { "id": 99, "video_files": [] }
+  ]
+}

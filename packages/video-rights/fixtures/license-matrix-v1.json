@@ -1,0 +1,792 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    "private-preview",
+    "noncommercial-public",
+    "commercial-online",
+    "commercial-client",
+    "broadcast"
+  ],
+  "normalization": [
+    {
+      "name": "commons cc by-sa url and short name agree",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "name": "CC BY-SA 4.0",
+        "version": null
+      },
+      "expected": {
+        "code": "by-sa",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+      },
+      "displayName": "CC BY-SA 4.0"
+    },
+    {
+      "name": "openverse http url is canonicalized to https",
+      "input": {
+        "providerId": "openverse",
+        "url": "http://creativecommons.org/licenses/by/2.0/",
+        "name": "by",
+        "version": "2.0"
+      },
+      "expected": {
+        "code": "by",
+        "version": "2.0",
+        "url": "https://creativecommons.org/licenses/by/2.0/"
+      },
+      "displayName": "CC BY 2.0"
+    },
+    {
+      "name": "cc0 deed url",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "name": "cc0",
+        "version": "1.0"
+      },
+      "expected": {
+        "code": "cc0",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      },
+      "displayName": "CC0 1.0"
+    },
+    {
+      "name": "public domain mark url",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "name": "pdm",
+        "version": "1.0"
+      },
+      "expected": {
+        "code": "pdm",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/"
+      },
+      "displayName": "Public Domain Mark 1.0"
+    },
+    {
+      "name": "www host, uppercase code and deed suffix",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://www.creativecommons.org/licenses/BY-NC/3.0/deed.en",
+        "name": null,
+        "version": null
+      },
+      "expected": {
+        "code": "by-nc",
+        "version": "3.0",
+        "url": "https://creativecommons.org/licenses/by-nc/3.0/"
+      },
+      "displayName": "CC BY-NC 3.0"
+    },
+    {
+      "name": "legacy by-nd-nc spelling",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/licenses/by-nd-nc/1.0/",
+        "name": null,
+        "version": null
+      },
+      "expected": {
+        "code": "by-nc-nd",
+        "version": "1.0",
+        "url": "https://creativecommons.org/licenses/by-nc-nd/1.0/"
+      },
+      "displayName": "CC BY-NC-ND 1.0"
+    },
+    {
+      "name": "ported jurisdiction segment is dropped",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/licenses/by/2.0/uk/",
+        "name": null,
+        "version": null
+      },
+      "expected": {
+        "code": "by",
+        "version": "2.0",
+        "url": "https://creativecommons.org/licenses/by/2.0/"
+      },
+      "displayName": "CC BY 2.0"
+    },
+    {
+      "name": "url without trailing slash",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/licenses/by/4.0",
+        "name": null,
+        "version": null
+      },
+      "expected": {
+        "code": "by",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "displayName": "CC BY 4.0"
+    },
+    {
+      "name": "dashed short name without url",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": null,
+        "name": "CC-BY-NC-SA-4.0",
+        "version": null
+      },
+      "expected": {
+        "code": "by-nc-sa",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+      },
+      "displayName": "CC BY-NC-SA 4.0"
+    },
+    {
+      "name": "bare cc0 name",
+      "input": {
+        "providerId": "smithsonian",
+        "url": null,
+        "name": "CC0",
+        "version": null
+      },
+      "expected": {
+        "code": "cc0",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      },
+      "displayName": "CC0 1.0"
+    },
+    {
+      "name": "commons public domain short name",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": null,
+        "name": "Public domain",
+        "version": null
+      },
+      "expected": {
+        "code": "pdm",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/"
+      },
+      "displayName": "Public Domain Mark 1.0"
+    },
+    {
+      "name": "non-cc license name is unknown",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": null,
+        "name": "GFDL",
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "freesound sampling plus is unknown",
+      "input": {
+        "providerId": "freesound",
+        "url": "https://creativecommons.org/licenses/sampling+/1.0/",
+        "name": "Sampling+",
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "cc-shaped path on a foreign host is unknown",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://evil.example/licenses/by/4.0/",
+        "name": null,
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "url and name disagree",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": "https://creativecommons.org/licenses/by/4.0/",
+        "name": "CC BY-NC 4.0",
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "pexels is always custom terms",
+      "input": {
+        "providerId": "pexels",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "name": "CC0",
+        "version": null
+      },
+      "expected": { "code": "custom", "version": null, "url": "https://www.pexels.com/license/" },
+      "displayName": "Pexels License"
+    },
+    {
+      "name": "pixabay is always custom terms",
+      "input": { "providerId": "pixabay", "url": null, "name": null, "version": null },
+      "expected": {
+        "code": "custom",
+        "version": null,
+        "url": "https://pixabay.com/service/license-summary/"
+      },
+      "displayName": "Pixabay Content License"
+    },
+    {
+      "name": "freesound http by url",
+      "input": {
+        "providerId": "freesound",
+        "url": "http://creativecommons.org/licenses/by/3.0/",
+        "name": "Attribution",
+        "version": null
+      },
+      "expected": {
+        "code": "by",
+        "version": "3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/"
+      },
+      "displayName": "CC BY 3.0"
+    },
+    {
+      "name": "internet archive licenseurl is a cc deed",
+      "input": {
+        "providerId": "internet-archive",
+        "url": "https://creativecommons.org/licenses/by-nc/2.0/",
+        "name": null,
+        "version": null
+      },
+      "expected": {
+        "code": "by-nc",
+        "version": "2.0",
+        "url": "https://creativecommons.org/licenses/by-nc/2.0/"
+      },
+      "displayName": "CC BY-NC 2.0"
+    },
+    {
+      "name": "internet archive item without a license url is unknown",
+      "input": { "providerId": "internet-archive", "url": null, "name": null, "version": null },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "unsupported version keeps the code but no url",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": null,
+        "name": "CC BY 9.9",
+        "version": null
+      },
+      "expected": { "code": "by", "version": null, "url": null },
+      "displayName": "CC BY"
+    },
+    {
+      "name": "version taken from separate field and integer version expanded",
+      "input": { "providerId": "openverse", "url": null, "name": "by-nd", "version": "4" },
+      "expected": {
+        "code": "by-nd",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-nd/4.0/"
+      },
+      "displayName": "CC BY-ND 4.0"
+    },
+    {
+      "name": "spaced short name with separate version",
+      "input": {
+        "providerId": "wikimedia-commons",
+        "url": null,
+        "name": "CC BY-SA",
+        "version": "2.5"
+      },
+      "expected": {
+        "code": "by-sa",
+        "version": "2.5",
+        "url": "https://creativecommons.org/licenses/by-sa/2.5/"
+      },
+      "displayName": "CC BY-SA 2.5"
+    },
+    {
+      "name": "nothing stated",
+      "input": { "providerId": "openverse", "url": null, "name": null, "version": null },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "non-http scheme is unknown",
+      "input": {
+        "providerId": "openverse",
+        "url": "ftp://creativecommons.org/licenses/by/4.0/",
+        "name": null,
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    },
+    {
+      "name": "unsupported public domain version is unknown",
+      "input": {
+        "providerId": "openverse",
+        "url": "https://creativecommons.org/publicdomain/zero/2.0/",
+        "name": null,
+        "version": null
+      },
+      "expected": { "code": "unknown", "version": null, "url": null },
+      "displayName": "Unknown license"
+    }
+  ],
+  "policy": [
+    {
+      "code": "cc0",
+      "conflict": false,
+      "expected": {
+        "private-preview": { "outcome": "allow", "reasons": [] },
+        "noncommercial-public": { "outcome": "allow", "reasons": [] },
+        "commercial-online": { "outcome": "allow", "reasons": [] },
+        "commercial-client": { "outcome": "allow", "reasons": [] },
+        "broadcast": { "outcome": "allow", "reasons": [] }
+      }
+    },
+    {
+      "code": "pdm",
+      "conflict": false,
+      "expected": {
+        "private-preview": { "outcome": "allow", "reasons": [] },
+        "noncommercial-public": { "outcome": "allow", "reasons": [] },
+        "commercial-online": { "outcome": "allow", "reasons": [] },
+        "commercial-client": { "outcome": "allow", "reasons": [] },
+        "broadcast": { "outcome": "allow", "reasons": [] }
+      }
+    },
+    {
+      "code": "by",
+      "conflict": false,
+      "expected": {
+        "private-preview": { "outcome": "allow", "reasons": ["attribution-required"] },
+        "noncommercial-public": { "outcome": "allow", "reasons": ["attribution-required"] },
+        "commercial-online": { "outcome": "allow", "reasons": ["attribution-required"] },
+        "commercial-client": { "outcome": "allow", "reasons": ["attribution-required"] },
+        "broadcast": { "outcome": "allow", "reasons": ["attribution-required"] }
+      }
+    },
+    {
+      "code": "by-sa",
+      "conflict": false,
+      "expected": {
+        "private-preview": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "share-alike-obligation"]
+        },
+        "noncommercial-public": {
+          "outcome": "warn",
+          "reasons": ["attribution-required", "share-alike-obligation"]
+        },
+        "commercial-online": {
+          "outcome": "warn",
+          "reasons": ["attribution-required", "share-alike-obligation"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "share-alike-obligation"]
+        },
+        "broadcast": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "share-alike-obligation"]
+        }
+      }
+    },
+    {
+      "code": "by-nc",
+      "conflict": false,
+      "expected": {
+        "private-preview": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "noncommercial-only"]
+        },
+        "noncommercial-public": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "noncommercial-only"]
+        },
+        "commercial-online": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only"]
+        },
+        "broadcast": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only"]
+        }
+      }
+    },
+    {
+      "code": "by-nc-sa",
+      "conflict": false,
+      "expected": {
+        "private-preview": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "share-alike-obligation", "noncommercial-only"]
+        },
+        "noncommercial-public": {
+          "outcome": "warn",
+          "reasons": ["attribution-required", "share-alike-obligation", "noncommercial-only"]
+        },
+        "commercial-online": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "share-alike-obligation", "noncommercial-only"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "share-alike-obligation", "noncommercial-only"]
+        },
+        "broadcast": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "share-alike-obligation", "noncommercial-only"]
+        }
+      }
+    },
+    {
+      "code": "by-nd",
+      "conflict": false,
+      "expected": {
+        "private-preview": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "no-derivatives"]
+        },
+        "noncommercial-public": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "no-derivatives"]
+        },
+        "commercial-online": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "no-derivatives"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "no-derivatives"]
+        },
+        "broadcast": { "outcome": "block", "reasons": ["attribution-required", "no-derivatives"] }
+      }
+    },
+    {
+      "code": "by-nc-nd",
+      "conflict": false,
+      "expected": {
+        "private-preview": {
+          "outcome": "allow",
+          "reasons": ["attribution-required", "noncommercial-only", "no-derivatives"]
+        },
+        "noncommercial-public": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "no-derivatives"]
+        },
+        "commercial-online": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "no-derivatives"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "no-derivatives"]
+        },
+        "broadcast": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "no-derivatives"]
+        }
+      }
+    },
+    {
+      "code": "custom",
+      "conflict": false,
+      "expected": {
+        "private-preview": { "outcome": "allow", "reasons": ["custom-terms-review"] },
+        "noncommercial-public": { "outcome": "warn", "reasons": ["custom-terms-review"] },
+        "commercial-online": { "outcome": "warn", "reasons": ["custom-terms-review"] },
+        "commercial-client": { "outcome": "warn", "reasons": ["custom-terms-review"] },
+        "broadcast": { "outcome": "warn", "reasons": ["custom-terms-review"] }
+      }
+    },
+    {
+      "code": "unknown",
+      "conflict": false,
+      "expected": {
+        "private-preview": { "outcome": "warn", "reasons": ["license-unknown"] },
+        "noncommercial-public": { "outcome": "block", "reasons": ["license-unknown"] },
+        "commercial-online": { "outcome": "block", "reasons": ["license-unknown"] },
+        "commercial-client": { "outcome": "block", "reasons": ["license-unknown"] },
+        "broadcast": { "outcome": "block", "reasons": ["license-unknown"] }
+      }
+    },
+    {
+      "code": "cc0",
+      "conflict": true,
+      "expected": {
+        "private-preview": { "outcome": "warn", "reasons": ["license-conflict"] },
+        "noncommercial-public": { "outcome": "warn", "reasons": ["license-conflict"] },
+        "commercial-online": { "outcome": "warn", "reasons": ["license-conflict"] },
+        "commercial-client": { "outcome": "warn", "reasons": ["license-conflict"] },
+        "broadcast": { "outcome": "warn", "reasons": ["license-conflict"] }
+      }
+    },
+    {
+      "code": "by-nc",
+      "conflict": true,
+      "expected": {
+        "private-preview": {
+          "outcome": "warn",
+          "reasons": ["attribution-required", "noncommercial-only", "license-conflict"]
+        },
+        "noncommercial-public": {
+          "outcome": "warn",
+          "reasons": ["attribution-required", "noncommercial-only", "license-conflict"]
+        },
+        "commercial-online": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "license-conflict"]
+        },
+        "commercial-client": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "license-conflict"]
+        },
+        "broadcast": {
+          "outcome": "block",
+          "reasons": ["attribution-required", "noncommercial-only", "license-conflict"]
+        }
+      }
+    }
+  ],
+  "conflicts": [
+    {
+      "name": "no collection license",
+      "item": {
+        "code": "by",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "collection": null,
+      "expected": {
+        "license": {
+          "code": "by",
+          "version": "4.0",
+          "url": "https://creativecommons.org/licenses/by/4.0/"
+        },
+        "conflict": false
+      }
+    },
+    {
+      "name": "unknown item falls back to collection",
+      "item": { "code": "unknown", "version": null, "url": null },
+      "collection": {
+        "code": "cc0",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      },
+      "expected": {
+        "license": {
+          "code": "cc0",
+          "version": "1.0",
+          "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+        },
+        "conflict": false
+      }
+    },
+    {
+      "name": "unknown collection keeps item",
+      "item": {
+        "code": "cc0",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      },
+      "collection": { "code": "unknown", "version": null, "url": null },
+      "expected": {
+        "license": {
+          "code": "cc0",
+          "version": "1.0",
+          "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+        },
+        "conflict": false
+      }
+    },
+    {
+      "name": "same code different version keeps item",
+      "item": {
+        "code": "by",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "collection": {
+        "code": "by",
+        "version": "2.0",
+        "url": "https://creativecommons.org/licenses/by/2.0/"
+      },
+      "expected": {
+        "license": {
+          "code": "by",
+          "version": "4.0",
+          "url": "https://creativecommons.org/licenses/by/4.0/"
+        },
+        "conflict": false
+      }
+    },
+    {
+      "name": "more restrictive collection wins with conflict",
+      "item": {
+        "code": "cc0",
+        "version": "1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      },
+      "collection": {
+        "code": "by-nc",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-nc/4.0/"
+      },
+      "expected": {
+        "license": {
+          "code": "by-nc",
+          "version": "4.0",
+          "url": "https://creativecommons.org/licenses/by-nc/4.0/"
+        },
+        "conflict": true
+      }
+    },
+    {
+      "name": "more restrictive item wins with conflict",
+      "item": {
+        "code": "by-nd",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-nd/4.0/"
+      },
+      "collection": {
+        "code": "by-sa",
+        "version": "4.0",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+      },
+      "expected": {
+        "license": {
+          "code": "by-nd",
+          "version": "4.0",
+          "url": "https://creativecommons.org/licenses/by-nd/4.0/"
+        },
+        "conflict": true
+      }
+    },
+    {
+      "name": "both unknown",
+      "item": { "code": "unknown", "version": null, "url": null },
+      "collection": { "code": "unknown", "version": null, "url": null },
+      "expected": {
+        "license": { "code": "unknown", "version": null, "url": null },
+        "conflict": false
+      }
+    }
+  ],
+  "attribution": [
+    {
+      "name": "complete by attribution",
+      "code": "by",
+      "attribution": {
+        "title": "Harbor at dawn",
+        "creator": "Jane Doe",
+        "creatorUrl": null,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Harbor.webm",
+        "providerName": "Wikimedia Commons",
+        "licenseName": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "expectedMissing": []
+    },
+    {
+      "name": "by without creator or license url",
+      "code": "by-sa",
+      "attribution": {
+        "title": null,
+        "creator": "   ",
+        "creatorUrl": null,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Harbor.webm",
+        "providerName": "Wikimedia Commons",
+        "licenseName": "CC BY-SA",
+        "licenseUrl": null
+      },
+      "expectedMissing": ["creator", "licenseUrl"]
+    },
+    {
+      "name": "cc0 only needs a source",
+      "code": "cc0",
+      "attribution": {
+        "title": null,
+        "creator": null,
+        "creatorUrl": null,
+        "sourceUrl": "https://www.si.edu/object/example",
+        "providerName": "Smithsonian Open Access",
+        "licenseName": "CC0 1.0",
+        "licenseUrl": null
+      },
+      "expectedMissing": []
+    },
+    {
+      "name": "custom without source",
+      "code": "custom",
+      "attribution": {
+        "title": null,
+        "creator": "Pat",
+        "creatorUrl": null,
+        "sourceUrl": null,
+        "providerName": "Pexels",
+        "licenseName": "Pexels License",
+        "licenseUrl": "https://www.pexels.com/license/"
+      },
+      "expectedMissing": ["sourceUrl"]
+    },
+    {
+      "name": "unknown without anything",
+      "code": "unknown",
+      "attribution": {
+        "title": null,
+        "creator": null,
+        "creatorUrl": null,
+        "sourceUrl": null,
+        "providerName": "Openverse",
+        "licenseName": "Unknown license",
+        "licenseUrl": null
+      },
+      "expectedMissing": ["sourceUrl"]
+    }
+  ],
+  "credits": [
+    {
+      "name": "two entries sorted by receipt id with control characters flattened",
+      "entries": [
+        {
+          "receiptId": "00000000-0000-4000-8000-000000000002",
+          "attribution": {
+            "title": null,
+            "creator": null,
+            "creatorUrl": null,
+            "sourceUrl": "https://www.pexels.com/video/123/",
+            "providerName": "Pexels",
+            "licenseName": "Pexels License",
+            "licenseUrl": "https://www.pexels.com/license/"
+          }
+        },
+        {
+          "receiptId": "00000000-0000-4000-8000-000000000001",
+          "attribution": {
+            "title": "Harbor\nat dawn",
+            "creator": "Jane Doe",
+            "creatorUrl": null,
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Harbor.webm",
+            "providerName": "Wikimedia Commons",
+            "licenseName": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+          }
+        }
+      ],
+      "expectedText": "Credits\n\n\"Harbor at dawn\" by Jane Doe\n  License: CC BY 4.0 <https://creativecommons.org/licenses/by/4.0/>\n  Source: https://commons.wikimedia.org/wiki/File:Harbor.webm (via Wikimedia Commons)\n\nUntitled\n  License: Pexels License <https://www.pexels.com/license/>\n  Source: https://www.pexels.com/video/123/ (via Pexels)\n"
+    }
+  ]
+}

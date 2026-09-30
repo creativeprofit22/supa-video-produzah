@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "responseCode": 1,
+  "response": {
+    "id": "edanmdm-nasm_A19610048000",
+    "title": "Spirit of St. Louis",
+    "content": {
+      "descriptiveNonRepeating": {
+        "record_link": "https://collections.si.edu/search/detail/edanmdm:nasm_A19610048000",
+        "title": { "label": "Title", "content": "Ryan NYP \"Spirit of St. Louis\"" },
+        "metadata_usage": { "access": "CC0" },
+        "online_media": {
+          "mediaCount": 1,
+          "media": [
+            {
+              "type": "Images",
+              "content": "https://ids.si.edu/ids/deliveryService?id=NASM-A19610048000-NASM2018-10769",
+              "thumbnail": "https://ids.si.edu/ids/deliveryService?id=NASM-A19610048000-NASM2018-10769&max=150",
+              "usage": { "access": "CC0" },
+              "resources": [{ "label": "High-resolution JPEG", "width": 3000, "height": 2000 }]
+            }
+          ]
+        }
+      },
+      "freetext": { "name": [{ "label": "Manufacturer", "content": "Ryan Airlines Co." }] }
+    }
+  }
+}

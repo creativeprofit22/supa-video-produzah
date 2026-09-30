@@ -1,0 +1,52 @@
+{
+  "created": 1790730000,
+  "d1": "dn801200.us.archive.org",
+  "dir": "/0/items/Flickr-18926153804",
+  "files": [
+    {
+      "name": "20150708_HDR-18926153804.info.json",
+      "source": "original",
+      "size": "7723",
+      "format": "JSON"
+    },
+    {
+      "name": "20150708_HDR-18926153804.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "546599",
+      "length": "8.48",
+      "width": "400",
+      "height": "226"
+    },
+    {
+      "name": "20150708_HDR-18926153804.mp4",
+      "source": "original",
+      "size": "21637365",
+      "format": "MPEG4",
+      "length": "8.48",
+      "height": "1080",
+      "width": "1920",
+      "md5": "30011016ef57db70df65fee259a58d49"
+    },
+    {
+      "name": "Flickr-18926153804.thumbs/20150708_HDR-18926153804_000001.jpg",
+      "source": "derivative",
+      "format": "Thumbnail",
+      "size": "4235"
+    },
+    { "name": "__ia_thumb.jpg", "source": "original", "size": "5123", "format": "Item Tile" }
+  ],
+  "files_count": 5,
+  "item_last_updated": 1782396092,
+  "metadata": {
+    "identifier": "Flickr-18926153804",
+    "collection": ["flickrvideo", "additional_collections_video"],
+    "creator": "Chao-Wei Juan",
+    "date": "2015-07-09",
+    "licenseurl": "https://creativecommons.org/licenses/by-nc/2.0/",
+    "mediatype": "movies",
+    "originalurl": "https://www.flickr.com/photos/49851674@N00/18926153804",
+    "title": "20150708 <b>Sunrise</b> timelapse HDR"
+  },
+  "server": "dn801200.us.archive.org"
+}

@@ -1,0 +1,35 @@
+{
+  "responseHeader": { "status": 0, "QTime": 41 },
+  "response": {
+    "numFound": 3,
+    "start": 0,
+    "docs": [
+      {
+        "identifier": "Flickr-18926153804",
+        "title": "20150708 Sunrise timelapse HDR",
+        "creator": "Chao-Wei Juan",
+        "licenseurl": "https://creativecommons.org/licenses/by-nc/2.0/",
+        "mediatype": "movies"
+      },
+      {
+        "identifier": "prelinger-sunrise-1950",
+        "title": ["Sunrise Over the City", "alt title"],
+        "creator": ["Prelinger Archives"],
+        "licenseurl": "http://creativecommons.org/publicdomain/mark/1.0/",
+        "mediatype": "movies"
+      },
+      {
+        "identifier": "../escape",
+        "title": "bad id",
+        "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "mediatype": "movies"
+      },
+      {
+        "identifier": "some-audio-item",
+        "title": "wrong kind",
+        "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "mediatype": "audio"
+      }
+    ]
+  }
+}

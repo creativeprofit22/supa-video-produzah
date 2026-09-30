@@ -1,0 +1,19 @@
+{
+  "count": 2,
+  "results": [
+    {
+      "id": 1234,
+      "name": "Rain",
+      "username": "field_recorder",
+      "url": "https://freesound.org/people/field_recorder/sounds/1234/",
+      "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "previews": { "preview-hq-mp3": "https://cdn.freesound.org/previews/1/1234_5678-hq.mp3" }
+    },
+    {
+      "id": 5,
+      "name": "No preview",
+      "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+      "previews": {}
+    }
+  ]
+}

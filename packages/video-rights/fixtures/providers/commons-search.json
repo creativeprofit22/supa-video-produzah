@@ -1,0 +1,44 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 2,
+        "ns": 6,
+        "title": "File:Second.webm",
+        "index": 2,
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/b/Second.webm",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Second.webm",
+            "mime": "video/webm",
+            "mediatype": "VIDEO",
+            "width": 640,
+            "height": 360,
+            "extmetadata": { "LicenseShortName": { "value": "Public domain" } }
+          }
+        ]
+      },
+      {
+        "pageid": 1,
+        "ns": 6,
+        "title": "File:First.webm",
+        "index": 1,
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/a/First.webm",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:First.webm",
+            "mime": "video/webm",
+            "mediatype": "VIDEO",
+            "extmetadata": {
+              "LicenseShortName": { "value": "CC BY 4.0" },
+              "LicenseUrl": { "value": "https://creativecommons.org/licenses/by/4.0" },
+              "Artist": { "value": "Ann" }
+            }
+          }
+        ]
+      },
+      { "pageid": 3, "ns": 6, "title": "File:Broken.webm", "index": 3 }
+    ]
+  }
+}
