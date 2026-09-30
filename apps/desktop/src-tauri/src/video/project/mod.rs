@@ -21,6 +21,8 @@ mod clip_speed_compatibility_tests;
 #[cfg(test)]
 mod editor_controls_persistence_tests;
 #[cfg(test)]
+mod first_cut_tests;
+#[cfg(test)]
 mod proposal_tests;
 #[cfg(test)]
 mod speed_contract_tests;
