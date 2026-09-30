@@ -352,9 +352,14 @@ export function createMockVideoService(
     sourcePath?: string;
     mediaCacheStatus?: MediaCacheStatus;
     mediaRecovery?: MediaJobRecoveryReport | null;
+    /** Start with this project already open (as if created earlier). */
+    seedProjection?: ProjectProjection;
   } = {},
 ) {
-  let projection = emptyProjection();
+  let projection =
+    options.seedProjection === undefined
+      ? emptyProjection()
+      : structuredClone(options.seedProjection);
   const checkpointWarningRevisions = new Set(options.checkpointWarningRevisions ?? []);
   const checkpointEvents = (next: ProjectProjection) => {
     const pending = checkpointWarningRevisions.has(next.revision.number);
@@ -703,6 +708,16 @@ export function createMockVideoService(
           if (track.kind !== "caption") throw commandError("non_caption_track");
           track.activeCaptionArtifact = structuredClone(item.artifact);
           addCacheInvalidations(cacheInvalidations, ["captions", "render_plan"]);
+        } else if (item.type === "AddMarker") {
+          const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
+          if (sequence === undefined) throw commandError("unknown_sequence");
+          if (sequence.markers.some(({ id }) => id === item.marker.id))
+            throw commandError("duplicate_marker");
+          const index = item.index ?? sequence.markers.length;
+          if (!Number.isSafeInteger(index) || index < 0 || index > sequence.markers.length)
+            throw commandError("invalid_marker_index");
+          sequence.markers.splice(index, 0, structuredClone(item.marker));
+          addCacheInvalidations(cacheInvalidations, ["timeline"]);
         }
       }
       validateNoClipOverlaps(next);

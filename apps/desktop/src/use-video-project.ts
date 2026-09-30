@@ -16,6 +16,7 @@ import {
   microsecondsToSourceFrames,
   VideoDomainError,
   type ClipTransform,
+  type CommandGroupRequest,
   type CommandResult,
   type ProjectCommandV2,
   type ProjectProjection,
@@ -79,6 +80,8 @@ export type ProjectOperationState =
   | { readonly phase: "idle" }
   | { readonly phase: "pending"; readonly operation: ProjectOperation }
   | { readonly phase: "error"; readonly operation: ProjectOperation; readonly error: Error };
+export type FirstCutApplyOutcome =
+  { readonly ok: true } | { readonly ok: false; readonly message: string };
 export interface TrimDraft {
   readonly inFrame: number;
   readonly outFrame: number;
@@ -90,6 +93,7 @@ export type TimelineEditOperation =
   | "ripple-delete"
   | "transcript-edit"
   | "agent-proposal"
+  | "first-cut"
   | "generate-captions"
   | "caption-edit"
   | "audio-mix"
@@ -1254,6 +1258,53 @@ export function useVideoProject(
     [activateEditResult, backend],
   );
   /**
+   * Commits a reviewed first cut as one command group. The group was compiled
+   * against a specific revision; if the project moved on since, nothing is
+   * sent and the reviewer must re-plan. Rust re-validates the base revision.
+   */
+  const applyFirstCut = useCallback(
+    async (request: CommandGroupRequest): Promise<FirstCutApplyOutcome> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current)
+        return { ok: false, message: "Another edit is in progress. Try again when it finishes." };
+      if (request.projectId !== base.projectId || request.baseRevision !== base.revision.number)
+        return {
+          ok: false,
+          message: "The project changed since this first cut was planned. Re-plan it.",
+        };
+      const operation = ++editOperationRef.current;
+      editOperationPendingRef.current = true;
+      setEditOperation({ phase: "saving", operation: "first-cut" });
+      try {
+        const result = await backend.executeVideoProjectGroup(request);
+        if (result.groupId !== request.groupId)
+          throw new Error("The desktop service returned a mismatched first cut");
+        const activated = activateEditResult(base, result, operation);
+        if (activated) setEditOperation({ phase: "idle" });
+        return activated
+          ? { ok: true }
+          : { ok: false, message: "The project changed while applying. Re-plan the first cut." };
+      } catch (error) {
+        // The native commit re-validates the base revision; a project change that
+        // landed after the pre-check above is a stale plan, not an edit failure.
+        if (error instanceof VideoDomainError && error.code === "stale_revision") {
+          if (operation === editOperationRef.current) setEditOperation({ phase: "idle" });
+          return {
+            ok: false,
+            message: "The project changed since this first cut was planned. Re-plan it.",
+          };
+        }
+        const failure = asError(error);
+        if (operation === editOperationRef.current)
+          setEditOperation({ phase: "error", operation: "first-cut", error: failure });
+        return { ok: false, message: failure.message };
+      } finally {
+        if (operation === editOperationRef.current) editOperationPendingRef.current = false;
+      }
+    },
+    [activateEditResult, backend],
+  );
+  /**
    * Runs a native proposal edit (apply, or restore-to-before which may be
    * several undo steps) under the editor's single-edit lock and adopts the
    * final projection. The results must form an unbroken revision chain from
@@ -2244,6 +2295,7 @@ export function useVideoProject(
     trimTimelineClip,
     rippleDeleteTimelineClip,
     applyTranscriptEditProposal,
+    applyFirstCut,
     runProposalEdit,
     generateCaptionsFromTranscript,
     applyCaptionArtifactEdit,

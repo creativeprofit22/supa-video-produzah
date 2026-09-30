@@ -3512,3 +3512,85 @@ video {
   margin: 0 0 6px;
   font-size: 0.9rem;
 }
+
+.produce-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.produce-form {
+  display: grid;
+  gap: 8px;
+}
+
+.produce-form fieldset {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.produce-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.produce-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.produce-form textarea,
+.produce-form select,
+.first-cut-beat select {
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.first-cut-review {
+  display: grid;
+  gap: 8px;
+}
+
+.first-cut-beats {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.first-cut-beat {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+.first-cut-beat[data-status="unresolved"] {
+  border-style: dashed;
+}
+
+.first-cut-beat p,
+.first-cut-explanation {
+  margin: 0;
+}
+
+.first-cut-beat label {
+  display: grid;
+  gap: 4px;
+}
+
+.first-cut-explanation {
+  padding-left: 1.2em;
+  font-size: 0.85rem;
+}

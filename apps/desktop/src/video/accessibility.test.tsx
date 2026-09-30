@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createMockVideoService } from "../test-video-service";
 import { ExportPanel } from "./ExportPanel";
+import { ProducePanel } from "./ProducePanel";
+import { explainer, projectionFor, receiptsBackend } from "./produce-panel-fixtures";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset:${path}`),
@@ -138,6 +140,30 @@ describe("Phase 2 accessibility defect scanning", () => {
       </main>,
     );
     await screen.findByRole("dialog", { name: "Replace the existing file?" });
+    await expectNoAxeViolations(container);
+  });
+
+  it("reports zero violations for a reviewed first-cut proposal", async () => {
+    if (explainer.source.workflow !== "explainer") throw new Error("explainer fixture");
+    const { container } = render(
+      <ProducePanel
+        projection={projectionFor(explainer)}
+        aRoll={null}
+        artifact={null}
+        intendedUse={explainer.intendedUse}
+        disabled={false}
+        onApply={vi.fn(async () => ({ ok: true }) as const)}
+        backend={receiptsBackend(explainer.receipts)}
+        now={() => explainer.nowMs}
+      />,
+    );
+    await expectNoAxeViolations(container);
+    fireEvent.change(screen.getByRole("textbox", { name: /Script/ }), {
+      target: { value: explainer.source.script },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Plan first cut" }));
+    await screen.findByRole("list", { name: "First cut beats" });
+    await screen.findByText(/After applying, this project can’t be exported yet/);
     await expectNoAxeViolations(container);
   });
 });

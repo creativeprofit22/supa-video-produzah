@@ -3,7 +3,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { EventCallback } from "@tauri-apps/api/event";
-import type { MediaJobRecord } from "@supa-video/media";
+import type { MediaJobRecord, TranscriptArtifactV1 } from "@supa-video/media";
+import type { FirstCutFixture } from "@supa-video/produce";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,15 @@ import { CommandProvider } from "../commands/CommandProvider";
 import { createMockVideoService, testMediaJob } from "../test-video-service";
 import { useVideoProject } from "../use-video-project";
 import { VideoWorkspace } from "./VideoWorkspace";
+import { ProducePanel, type ProducePanelProps } from "./ProducePanel";
+import {
+  explainer,
+  podcast,
+  podcastARoll,
+  podcastArtifact,
+  projectionFor,
+  receiptsBackend,
+} from "./produce-panel-fixtures";
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: vi.fn((path: string) => `asset:${path}`),
   invoke: vi.fn(),
@@ -1244,5 +1254,160 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).not.toContain("private");
+  });
+});
+
+function FirstCutHarness({
+  fixture,
+  aRoll,
+  artifact,
+}: {
+  readonly fixture: FirstCutFixture;
+  readonly aRoll: ProducePanelProps["aRoll"];
+  readonly artifact: TranscriptArtifactV1 | null;
+}) {
+  const controller = useVideoProject();
+  return (
+    <>
+      <button type="button" onClick={() => void controller.openProject()}>
+        Open first-cut project
+      </button>
+      <button
+        type="button"
+        disabled={!controller.canUndo}
+        onClick={() => void controller.undoEdit()}
+      >
+        Undo first cut
+      </button>
+      <ProducePanel
+        projection={controller.projection}
+        aRoll={aRoll}
+        artifact={artifact}
+        intendedUse={fixture.intendedUse}
+        disabled={controller.editOperation.phase === "saving"}
+        onApply={controller.applyFirstCut}
+        backend={receiptsBackend(fixture.receipts)}
+        now={() => fixture.nowMs}
+      />
+    </>
+  );
+}
+
+describe("first-cut production workflow", { timeout: 15_000 }, () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    listenMock.mockReset().mockResolvedValue(vi.fn());
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+  });
+
+  it.each([
+    ["explainer", explainer, null, false],
+    ["podcast", podcast, podcastARoll(), true],
+  ] as const)(
+    "plans, reviews, applies and undoes a %s first cut through one command group",
+    async (_name, fixture, aRoll, usesTranscript) => {
+      const seed = projectionFor(fixture);
+      const service = createMockVideoService({ seedProjection: seed });
+      invokeMock.mockImplementation(service.invoke);
+      render(
+        <FirstCutHarness
+          fixture={fixture}
+          aRoll={aRoll}
+          artifact={usesTranscript ? await podcastArtifact() : null}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open first-cut project" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Plan first cut" })).toHaveProperty(
+          "disabled",
+          false,
+        ),
+      );
+      const original = structuredClone(service.projection.state);
+      const revision = service.projection.revision.number;
+
+      if (fixture.source.workflow === "explainer") {
+        fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+          target: { value: fixture.language },
+        });
+        fireEvent.change(screen.getByRole("textbox", { name: /Script/ }), {
+          target: { value: fixture.source.script },
+        });
+      } else {
+        fireEvent.click(screen.getByRole("radio", { name: "Podcast from the A-roll transcript" }));
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Plan first cut" }));
+      const beats = await screen.findByRole("list", { name: "First cut beats" });
+      // Unknown-license media is never a selectable shot.
+      for (const select of within(beats).queryAllByRole("combobox")) {
+        const labels = within(select)
+          .getAllByRole("option")
+          .map((option) => option.textContent ?? "");
+        expect(
+          labels.some((label) => /snow river\.webm|microphone closeup\.webm/.test(label)),
+        ).toBe(false);
+      }
+      const groupsBefore = invokeMock.mock.calls.filter(
+        ([command]) => command === "video_execute_project_group",
+      ).length;
+      fireEvent.click(screen.getByRole("button", { name: "Apply first cut" }));
+      await screen.findByText(/First cut added on new tracks/);
+      const groups = invokeMock.mock.calls.filter(
+        ([command]) => command === "video_execute_project_group",
+      );
+      expect(groups).toHaveLength(groupsBefore + 1);
+      expect(service.projection.revision.number).toBe(revision + 1);
+      const sequence = service.projection.state.sequences[0];
+      const originalSequence = original.sequences[0];
+      expect(sequence?.tracks.slice(0, originalSequence?.tracks.length)).toEqual(
+        originalSequence?.tracks,
+      );
+      expect(
+        sequence?.tracks.map((track) => track.name).slice(originalSequence?.tracks.length),
+      ).toContain("First cut");
+
+      fireEvent.click(screen.getByRole("button", { name: "Undo first cut" }));
+      await waitFor(() => expect(service.projection.state).toEqual(original));
+    },
+  );
+
+  it("asks for a re-plan when native rejects the first cut as stale", async () => {
+    const service = createMockVideoService({ seedProjection: projectionFor(explainer) });
+    invokeMock.mockImplementation(service.invoke);
+    render(<FirstCutHarness fixture={explainer} aRoll={null} artifact={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open first-cut project" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Plan first cut" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+      target: { value: explainer.language },
+    });
+    if (explainer.source.workflow !== "explainer") throw new Error("Expected explainer fixture");
+    fireEvent.change(screen.getByRole("textbox", { name: /Script/ }), {
+      target: { value: explainer.source.script },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Plan first cut" }));
+    await screen.findByRole("list", { name: "First cut beats" });
+    const revision = service.projection.revision.number;
+
+    // The project moves on between the frontend pre-check and the native commit.
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "video_execute_project_group")
+        throw {
+          code: "stale_revision",
+          message: "Project history operation was rejected",
+          details: {},
+        };
+      return service.invoke(command, args);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply first cut" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Re-plan it");
+    expect(alert.textContent).not.toContain("Project history operation was rejected");
+    expect(service.projection.revision.number).toBe(revision);
   });
 });

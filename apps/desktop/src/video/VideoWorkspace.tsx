@@ -37,6 +37,7 @@ import { ClipTrimRanges } from "./ClipTrimRanges";
 import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
+import { ProducePanel } from "./ProducePanel";
 import { ProposalsPanel, type ProposalTimelineRange } from "./ProposalsPanel";
 import { createRightsAgentSession } from "../rights-agent-tools";
 import { tauriRightsBackend } from "../rights-ipc";
@@ -307,6 +308,26 @@ export function VideoWorkspace({
     controller.source?.assetId,
     controller.sourcePath,
   ]);
+  // Podcast first cuts plan against every transcribed A-roll clip; transcript
+  // edits split the A-roll into several clips of the same asset.
+  const firstCutARoll = useMemo(() => {
+    if (transcriptTarget === null || canonicalSequence === null) return null;
+    const track = canonicalSequence.tracks.find(
+      (candidate) => candidate.id === transcriptTarget.trackId,
+    );
+    const clipIds =
+      track === undefined || track.kind === "caption"
+        ? []
+        : track.clips
+            .filter(
+              (candidate) =>
+                candidate.source.kind === "asset" &&
+                candidate.source.assetId === transcriptTarget.assetId,
+            )
+            .sort((a, b) => a.timelineStart.value - b.timelineStart.value)
+            .map((clip) => clip.id);
+    return clipIds.length === 0 ? null : { assetId: transcriptTarget.assetId, clipIds };
+  }, [canonicalSequence, transcriptTarget]);
   const orderedMediaIds = useMemo(
     () =>
       canonicalSequence?.tracks.flatMap((track) =>
@@ -1323,6 +1344,14 @@ export function VideoWorkspace({
             disabled={editPending}
             runEdit={controller.runProposalEdit}
             onPreviewRanges={setProposalRanges}
+          />
+          <ProducePanel
+            projection={controller.projection}
+            aRoll={firstCutARoll}
+            artifact={transcriptArtifact}
+            intendedUse={controller.exportIntendedUse}
+            disabled={editPending}
+            onApply={controller.applyFirstCut}
           />
           <RightsPanel
             projectId={controller.projection?.projectId ?? null}
