@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { VideoProjectSnapshotV2 } from "./project-v2.js";
+import { assetOriginSchema } from "./asset-origin.js";
 import { mediaContentIdentityV1Schema } from "./source-content.js";
 import {
   compareRationalTimes,
@@ -91,6 +92,8 @@ export const videoAssetSchema = z
     locator: assetLocatorSchema,
     probe: mediaProbeSchema,
     contentIdentity: mediaContentIdentityV1Schema.optional(),
+    /** Present only for assets created by Rust's rights acquisition command. */
+    origin: assetOriginSchema.optional(),
   })
   .strict();
 

@@ -10,6 +10,7 @@ export * from "./project-commands-v2.js";
 export * from "./project-service.js";
 export * from "./project-io.js";
 export * from "./render-plan.js";
+export * from "./rights.js";
 export * from "./source-content.js";
 export * from "./time.js";
 export * from "./timeline-snap.js";

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { videoCommandErrorSchema } from "./errors.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
+import { usePolicyProfileSchema } from "./rights.js";
 import {
   clipFadesSchema,
   clipTransformGeometrySchema,
@@ -209,6 +210,18 @@ export const renderVideoInputV2Schema = z
 
 export type RenderVideoInputV2 = z.infer<typeof renderVideoInputV2Schema>;
 
+/**
+ * Advisory rights context. Rust's release gate identifies acquired inputs by
+ * content digest regardless; claims here can only add checks, never skip them.
+ */
+export const renderRightsContextSchema = z
+  .object({
+    intendedUse: usePolicyProfileSchema,
+    acquisitionReceiptIdsByAssetId: z.record(projectUuidSchema, z.uuid()),
+  })
+  .strict();
+export type RenderRightsContext = z.infer<typeof renderRightsContextSchema>;
+
 export const renderPlanV2Schema = z
   .object({
     schemaVersion: z.literal(2),
@@ -220,12 +233,24 @@ export const renderPlanV2Schema = z
     captions: z.array(renderCaptionInputV2Schema).max(100_000).optional(),
     /** Present when the sequence has a loudness target (two-pass loudnorm). */
     audioMix: sequenceLoudnessTargetSchema.optional(),
+    rights: renderRightsContextSchema.optional(),
     outputPath: pathSchema,
     expected: renderExpectationSchema,
     argv: z.array(argumentSchema).min(1).max(10_000),
   })
   .strict()
   .superRefine((plan, context) => {
+    if (
+      plan.rights !== undefined &&
+      Object.keys(plan.rights.acquisitionReceiptIdsByAssetId).some(
+        (assetId) => !(assetId in plan.inputPathsByAssetId),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Rights claims must reference render inputs",
+      });
+    }
     if (plan.argv.at(-1) !== plan.outputPath) {
       context.addIssue({
         code: "custom",
