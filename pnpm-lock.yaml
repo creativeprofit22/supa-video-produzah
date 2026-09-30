@@ -47,6 +47,9 @@ importers:
       '@supa-video/render':
         specifier: workspace:*
         version: link:../../packages/video-render
+      '@supa-video/rights':
+        specifier: workspace:*
+        version: link:../../packages/video-rights
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1

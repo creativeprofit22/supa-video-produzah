@@ -1,9 +1,15 @@
-import { VideoDomainError, type VideoErrorCode } from "@supa-video/contracts";
+import {
+  usePolicyProfileSchema,
+  VideoDomainError,
+  type UsePolicyProfile,
+  type VideoErrorCode,
+} from "@supa-video/contracts";
 import type { MediaJobRecord } from "@supa-video/media";
 import { AlertCircle, CheckCircle2, Download, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import type { RenderState } from "../use-video-project";
+import { intendedUseLabels, rightsRenderErrorMessage } from "./export-rights";
 import { formatDuration, formatFileSize } from "./format-video";
 import { isMediaJobActive, isMediaJobSettled, MediaJobStatus } from "./MediaJobStatus";
 import type { ReadinessState } from "./VideoProjectOpener";
@@ -34,6 +40,8 @@ const renderPlanCategoryMessages: ReadonlyMap<unknown, string> = new Map([
 
 function safeRenderError(error: Error): string {
   if (error instanceof VideoDomainError) {
+    const rightsMessage = rightsRenderErrorMessage(error);
+    if (rightsMessage !== null) return rightsMessage;
     const category = error.details["category"];
     if (error.code === "invalid_render_plan") {
       if (category === "unsupported_composition") return error.message;
@@ -61,6 +69,9 @@ interface ExportPanelProps {
   readonly onCancel: () => void;
   readonly onConfirmOverwrite: () => void;
   readonly onOpenJobCenter: (jobId: string) => void;
+  /** Declared use of the export, checked against acquired media licenses. */
+  readonly intendedUse?: UsePolicyProfile | null;
+  readonly onIntendedUseChange?: (intendedUse: UsePolicyProfile | null) => void;
 }
 
 export function ExportPanel({
@@ -75,6 +86,8 @@ export function ExportPanel({
   onCancel,
   onConfirmOverwrite,
   onOpenJobCenter,
+  intendedUse = null,
+  onIntendedUseChange,
 }: ExportPanelProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelDialogButtonRef = useRef<HTMLButtonElement>(null);
@@ -166,6 +179,31 @@ export function ExportPanel({
           </button>
         )}
       </div>
+
+      {onIntendedUseChange === undefined ? null : (
+        <label className="export-intended-use">
+          <span>Intended use</span>
+          <select
+            value={intendedUse ?? ""}
+            disabled={active || destinationPending}
+            aria-describedby="export-intended-use-help"
+            onChange={(event) => {
+              const parsed = usePolicyProfileSchema.safeParse(event.target.value);
+              onIntendedUseChange(parsed.success ? parsed.data : null);
+            }}
+          >
+            <option value="">As declared when media was acquired</option>
+            {usePolicyProfileSchema.options.map((profile) => (
+              <option key={profile} value={profile}>
+                {intendedUseLabels[profile]}
+              </option>
+            ))}
+          </select>
+          <small id="export-intended-use-help">
+            Stock and public media licenses are checked against this before export.
+          </small>
+        </label>
+      )}
 
       {ineligibilityReason !== null ? (
         <div className="neutral-status" role="status">

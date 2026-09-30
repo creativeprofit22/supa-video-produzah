@@ -27,6 +27,7 @@ import {
   type VideoProjectFileV1,
   type VideoSourceRecord,
   videoProjectFileV1Schema,
+  type UsePolicyProfile,
 } from "@supa-video/contracts";
 import type {
   CaptionArtifactV1,
@@ -58,6 +59,8 @@ import {
   selectAffectedCaptionReferences,
 } from "./managed-transcript-resolution";
 import type { ProposalEditOutcome } from "./proposal-ipc";
+import { tauriRightsBackend } from "./rights-ipc";
+import { runRightsPreflight, type RightsPreflightBackend } from "./video/export-rights";
 import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
 
 export type PreparationState =
@@ -66,6 +69,12 @@ export type PreparationState =
   | { readonly phase: "error"; readonly error: Error }
   | { readonly phase: "success"; readonly value: PreparedVideoAsset };
 export type ProjectOperation = "new" | "open" | "import" | "regrant";
+
+export interface AcquiredImportOptions {
+  readonly displayName: string;
+  readonly acquisitionReceiptId: string;
+  readonly contentIdentity: { readonly digest: string; readonly byteLength: number };
+}
 export type ProjectOperationState =
   | { readonly phase: "idle" }
   | { readonly phase: "pending"; readonly operation: ProjectOperation }
@@ -419,8 +428,17 @@ function eventMatchesIdentity(event: VideoRenderNotification, identity: RenderId
   );
 }
 
-export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
+export function useVideoProject(
+  backend: VideoBackend = tauriVideoBackend,
+  rightsBackend: RightsPreflightBackend | null = tauriRightsBackend,
+) {
   const [state, setState] = useState(initialControllerState);
+  const [exportIntendedUse, setExportIntendedUseState] = useState<UsePolicyProfile | null>(null);
+  const exportIntendedUseRef = useRef<UsePolicyProfile | null>(null);
+  const setExportIntendedUse = useCallback((next: UsePolicyProfile | null) => {
+    exportIntendedUseRef.current = next;
+    setExportIntendedUseState(next);
+  }, []);
   const [render, setRender] = useState<RenderState>({ phase: "idle" });
   const [destinationPending, setDestinationPending] = useState(false);
   const [destinationError, setDestinationError] = useState<Error | null>(null);
@@ -884,7 +902,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
   }, [activateProjection, backend, closeCurrent, patchState, prepareOpenedSources, replaceState]);
 
   const persistImportedSource = useCallback(
-    async (operation: number, path: string) => {
+    async (operation: number, path: string, acquired?: AcquiredImportOptions) => {
       const base = stateRef.current.projection;
       if (base === null) throw new Error("Create or open a project before choosing a source video");
       const assetId = newId();
@@ -910,10 +928,18 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
             commandId: newId(),
             asset: {
               id: assetId,
-              displayName: sourceDisplayName(path),
+              displayName: acquired?.displayName ?? sourceDisplayName(path),
               locator: { absolutePath: path },
               probe: sourceProbe,
               contentIdentity: prepared.sourceIdentity,
+              ...(acquired === undefined
+                ? {}
+                : {
+                    origin: {
+                      kind: "acquired" as const,
+                      acquisitionReceiptId: acquired.acquisitionReceiptId,
+                    },
+                  }),
             },
           },
           {
@@ -967,6 +993,11 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       const committedAsset = result.projection.state.assets.find((asset) => asset.id === assetId);
       if (!contentIdentityMatches(prepared.sourceIdentity, committedAsset?.contentIdentity))
         throw new Error("The committed source identity does not match the prepared media");
+      if (
+        acquired !== undefined &&
+        !contentIdentityMatches(acquired.contentIdentity, committedAsset?.contentIdentity)
+      )
+        throw new Error("The committed source does not match the acquired media");
       activateProjection(result.projection, {
         projectPath: stateRef.current.projectPath,
         preparedAsset: prepared,
@@ -1010,6 +1041,27 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       });
       try {
         await persistImportedSource(operation, path);
+      } catch (error) {
+        if (operation === projectOperationRef.current)
+          patchState({
+            projectOperation: { phase: "error", operation: "import", error: asError(error) },
+            preparation: { phase: "error", error: asError(error) },
+          });
+      }
+    },
+    [patchState, persistImportedSource],
+  );
+
+  /** Imports media acquired by the rights service, carrying its receipt as the asset origin. */
+  const importAcquiredSource = useCallback(
+    async (source: AcquiredImportOptions & { readonly absolutePath: string }) => {
+      const operation = ++projectOperationRef.current;
+      patchState({
+        projectOperation: { phase: "pending", operation: "import" },
+        preparation: { phase: "pending" },
+      });
+      try {
+        await persistImportedSource(operation, source.absolutePath, source);
       } catch (error) {
         if (operation === projectOperationRef.current)
           patchState({
@@ -2069,11 +2121,21 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
       if (!activeEligibility.eligible) {
         throw unsupportedCompositionError(activeEligibility.reason);
       }
+      const intendedUse = exportIntendedUseRef.current;
+      const rightsError = await runRightsPreflight(
+        rightsBackend,
+        active.state,
+        intendedUse,
+        Date.now(),
+      );
+      if (rightsError !== null) throw rightsError;
+      if (operation !== destinationOperationRef.current) return;
       const plan = compileActiveSequenceRenderPlan({
         planId: newId(),
         revision: { revision: active.revision, state: active.state },
         inputPathsByAssetId,
         outputPath,
+        ...(intendedUse === null ? {} : { intendedUse }),
       });
       await startRenderPlan(plan, false);
     } catch (error) {
@@ -2084,7 +2146,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
         setDestinationPending(false);
       }
     }
-  }, [backend, startRenderPlan]);
+  }, [backend, rightsBackend, startRenderPlan]);
   const confirmOverwrite = useCallback(async () => {
     const plan = overwritePlanRef.current;
     if (plan !== null && renderRef.current.phase === "failed") await startRenderPlan(plan, true);
@@ -2172,6 +2234,7 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     openProject,
     chooseSource,
     prepareImportedSource,
+    importAcquiredSource,
     regrantSourceAccess,
     retryPreparation,
     updateTrimDraft,
@@ -2199,6 +2262,8 @@ export function useVideoProject(backend: VideoBackend = tauriVideoBackend) {
     redoEdit,
     convertCachePath: backend.convertFileSrc,
     exportVideo,
+    exportIntendedUse,
+    setExportIntendedUse,
     confirmOverwrite,
     cancelRender,
   } as const;

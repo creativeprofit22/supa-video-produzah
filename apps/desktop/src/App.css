@@ -3364,3 +3364,151 @@ video {
     forced-color-adjust: none;
   }
 }
+
+.export-intended-use {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.export-intended-use select {
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.export-intended-use small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.rights-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rights-search {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.rights-search label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rights-search select,
+.rights-search input {
+  font: inherit;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rights-status:empty {
+  display: none;
+}
+
+.rights-results,
+.rights-receipts ul,
+.rights-inspector ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rights-result,
+.rights-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+.rights-result-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rights-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rights-compare-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rights-outcome {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.rights-outcome-block {
+  color: var(--danger);
+}
+
+.rights-compare {
+  overflow-x: auto;
+}
+
+.rights-compare table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.rights-compare :is(th, td) {
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.rights-inspector dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.rights-inspector dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rights-digest {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.rights-credits pre {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+}
+
+.rights-receipts h3,
+.rights-inspector h3,
+.rights-inspector h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}

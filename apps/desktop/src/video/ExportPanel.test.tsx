@@ -221,4 +221,40 @@ describe("ExportPanel", () => {
     expect(screen.getByText("AAC")).toBeTruthy();
     expect(screen.getByText("C:\\Neutral\\Exports\\final.mp4")).toBeTruthy();
   });
+
+  it("lets the user declare the export's intended use", () => {
+    const onIntendedUseChange = vi.fn();
+    render(
+      <ExportPanel
+        {...baseProps()}
+        render={{ phase: "idle" }}
+        intendedUse={null}
+        onIntendedUseChange={onIntendedUseChange}
+      />,
+    );
+    const select = screen.getByRole("combobox", { name: /Intended use/ });
+    fireEvent.change(select, { target: { value: "broadcast" } });
+    expect(onIntendedUseChange).toHaveBeenLastCalledWith("broadcast");
+    fireEvent.change(select, { target: { value: "" } });
+    expect(onIntendedUseChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("explains a rights refusal from the release gate", () => {
+    render(
+      <ExportPanel
+        {...baseProps()}
+        destinationError={
+          new VideoDomainError("invalid_render_plan", "invalid", {
+            category: "rights_upstream_withdrawn",
+          })
+        }
+        render={{ phase: "idle" }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Rights check failed: The provider no longer offers this item. Remove it from the timeline.",
+      ),
+    ).toBeTruthy();
+  });
 });

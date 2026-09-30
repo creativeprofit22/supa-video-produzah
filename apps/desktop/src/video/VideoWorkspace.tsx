@@ -38,6 +38,9 @@ import { ExportPanel } from "./ExportPanel";
 import { formatProjectName } from "./format-video";
 import { MultitrackTimeline } from "./MultitrackTimeline";
 import { ProposalsPanel, type ProposalTimelineRange } from "./ProposalsPanel";
+import { createRightsAgentSession } from "../rights-agent-tools";
+import { tauriRightsBackend } from "../rights-ipc";
+import { RightsPanel } from "./RightsPanel";
 import { ProgramMonitor, type ProgramMonitorLayer } from "./ProgramMonitor";
 import {
   activeCaptionCuesForTimelineFrame,
@@ -264,6 +267,26 @@ export function VideoWorkspace({
     ) ?? null;
   const [transcriptArtifact, setTranscriptArtifact] = useState<TranscriptArtifactV1 | null>(null);
   const [proposalRanges, setProposalRanges] = useState<readonly ProposalTimelineRange[]>([]);
+  const [agentProposalVersion, setAgentProposalVersion] = useState(0);
+  const exportIntendedUseRef = useRef(controller.exportIntendedUse);
+  useEffect(() => {
+    exportIntendedUseRef.current = controller.exportIntendedUse;
+  }, [controller.exportIntendedUse]);
+  // Agent rights tools: read-only search plus proposals that wait for the user's approval.
+  const rightsAgent = useMemo(
+    () =>
+      createRightsAgentSession({
+        backend: tauriRightsBackend,
+        intendedUse: () => exportIntendedUseRef.current ?? "private-preview",
+        newId: () => crypto.randomUUID(),
+        onChange: () => setAgentProposalVersion((version) => version + 1),
+      }),
+    [],
+  );
+  const agentProposals = useMemo(
+    () => rightsAgent.proposals(),
+    [rightsAgent, agentProposalVersion],
+  );
   const transcriptTarget = useMemo((): TranscriptTarget | null => {
     const projectId = controller.projection?.projectId;
     const assetId = controller.source?.assetId;
@@ -1266,6 +1289,8 @@ export function VideoWorkspace({
             onCancel={() => void controller.cancelRender()}
             onConfirmOverwrite={() => void controller.confirmOverwrite()}
             onOpenJobCenter={onOpenJobCenter}
+            intendedUse={controller.exportIntendedUse}
+            onIntendedUseChange={controller.setExportIntendedUse}
           />
           <TranscriptPanel
             backend={transcriptionBackend}
@@ -1298,6 +1323,30 @@ export function VideoWorkspace({
             disabled={editPending}
             runEdit={controller.runProposalEdit}
             onPreviewRanges={setProposalRanges}
+          />
+          <RightsPanel
+            projectId={controller.projection?.projectId ?? null}
+            disabled={editPending}
+            intendedUse={controller.exportIntendedUse}
+            onImportAcquired={(acquired) =>
+              controller.importAcquiredSource({
+                absolutePath: acquired.importSource.absolutePath,
+                displayName: acquired.receipt.attribution.title ?? acquired.receipt.providerItemId,
+                acquisitionReceiptId: acquired.receipt.receiptId,
+                contentIdentity: acquired.importSource.contentIdentity,
+              })
+            }
+            agentProposals={agentProposals}
+            onDecideAgentProposal={async (proposalId, decision) => {
+              if (decision === "reject") {
+                rightsAgent.rejectAcquisitionProposal(proposalId);
+                return null;
+              }
+              const projectId = controller.projection?.projectId;
+              if (projectId === undefined) return null;
+              const result = await rightsAgent.approveAcquisitionProposal(proposalId, projectId);
+              return result.ok ? result.value : null;
+            }}
           />
           <AudioPanel
             sequence={canonicalSequence}

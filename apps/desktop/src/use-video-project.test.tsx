@@ -21,6 +21,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { sampleReceipt } from "./rights-fixtures";
 import { useVideoProject } from "./use-video-project";
 import { ProposalsPanel } from "./video/ProposalsPanel";
 import {
@@ -3052,6 +3053,96 @@ describe("canonical project controller", () => {
     expect(result.current.destinationError?.message).toBe(
       "Each video track must contain exactly one direct-asset clip to export",
     );
+  });
+
+  it("explains a rights preflight failure before any render starts", async () => {
+    const opened = clipProjection(1);
+    const receiptId = "00000000-0000-4000-8000-00000000a001";
+    opened.state.assets[0] = {
+      ...opened.state.assets[0]!,
+      origin: { kind: "acquired", acquisitionReceiptId: receiptId },
+    };
+    const startVideoRender = vi.fn();
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender,
+    });
+    const rights = {
+      listRightsReceipts: vi.fn(async () => [
+        sampleReceipt({
+          receiptId,
+          content: sourceIdentity,
+          lastRefreshAtMs: Date.now(),
+          lastRefreshStatus: "withdrawn",
+        }),
+      ]),
+    };
+    const { result } = renderHook(() => useVideoProject(backend, rights));
+    await act(() => result.current.openProject());
+    await act(() => result.current.exportVideo());
+
+    expect(rights.listRightsReceipts).toHaveBeenCalledOnce();
+    expect(startVideoRender).not.toHaveBeenCalled();
+    expect(result.current.destinationError?.message).toContain(
+      "The provider no longer offers this item.",
+    );
+  });
+
+  it("carries the declared intended use and receipt claims into the render plan", async () => {
+    const opened = clipProjection(1);
+    const receiptId = "00000000-0000-4000-8000-00000000a001";
+    opened.state.assets[0] = {
+      ...opened.state.assets[0]!,
+      origin: { kind: "acquired", acquisitionReceiptId: receiptId },
+    };
+    const startVideoRender = vi.fn(async (plan: RenderPlan) => ({
+      jobId: id(90),
+      planId: plan.planId,
+      revisionId: plan.revisionId,
+    }));
+    const backend = createBackend({
+      openVideoProject: vi.fn(async () => ({
+        projection: opened,
+        recovery: {
+          status: "clean" as const,
+          recoveredRevision: 1,
+          replayedRecordCount: 0,
+          discardedTailBytes: 0,
+          message: "Clean",
+          legacyHistoryReset: false,
+        },
+      })),
+      pickVideoExportPath: vi.fn(async () => "C:\\Exports\\clip.mp4"),
+      startVideoRender,
+    });
+    const rights = {
+      listRightsReceipts: vi.fn(async () => [
+        sampleReceipt({ receiptId, content: sourceIdentity, lastRefreshAtMs: Date.now() }),
+      ]),
+    };
+    const { result } = renderHook(() => useVideoProject(backend, rights));
+    await act(() => result.current.openProject());
+    act(() => result.current.setExportIntendedUse("commercial-online"));
+    await act(() => result.current.exportVideo());
+
+    expect(startVideoRender).toHaveBeenCalledOnce();
+    expect(startVideoRender.mock.calls[0]?.[0]).toMatchObject({
+      rights: {
+        intendedUse: "commercial-online",
+        acquisitionReceiptIdsByAssetId: { [opened.state.assets[0]!.id]: receiptId },
+      },
+    });
   });
 
   it("exports all canonical video tracks while preserving hidden-layer audio and editability", async () => {
