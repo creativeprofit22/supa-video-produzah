@@ -1,5 +1,0 @@
-Some(SourceObject),false,gate_ms=238
-Some(SourceObject),true,gate_ms=43
-Some(Proxy),false,late_ms=12071
-None,false,gate_ms=42
-None,true,gate_ms=35

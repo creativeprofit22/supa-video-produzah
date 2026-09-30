@@ -1,7 +1,0 @@
-Some(SourceObject),false,gate_ms=48
-Some(SourceObject),true,gate_ms=80
-Some(Proxy),false,gate_ms=3820
-Some(Proxy),true,gate_ms=122
-Some(ThumbnailTile),false,late_ms=11554
-None,false,gate_ms=41
-None,true,gate_ms=13
