@@ -8,6 +8,7 @@ import {
   type RenderCaptionInputV2,
   type RenderPlanV1,
   type RenderPlanV2,
+  type UsePolicyProfile,
   type VideoProjectStateV2,
   VideoDomainError,
   createRationalTime,
@@ -49,6 +50,8 @@ export interface CompileActiveSequenceRenderPlanInput {
   readonly revision: Readonly<RenderableRevisionV2>;
   readonly inputPathsByAssetId: Readonly<Record<string, string>>;
   readonly outputPath: string;
+  /** Declared use of this export. When present, the plan carries a rights context. */
+  readonly intendedUse?: UsePolicyProfile;
 }
 
 interface ValidatedSingleClipRevision {
@@ -885,6 +888,24 @@ export function compileActiveSequenceRenderPlan(
       videoInputs,
       captions,
       ...(audioMix === undefined || audibleInputs.length === 0 ? {} : { audioMix }),
+      ...(input.intendedUse === undefined
+        ? {}
+        : {
+            rights: {
+              intendedUse: input.intendedUse,
+              acquisitionReceiptIdsByAssetId: Object.fromEntries(
+                [
+                  ...new Map(
+                    clips.flatMap(({ asset }) =>
+                      asset.origin === undefined
+                        ? []
+                        : [[asset.id, asset.origin.acquisitionReceiptId] as const],
+                    ),
+                  ).entries(),
+                ].sort(([left], [right]) => left.localeCompare(right)),
+              ),
+            },
+          }),
       outputPath: input.outputPath,
       expected: {
         durationFrames,

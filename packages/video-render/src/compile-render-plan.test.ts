@@ -1328,3 +1328,59 @@ describe("compileActiveSequenceRenderPlan", () => {
     );
   });
 });
+
+describe("V2 rights context", () => {
+  const receiptId = "00000000-0000-4000-8000-00000000a001";
+  const compileWith = (
+    revision: ReturnType<typeof makeV2Revision>,
+    intendedUse?: "private-preview" | "broadcast",
+  ) =>
+    compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+      ...(intendedUse === undefined ? {} : { intendedUse }),
+    });
+
+  it("leaves plans without a declared use byte-identical to before", () => {
+    const plan = compileWith(makeV2Revision());
+    expect("rights" in plan).toBe(false);
+  });
+
+  it("claims acquired assets by receipt id and records the declared use", () => {
+    const revision = makeV2Revision();
+    const asset = revision.state.assets[0]!;
+    revision.state.assets[0] = {
+      ...asset,
+      origin: { kind: "acquired", acquisitionReceiptId: receiptId },
+    };
+    const plan = compileWith(revision, "broadcast");
+    expect(plan.rights).toEqual({
+      intendedUse: "broadcast",
+      acquisitionReceiptIdsByAssetId: { [ids.asset]: receiptId },
+    });
+    expect(plan.argv).toEqual(compileWith(makeV2Revision()).argv);
+  });
+
+  it("declares the use with no claims for local-only projects", () => {
+    const plan = compileWith(makeV2Revision(), "private-preview");
+    expect(plan.rights).toEqual({
+      intendedUse: "private-preview",
+      acquisitionReceiptIdsByAssetId: {},
+    });
+  });
+
+  it("rejects claims for assets that are not render inputs", () => {
+    const plan = compileWith(makeV2Revision(), "private-preview");
+    expect(
+      renderPlanV2Schema.safeParse({
+        ...plan,
+        rights: {
+          intendedUse: "private-preview",
+          acquisitionReceiptIdsByAssetId: { "00000000-0000-4000-8000-00000000ffff": receiptId },
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
