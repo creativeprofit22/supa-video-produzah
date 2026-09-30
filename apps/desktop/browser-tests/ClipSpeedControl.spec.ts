@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 
 const evidence = "../../evidence/2026-09-16-p2-editor-controls-completion";
 async function open(page: Page, state = "editable") {
@@ -181,7 +182,7 @@ for (const mode of ["desktop", "narrow", "text-200", "forced-colors-rtl"] as con
       .analyze();
     expect(axe.violations).toEqual([]);
     await page.screenshot({
-      path: `${evidence}/step-9-${mode}.png`,
+      path: evidencePath(`${evidence}/step-9-${mode}.png`),
       fullPage: true,
       animations: "disabled",
     });

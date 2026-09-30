@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const fixturePath = "/browser-tests/transcript-panel.html";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag22aa"];
-const evidenceDir = "2026-09-28-p3-transcription-audio";
+const evidence = "../../evidence/2026-09-28-p3-transcription-audio";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const result = await page.evaluate(() => {
@@ -121,7 +121,7 @@ test("transcript panel is fully keyboard operable from setup to captions", async
   await page.goto(fixturePath);
   await completeFlowWithKeyboard(page);
   await expectNoAxeViolations(page);
-  await page.screenshot({ path: evidencePath(evidenceDir, `transcript-panel-1280x800.png`) });
+  await page.screenshot({ path: evidencePath(`${evidence}/transcript-panel-1280x800.png`) });
 });
 
 test("transcript panel reflows at 320px with 200% text", async ({ page }) => {
@@ -137,7 +137,7 @@ test("transcript panel reflows at 320px with 200% text", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
   await expectNoAxeViolations(page);
   await page.screenshot({
-    path: evidencePath(evidenceDir, `transcript-panel-320px-200-percent-text.png`),
+    path: evidencePath(`${evidence}/transcript-panel-320px-200-percent-text.png`),
     fullPage: true,
   });
 });
@@ -152,7 +152,7 @@ test("license dialog reflows at 320px with 200% text", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Speech model license" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({
-    path: evidencePath(evidenceDir, `transcript-license-320px-200-percent-text.png`),
+    path: evidencePath(`${evidence}/transcript-license-320px-200-percent-text.png`),
   });
 });
 
@@ -207,7 +207,7 @@ test("captions panel reflows at 320px with 200% text", async ({ page }) => {
   await reachCaptions(page);
   await expectNoHorizontalOverflow(page);
   await page.locator(".captions-panel").screenshot({
-    path: evidencePath(evidenceDir, `captions-panel-320px-200-percent-text.png`),
+    path: evidencePath(`${evidence}/captions-panel-320px-200-percent-text.png`),
   });
 });
 

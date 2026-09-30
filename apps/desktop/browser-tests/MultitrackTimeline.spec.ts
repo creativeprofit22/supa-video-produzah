@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 
 const fixturePath = "/browser-tests/multitrack-timeline.html";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag22aa"];
@@ -718,6 +719,6 @@ for (const evidenceCapture of [
       );
     }
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await timeline.screenshot({ path: evidenceCapture.path, animations: "disabled" });
+    await timeline.screenshot({ path: evidencePath(evidenceCapture.path), animations: "disabled" });
   });
 }

@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 
 const fixturePath = "/browser-tests/clip-inspector.html";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag22aa"];
@@ -105,7 +106,7 @@ for (const viewport of viewports) {
     expect(Number.parseFloat(focusStyles.outlineWidth)).toBeGreaterThanOrEqual(2);
     expect(Number.parseFloat(focusStyles.outlineOffset)).toBeGreaterThanOrEqual(2);
 
-    await page.screenshot({ path: viewport.screenshot, animations: "disabled" });
+    await page.screenshot({ path: evidencePath(viewport.screenshot), animations: "disabled" });
   });
 
   test(`applies and resets transform geometry at ${viewport.name}`, async ({ page }) => {

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { evidencePath } from "./evidence-path";
 
 const fixturePath = "/browser-tests/monitor-captions.html";
-const evidenceDir = "2026-09-28-p3-transcription-audio";
+const evidence = "../../evidence/2026-09-28-p3-transcription-audio";
 
 // 200% browser zoom on a 1280×800 window = a 640×400 CSS-pixel page drawn at
 // twice the pixel density.
@@ -89,7 +89,7 @@ for (const { aspect, text } of cases) {
 
     const suffix = text === "200" ? "zoom200-text200" : "zoom200";
     await page.locator(".monitor-stage").screenshot({
-      path: evidencePath(evidenceDir, `17-monitor-captions-${aspect}-${suffix}.png`),
+      path: evidencePath(`${evidence}/17-monitor-captions-${aspect}-${suffix}.png`),
     });
   });
 }

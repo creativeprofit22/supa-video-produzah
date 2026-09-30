@@ -3,7 +3,7 @@ import { evidencePath } from "./evidence-path";
 import { expect, test, type Page } from "@playwright/test";
 
 const fixturePath = "/browser-tests/audio-panel.html";
-const evidenceDir = "2026-09-28-p3-transcription-audio";
+const evidence = "../../evidence/2026-09-28-p3-transcription-audio";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const result = await page.evaluate(() => {
@@ -120,6 +120,6 @@ test("audio panel reflows at 320px with 200% text", async ({ page }) => {
   await useKeyboardToSetUpMix(page);
   await expectNoHorizontalOverflow(page);
   await page.locator(".audio-panel").screenshot({
-    path: evidencePath(evidenceDir, `audio-panel-320px-200-percent-text.png`),
+    path: evidencePath(`${evidence}/audio-panel-320px-200-percent-text.png`),
   });
 });

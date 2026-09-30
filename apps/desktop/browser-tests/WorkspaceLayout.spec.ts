@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 
 test("LAYOUT-B01 keyboard persistence and narrow/text reflow", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -43,7 +44,9 @@ test("LAYOUT-B01 keyboard persistence and narrow/text reflow", async ({ page }) 
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeFocused();
   await page.screenshot({
-    path: "../../evidence/2026-09-16-p2-editor-controls-completion/layout-320-text200.png",
+    path: evidencePath(
+      "../../evidence/2026-09-16-p2-editor-controls-completion/layout-320-text200.png",
+    ),
     fullPage: true,
   });
 });

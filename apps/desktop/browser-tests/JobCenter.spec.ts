@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 
 const fixturePath = "/browser-tests/job-center.html";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag22aa"];
@@ -71,7 +72,7 @@ for (const viewport of [
 
     await expectNoHorizontalOverflow(page);
     await expectNoAxeViolations(page);
-    await page.screenshot({ path: viewport.screenshot, animations: "disabled" });
+    await page.screenshot({ path: evidencePath(viewport.screenshot), animations: "disabled" });
   });
 }
 
@@ -107,7 +108,7 @@ test("older-page loading preserves focus, merges equal timestamps once, and anno
   await new Promise((resolve) => setTimeout(resolve, 350));
   await expect(pending).toBeDisabled();
   await page.screenshot({
-    path: "evidence/phase-3/job-center-pagination-pending-1280x800.png",
+    path: evidencePath("evidence/phase-3/job-center-pagination-pending-1280x800.png"),
     animations: "disabled",
   });
   await page.clock.runFor(300);
@@ -139,7 +140,7 @@ test("older-page failure keeps the ledger and retries at 480x360", async ({ page
   await expect(page.getByText("Older jobs could not be loaded.")).toBeVisible();
   await expect(page.locator(".job-list > .job-item")).toHaveCount(2);
   await page.screenshot({
-    path: "evidence/phase-3/job-center-pagination-failure-480x360.png",
+    path: evidencePath("evidence/phase-3/job-center-pagination-failure-480x360.png"),
     animations: "disabled",
   });
   const retry = page.getByRole("button", { name: "Retry loading older jobs" });
@@ -170,7 +171,9 @@ test("child-only pages keep older parent jobs keyboard-reachable at 320px and 20
   await expectNoAxeViolations(page);
   await loadParentJobs.scrollIntoViewIfNeeded();
   await page.screenshot({
-    path: "evidence/phase-3/job-center-child-only-pagination-320px-200-percent-text.png",
+    path: evidencePath(
+      "evidence/phase-3/job-center-child-only-pagination-320px-200-percent-text.png",
+    ),
     animations: "disabled",
   });
 
@@ -202,7 +205,7 @@ test("empty and no-more pagination states remain explicit", async ({ page }) => 
   await expectNoHorizontalOverflow(page);
   await expectNoAxeViolations(page);
   await page.screenshot({
-    path: "evidence/phase-3/job-center-pagination-no-more-320px-200-percent-text.png",
+    path: evidencePath("evidence/phase-3/job-center-pagination-no-more-320px-200-percent-text.png"),
     animations: "disabled",
   });
 });
@@ -252,7 +255,7 @@ test("forced colors and reduced motion preserve state and layout", async ({ page
   expect(styles.jobBorder).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles.toggleBackground).not.toBe("rgba(0, 0, 0, 0)");
   await page.screenshot({
-    path: "evidence/phase-3/job-center-forced-colors-reduced-motion.png",
+    path: evidencePath("evidence/phase-3/job-center-forced-colors-reduced-motion.png"),
     animations: "disabled",
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { evidencePath } from "./evidence-path";
 import AxeBuilder from "@axe-core/playwright";
 import { assertForcedTextContrast, forcedTextContrast } from "./forced-colors-contrast";
 async function snapshot(page: Page) {
@@ -199,13 +200,15 @@ test("populated 320px at 200% text, long labels, keyboard focus and scoped axe",
   const axe = await new AxeBuilder({ page }).include('[aria-label="Editing controls"]').analyze();
   expect(axe.violations).toEqual([]);
   await page.screenshot({
-    path: "../../evidence/2026-09-16-p2-editor-controls-completion/workspace-320-text200.png",
+    path: evidencePath(
+      "../../evidence/2026-09-16-p2-editor-controls-completion/workspace-320-text200.png",
+    ),
     fullPage: true,
   });
   const bulk = page.getByRole("region", { name: "Multiple clip controls", exact: true });
   expect(await bulk.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await bulk.screenshot({
-    path: "../../evidence/2026-09-16-p2-editor-controls-completion/bulk-text-200.png",
+    path: evidencePath("../../evidence/2026-09-16-p2-editor-controls-completion/bulk-text-200.png"),
   });
 });
 
@@ -337,7 +340,9 @@ for (const mode of ["desktop", "text-200", "forced-colors-rtl"] as const) {
     }
     expect((await scan.analyze()).violations).toEqual([]);
     await page.screenshot({
-      path: `../../evidence/2026-09-16-p2-editor-controls-completion/controls-${mode}.png`,
+      path: evidencePath(
+        `../../evidence/2026-09-16-p2-editor-controls-completion/controls-${mode}.png`,
+      ),
       fullPage: true,
       animations: "disabled",
     });
@@ -350,7 +355,9 @@ for (const mode of ["desktop", "text-200", "forced-colors-rtl"] as const) {
         `${name} panel must not clip its contents`,
       ).toBe(true);
       await region.screenshot({
-        path: `../../evidence/2026-09-16-p2-editor-controls-completion/${name}-${mode}.png`,
+        path: evidencePath(
+          `../../evidence/2026-09-16-p2-editor-controls-completion/${name}-${mode}.png`,
+        ),
         animations: "disabled",
       });
     }
