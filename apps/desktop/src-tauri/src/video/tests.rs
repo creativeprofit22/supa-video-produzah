@@ -5412,6 +5412,11 @@ async fn bundled_resolver_only_bounded_batch() {
     }
 }
 
+mod rights_gate;
+
+#[cfg(target_os = "windows")]
+mod rights_export_e2e;
+
 #[cfg(target_os = "windows")]
 mod audio_export;
 #[cfg(target_os = "windows")]

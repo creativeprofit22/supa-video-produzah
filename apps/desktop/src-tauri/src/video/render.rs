@@ -9,6 +9,10 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::Value;
+
+use crate::rights::gate::{
+    release_gate, write_credits_sidecar, GateInput, GateOutcome, RenderRights,
+};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 use tempfile::{Builder as TempFileBuilder, TempPath};
@@ -332,9 +336,15 @@ pub async fn video_start_render<R: Runtime>(
             .emit(VIDEO_RENDER_EVENT, event)
             .map_err(|_| VideoCommandError::project_io("emit_render_event", "owner_window"))
     });
-    start_render_with_context(
+    let rights_service = window
+        .app_handle()
+        .try_state::<crate::rights::service::RightsService>()
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("rights_unavailable"))?;
+    let rights = rights_service.render_rights();
+    start_render_with_rights(
         window.label(),
         &grants,
+        &rights,
         &jobs,
         programs,
         app_cache_dir,
@@ -345,10 +355,20 @@ pub async fn video_start_render<R: Runtime>(
     .await
 }
 
+#[cfg(test)]
+pub(crate) fn no_receipts_rights() -> RenderRights<'static> {
+    RenderRights {
+        lookup: &crate::rights::gate::NoReceipts,
+        now_ms: 0,
+        freshness: std::time::Duration::from_secs(1),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn start_render_with_context(
+pub(crate) async fn start_render_with_rights(
     owner_label: &str,
     grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
     jobs: &MediaJobService,
     programs: MediaPrograms,
     app_cache_dir: PathBuf,
@@ -356,7 +376,7 @@ pub(crate) async fn start_render_with_context(
     overwrite: bool,
     events: RenderEventSink,
 ) -> Result<VideoRenderStarted, VideoCommandError> {
-    let validated = parse_and_validate_render_plan(plan, owner_label, grants)?;
+    let validated = parse_and_validate_render_plan_with_rights(plan, owner_label, grants, rights)?;
     start_validated_render_with_context(
         owner_label,
         jobs,
@@ -467,10 +487,37 @@ async fn start_validated_render_with_context(
     Ok(response)
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn reauthorize_final_render_output_with_context(
     owner_label: &str,
     grants: &VideoPathGrants,
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    app_cache_dir: PathBuf,
+    job_id: &str,
+    output_path: &str,
+    events: RenderEventSink,
+) -> Result<super::jobs::model::MediaJobRecord, VideoCommandError> {
+    reauthorize_final_render_output_with_rights(
+        owner_label,
+        grants,
+        &no_receipts_rights(),
+        jobs,
+        programs,
+        app_cache_dir,
+        job_id,
+        output_path,
+        events,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn reauthorize_final_render_output_with_rights(
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
     jobs: &MediaJobService,
     programs: MediaPrograms,
     app_cache_dir: PathBuf,
@@ -529,7 +576,7 @@ pub(crate) async fn reauthorize_final_render_output_with_context(
 
     let plan_id = payload.plan.plan_id().as_str().to_owned();
     let revision_id = payload.plan.revision_id().as_str().to_owned();
-    let validated = validate_persisted_render_plan(payload.plan, owner_label, grants)?;
+    let validated = validate_persisted_render_plan(payload.plan, owner_label, grants, rights)?;
     if stored.dedupe_key != render_dedupe_key(&validated, payload.overwrite) {
         return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
     }
@@ -665,20 +712,31 @@ fn map_render_job_store_error(_error: MediaStateStoreError) -> VideoCommandError
     VideoCommandError::project_io("render_job", "media_job_state")
 }
 
+#[cfg(test)]
 pub(crate) fn parse_and_validate_render_plan(
     value: Value,
     owner_label: &str,
     grants: &VideoPathGrants,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
-    let plan: RenderPlan = serde_json::from_value(value)
-        .map_err(|_| VideoCommandError::invalid_render_plan("schema"))?;
-    validate_render_plan(plan, owner_label, grants)
+    parse_and_validate_render_plan_with_rights(value, owner_label, grants, &no_receipts_rights())
 }
 
-pub(crate) fn validate_render_plan(
+pub(crate) fn parse_and_validate_render_plan_with_rights(
+    value: Value,
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
+) -> Result<ValidatedRenderPlan, VideoCommandError> {
+    let plan: RenderPlan = serde_json::from_value(value)
+        .map_err(|_| VideoCommandError::invalid_render_plan("schema"))?;
+    validate_render_plan_with_rights(plan, owner_label, grants, rights)
+}
+
+pub(crate) fn validate_render_plan_with_rights(
     plan: RenderPlan,
     owner_label: &str,
     grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
     let requested_inputs: Vec<&str> = match &plan {
         RenderPlan::V1(plan) => vec![plan.input_path.as_str()],
@@ -700,13 +758,14 @@ pub(crate) fn validate_render_plan(
                 .map_err(|_| VideoCommandError::invalid_render_plan("input_grant"))?,
         );
     }
-    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths)
+    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths, rights)
 }
 
-fn validate_persisted_render_plan(
+pub(crate) fn validate_persisted_render_plan(
     plan: RenderPlan,
     owner_label: &str,
     grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
     let requested_inputs: Vec<&str> = match &plan {
         RenderPlan::V1(plan) => vec![plan.input_path.as_str()],
@@ -727,7 +786,7 @@ fn validate_persisted_render_plan(
             .map_err(|_| VideoCommandError::invalid_render_plan("persisted_input"))?,
         );
     }
-    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths)
+    validate_render_plan_with_inputs(plan, owner_label, grants, input_paths, rights)
 }
 
 fn validate_render_plan_with_inputs(
@@ -735,6 +794,7 @@ fn validate_render_plan_with_inputs(
     owner_label: &str,
     grants: &VideoPathGrants,
     input_paths: Vec<PathBuf>,
+    rights: &RenderRights<'_>,
 ) -> Result<ValidatedRenderPlan, VideoCommandError> {
     let correct_version = matches!(&plan, RenderPlan::V1(value) if value.schema_version == 1)
         || matches!(&plan, RenderPlan::V2(value) if value.schema_version == 2);
@@ -806,12 +866,96 @@ fn validate_render_plan_with_inputs(
     if input_paths.is_empty() {
         return Err(VideoCommandError::invalid_render_plan("input_paths"));
     }
+    enforce_release_gate(&plan, &input_paths, &output_path, rights)?;
     Ok(ValidatedRenderPlan {
         plan,
         input_paths,
         output_path,
         duration_microseconds,
     })
+}
+
+/// Rights release gate for every input (fresh and persisted paths). Remote inputs are
+/// found by content digest; local imports (no receipt for their bytes) pass unchanged.
+fn enforce_release_gate(
+    plan: &RenderPlan,
+    input_paths: &[PathBuf],
+    output_path: &Path,
+    rights: &RenderRights<'_>,
+) -> Result<(), VideoCommandError> {
+    // (asset id, input path) pairs taken from the map entries themselves, so pairing never
+    // depends on iteration order. Each value was already checked to equal its normalized,
+    // granted path (`path_normalization`), so hashing it hashes the authorized input.
+    let mut entries: Vec<(Option<&str>, &Path)> = match plan {
+        RenderPlan::V1(_) => input_paths
+            .iter()
+            .map(|path| (None, path.as_path()))
+            .collect(),
+        RenderPlan::V2(plan) => plan
+            .input_paths_by_asset_id
+            .iter()
+            .map(|(id, path)| (Some(id.as_str()), Path::new(path.as_str())))
+            .collect(),
+    };
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    if entries.len() != input_paths.len() {
+        return Err(VideoCommandError::invalid_render_plan("input_paths"));
+    }
+    let context = match plan {
+        RenderPlan::V1(_) => None,
+        RenderPlan::V2(plan) => plan.rights.as_ref(),
+    };
+    let claimed: std::collections::BTreeMap<String, uuid::Uuid> = context
+        .map(|context| {
+            context
+                .acquisition_receipt_ids_by_asset_id
+                .iter()
+                .map(|(asset, receipt)| (asset.as_str().to_owned(), *receipt))
+                .collect()
+        })
+        .unwrap_or_default();
+    if claimed
+        .keys()
+        .any(|asset| !entries.iter().any(|(id, _)| *id == Some(asset.as_str())))
+    {
+        return Err(VideoCommandError::invalid_render_plan("rights_context"));
+    }
+    let inputs: Vec<GateInput<'_>> = entries
+        .into_iter()
+        .map(|(asset_id, path)| GateInput { asset_id, path })
+        .collect();
+    let started = std::time::Instant::now();
+    let outcome = release_gate(
+        rights,
+        &inputs,
+        context.map(|context| context.intended_use),
+        &claimed,
+    );
+    match outcome {
+        GateOutcome::Blocked { failures } => {
+            let reason = failures
+                .first()
+                .map(|failure| failure.reason.render_field())
+                .unwrap_or("rights_blocked");
+            eprintln!(
+                "rights.release_gate outcome=blocked reason={reason} failures={} elapsed_ms={}",
+                failures.len(),
+                started.elapsed().as_millis()
+            );
+            Err(VideoCommandError::invalid_render_plan(reason))
+        }
+        GateOutcome::Pass { credits } if credits.is_empty() => Ok(()),
+        GateOutcome::Pass { credits } => {
+            write_credits_sidecar(output_path, &credits)
+                .map_err(|_| VideoCommandError::invalid_render_plan("rights_credits_write"))?;
+            eprintln!(
+                "rights.release_gate outcome=pass credited={} elapsed_ms={}",
+                credits.len(),
+                started.elapsed().as_millis()
+            );
+            Ok(())
+        }
+    }
 }
 
 fn validate_expectation(

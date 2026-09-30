@@ -5,7 +5,7 @@ use crate::video::{
     derived::MediaPrograms,
     error::VideoCommandError,
     grants::VideoPathGrants,
-    render::{reauthorize_final_render_output_with_context, RenderEventSink, VIDEO_RENDER_EVENT},
+    render::{reauthorize_final_render_output_with_rights, RenderEventSink, VIDEO_RENDER_EVENT},
     toolchain::MediaToolchainState,
     types::is_recognizable_absolute_path,
 };
@@ -246,9 +246,15 @@ pub(crate) async fn video_reauthorize_media_job_output<R: Runtime>(
             .emit(VIDEO_RENDER_EVENT, event)
             .map_err(|_| VideoCommandError::project_io("emit_render_event", "owner_window"))
     });
-    let job = reauthorize_final_render_output_with_context(
+    let rights_service = window
+        .app_handle()
+        .try_state::<crate::rights::service::RightsService>()
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("rights_unavailable"))?;
+    let rights = rights_service.render_rights();
+    let job = reauthorize_final_render_output_with_rights(
         window.label(),
         &grants,
+        &rights,
         &jobs,
         programs,
         app_cache_dir,
