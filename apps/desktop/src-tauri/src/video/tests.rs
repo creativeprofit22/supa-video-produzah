@@ -5577,8 +5577,10 @@ async fn render_speed_bundled_actual_media() {
         assert!(decoded.status.success());
         let pcm: Vec<f32> = decoded
             .stdout
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         // Exclude 250 ms onset/tail. Positive zero crossings measure steady tone,
         // not container metadata or the intended atempo expression.
@@ -5603,6 +5605,7 @@ async fn render_speed_bundled_actual_media() {
     );
 }
 
+#[cfg(target_os = "windows")]
 async fn assert_bundled_caption_boundary_case(index: usize) {
     for name in ["FONTCONFIG_FILE", "FONTCONFIG_PATH"] {
         assert!(

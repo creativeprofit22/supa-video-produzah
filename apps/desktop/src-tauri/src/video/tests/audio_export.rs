@@ -160,8 +160,10 @@ async fn render_audio_gain_and_fades_actual_compiler_output() {
             ],
         );
         let samples: Vec<f32> = pcm
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         let plateau = rms(&samples, 0.8, 1.2);
         let baseline = *reference.get_or_insert(plateau);

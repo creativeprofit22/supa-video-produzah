@@ -874,8 +874,10 @@ fn plan_pieces_from_wav(
             samples.clear();
             samples.extend(
                 bytes
-                    .chunks_exact(2)
-                    .map(|pair| i16::from_le_bytes([pair[0], pair[1]])),
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| i16::from_le_bytes(*pair)),
             );
             Ok(())
         },
@@ -1509,8 +1511,10 @@ fn read_pcm_samples(
         return Err(invalid());
     }
     Ok(bytes
-        .chunks_exact(2)
-        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| i16::from_le_bytes(*pair))
         .collect())
 }
 

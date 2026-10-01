@@ -30,7 +30,9 @@ fn frame_ids(ffmpeg: &Path, path: &Path) -> Vec<u32> {
     );
     assert_eq!(bytes.len() % (320 * 180), 0);
     bytes
-        .chunks_exact(320 * 180)
+        .as_chunks::<{ 320 * 180 }>()
+        .0
+        .iter()
         .map(|frame| {
             (0..8).fold(0, |id, bit| {
                 id | (u32::from(frame[90 * 320 + bit * 40 + 20] > 128) << bit)
@@ -49,12 +51,16 @@ fn audio_measurement(ffmpeg: &Path, path: &Path) -> (f64, f64) {
             ]),
     );
     let pcm: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect();
     // 2 ms RMS windows locate the high-amplitude 1000 Hz transient independently of timestamps.
     let onset = pcm
-        .chunks_exact(96)
+        .as_chunks::<96>()
+        .0
+        .iter()
         .position(|w| w.iter().map(|v| v * v).sum::<f32>() / 96.0 > 0.04)
         .expect("missing audio transient") as f64
         * 0.002;
@@ -343,7 +349,7 @@ async fn render_multilayer_production_compiler_independent_hidden_and_muted() {
                 ]),
         );
         assert_eq!(pixels.len(), 60 * 320 * 180 * 3);
-        for frame in pixels.chunks_exact(320 * 180 * 3) {
+        for frame in pixels.as_chunks::<{ 320 * 180 * 3 }>().0.iter() {
             let pixel = &frame[(90 * 320 + 160) * 3..][..3];
             let hidden = matches!(mode, "hidden" | "both");
             assert!(
@@ -364,8 +370,10 @@ async fn render_multilayer_production_compiler_independent_hidden_and_muted() {
                 ]),
         );
         let pcm: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         // Interior window excludes AAC priming and atempo edge transients. Projection
         // at each known frequency distinguishes the two simultaneous sources.

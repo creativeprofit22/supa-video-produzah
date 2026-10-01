@@ -118,8 +118,10 @@ async fn render_silent_onset_production_compiler_actual_parity() {
             );
             fs::write(workspace.join(format!("{label}.f32")), &bytes).unwrap();
             let pcm: Vec<f32> = bytes
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
                 .collect();
             let first = pcm
                 .iter()
