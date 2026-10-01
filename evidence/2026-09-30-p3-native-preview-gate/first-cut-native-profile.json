@@ -1,0 +1,2925 @@
+{
+  "utc": "2026-09-30T18:26:34.058Z",
+  "target": "native-profile",
+  "releaseSha256": "019a04c2c3e0137f638ec5eaa5cec883a1d6a224201c69b0759492f4e50bebe6",
+  "executableSha256": "1f64547643b7abcb60eff6de54d1d6f55b459ae5af9b900c9ab7974431ed7b85",
+  "mediaReceiptSha256": "537f72016880ddd18b82edb708320e4c19cda48d36ec45d2075f8db014abc6cf",
+  "firstCutProposalSha256": "01ce90c3c161fb84c1bf177895b5553c4158657d7e333f6310d2b7bdc9992bc4",
+  "visibleDropTarget": 0.01,
+  "rawArtifacts": "evidence/p2-native-performance/runs/p3-first-cut-native-profile-2fsi0v",
+  "status": "passed",
+  "webviewVersion": "154.0.4258.48",
+  "timeline": {
+    "firstCutFrames": 834,
+    "repeatCount": 3,
+    "durationFrames": 2502,
+    "durationSeconds": 83.4,
+    "seekWindowFrames": 834,
+    "tracks": [
+      {
+        "kind": "video",
+        "name": "First cut",
+        "items": 15
+      },
+      {
+        "kind": "caption",
+        "name": "First cut titles",
+        "items": 12
+      }
+    ],
+    "markers": 2,
+    "assetBinding": {
+      "000000e1-0000-4000-8000-000000000001": "91000000-0000-4000-8000-000000000101",
+      "000000e1-0000-4000-8000-000000000002": "91000000-0000-4000-8000-000000000102",
+      "000000e1-0000-4000-8000-000000000003": "91000000-0000-4000-8000-000000000101",
+      "000000e1-0000-4000-8000-000000000005": "91000000-0000-4000-8000-000000000102",
+      "000000e1-0000-4000-8000-000000000009": "91000000-0000-4000-8000-000000000101"
+    },
+    "preparation": [
+      {
+        "assetId": "91000000-0000-4000-8000-000000000101",
+        "elapsedMs": 3124
+      },
+      {
+        "assetId": "91000000-0000-4000-8000-000000000102",
+        "elapsedMs": 3616
+      }
+    ]
+  },
+  "playback": [
+    {
+      "repeat": 0,
+      "elapsedSeconds": 60.00340000000596,
+      "stillPlayingAtEnd": true,
+      "videoFramesAdvanced": 88,
+      "visibleDrops": {
+        "attributionAvailable": true,
+        "occlusionAvailable": true,
+        "visible": {
+          "total": 1086,
+          "dropped": 0
+        },
+        "occluded": {
+          "total": 0,
+          "dropped": 0
+        },
+        "hidden": {
+          "total": 643,
+          "dropped": 0
+        },
+        "unattributed": {
+          "intervals": 0
+        },
+        "byClip": {
+          "0e52cd01-4829-4079-a2ea-7efabde680f5": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 104,
+              "dropped": 0
+            }
+          },
+          "12ab954b-273e-4d9f-a2dc-21cebb36b246": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 116,
+              "dropped": 0
+            }
+          },
+          "2be65299-ca6a-445e-a26f-4aba3d9518c9": {
+            "visible": {
+              "total": 109,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 116,
+              "dropped": 0
+            }
+          },
+          "5633c1f7-65f5-4760-8bd5-c37b7c53832e": {
+            "visible": {
+              "total": 33,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 0,
+              "dropped": 0
+            }
+          },
+          "5b9b98c0-6745-4b90-b48e-72ab9375f61c": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "636339f3-9d87-47ac-b96e-f1b978e0a7c8": {
+            "visible": {
+              "total": 77,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "924f910f-5f19-4545-abc8-92c9b9a0aac0": {
+            "visible": {
+              "total": 109,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "a021ae4c-9559-410b-8a04-5b7b836fbd77": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 91,
+              "dropped": 0
+            }
+          },
+          "a18db71d-cfcb-4f76-b478-32009fb89b85": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 92,
+              "dropped": 0
+            }
+          },
+          "c828f9ca-1114-4fd6-abf2-40e5643c462d": {
+            "visible": {
+              "total": 78,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "d2f557ba-e9b1-4cf6-9f6e-03ab4ce70b9a": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 104,
+              "dropped": 0
+            }
+          },
+          "da3f78f1-2e55-4c7c-ac19-76b1511fd5d5": {
+            "visible": {
+              "total": 84,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          }
+        },
+        "visibleDropRate": 0,
+        "occludedDropRate": null,
+        "hiddenDropRate": 0,
+        "meetsVisibleTarget": true
+      },
+      "commits": [
+        {
+          "id": "VideoWorkspace",
+          "preWindowCount": 24,
+          "count": 60,
+          "commitsPerSecond": 0.9999433365441631,
+          "durationMs": {
+            "count": 60,
+            "p50": 1.2999999821186066,
+            "p95": 1.9000000059604645,
+            "p99": 2.0999999940395355,
+            "max": 2.0999999940395355
+          }
+        },
+        {
+          "id": "MultitrackTimeline",
+          "preWindowCount": 8,
+          "count": 0,
+          "commitsPerSecond": 0,
+          "durationMs": {
+            "count": 0,
+            "p50": null,
+            "p95": null,
+            "p99": null,
+            "max": null
+          }
+        }
+      ],
+      "longTaskDurationMs": {
+        "count": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "frameGapMs": {
+        "count": 1065,
+        "p50": 33.30000000000291,
+        "p95": 33.5,
+        "p99": 983.1999999999971,
+        "max": 6266.999999999993
+      }
+    },
+    {
+      "repeat": 1,
+      "elapsedSeconds": 60.015,
+      "stillPlayingAtEnd": true,
+      "videoFramesAdvanced": 90,
+      "visibleDrops": {
+        "attributionAvailable": true,
+        "occlusionAvailable": true,
+        "visible": {
+          "total": 1091,
+          "dropped": 0
+        },
+        "occluded": {
+          "total": 0,
+          "dropped": 0
+        },
+        "hidden": {
+          "total": 642,
+          "dropped": 0
+        },
+        "unattributed": {
+          "intervals": 0
+        },
+        "byClip": {
+          "0e52cd01-4829-4079-a2ea-7efabde680f5": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 104,
+              "dropped": 0
+            }
+          },
+          "12ab954b-273e-4d9f-a2dc-21cebb36b246": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 114,
+              "dropped": 0
+            }
+          },
+          "2be65299-ca6a-445e-a26f-4aba3d9518c9": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 116,
+              "dropped": 0
+            }
+          },
+          "5633c1f7-65f5-4760-8bd5-c37b7c53832e": {
+            "visible": {
+              "total": 33,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 0,
+              "dropped": 0
+            }
+          },
+          "5b9b98c0-6745-4b90-b48e-72ab9375f61c": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "636339f3-9d87-47ac-b96e-f1b978e0a7c8": {
+            "visible": {
+              "total": 78,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "924f910f-5f19-4545-abc8-92c9b9a0aac0": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "a021ae4c-9559-410b-8a04-5b7b836fbd77": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 92,
+              "dropped": 0
+            }
+          },
+          "a18db71d-cfcb-4f76-b478-32009fb89b85": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 92,
+              "dropped": 0
+            }
+          },
+          "c828f9ca-1114-4fd6-abf2-40e5643c462d": {
+            "visible": {
+              "total": 78,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "d2f557ba-e9b1-4cf6-9f6e-03ab4ce70b9a": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 104,
+              "dropped": 0
+            }
+          },
+          "da3f78f1-2e55-4c7c-ac19-76b1511fd5d5": {
+            "visible": {
+              "total": 86,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          }
+        },
+        "visibleDropRate": 0,
+        "occludedDropRate": null,
+        "hiddenDropRate": 0,
+        "meetsVisibleTarget": true
+      },
+      "commits": [
+        {
+          "id": "VideoWorkspace",
+          "preWindowCount": 20,
+          "count": 60,
+          "commitsPerSecond": 0.9997500624843789,
+          "durationMs": {
+            "count": 60,
+            "p50": 1.1000000089406967,
+            "p95": 1.7999999970197678,
+            "p99": 2.3999999910593033,
+            "max": 2.3999999910593033
+          }
+        },
+        {
+          "id": "MultitrackTimeline",
+          "preWindowCount": 5,
+          "count": 0,
+          "commitsPerSecond": 0,
+          "durationMs": {
+            "count": 0,
+            "p50": null,
+            "p95": null,
+            "p99": null,
+            "max": null
+          }
+        }
+      ],
+      "longTaskDurationMs": {
+        "count": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "frameGapMs": {
+        "count": 1070,
+        "p50": 33.30000000000291,
+        "p95": 33.5,
+        "p99": 966.8000000000029,
+        "max": 6250.1999999999825
+      }
+    },
+    {
+      "repeat": 2,
+      "elapsedSeconds": 60.01390000000596,
+      "stillPlayingAtEnd": true,
+      "videoFramesAdvanced": 90,
+      "visibleDrops": {
+        "attributionAvailable": true,
+        "occlusionAvailable": true,
+        "visible": {
+          "total": 1091,
+          "dropped": 0
+        },
+        "occluded": {
+          "total": 0,
+          "dropped": 0
+        },
+        "hidden": {
+          "total": 641,
+          "dropped": 0
+        },
+        "unattributed": {
+          "intervals": 0
+        },
+        "byClip": {
+          "0e52cd01-4829-4079-a2ea-7efabde680f5": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 101,
+              "dropped": 0
+            }
+          },
+          "12ab954b-273e-4d9f-a2dc-21cebb36b246": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 116,
+              "dropped": 0
+            }
+          },
+          "2be65299-ca6a-445e-a26f-4aba3d9518c9": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 116,
+              "dropped": 0
+            }
+          },
+          "5633c1f7-65f5-4760-8bd5-c37b7c53832e": {
+            "visible": {
+              "total": 33,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 0,
+              "dropped": 0
+            }
+          },
+          "5b9b98c0-6745-4b90-b48e-72ab9375f61c": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "636339f3-9d87-47ac-b96e-f1b978e0a7c8": {
+            "visible": {
+              "total": 78,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "924f910f-5f19-4545-abc8-92c9b9a0aac0": {
+            "visible": {
+              "total": 110,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "a021ae4c-9559-410b-8a04-5b7b836fbd77": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 92,
+              "dropped": 0
+            }
+          },
+          "a18db71d-cfcb-4f76-b478-32009fb89b85": {
+            "visible": {
+              "total": 90,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 92,
+              "dropped": 0
+            }
+          },
+          "c828f9ca-1114-4fd6-abf2-40e5643c462d": {
+            "visible": {
+              "total": 78,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          },
+          "d2f557ba-e9b1-4cf6-9f6e-03ab4ce70b9a": {
+            "visible": {
+              "total": 98,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 104,
+              "dropped": 0
+            }
+          },
+          "da3f78f1-2e55-4c7c-ac19-76b1511fd5d5": {
+            "visible": {
+              "total": 86,
+              "dropped": 0
+            },
+            "occluded": {
+              "total": 0,
+              "dropped": 0
+            },
+            "hidden": {
+              "total": 4,
+              "dropped": 0
+            }
+          }
+        },
+        "visibleDropRate": 0,
+        "occludedDropRate": null,
+        "hiddenDropRate": 0,
+        "meetsVisibleTarget": true
+      },
+      "commits": [
+        {
+          "id": "VideoWorkspace",
+          "preWindowCount": 20,
+          "count": 60,
+          "commitsPerSecond": 0.999768386990248,
+          "durationMs": {
+            "count": 60,
+            "p50": 1.0999999940395355,
+            "p95": 1.7999999970197678,
+            "p99": 2.1000000089406967,
+            "max": 2.1000000089406967
+          }
+        },
+        {
+          "id": "MultitrackTimeline",
+          "preWindowCount": 5,
+          "count": 0,
+          "commitsPerSecond": 0,
+          "durationMs": {
+            "count": 0,
+            "p50": null,
+            "p95": null,
+            "p99": null,
+            "max": null
+          }
+        }
+      ],
+      "longTaskDurationMs": {
+        "count": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "frameGapMs": {
+        "count": 1070,
+        "p50": 33.30000000001746,
+        "p95": 33.5,
+        "p99": 983.2000000000116,
+        "max": 6250.3000000000175
+      }
+    }
+  ],
+  "seeks": {
+    "requested": 100,
+    "sameFrameNoNewFrame": 2,
+    "failures": 36,
+    "seekedMs": {
+      "count": 64,
+      "p50": 43.20000000298023,
+      "p95": 79.40000000596046,
+      "p99": 92,
+      "max": 92
+    },
+    "presentedMs": {
+      "count": 62,
+      "p50": 37.60000001190929,
+      "p95": 79.40000001192675,
+      "p99": 101.79999999998836,
+      "max": 101.79999999998836
+    },
+    "samples": [
+      {
+        "index": 0,
+        "frame": 198,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218489.19999998808,
+        "requestedAt": 218489.19999998808,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 25.30000001192093,
+        "presentedMs": 79.40000001192675,
+        "mediaWriteAt": 218495.5,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 1,
+        "frame": 274,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.13333333333333333,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218580.5,
+        "requestedAt": 218580.5,
+        "requestedValue": 0.133335,
+        "status": "ok",
+        "seekedMs": 38.29999999701977,
+        "presentedMs": 38.10000000000582,
+        "mediaWriteAt": 218584.69999998808,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.133335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 2,
+        "frame": 541,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 3,
+        "frame": 665,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 4,
+        "frame": 199,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218647.5,
+        "requestedAt": 218647.5,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 33.099999994039536,
+        "presentedMs": 37.70000000001164,
+        "mediaWriteAt": 218655.29999999702,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 5,
+        "frame": 43,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 6,
+        "frame": 270,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218700.29999999702,
+        "requestedAt": 218700.29999999702,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 29.599999994039536,
+        "presentedMs": 35.00000000296859,
+        "mediaWriteAt": 218708,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 7,
+        "frame": 481,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.2333333333333334,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218746.59999999404,
+        "requestedAt": 218746.59999999404,
+        "requestedValue": 1.233335,
+        "status": "ok",
+        "seekedMs": 33.5,
+        "presentedMs": 22.000000005966285,
+        "mediaWriteAt": 218750.79999999702,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.233335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 8,
+        "frame": 539,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.1666666666666665,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 1.233335,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 218794.79999999702,
+        "requestedAt": 218794.79999999702,
+        "requestedValue": 3.166668,
+        "status": "ok",
+        "seekedMs": 59.5,
+        "presentedMs": 73.80000000298605,
+        "mediaWriteAt": 218794.79999999702,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.166668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 9,
+        "frame": 698,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 10,
+        "frame": 269,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3666666666666667,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218882.59999999404,
+        "requestedAt": 218882.59999999404,
+        "requestedValue": 2.366668,
+        "status": "ok",
+        "seekedMs": 62.29999999701977,
+        "presentedMs": 52.70000000594882,
+        "mediaWriteAt": 218886.79999999702,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 11,
+        "frame": 705,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 12,
+        "frame": 725,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 13,
+        "frame": 132,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.4,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 218974.69999998808,
+        "requestedAt": 218974.69999998808,
+        "requestedValue": 1.400001,
+        "status": "ok",
+        "seekedMs": 56.5,
+        "presentedMs": 43.90000001192675,
+        "mediaWriteAt": 218979,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.400001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 14,
+        "frame": 725,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 15,
+        "frame": 304,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.1333333333333333,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 219050.19999998808,
+        "requestedAt": 219050.19999998808,
+        "requestedValue": 1.133335,
+        "status": "ok",
+        "seekedMs": 50.20000000298023,
+        "presentedMs": 35.00000001193257,
+        "mediaWriteAt": 219055.5,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.133335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 16,
+        "frame": 726,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 219112.69999998808,
+        "requestedAt": 219112.79999999702,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 26.5,
+        "presentedMs": 39.20000000298023,
+        "mediaWriteAt": 219118.59999999404,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 17,
+        "frame": 717,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 18,
+        "frame": 726,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 219167.19999998808,
+        "requestedAt": 219167.19999998808,
+        "requestedValue": 0,
+        "status": "same-frame-no-new-frame",
+        "seekedMs": 4.800000011920929,
+        "presentedMs": null,
+        "mediaWriteAt": 219167.29999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 19,
+        "frame": 525,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.7,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224179.09999999404,
+        "requestedAt": 224179.09999999404,
+        "requestedValue": 2.700001,
+        "status": "ok",
+        "seekedMs": 62.70000000298023,
+        "presentedMs": 56.20000000594882,
+        "mediaWriteAt": 224182.79999999702,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.700001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 20,
+        "frame": 445,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 2.700001,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 224257.19999998808,
+        "requestedAt": 224257.19999998808,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 7.9000000059604645,
+        "presentedMs": 11.50000001193257,
+        "mediaWriteAt": 224257.19999998808,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 21,
+        "frame": 357,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 22,
+        "frame": 539,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.1666666666666665,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 224284,
+        "requestedAt": 224284,
+        "requestedValue": 3.166668,
+        "status": "ok",
+        "seekedMs": 53.5,
+        "presentedMs": 51.29999999998836,
+        "mediaWriteAt": 224284,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.166668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 23,
+        "frame": 613,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 24,
+        "frame": 727,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224366.39999999106,
+        "requestedAt": 224366.39999999106,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 15.400000005960464,
+        "presentedMs": 18.80000000895234,
+        "mediaWriteAt": 224366.39999999106,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 25,
+        "frame": 654,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 26,
+        "frame": 270,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224399.09999999404,
+        "requestedAt": 224399.09999999404,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 40.900000005960464,
+        "presentedMs": 36.20000000594882,
+        "mediaWriteAt": 224404,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 27,
+        "frame": 176,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.8666666666666667,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224463.29999999702,
+        "requestedAt": 224463.39999999106,
+        "requestedValue": 2.866668,
+        "status": "ok",
+        "seekedMs": 92,
+        "presentedMs": 55.30000000895234,
+        "mediaWriteAt": 224470.29999999702,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.866668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 28,
+        "frame": 445,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224579.79999999702,
+        "requestedAt": 224579.79999999702,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 20.399999991059303,
+        "presentedMs": 22.10000000297441,
+        "mediaWriteAt": 224584.09999999404,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 29,
+        "frame": 256,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.9333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224612.19999998808,
+        "requestedAt": 224612.19999998808,
+        "requestedValue": 1.933335,
+        "status": "ok",
+        "seekedMs": 70.1000000089407,
+        "presentedMs": 39.70000001191511,
+        "mediaWriteAt": 224616.89999999106,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.933335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 30,
+        "frame": 445,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224697.19999998808,
+        "requestedAt": 224697.19999998808,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 25.400000005960464,
+        "presentedMs": 21.40000001192675,
+        "mediaWriteAt": 224701.69999998808,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 31,
+        "frame": 539,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.1666666666666665,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 224745,
+        "requestedAt": 224745,
+        "requestedValue": 3.166668,
+        "status": "ok",
+        "seekedMs": 53.3999999910593,
+        "presentedMs": 57,
+        "mediaWriteAt": 224745,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.166668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 32,
+        "frame": 89,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 33,
+        "frame": 15,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 34,
+        "frame": 541,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 35,
+        "frame": 159,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224829.19999998808,
+        "requestedAt": 224829.29999999702,
+        "requestedValue": 2.300001,
+        "status": "ok",
+        "seekedMs": 59.599999994039536,
+        "presentedMs": 56.00000000296859,
+        "mediaWriteAt": 224833.69999998808,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.300001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 36,
+        "frame": 354,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 37,
+        "frame": 137,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.5666666666666667,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224913,
+        "requestedAt": 224913,
+        "requestedValue": 1.566668,
+        "status": "ok",
+        "seekedMs": 60.3999999910593,
+        "presentedMs": 38.89999999999418,
+        "mediaWriteAt": 224917.19999998808,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 38,
+        "frame": 725,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 39,
+        "frame": 211,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.43333333333333335,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 224999.69999998808,
+        "requestedAt": 224999.69999998808,
+        "requestedValue": 0.433335,
+        "status": "ok",
+        "seekedMs": 37.400000005960464,
+        "presentedMs": 35.60000001190929,
+        "mediaWriteAt": 225004.19999998808,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.433335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 40,
+        "frame": 727,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225062.29999999702,
+        "requestedAt": 225062.29999999702,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 26.799999997019768,
+        "presentedMs": 39.80000000298605,
+        "mediaWriteAt": 225066.5,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 41,
+        "frame": 519,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.5,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225112.79999999702,
+        "requestedAt": 225112.79999999702,
+        "requestedValue": 2.500001,
+        "status": "ok",
+        "seekedMs": 71.5,
+        "presentedMs": 39.20000000298023,
+        "mediaWriteAt": 225116.59999999404,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.500001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 42,
+        "frame": 541,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 43,
+        "frame": 819,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.1,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225198.89999999106,
+        "requestedAt": 225198.89999999106,
+        "requestedValue": 3.100001,
+        "status": "ok",
+        "seekedMs": 74.29999999701977,
+        "presentedMs": 69.70000000894652,
+        "mediaWriteAt": 225199,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.100001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 44,
+        "frame": 91,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225295.29999999702,
+        "requestedAt": 225295.29999999702,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 18.099999994039536,
+        "presentedMs": 23.400000002991874,
+        "mediaWriteAt": 225299,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 45,
+        "frame": 698,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 46,
+        "frame": 833,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.566666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225333.29999999702,
+        "requestedAt": 225333.29999999702,
+        "requestedValue": 3.566668,
+        "status": "ok",
+        "seekedMs": 74,
+        "presentedMs": 85.40000000299187,
+        "mediaWriteAt": 225333.39999999106,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 47,
+        "frame": 288,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.6,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225433.39999999106,
+        "requestedAt": 225433.39999999106,
+        "requestedValue": 0.600001,
+        "status": "ok",
+        "seekedMs": 59.5,
+        "presentedMs": 35.20000000894652,
+        "mediaWriteAt": 225439.5,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.600001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 48,
+        "frame": 89,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 49,
+        "frame": 217,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.6333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225523.89999999106,
+        "requestedAt": 225523.89999999106,
+        "requestedValue": 0.633335,
+        "status": "ok",
+        "seekedMs": 64.1000000089407,
+        "presentedMs": 28.200000008946517,
+        "mediaWriteAt": 225529.79999999702,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.633335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 50,
+        "frame": 444,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225612.89999999106,
+        "requestedAt": 225612.89999999106,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 22,
+        "presentedMs": 22.30000000895234,
+        "mediaWriteAt": 225617.39999999106,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 51,
+        "frame": 753,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.9,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225647.69999998808,
+        "requestedAt": 225647.69999998808,
+        "requestedValue": 0.900001,
+        "status": "ok",
+        "seekedMs": 43.20000000298023,
+        "presentedMs": 37.60000001190929,
+        "mediaWriteAt": 225652.29999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.900001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 52,
+        "frame": 89,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 53,
+        "frame": 396,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 54,
+        "frame": 271,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225721.5,
+        "requestedAt": 225721.5,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 42.29999999701977,
+        "presentedMs": 30.39999999999418,
+        "mediaWriteAt": 225728.19999998808,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 55,
+        "frame": 490,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.5333333333333334,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225780.79999999702,
+        "requestedAt": 225780.79999999702,
+        "requestedValue": 1.533335,
+        "status": "ok",
+        "seekedMs": 64.79999999701977,
+        "presentedMs": 37.900000002991874,
+        "mediaWriteAt": 225787.39999999106,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.533335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 56,
+        "frame": 199,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225861.59999999404,
+        "requestedAt": 225861.59999999404,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 28.799999997019768,
+        "presentedMs": 40.300000005954644,
+        "mediaWriteAt": 225865.69999998808,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 57,
+        "frame": 383,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 58,
+        "frame": 726,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225927.09999999404,
+        "requestedAt": 225927.09999999404,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 23.700000002980232,
+        "presentedMs": 24.900000005960464,
+        "mediaWriteAt": 225931.79999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 59,
+        "frame": 64,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 60,
+        "frame": 541,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 61,
+        "frame": 595,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 62,
+        "frame": 197,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.566666666666667,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 225983.5,
+        "requestedAt": 225983.5,
+        "requestedValue": 3.566668,
+        "status": "ok",
+        "seekedMs": 91.79999999701977,
+        "presentedMs": 101.79999999998836,
+        "mediaWriteAt": 225988.19999998808,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 63,
+        "frame": 485,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.3666666666666667,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226100,
+        "requestedAt": 226100.09999999404,
+        "requestedValue": 1.366668,
+        "status": "ok",
+        "seekedMs": 51.20000000298023,
+        "presentedMs": 35.20000000594882,
+        "mediaWriteAt": 226106.5,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 64,
+        "frame": 727,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226160.89999999106,
+        "requestedAt": 226160.89999999106,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 18.600000008940697,
+        "presentedMs": 24.400000008929055,
+        "mediaWriteAt": 226164.79999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 65,
+        "frame": 147,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.9,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226196.89999999106,
+        "requestedAt": 226196.89999999106,
+        "requestedValue": 1.900001,
+        "status": "ok",
+        "seekedMs": 62.70000000298023,
+        "presentedMs": 38.400000008929055,
+        "mediaWriteAt": 226201.5,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.900001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 66,
+        "frame": 444,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226278.89999999106,
+        "requestedAt": 226278.89999999106,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 23,
+        "presentedMs": 23.000000008934876,
+        "mediaWriteAt": 226283.69999998808,
+        "observedMedia": {
+          "clipId": "0e52cd01-4829-4079-a2ea-7efabde680f5",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 67,
+        "frame": 116,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.8666666666666667,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226311.69999998808,
+        "requestedAt": 226311.69999998808,
+        "requestedValue": 0.866668,
+        "status": "ok",
+        "seekedMs": 22.200000002980232,
+        "presentedMs": 23.600000011909287,
+        "mediaWriteAt": 226315.5,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.866668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 68,
+        "frame": 354,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 69,
+        "frame": 125,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.1666666666666667,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226350.89999999106,
+        "requestedAt": 226350.89999999106,
+        "requestedValue": 1.166668,
+        "status": "ok",
+        "seekedMs": 48.5,
+        "presentedMs": 34.400000008929055,
+        "mediaWriteAt": 226355.89999999106,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.166668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 70,
+        "frame": 199,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226416.69999998808,
+        "requestedAt": 226416.69999998808,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 44.900000005960464,
+        "presentedMs": 35.20000001191511,
+        "mediaWriteAt": 226420.69999998808,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 71,
+        "frame": 606,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 72,
+        "frame": 833,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.566666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226485.29999999702,
+        "requestedAt": 226485.29999999702,
+        "requestedValue": 3.566668,
+        "status": "ok",
+        "seekedMs": 86.20000000298023,
+        "presentedMs": 100.00000000296859,
+        "mediaWriteAt": 226485.39999999106,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 73,
+        "frame": 575,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 74,
+        "frame": 91,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.03333333333333333,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226597.89999999106,
+        "requestedAt": 226597.89999999106,
+        "requestedValue": 0.033335,
+        "status": "ok",
+        "seekedMs": 20.200000002980232,
+        "presentedMs": 20.700000008946517,
+        "mediaWriteAt": 226601.69999998808,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.033335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 75,
+        "frame": 644,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 76,
+        "frame": 269,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3666666666666667,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226633.09999999404,
+        "requestedAt": 226633.09999999404,
+        "requestedValue": 2.366668,
+        "status": "ok",
+        "seekedMs": 61.70000000298023,
+        "presentedMs": 52.20000000594882,
+        "mediaWriteAt": 226637.69999998808,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 77,
+        "frame": 115,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.8333333333333334,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226709.29999999702,
+        "requestedAt": 226709.29999999702,
+        "requestedValue": 0.833335,
+        "status": "ok",
+        "seekedMs": 23.5,
+        "presentedMs": 25.900000002991874,
+        "mediaWriteAt": 226713.69999998808,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.833335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 78,
+        "frame": 833,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.566666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226745,
+        "requestedAt": 226745,
+        "requestedValue": 3.566668,
+        "status": "ok",
+        "seekedMs": 78.09999999403954,
+        "presentedMs": 73.60000000000582,
+        "mediaWriteAt": 226748.89999999106,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 79,
+        "frame": 758,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.0666666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 226839.79999999702,
+        "requestedAt": 226839.79999999702,
+        "requestedValue": 1.066668,
+        "status": "ok",
+        "seekedMs": 15.399999991059303,
+        "presentedMs": 29.00000000296859,
+        "mediaWriteAt": 226839.79999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.066668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 80,
+        "frame": 726,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 1.066668,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 226878,
+        "requestedAt": 226878,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 5.199999988079071,
+        "presentedMs": 7.465999999985797,
+        "mediaWriteAt": 226878,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 81,
+        "frame": 662,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 82,
+        "frame": 269,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3666666666666667,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 226901,
+        "requestedAt": 226901.09999999404,
+        "requestedValue": 2.366668,
+        "status": "ok",
+        "seekedMs": 73.09999999403954,
+        "presentedMs": 67.6000000059721,
+        "mediaWriteAt": 226910,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 83,
+        "frame": 28,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 84,
+        "frame": 269,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3666666666666667,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 227000.89999999106,
+        "requestedAt": 227000.89999999106,
+        "requestedValue": 2.366668,
+        "status": "ok",
+        "seekedMs": 70.20000000298023,
+        "presentedMs": 67.70000000894652,
+        "mediaWriteAt": 227010.5,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 85,
+        "frame": 736,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.3333333333333333,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 227096.69999998808,
+        "requestedAt": 227096.69999998808,
+        "requestedValue": 0.333335,
+        "status": "ok",
+        "seekedMs": 26.100000008940697,
+        "presentedMs": 22.00000001193257,
+        "mediaWriteAt": 227101.29999999702,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.333335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 86,
+        "frame": 269,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 2.3666666666666667,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 227145.09999999404,
+        "requestedAt": 227145.09999999404,
+        "requestedValue": 2.366668,
+        "status": "ok",
+        "seekedMs": 75.59999999403954,
+        "presentedMs": 40.300000005954644,
+        "mediaWriteAt": 227149.09999999404,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 2.366668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 87,
+        "frame": 830,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.466666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 227246.09999999404,
+        "requestedAt": 227246.09999999404,
+        "requestedValue": 3.466668,
+        "status": "ok",
+        "seekedMs": 78.09999999403954,
+        "presentedMs": 72.50000000596629,
+        "mediaWriteAt": 227250.5,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.466668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 88,
+        "frame": 89,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 89,
+        "frame": 256,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.9333333333333333,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 227344.69999998808,
+        "requestedAt": 227344.69999998808,
+        "requestedValue": 1.933335,
+        "status": "ok",
+        "seekedMs": 67.1000000089407,
+        "presentedMs": 40.60000001190929,
+        "mediaWriteAt": 227348.79999999702,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.933335,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 90,
+        "frame": 270,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 227429.69999998808,
+        "requestedAt": 227429.69999998808,
+        "requestedValue": 0,
+        "status": "same-frame-no-new-frame",
+        "seekedMs": 4.300000011920929,
+        "presentedMs": null,
+        "mediaWriteAt": 227429.79999999702,
+        "observedMedia": {
+          "clipId": "a18db71d-cfcb-4f76-b478-32009fb89b85",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 91,
+        "frame": 428,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 92,
+        "frame": 833,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 3.566666666666667,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 232449.69999998808,
+        "requestedAt": 232449.69999998808,
+        "requestedValue": 3.566668,
+        "status": "ok",
+        "seekedMs": 79.40000000596046,
+        "presentedMs": 69.00000001193257,
+        "mediaWriteAt": 232454.59999999404,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 3.566668,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 93,
+        "frame": 722,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 94,
+        "frame": 90,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 232543.59999999404,
+        "requestedAt": 232543.59999999404,
+        "requestedValue": 0,
+        "status": "ok",
+        "seekedMs": 20.200000002980232,
+        "presentedMs": 25.100000005972106,
+        "mediaWriteAt": 232549.39999999106,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 95,
+        "frame": 111,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.7,
+        "requestedClipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 4,
+          "seeking": false
+        },
+        "armedAt": 232577.39999999106,
+        "requestedAt": 232577.39999999106,
+        "requestedValue": 0.700001,
+        "status": "ok",
+        "seekedMs": 13.600000008940697,
+        "presentedMs": 24.700000008946517,
+        "mediaWriteAt": 232577.39999999106,
+        "observedMedia": {
+          "clipId": "a4e8d825-baf9-49ec-899c-cd82707131b4",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.700001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 96,
+        "frame": 540,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 97,
+        "frame": 750,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 0.8,
+        "requestedClipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 232617.39999999106,
+        "requestedAt": 232617.39999999106,
+        "requestedValue": 0.800001,
+        "status": "ok",
+        "seekedMs": 22.299999997019768,
+        "presentedMs": 18.032000008941395,
+        "mediaWriteAt": 232617.5,
+        "observedMedia": {
+          "clipId": "12ab954b-273e-4d9f-a2dc-21cebb36b246",
+          "connected": true,
+          "active": "true",
+          "currentTime": 0.800001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      },
+      {
+        "index": 98,
+        "frame": 354,
+        "status": "gap-no-video-frame",
+        "seekedMs": null,
+        "presentedMs": null
+      },
+      {
+        "index": 99,
+        "frame": 246,
+        "type": "seek",
+        "latencyOrigin": "real-seek-entry",
+        "expectedSeconds": 1.6,
+        "requestedClipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+        "beforeWrite": {
+          "currentTime": 0,
+          "readyState": 0,
+          "seeking": false
+        },
+        "armedAt": 232667.69999998808,
+        "requestedAt": 232667.69999998808,
+        "requestedValue": 1.600001,
+        "status": "ok",
+        "seekedMs": 44.30000001192093,
+        "presentedMs": 34.40000001192675,
+        "mediaWriteAt": 232672.69999998808,
+        "observedMedia": {
+          "clipId": "5633c1f7-65f5-4760-8bd5-c37b7c53832e",
+          "connected": true,
+          "active": "true",
+          "currentTime": 1.600001,
+          "readyState": 4,
+          "networkState": 1,
+          "seeking": false
+        }
+      }
+    ],
+    "artifact": {
+      "file": "E:\\Projects\\supa-video-produzah\\evidence\\p2-native-performance\\runs\\p3-first-cut-native-profile-2fsi0v\\first-cut-Preview-seeks.json",
+      "sha256": "911ae049e944fc94d05f15e3b9edf17ae74a2bb09b658cc35247e24d78a1a1df"
+    }
+  },
+  "cleanup": {
+    "code": 0,
+    "signal": null,
+    "overflow": false,
+    "stderr": "",
+    "events": [
+      {
+        "event": "identity",
+        "pid": 19728,
+        "creation": "134352663953643960"
+      },
+      {
+        "event": "closed",
+        "rootExitBeforeCleanup": 259,
+        "empty": true
+      }
+    ]
+  }
+}
