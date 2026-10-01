@@ -24,6 +24,10 @@ export const videoErrorCodes = [
   "invalid_media",
   "invalid_render_plan",
   "output_exists",
+  "invalid_editorial_evaluation",
+  "qc_release_blocked",
+  "qc_unavailable",
+  "invalid_review_record",
 ] as const;
 
 export const videoErrorCodeSchema = z.enum(videoErrorCodes);

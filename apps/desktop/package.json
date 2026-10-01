@@ -26,6 +26,7 @@
     "@supa-video/contracts": "workspace:*",
     "@supa-video/media": "workspace:*",
     "@supa-video/project": "workspace:*",
+    "@supa-video/qc": "workspace:*",
     "@supa-video/render": "workspace:*",
     "@supa-video/produce": "workspace:*",
     "@supa-video/rights": "workspace:*",

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { videoCommandErrorSchema } from "./errors.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
+import { renderQcResultSchema } from "./qc.js";
 import { usePolicyProfileSchema } from "./rights.js";
 import {
   clipFadesSchema,
@@ -438,6 +439,8 @@ export const verifiedRenderOutputSchema = z
     previewPath: pathSchema,
     probe: mediaProbeSchema,
     loudnessReport: loudnessReportSchema.optional(),
+    /** QC result and immutable manifest; present for every QC-checked render. */
+    qc: renderQcResultSchema.optional(),
   })
   .strict();
 
