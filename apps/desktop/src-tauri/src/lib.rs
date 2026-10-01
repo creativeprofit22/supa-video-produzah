@@ -425,6 +425,10 @@ mod tests {
                 video::jobs::ipc::video_reauthorize_media_job_output,
                 video::jobs::ipc::video_get_media_cache_status,
                 video::jobs::ipc::video_clear_legacy_media_cache,
+                video::review_record::video_read_review_state,
+                video::review_record::video_record_review_decision,
+                video::delivery::video_start_delivery,
+                crate::crash_report::app_take_crash_reports,
             ])
             .on_window_event(clean_up_video_state_on_destroyed)
             .build(mock_context(noop_assets()))
