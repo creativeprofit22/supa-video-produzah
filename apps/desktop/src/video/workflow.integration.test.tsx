@@ -36,10 +36,12 @@ vi.mock("@tauri-apps/api/window", () => ({
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
 function dispatchTauriEvent(eventName: string, payload: unknown) {
-  const callback = listenMock.mock.calls.find(([name]) => name === eventName)?.[1] as
-    EventCallback<unknown> | undefined;
-  if (callback === undefined) throw new Error(`No listener registered for ${eventName}`);
-  callback({ event: eventName, id: 1, payload });
+  // Tauri delivers an event to every listener registered for it.
+  const callbacks = listenMock.mock.calls
+    .filter(([name]) => name === eventName)
+    .map(([, callback]) => callback as EventCallback<unknown>);
+  if (callbacks.length === 0) throw new Error(`No listener registered for ${eventName}`);
+  for (const callback of callbacks) callback({ event: eventName, id: 1, payload });
 }
 function dispatchRender(payload: unknown) {
   dispatchTauriEvent("video:render-event", payload);

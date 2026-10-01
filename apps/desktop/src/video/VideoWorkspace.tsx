@@ -56,7 +56,18 @@ import { AudioPanel, loudnessReportFrom } from "./AudioPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
 import { TranscriptPanel, type TranscriptTarget } from "./TranscriptPanel";
 import { tauriTranscriptionBackend, type TranscriptionBackend } from "../asr-ipc";
-import { loadManagedTranscriptArtifact } from "../video-ipc";
+import {
+  listenVideoRenderEvents,
+  loadManagedTranscriptArtifact,
+  pickVideoExportPath,
+  readReviewState,
+  recordReviewDecision,
+  startVideoDelivery,
+} from "../video-ipc";
+import { renderInputPaths } from "../use-video-project";
+import { DeliverPanel } from "./DeliverPanel";
+import { ReviewPanel } from "./ReviewPanel";
+import { useReviewDeliver, type ReviewDeliverBackend } from "./use-review-deliver";
 import type { ReadinessState } from "./VideoProjectOpener";
 
 interface VideoWorkspaceProps {
@@ -68,6 +79,7 @@ interface VideoWorkspaceProps {
   readonly onOpenJobCenter: (jobId: string) => void;
   readonly onCancelMediaJob?: (jobId: string) => void;
   readonly transcriptionBackend?: TranscriptionBackend;
+  readonly reviewBackend?: ReviewDeliverBackend;
 }
 
 export function findAssetPreparationJob(
@@ -153,6 +165,14 @@ export function timelineFrameForPreviewSourceFrame(
 
 export { activeCaptionCuesForTimelineFrame };
 
+const tauriReviewBackend: ReviewDeliverBackend = {
+  readReviewState,
+  recordReviewDecision,
+  startVideoDelivery,
+  pickVideoExportPath,
+  listenVideoRenderEvents,
+};
+
 // Keeps the export name `MultitrackTimeline` intact for the profiler transform.
 const TimelineView = memo(MultitrackTimeline);
 
@@ -165,6 +185,7 @@ export function VideoWorkspace({
   onOpenJobCenter,
   onCancelMediaJob,
   transcriptionBackend = tauriTranscriptionBackend,
+  reviewBackend = tauriReviewBackend,
 }: VideoWorkspaceProps) {
   const [playhead, setPlayhead] = useState(0);
   const [compositionPlayhead, setCompositionPlayhead] = useState<number | null>(null);
@@ -266,6 +287,15 @@ export function VideoWorkspace({
     controller.projection?.state.sequences.find(
       (candidate) => candidate.id === controller.projection?.state.activeSequenceId,
     ) ?? null;
+  const reviewed = controller.render.phase === "completed" ? controller.render.output : null;
+  const reviewDeliver = useReviewDeliver({
+    backend: reviewBackend,
+    reviewed,
+    projection: controller.projection,
+    inputPathsByAssetId: renderInputPaths(controller.projection),
+    intendedUse: controller.exportIntendedUse,
+    newId: () => crypto.randomUUID(),
+  });
   const [transcriptArtifact, setTranscriptArtifact] = useState<TranscriptArtifactV1 | null>(null);
   const [proposalRanges, setProposalRanges] = useState<readonly ProposalTimelineRange[]>([]);
   const [agentProposalVersion, setAgentProposalVersion] = useState(0);
@@ -1337,6 +1367,39 @@ export function VideoWorkspace({
                   })
             }
           />
+          <ReviewPanel
+            review={reviewDeliver.review}
+            loading={reviewDeliver.loading}
+            error={reviewDeliver.error}
+            pending={reviewDeliver.pending}
+            onSeek={(startUs) => {
+              if (canonicalSequence === null) return;
+              const { numerator, denominator } = canonicalSequence.rate;
+              commitMonitorFrame(
+                Math.floor((startUs * numerator) / (denominator * 1_000_000)),
+                true,
+              );
+            }}
+            onAccept={reviewDeliver.accept}
+            onProposeRepair={(finding) => {
+              reviewDeliver.recordRepair(finding, crypto.randomUUID());
+              document
+                .querySelector<HTMLElement>(".proposals-panel")
+                ?.scrollIntoView({ block: "nearest" });
+            }}
+            onStopRepair={reviewDeliver.stopRepair}
+          />
+          {reviewDeliver.review === null ? null : (
+            <DeliverPanel
+              review={reviewDeliver.review}
+              selected={reviewDeliver.selected}
+              outputs={reviewDeliver.outputs}
+              pending={reviewDeliver.pending}
+              error={reviewDeliver.deliverError}
+              onToggle={reviewDeliver.toggle}
+              onDeliver={() => void reviewDeliver.deliver()}
+            />
+          )}
           <ProposalsPanel
             projection={controller.projection}
             target={transcriptTarget}

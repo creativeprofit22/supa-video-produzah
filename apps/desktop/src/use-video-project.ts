@@ -61,7 +61,9 @@ import {
 } from "./managed-transcript-resolution";
 import type { ProposalEditOutcome } from "./proposal-ipc";
 import { tauriRightsBackend } from "./rights-ipc";
+import { editorialEvaluationFor } from "./video/editorial-evaluation";
 import { runRightsPreflight, type RightsPreflightBackend } from "./video/export-rights";
+import type { EditorialEvaluation } from "@supa-video/qc";
 import { tauriVideoBackend, type VideoBackend, type VideoRenderNotification } from "./video-ipc";
 
 export type PreparationState =
@@ -371,7 +373,7 @@ function sourceDurationFrames(projection: ProjectProjection | null): number | nu
     : microsecondsToSourceFrames(asset.probe.durationMicroseconds, asset.probe.averageFrameRate)
         .value;
 }
-function renderInputPaths(
+export function renderInputPaths(
   projection: ProjectProjection | null,
 ): Readonly<Record<string, string>> | null {
   if (projection === null) return null;
@@ -462,6 +464,7 @@ export function useVideoProject(
   const destinationOperationRef = useRef(0);
   const destinationPendingRef = useRef(false);
   const overwritePlanRef = useRef<Readonly<RenderPlan> | null>(null);
+  const editorialRef = useRef<EditorialEvaluation | null>(null);
 
   const replaceState = useCallback((next: VideoProjectControllerState) => {
     stateRef.current = next;
@@ -675,8 +678,9 @@ export function useVideoProject(
   );
 
   const startRenderPlan = useCallback(
-    async (plan: Readonly<RenderPlan>, overwrite: boolean) => {
+    async (plan: Readonly<RenderPlan>, overwrite: boolean, editorial: EditorialEvaluation) => {
       const operation = ++renderOperationRef.current;
+      editorialRef.current = editorial;
       disposeRenderListener();
       overwritePlanRef.current = null;
       replaceRender({
@@ -696,7 +700,7 @@ export function useVideoProject(
           return;
         }
         renderListenerRef.current = unlisten;
-        const started = await backend.startVideoRender(plan, overwrite);
+        const started = await backend.startVideoRender(plan, overwrite, editorial);
         if (operation !== renderOperationRef.current) {
           disposeRenderListener();
           const invalidatedStarting = invalidatedStartingRenderRef.current;
@@ -2188,7 +2192,9 @@ export function useVideoProject(
         outputPath,
         ...(intendedUse === null ? {} : { intendedUse }),
       });
-      await startRenderPlan(plan, false);
+      const editorial = await editorialEvaluationFor(active);
+      if (operation !== destinationOperationRef.current) return;
+      await startRenderPlan(plan, false, editorial);
     } catch (error) {
       if (operation === destinationOperationRef.current) setDestinationError(asError(error));
     } finally {
@@ -2200,7 +2206,9 @@ export function useVideoProject(
   }, [backend, rightsBackend, startRenderPlan]);
   const confirmOverwrite = useCallback(async () => {
     const plan = overwritePlanRef.current;
-    if (plan !== null && renderRef.current.phase === "failed") await startRenderPlan(plan, true);
+    const editorial = editorialRef.current;
+    if (plan !== null && editorial !== null && renderRef.current.phase === "failed")
+      await startRenderPlan(plan, true, editorial);
   }, [startRenderPlan]);
   const cancelRender = useCallback(async () => {
     const active = renderRef.current;

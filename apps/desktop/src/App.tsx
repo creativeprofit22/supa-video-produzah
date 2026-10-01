@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { CommandProvider, useCommand, useCommandHandler } from "./commands/CommandProvider";
 import { ShortcutSettings } from "./commands/ShortcutSettings";
+import { CrashNotice } from "./CrashNotice";
 import { useDraftDiscardGuard } from "./use-draft-discard-guard";
 import { useMediaJobs } from "./use-media-jobs";
 import { useVideoProject } from "./use-video-project";
@@ -142,6 +143,8 @@ export function AppContent() {
           </div>
         </div>
       </header>
+
+      <CrashNotice />
 
       {jobCenterOpen ? (
         <JobCenter controller={mediaJobs} focusJobId={jobCenterTarget} onClose={closeJobCenter} />

@@ -2,6 +2,7 @@ import {
   absoluteNativePathSchema,
   commandGroupRequestSchema,
   commandResultSchema,
+  deliveryPresetSchema,
   mediaProbeSchema,
   openedProjectV2Schema,
   projectInspectorSchema,
@@ -13,9 +14,18 @@ import {
   videoRenderStartedSchema,
   videoToolStatusSchema,
 } from "@supa-video/contracts";
+import {
+  editorialEvaluationSchema,
+  reviewDecisionRequestSchema,
+  reviewStateSchema,
+  type EditorialEvaluation,
+  type ReviewDecisionRequest,
+  type ReviewState,
+} from "@supa-video/qc";
 import type {
   CommandGroupRequest,
   CommandResult,
+  DeliveryPresetId,
   MediaProbe,
   OpenedProjectV2,
   ProjectInspector,
@@ -221,11 +231,13 @@ export async function prepareVideoAsset(
 export async function startVideoRender(
   plan: RenderPlan,
   overwrite: boolean,
+  editorial: EditorialEvaluation,
 ): Promise<VideoRenderStarted> {
   const validatedPlan = renderPlanSchema.parse(plan);
   const response = await invokeVideoCommand("video_start_render", {
     plan: validatedPlan,
     overwrite,
+    editorial: editorialEvaluationSchema.parse(editorial),
   });
   return parseResponse(videoRenderStartedSchema.safeParse(response));
 }
@@ -233,6 +245,45 @@ export async function startVideoRender(
 export async function cancelVideoRender(jobId: string): Promise<void> {
   const response = await invokeVideoCommand("video_cancel_render", { jobId });
   parseResponse(emptyCommandResponseSchema.safeParse(response));
+}
+
+export async function readReviewState(outputPath: string): Promise<ReviewState> {
+  const response = await invokeVideoCommand("video_read_review_state", { outputPath });
+  return parseResponse(reviewStateSchema.safeParse(response));
+}
+
+export async function recordReviewDecision(
+  outputPath: string,
+  decision: ReviewDecisionRequest,
+): Promise<ReviewState> {
+  const response = await invokeVideoCommand("video_record_review_decision", {
+    outputPath,
+    decision: reviewDecisionRequestSchema.parse(decision),
+  });
+  return parseResponse(reviewStateSchema.safeParse(response));
+}
+
+export interface DeliveryPresetJob {
+  readonly presetId: DeliveryPresetId;
+  readonly plan: RenderPlan;
+  readonly editorial: EditorialEvaluation;
+}
+
+export async function startVideoDelivery(
+  sourceOutputPath: string,
+  presets: readonly DeliveryPresetJob[],
+): Promise<readonly VideoRenderStarted[]> {
+  const response = await invokeVideoCommand("video_start_delivery", {
+    request: {
+      sourceOutputPath,
+      presets: presets.map((preset) => ({
+        presetId: deliveryPresetSchema.shape.id.parse(preset.presetId),
+        plan: renderPlanSchema.parse(preset.plan),
+        editorial: editorialEvaluationSchema.parse(preset.editorial),
+      })),
+    },
+  });
+  return parseResponse(z.array(videoRenderStartedSchema).max(3).safeParse(response));
 }
 
 export async function listMediaJobs(request: ListMediaJobsRequest = {}): Promise<MediaJobList> {

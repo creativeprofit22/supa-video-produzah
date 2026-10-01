@@ -3594,3 +3594,56 @@ video {
   padding-left: 1.2em;
   font-size: 0.85rem;
 }
+
+/* Review and Deliver (QC findings, delivery presets) */
+.qc-findings {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qc-finding {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.qc-finding p {
+  margin: 0;
+}
+
+.qc-finding-heading,
+.qc-finding-actions,
+.qc-accept-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.qc-finding-blocker .qc-severity {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.qc-finding-warning .qc-severity {
+  color: var(--warning);
+}
+
+.deliver-presets {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  border: 0;
+  padding: 0;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

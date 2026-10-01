@@ -319,11 +319,27 @@ describe("strict V2 video IPC adapter", () => {
 
   it("keeps render start and events strict", async () => {
     const started = { jobId: id(30), planId: renderPlan.planId, revisionId: renderPlan.revisionId };
+    const editorial = {
+      evaluatorVersion: "editorial-v1",
+      revisionId: renderPlan.revisionId,
+      revisionStateHash: "a".repeat(64),
+      findings: [],
+    };
     invokeMock.mockResolvedValueOnce(started);
-    await expect(startVideoRender(renderPlan, false)).resolves.toEqual(started);
+    await expect(startVideoRender(renderPlan, false, editorial)).resolves.toEqual(started);
+    expect(invokeMock).toHaveBeenLastCalledWith("video_start_render", {
+      plan: renderPlan,
+      overwrite: false,
+      editorial,
+    });
+    await expect(
+      startVideoRender(renderPlan, false, { ...editorial, revisionStateHash: "nope" }),
+    ).rejects.toThrow();
     const multitrackStarted = { ...started, planId: multitrackRenderPlan.planId };
     invokeMock.mockResolvedValueOnce(multitrackStarted);
-    await expect(startVideoRender(multitrackRenderPlan, false)).resolves.toEqual(multitrackStarted);
+    await expect(startVideoRender(multitrackRenderPlan, false, editorial)).resolves.toEqual(
+      multitrackStarted,
+    );
     const unlisten = vi.fn();
     listenMock.mockResolvedValueOnce(unlisten);
     const handler = vi.fn();

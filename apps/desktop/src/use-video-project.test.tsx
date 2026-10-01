@@ -3143,6 +3143,13 @@ describe("canonical project controller", () => {
         acquisitionReceiptIdsByAssetId: { [opened.state.assets[0]!.id]: receiptId },
       },
     });
+    // The editorial evaluation is bound to the exact revision being exported.
+    const calls = startVideoRender.mock.calls as unknown as [RenderPlan, boolean, unknown][];
+    expect(calls[0]?.[2]).toMatchObject({
+      evaluatorVersion: "editorial-v1",
+      revisionId: opened.revision.id,
+      revisionStateHash: opened.revision.stateHash,
+    });
   });
 
   it("exports all canonical video tracks while preserving hidden-layer audio and editability", async () => {

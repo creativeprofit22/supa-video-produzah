@@ -1,3 +1,4 @@
+import "./zod-csp";
 import React from "react";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
