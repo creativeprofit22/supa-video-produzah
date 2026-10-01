@@ -1,0 +1,286 @@
+[
+  {
+    "at": "2026-10-01T03:32:02.327Z",
+    "event": "1-msi-extract:start"
+  },
+  {
+    "at": "2026-10-01T03:32:10.389Z",
+    "event": "1-msi-extract:done",
+    "status": "PASS",
+    "ms": 8062,
+    "msi": "Supa Video Producer_0.1.0_x64_en-US.msi",
+    "msiSha256": "a6d3abd94ac8289206b33895c0e5d7dae76910a85f1eef9ca2cf4e6b75f01530",
+    "found": {
+      "supa-video-desktop.exe": "PFiles\\Supa Video Producer\\supa-video-desktop.exe",
+      "THIRD_PARTY_LICENSES.md": "PFiles\\Supa Video Producer\\licenses\\THIRD_PARTY_LICENSES.md",
+      "ffmpeg.exe": "PFiles\\Supa Video Producer\\media-tools\\ffmpeg.exe",
+      "ffprobe.exe": "PFiles\\Supa Video Producer\\media-tools\\ffprobe.exe",
+      "manifest.v1.json": "PFiles\\Supa Video Producer\\media-tools\\manifest.v1.json",
+      "THIRD_PARTY_NOTICES.md": "PFiles\\Supa Video Producer\\media-tools\\THIRD_PARTY_NOTICES.md",
+      "SOURCE_OFFER.md": "PFiles\\Supa Video Producer\\media-tools\\SOURCE_OFFER.md",
+      "GPL-3.0.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GPL-3.0.txt",
+      "GYAN-FFMPEG-README.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GYAN-FFMPEG-README.txt"
+    },
+    "hashes": {
+      "ffmpeg": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
+      "ffprobe": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+    },
+    "exeSignature": "NotSigned"
+  },
+  {
+    "at": "2026-10-01T03:32:11.339Z",
+    "event": "owned",
+    "owned": {
+      "event": "identity",
+      "pid": 18388,
+      "creation": "134352991313178173"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:11.372Z",
+    "event": "2-launch-and-csp:start"
+  },
+  {
+    "at": "2026-10-01T03:32:13.990Z",
+    "event": "page-console",
+    "type": "warning",
+    "text": "IPC custom protocol failed, Tauri will now use the postMessage interface instead TypeError: Failed to fetch\n    at Object.sendIpcMessage (<anonymous>:83:7)\n    at Object.<anonymous> (<anonymous>:177:38)\n    at action (<anonymous>:336:38)\n    at <anonymous>:345:11\n    at new Promise (<anonymous>)\n    at Object.value (<anonymous>:325:14)\n    at $ (http://tauri.localhost/assets/index-BJBSwyJ-.js:72:116465)\n    at EC (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:17928)\n    at Object.JC [as listMediaJobs] (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:20219)\n    at http://tauri.localhost/assets/index-BJBSwyJ-.js:81:24650"
+  },
+  {
+    "at": "2026-10-01T03:32:13.992Z",
+    "event": "page-console",
+    "type": "warning",
+    "text": "IPC custom protocol failed, Tauri will now use the postMessage interface instead TypeError: Failed to fetch\n    at Object.sendIpcMessage (<anonymous>:83:7)\n    at Object.<anonymous> (<anonymous>:177:38)\n    at action (<anonymous>:336:38)\n    at <anonymous>:345:11\n    at new Promise (<anonymous>)\n    at Object.value (<anonymous>:325:14)\n    at $ (http://tauri.localhost/assets/index-BJBSwyJ-.js:72:116465)\n    at EC (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:17928)\n    at Object.$C [as getMediaCacheStatus] (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:20806)\n    at http://tauri.localhost/assets/index-BJBSwyJ-.js:81:27004"
+  },
+  {
+    "at": "2026-10-01T03:32:13.994Z",
+    "event": "page-console",
+    "type": "warning",
+    "text": "IPC custom protocol failed, Tauri will now use the postMessage interface instead TypeError: Failed to fetch\n    at Object.sendIpcMessage (<anonymous>:83:7)\n    at Object.<anonymous> (<anonymous>:177:38)\n    at action (<anonymous>:336:38)\n    at <anonymous>:345:11\n    at new Promise (<anonymous>)\n    at Object.value (<anonymous>:325:14)\n    at $ (http://tauri.localhost/assets/index-BJBSwyJ-.js:72:116465)\n    at EC (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:17928)\n    at OC (http://tauri.localhost/assets/index-BJBSwyJ-.js:81:18045)\n    at http://tauri.localhost/assets/index-BJBSwyJ-.js:87:55693"
+  },
+  {
+    "at": "2026-10-01T03:32:14.230Z",
+    "event": "page-console",
+    "type": "warning",
+    "text": "[TAURI] Couldn't find callback id 409273404. This might happen when the app is reloaded while Rust is running an asynchronous operation."
+  },
+  {
+    "at": "2026-10-01T03:32:14.232Z",
+    "event": "page-console",
+    "type": "warning",
+    "text": "[TAURI] Couldn't find callback id 2896770121. This might happen when the app is reloaded while Rust is running an asynchronous operation."
+  },
+  {
+    "at": "2026-10-01T03:32:16.065Z",
+    "event": "2-launch-and-csp:done",
+    "status": "PASS",
+    "ms": 4693,
+    "url": "http://tauri.localhost/",
+    "cspCheck": "reload-with-listener",
+    "cspSource": "header",
+    "csp": "media-src 'self' asset: http://asset.localhost; base-uri 'none'; default-src 'self'; object-src 'none'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost; script-src 'self' 'sha256-gXu2KRdWL7fYPqRRoNLEZcVrnOu4NpfruUdNnGEUOY0='; style-src 'self'; form-action 'none'; font-src 'self'",
+    "replayedSecurityEntries": []
+  },
+  {
+    "at": "2026-10-01T03:32:16.114Z",
+    "event": "owned",
+    "owned": {
+      "event": "closing-job"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.116Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18388
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.116Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 13012
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.117Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 24948
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.118Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19160
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.155Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30376
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.157Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 11300
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.157Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25344
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.938Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 11300,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.939Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 13012,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.940Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18388,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.941Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19160,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.941Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 24948,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.942Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25344,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.942Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30376,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.942Z",
+    "event": "owned",
+    "owned": {
+      "event": "closed",
+      "rootExit": 0,
+      "empty": true
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.944Z",
+    "event": "owned",
+    "owned": {
+      "event": "launcher-exit",
+      "pid": 29112,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.958Z",
+    "event": "closed",
+    "exit": {
+      "event": "launcher-exit",
+      "pid": 29112,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "at": "2026-10-01T03:32:16.958Z",
+    "event": "steps",
+    "steps": {
+      "1-msi-extract": {
+        "status": "PASS",
+        "ms": 8062,
+        "msi": "Supa Video Producer_0.1.0_x64_en-US.msi",
+        "msiSha256": "a6d3abd94ac8289206b33895c0e5d7dae76910a85f1eef9ca2cf4e6b75f01530",
+        "found": {
+          "supa-video-desktop.exe": "PFiles\\Supa Video Producer\\supa-video-desktop.exe",
+          "THIRD_PARTY_LICENSES.md": "PFiles\\Supa Video Producer\\licenses\\THIRD_PARTY_LICENSES.md",
+          "ffmpeg.exe": "PFiles\\Supa Video Producer\\media-tools\\ffmpeg.exe",
+          "ffprobe.exe": "PFiles\\Supa Video Producer\\media-tools\\ffprobe.exe",
+          "manifest.v1.json": "PFiles\\Supa Video Producer\\media-tools\\manifest.v1.json",
+          "THIRD_PARTY_NOTICES.md": "PFiles\\Supa Video Producer\\media-tools\\THIRD_PARTY_NOTICES.md",
+          "SOURCE_OFFER.md": "PFiles\\Supa Video Producer\\media-tools\\SOURCE_OFFER.md",
+          "GPL-3.0.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GPL-3.0.txt",
+          "GYAN-FFMPEG-README.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GYAN-FFMPEG-README.txt"
+        },
+        "hashes": {
+          "ffmpeg": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
+          "ffprobe": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+        },
+        "exeSignature": "NotSigned"
+      },
+      "2-launch-and-csp": {
+        "status": "PASS",
+        "ms": 4693,
+        "url": "http://tauri.localhost/",
+        "cspCheck": "reload-with-listener",
+        "cspSource": "header",
+        "csp": "media-src 'self' asset: http://asset.localhost; base-uri 'none'; default-src 'self'; object-src 'none'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost; script-src 'self' 'sha256-gXu2KRdWL7fYPqRRoNLEZcVrnOu4NpfruUdNnGEUOY0='; style-src 'self'; form-action 'none'; font-src 'self'",
+        "replayedSecurityEntries": []
+      }
+    },
+    "runDir": "C:\\Users\\SPARTA~1\\AppData\\Local\\Temp\\supa-release-smoke-GZuNcm"
+  }
+]

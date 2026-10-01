@@ -1361,7 +1361,9 @@ Remotion is an optional HTML/template renderer reference, not the canonical prev
 
 # Phase 10 — Quality control, bounded repair, delivery, and provenance
 
-**Depends on:** Phases 5–9
+**Status:** Complete for the private, unsigned Windows build (1 October 2026), per `evidence/2026-10-p3-delivery/README.md`. Public distribution remains with the release-gate phase.
+
+**Depends on:** Phases 5–9. *Decision (1 Oct 2026):* Phase 9's measured deferral (P3 native preview gate `d665936f`, Done 1 Oct 2026, `evidence/2026-09-30-p3-native-preview-gate/README.md`) satisfies the Phase 9 part of this dependency, matching Milestone C's "where profiling requires" wording. If a preview target later fails, Phase 9 reopens on its own; Phase 10 is not retroactively blocked.
 
 ## Scope
 
@@ -1370,8 +1372,8 @@ Remotion is an optional HTML/template renderer reference, not the canonical prev
 - Rights and attribution release checks
 - Bounded repair proposals with attempt limits and visible deltas
 - Multi-format outputs: 16:9, 9:16, 1:1, captions, metadata, thumbnails
-- C2PA ingredient/output manifests where supported
-- Secure packaging, CSP, IPC/path restrictions, updater, crash diagnostics, and license notices
+- Plain readable render manifest beside each export (C2PA signing is a recorded non-goal, see below)
+- Secure packaging, CSP, IPC/path restrictions, crash diagnostics, and license notices
 
 ## Non-goals
 
@@ -1379,6 +1381,9 @@ Remotion is an optional HTML/template renderer reference, not the canonical prev
 - Silent infinite repair loops
 - Automatic publishing before destination-specific approval policy exists
 - Bit-identical output across every GPU/hardware encoder
+- Auto-updater (decision 1 Oct 2026: single-user personal app with no signing key or update host; updates are reinstalls of a new private build)
+- C2PA signing (decision 1 Oct 2026: a plain readable `<output>.manifest.json` plus credits sidecars is the provenance record)
+- Public distribution: owned by the "Release gate · public-distribution legal approval" phase; a verified private, unsigned Windows build completes Phase 10
 
 ## Affected modules
 
@@ -1424,7 +1429,7 @@ Remotion is an optional HTML/template renderer reference, not the canonical prev
 - False confidence from C2PA or technical checks
 - FFmpeg build/license drift
 - Tauri command surface expanding without narrow capabilities
-- Existing `csp: null` remaining in production
+- ~~Existing `csp: null` remaining in production~~ — stale since 2026-07-25 (`595fa8f` replaced the initial `csp: null` from `72fcdac`, 2026-07-24, with a restrictive production policy plus separate `devCsp`); enforced by `apps/desktop/src-tauri/tests/security_config.rs`. Remaining gap (1 Oct 2026): prove zero CSP violations in the packaged build (installer smoke test).
 
 ## Hard completion gate
 
@@ -1498,7 +1503,7 @@ Phase 10 QC, repair, delivery, provenance, release hardening
 
 ### Milestone C — Production-grade release
 
-**Future target:** Phases 9–10 complete where profiling requires Phase 9; preview, QC, delivery, security, provenance, and packaging meet release gates.
+**Future target:** Phases 9–10 complete where profiling requires Phase 9 (decision 1 Oct 2026: Phase 9's measured deferral counts as satisfying this); preview, QC, delivery, security, provenance, and packaging meet release gates.
 
 ---
 
@@ -1515,7 +1520,7 @@ Items 3–6 below now have implemented baselines: Windows-first evidence, a dire
 5. **Rust boundary:** Tauri process versus dedicated local engine process; default to a project service boundary that can later move out-of-process without changing contracts
 6. **SQLite role:** derived indexes/jobs only versus canonical project state; default is canonical snapshots/journal in files and SQLite for derived/query-heavy records
 7. **Proxy codec:** platform-compatible H.264/AAC versus intraframe editing codec; benchmark legal, size, seek, and decode behavior before locking
-8. **Native preview trigger:** define measured seek latency, dropped-frame, parity, and layer-count thresholds before authorizing Phase 9
+8. **Native preview trigger:** define measured seek latency, dropped-frame, parity, and layer-count thresholds before authorizing Phase 9. *Decided 1 Oct 2026:* thresholds measured and not hit, so Phase 9 is deferred (`evidence/2026-09-30-p3-native-preview-gate/README.md`); the deferral satisfies Phase 10's dependency
 9. **Model policy:** local-first versus hosted providers for transcription, embeddings, and editorial reasoning
 10. **Stock provider credentials:** user-supplied keys, bundled service credentials, or both; credentials must never enter project receipts
 11. **Commercial-use default:** recommend commercial-safe policy so outputs do not accidentally depend on NC or unclear assets

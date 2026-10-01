@@ -1,0 +1,2337 @@
+[
+  {
+    "at": "2026-10-01T03:28:10.236Z",
+    "event": "1-msi-extract:start"
+  },
+  {
+    "at": "2026-10-01T03:28:16.717Z",
+    "event": "1-msi-extract:done",
+    "status": "PASS",
+    "ms": 6481,
+    "msi": "Supa Video Producer_0.1.0_x64_en-US.msi",
+    "msiSha256": "fbdb2f03ba85f1e47c87350f529742a36f217dd5cfd3e8389786adc75b02b48c",
+    "found": {
+      "supa-video-desktop.exe": "PFiles\\Supa Video Producer\\supa-video-desktop.exe",
+      "THIRD_PARTY_LICENSES.md": "PFiles\\Supa Video Producer\\licenses\\THIRD_PARTY_LICENSES.md",
+      "ffmpeg.exe": "PFiles\\Supa Video Producer\\media-tools\\ffmpeg.exe",
+      "ffprobe.exe": "PFiles\\Supa Video Producer\\media-tools\\ffprobe.exe",
+      "manifest.v1.json": "PFiles\\Supa Video Producer\\media-tools\\manifest.v1.json",
+      "THIRD_PARTY_NOTICES.md": "PFiles\\Supa Video Producer\\media-tools\\THIRD_PARTY_NOTICES.md",
+      "SOURCE_OFFER.md": "PFiles\\Supa Video Producer\\media-tools\\SOURCE_OFFER.md",
+      "GPL-3.0.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GPL-3.0.txt",
+      "GYAN-FFMPEG-README.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GYAN-FFMPEG-README.txt"
+    },
+    "hashes": {
+      "ffmpeg": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
+      "ffprobe": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+    },
+    "exeSignature": "NotSigned"
+  },
+  {
+    "at": "2026-10-01T03:28:17.513Z",
+    "event": "owned",
+    "owned": {
+      "event": "identity",
+      "pid": 18284,
+      "creation": "134352988974956293"
+    }
+  },
+  {
+    "at": "2026-10-01T03:28:17.515Z",
+    "event": "2-launch-and-csp:start"
+  },
+  {
+    "at": "2026-10-01T03:28:21.472Z",
+    "event": "2-launch-and-csp:done",
+    "status": "PASS",
+    "ms": 3957,
+    "url": "http://tauri.localhost/",
+    "cspCheck": "log-replay",
+    "replayedSecurityEntries": []
+  },
+  {
+    "at": "2026-10-01T03:28:23.219Z",
+    "event": "3-import-and-export:start"
+  },
+  {
+    "at": "2026-10-01T03:28:25.807Z",
+    "event": "native-dialog",
+    "file": "smoke.svpvideo",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:28:27.909Z",
+    "event": "native-dialog",
+    "file": "broken-fixture.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:28:42.380Z",
+    "event": "native-dialog",
+    "file": "review-export.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:28:52.896Z",
+    "event": "3-import-and-export:done",
+    "status": "PASS",
+    "ms": 29677,
+    "exportExists": true,
+    "qcStatus": "blocked",
+    "findings": [
+      "audio_clipping:blocker",
+      "black_frames:blocker",
+      "silence:warning",
+      "freeze_frames:blocker"
+    ],
+    "reviewText": "QUALITY CHECKS\n\nReview\n\n3 problem(s) must be fixed or accepted before delivery.\n\nAudio clipping\nBlocks delivery\n\nAudio peaks at 14.4 dBFS and will clip\n\n0.0 s–9.0 s\nReason to accept anyway\nAccept anyway\nBlack frames\nBlocks delivery\n\nBlack picture for 2.0 s\n\n0.0 s–2.0 s\nReason to accept anyway\nAccept anyway\nSilence\nWarning\n\nNo audible sound for 4.0 s\n\n5.0 s–9.0 s\nSuggest a fix (0/3)\nReason to accept anyway\nAccept anyway\nFrozen picture\nBlocks delivery\n\nFrozen picture for 3.0 s\n\n6.0 s–9.0 s\nReason to accept anyway\nAccept anyway"
+  },
+  {
+    "at": "2026-10-01T03:28:52.897Z",
+    "event": "4-deliver-blocked-then-accept:start"
+  },
+  {
+    "at": "2026-10-01T03:28:56.719Z",
+    "event": "4-deliver-blocked-then-accept:done",
+    "status": "PASS",
+    "ms": 3822,
+    "blockedBefore": true,
+    "unresolvedBefore": 3,
+    "repairs": [
+      "Suggest a fix (1/3)"
+    ],
+    "accepted": 4,
+    "decisions": [
+      "repair_attempt",
+      "repair_stopped",
+      "accept_anyway",
+      "accept_anyway",
+      "accept_anyway",
+      "accept_anyway"
+    ],
+    "releasable": true
+  },
+  {
+    "at": "2026-10-01T03:28:56.720Z",
+    "event": "5-deliver-three-presets:start"
+  },
+  {
+    "at": "2026-10-01T03:28:58.077Z",
+    "event": "native-dialog",
+    "file": "review-export-16x9.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:28:59.362Z",
+    "event": "native-dialog",
+    "file": "review-export-9x16.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:29:00.669Z",
+    "event": "native-dialog",
+    "file": "review-export-1x1.mp4",
+    "out": "OWNED_FILENAME_VERIFIED_AND_SUBMITTED"
+  },
+  {
+    "at": "2026-10-01T03:29:35.583Z",
+    "event": "5-deliver-three-presets:done",
+    "status": "PASS",
+    "ms": 38863,
+    "outputs": {
+      "review-export-16x9.mp4": {
+        "codec": "h264",
+        "width": 1920,
+        "height": 1080,
+        "duration": "9.000000",
+        "qcStatus": "blocked",
+        "findingIds": [
+          "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+          "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+          "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+          "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+        ],
+        "acceptedDecisionIds": [
+          "0b6ed95f-8d27-4373-be20-9696405d3060",
+          "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+          "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+          "ec173d8a-f967-434c-b2fd-93017b21746c"
+        ],
+        "sidecars": {
+          "thumbnail": true,
+          "metadata": true,
+          "credits": false
+        }
+      },
+      "review-export-9x16.mp4": {
+        "codec": "h264",
+        "width": 1080,
+        "height": 1920,
+        "duration": "9.000000",
+        "qcStatus": "blocked",
+        "findingIds": [
+          "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+          "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+          "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+          "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+        ],
+        "acceptedDecisionIds": [
+          "0b6ed95f-8d27-4373-be20-9696405d3060",
+          "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+          "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+          "ec173d8a-f967-434c-b2fd-93017b21746c"
+        ],
+        "sidecars": {
+          "thumbnail": true,
+          "metadata": true,
+          "credits": false
+        }
+      },
+      "review-export-1x1.mp4": {
+        "codec": "h264",
+        "width": 1080,
+        "height": 1080,
+        "duration": "9.000000",
+        "qcStatus": "blocked",
+        "findingIds": [
+          "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+          "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+          "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+          "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+        ],
+        "acceptedDecisionIds": [
+          "0b6ed95f-8d27-4373-be20-9696405d3060",
+          "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+          "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+          "ec173d8a-f967-434c-b2fd-93017b21746c"
+        ],
+        "sidecars": {
+          "thumbnail": true,
+          "metadata": true,
+          "credits": false
+        }
+      }
+    },
+    "cspViolationsDuringRun": 0
+  },
+  {
+    "at": "2026-10-01T03:29:35.614Z",
+    "event": "owned",
+    "owned": {
+      "event": "closing-job"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.616Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18284
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.617Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20784
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.630Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 24596
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.631Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20620
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.643Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30452
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.656Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19868
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.668Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15732
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.668Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 14400
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.680Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12808
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.681Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 14400
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.681Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12808
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.691Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22316
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.691Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22244
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.702Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22316
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.702Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22244
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.718Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 7288
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.718Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15380
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.729Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 7288
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.730Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 15380
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.739Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25148
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.747Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 21360
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.747Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 16796
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.754Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29844
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.755Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 8252
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.755Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 25148
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.756Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 21360
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.767Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 16796
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.767Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29844
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.776Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29712
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.776Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 8252
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.788Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29712
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.789Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22224
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.799Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30116
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.807Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22224
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.808Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30116
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.808Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 18848
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.809Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 7300
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.810Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 18848
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.810Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 7300
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.823Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 28168
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.835Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29692
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.835Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 28168
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.838Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29692
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.848Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 26936
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.857Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29832
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.864Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 26936
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.864Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29832
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.865Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25748
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.878Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20092
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.891Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 25748
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.892Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20092
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.894Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 4380
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.895Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12428
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.896Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 4380
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.908Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12428
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.925Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12464
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.927Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 23296
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.937Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12464
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.952Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 23296
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.952Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 21208
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.953Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29692
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.953Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 21208
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.970Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29692
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.971Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 7352
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.982Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30536
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.989Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 23972
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:35.990Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30536
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.000Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 23972
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.015Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27180
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.016Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29428
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.017Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27180
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.028Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29428
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.039Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 10524
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.042Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20724
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.054Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 10524
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.064Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20724
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.065Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27020
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.075Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30476
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.076Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27020
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.085Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30476
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.086Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30620
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.098Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 25556
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.111Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30620
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.124Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 25556
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.138Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 24996
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.148Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12464
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.162Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 24996
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.175Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12464
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.176Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22736
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.177Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 19844
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.177Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22736
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.184Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 19844
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.198Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29260
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.199Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20728
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.214Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29260
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.227Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20728
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.228Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15068
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.242Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 9900
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.243Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 15068
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.253Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 9900
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.253Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20532
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.254Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12716
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.255Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20532
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.264Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12716
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.276Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 27064
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.287Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12544
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.297Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 27064
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.298Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12544
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.299Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 17264
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.311Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29860
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.319Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 7592
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.331Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29860
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.339Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 17264
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.351Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 7592
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.366Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30612
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.367Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 11332
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.379Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30612
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.390Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 11332
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.390Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 22736
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.398Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 5196
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.407Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 22736
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.416Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 5196
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.423Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 30640
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.434Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 15936
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.434Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 30640
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.435Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 15936
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.435Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20092
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.436Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20092
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.437Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 16132
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.448Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 14116
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.448Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 16132
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.449Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 14116
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.450Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 20560
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.451Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29340
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.452Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 20560
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.466Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29340
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.482Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12580
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.496Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 29132
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.497Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12580
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.508Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 29132
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.519Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 12716
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.528Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 6,
+      "pid": 21544
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.537Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 12716
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.548Z",
+    "event": "owned",
+    "owned": {
+      "event": "job-process",
+      "message": 7,
+      "pid": 21544
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.560Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 4380,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.561Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 5196,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.574Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 7288,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.587Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 7300,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.599Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 7352,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.608Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 7592,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.619Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 8252,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.627Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 9900,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.637Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 10524,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.647Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 11332,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.659Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12428,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.660Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12464,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.670Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12544,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.682Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12580,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.690Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12716,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.701Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 12808,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.702Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 14116,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.703Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 14400,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.717Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15068,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.735Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15380,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.736Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15732,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.738Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 15936,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.739Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 16132,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.740Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 16796,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.741Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 17264,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.742Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18284,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.743Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 18848,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.751Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19844,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.761Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 19868,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.769Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20092,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.781Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20532,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.795Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20560,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.803Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20620,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.817Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20724,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.826Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20728,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.834Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 20784,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.846Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 21208,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.861Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 21360,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.863Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 21544,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.877Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22224,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.889Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22244,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.890Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22316,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.891Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 22736,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.892Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 23296,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.893Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 23972,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.894Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 24596,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.896Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 24996,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.896Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25148,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.897Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25556,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.909Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 25748,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.910Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 26936,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.923Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27020,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.939Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27064,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.944Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 27180,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.958Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 28168,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.959Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29132,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.959Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29260,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.961Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29340,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.977Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29428,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.979Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29692,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.979Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29712,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.980Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29832,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.981Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29844,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.982Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 29860,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.983Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30116,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.984Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30452,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.984Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30476,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.985Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30536,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.986Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30612,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.987Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30620,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.988Z",
+    "event": "owned",
+    "owned": {
+      "event": "owned-exit-confirmed",
+      "pid": 30640,
+      "proof": "JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO"
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.989Z",
+    "event": "owned",
+    "owned": {
+      "event": "closed",
+      "rootExit": 0,
+      "empty": true
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:36.993Z",
+    "event": "owned",
+    "owned": {
+      "event": "launcher-exit",
+      "pid": 14052,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:37.005Z",
+    "event": "closed",
+    "exit": {
+      "event": "launcher-exit",
+      "pid": 14052,
+      "code": 0,
+      "signal": null,
+      "stderr": ""
+    }
+  },
+  {
+    "at": "2026-10-01T03:29:37.006Z",
+    "event": "steps",
+    "steps": {
+      "1-msi-extract": {
+        "status": "PASS",
+        "ms": 6481,
+        "msi": "Supa Video Producer_0.1.0_x64_en-US.msi",
+        "msiSha256": "fbdb2f03ba85f1e47c87350f529742a36f217dd5cfd3e8389786adc75b02b48c",
+        "found": {
+          "supa-video-desktop.exe": "PFiles\\Supa Video Producer\\supa-video-desktop.exe",
+          "THIRD_PARTY_LICENSES.md": "PFiles\\Supa Video Producer\\licenses\\THIRD_PARTY_LICENSES.md",
+          "ffmpeg.exe": "PFiles\\Supa Video Producer\\media-tools\\ffmpeg.exe",
+          "ffprobe.exe": "PFiles\\Supa Video Producer\\media-tools\\ffprobe.exe",
+          "manifest.v1.json": "PFiles\\Supa Video Producer\\media-tools\\manifest.v1.json",
+          "THIRD_PARTY_NOTICES.md": "PFiles\\Supa Video Producer\\media-tools\\THIRD_PARTY_NOTICES.md",
+          "SOURCE_OFFER.md": "PFiles\\Supa Video Producer\\media-tools\\SOURCE_OFFER.md",
+          "GPL-3.0.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GPL-3.0.txt",
+          "GYAN-FFMPEG-README.txt": "PFiles\\Supa Video Producer\\media-tools\\licenses\\GYAN-FFMPEG-README.txt"
+        },
+        "hashes": {
+          "ffmpeg": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
+          "ffprobe": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+        },
+        "exeSignature": "NotSigned"
+      },
+      "2-launch-and-csp": {
+        "status": "PASS",
+        "ms": 3957,
+        "url": "http://tauri.localhost/",
+        "cspCheck": "log-replay",
+        "replayedSecurityEntries": []
+      },
+      "3-import-and-export": {
+        "status": "PASS",
+        "ms": 29677,
+        "exportExists": true,
+        "qcStatus": "blocked",
+        "findings": [
+          "audio_clipping:blocker",
+          "black_frames:blocker",
+          "silence:warning",
+          "freeze_frames:blocker"
+        ],
+        "reviewText": "QUALITY CHECKS\n\nReview\n\n3 problem(s) must be fixed or accepted before delivery.\n\nAudio clipping\nBlocks delivery\n\nAudio peaks at 14.4 dBFS and will clip\n\n0.0 s–9.0 s\nReason to accept anyway\nAccept anyway\nBlack frames\nBlocks delivery\n\nBlack picture for 2.0 s\n\n0.0 s–2.0 s\nReason to accept anyway\nAccept anyway\nSilence\nWarning\n\nNo audible sound for 4.0 s\n\n5.0 s–9.0 s\nSuggest a fix (0/3)\nReason to accept anyway\nAccept anyway\nFrozen picture\nBlocks delivery\n\nFrozen picture for 3.0 s\n\n6.0 s–9.0 s\nReason to accept anyway\nAccept anyway"
+      },
+      "4-deliver-blocked-then-accept": {
+        "status": "PASS",
+        "ms": 3822,
+        "blockedBefore": true,
+        "unresolvedBefore": 3,
+        "repairs": [
+          "Suggest a fix (1/3)"
+        ],
+        "accepted": 4,
+        "decisions": [
+          "repair_attempt",
+          "repair_stopped",
+          "accept_anyway",
+          "accept_anyway",
+          "accept_anyway",
+          "accept_anyway"
+        ],
+        "releasable": true
+      },
+      "5-deliver-three-presets": {
+        "status": "PASS",
+        "ms": 38863,
+        "outputs": {
+          "review-export-16x9.mp4": {
+            "codec": "h264",
+            "width": 1920,
+            "height": 1080,
+            "duration": "9.000000",
+            "qcStatus": "blocked",
+            "findingIds": [
+              "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+              "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+              "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+              "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+            ],
+            "acceptedDecisionIds": [
+              "0b6ed95f-8d27-4373-be20-9696405d3060",
+              "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+              "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+              "ec173d8a-f967-434c-b2fd-93017b21746c"
+            ],
+            "sidecars": {
+              "thumbnail": true,
+              "metadata": true,
+              "credits": false
+            }
+          },
+          "review-export-9x16.mp4": {
+            "codec": "h264",
+            "width": 1080,
+            "height": 1920,
+            "duration": "9.000000",
+            "qcStatus": "blocked",
+            "findingIds": [
+              "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+              "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+              "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+              "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+            ],
+            "acceptedDecisionIds": [
+              "0b6ed95f-8d27-4373-be20-9696405d3060",
+              "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+              "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+              "ec173d8a-f967-434c-b2fd-93017b21746c"
+            ],
+            "sidecars": {
+              "thumbnail": true,
+              "metadata": true,
+              "credits": false
+            }
+          },
+          "review-export-1x1.mp4": {
+            "codec": "h264",
+            "width": 1080,
+            "height": 1080,
+            "duration": "9.000000",
+            "qcStatus": "blocked",
+            "findingIds": [
+              "d969bd367a3c1ca3e53f320dbf712e9f6a1ca106611b68d36230da4241bace91",
+              "3b5671e94d40f26102b518bd432bb1e0df1b3068446d3ffcb754ce09d8abd6db",
+              "5a2e16b4b1157023a6071b89e356afa319c58e7f67dfe30b073fe5e3740e4961",
+              "035b392df916c35ab3bfcff0a31f1844b9bc80863d01ad07d44741dfb6e17e0d"
+            ],
+            "acceptedDecisionIds": [
+              "0b6ed95f-8d27-4373-be20-9696405d3060",
+              "dd4a6b4f-de86-44a1-a592-7426e3b4d6e3",
+              "e69771bc-f370-4e65-a61b-9865dbd62f7b",
+              "ec173d8a-f967-434c-b2fd-93017b21746c"
+            ],
+            "sidecars": {
+              "thumbnail": true,
+              "metadata": true,
+              "credits": false
+            }
+          }
+        },
+        "cspViolationsDuringRun": 0
+      }
+    },
+    "runDir": "C:\\Users\\SPARTA~1\\AppData\\Local\\Temp\\supa-release-smoke-I2ZOez"
+  }
+]
