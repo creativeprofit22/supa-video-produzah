@@ -937,6 +937,24 @@ impl VideoProjectService {
             .and_then(|asset| asset.content_identity.clone()))
     }
 
+    /// State hash of `revision_id` if it is the current revision of a project
+    /// this owner has open. Renders and QC bind to this, never to a client value.
+    pub fn open_revision_state_hash(&self, owner: &str, revision_id: &str) -> Option<String> {
+        let sessions: Vec<_> = self
+            .sessions
+            .lock()
+            .ok()?
+            .iter()
+            .filter(|(key, _)| key.split('\0').next() == Some(owner))
+            .map(|(_, session)| session.clone())
+            .collect();
+        sessions.into_iter().find_map(|session| {
+            let session = lock_open_session(&session).ok()?;
+            (session.snapshot.revision.id == revision_id)
+                .then(|| session.snapshot.revision.state_hash.clone())
+        })
+    }
+
     pub fn inspector(
         &self,
         owner: &str,

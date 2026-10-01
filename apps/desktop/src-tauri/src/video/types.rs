@@ -678,6 +678,8 @@ pub struct VerifiedRenderOutput {
     pub probe: MediaProbe,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness_report: Option<Box<super::audio_mix::LoudnessReport>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qc: Option<Box<super::qc::RenderQcResult>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

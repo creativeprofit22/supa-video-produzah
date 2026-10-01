@@ -6,6 +6,7 @@ pub(crate) mod cache;
 #[allow(dead_code)]
 mod caption;
 mod caption_render;
+pub(crate) mod delivery;
 #[allow(dead_code)]
 pub(crate) mod derived;
 pub(crate) mod error;
@@ -17,7 +18,11 @@ pub(crate) mod probe;
 pub(crate) mod process;
 pub mod project;
 pub(crate) mod project_io;
+pub(crate) mod qc;
 pub(crate) mod render;
+pub(crate) mod render_manifest;
+pub(crate) mod render_qc;
+pub(crate) mod review_record;
 pub(crate) mod subtitle_export;
 pub(crate) mod toolchain;
 mod transcript;

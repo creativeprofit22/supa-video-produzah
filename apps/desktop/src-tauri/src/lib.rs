@@ -1,4 +1,5 @@
 mod ai_account;
+mod crash_report;
 #[allow(dead_code)]
 pub(crate) mod rights;
 pub mod video;
@@ -87,6 +88,11 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
         .manage(video::VideoProjectService::default())
         .manage(video::project::proposal_ipc::AgentProposalsSwitch::from_env())
         .setup(|app| {
+            crash_report::install_panic_hook(
+                app.path()
+                    .app_local_data_dir()?
+                    .join(crash_report::CRASH_DIR),
+            );
             manage_media_toolchain(
                 app,
                 video::toolchain::MediaToolchainState::start_for_app(app.handle()),
@@ -112,6 +118,10 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::derived::video_prepare_asset,
             video::render::video_start_render,
             video::render::video_cancel_render,
+            video::review_record::video_read_review_state,
+            video::review_record::video_record_review_decision,
+            video::delivery::video_start_delivery,
+            crash_report::app_take_crash_reports,
             video::project_io::video_pick_new_project_path,
             video::project::ipc::video_create_project,
             video::project::ipc::video_open_project,
@@ -1247,6 +1257,108 @@ mod tests {
         .expect("the owning window must close its project");
     }
 
+    #[test]
+    fn render_ipc_rejects_missing_mismatched_and_malformed_editorial_before_encoding() {
+        const OWNER: &str = "editorial-owner";
+        let app = mock_video_app();
+        let webview = WebviewWindowBuilder::new(&app, OWNER, Default::default())
+            .build()
+            .expect("editorial test webview must build");
+        let workspace = tempfile::tempdir().expect("editorial test workspace must exist");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/video-phase1/single-clip.mp4")
+            .canonicalize()
+            .expect("canonical editorial fixture must exist");
+        let grants = app.state::<video::VideoPathGrants>();
+        let source = grants
+            .grant_existing_file(OWNER, video::GrantCategory::Source, &source)
+            .expect("editorial source must be granted");
+        let output = grants
+            .grant_destination(
+                OWNER,
+                video::GrantCategory::Output,
+                &workspace.path().join("editorial.mp4"),
+            )
+            .expect("editorial output must be granted");
+        let project_path = workspace.path().join("editorial.svpvideo");
+        grants
+            .grant_destination(OWNER, video::GrantCategory::Project, &project_path)
+            .expect("editorial project path must be granted");
+        let created = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_create_project",
+                json!({ "path": project_path.to_string_lossy(), "name": "Editorial" }),
+            ),
+        )
+        .expect("editorial project must be created")
+        .deserialize::<Value>()
+        .expect("editorial project must be JSON");
+        let plan = packaged_render_plan(
+            &source,
+            &output,
+            PACKAGED_COMPLETE_PLAN_ID,
+            320,
+            180,
+            &packaged_revision_id(&created),
+        );
+        let valid = packaged_editorial(&created);
+        let mut wrong_hash = valid.clone();
+        wrong_hash["revisionStateHash"] = json!("0".repeat(64));
+        let mut wrong_source = valid.clone();
+        wrong_source["findings"] = json!([{
+            "findingId": "1".repeat(64),
+            "kind": "black_frames",
+            "severity": "warning",
+            "source": "deterministic",
+            "subject": "",
+            "range": { "startUs": 0, "endUs": 1 },
+            "message": "forged"
+        }]);
+        let cases = [
+            ("missing", None),
+            ("revision_mismatch", Some(wrong_hash)),
+            ("malformed", Some(json!({ "evaluatorVersion": 1 }))),
+            ("finding_source", Some(wrong_source)),
+        ];
+        for (reason, editorial) in cases {
+            let mut args = json!({ "plan": plan.clone(), "overwrite": false });
+            if let Some(editorial) = editorial {
+                args["editorial"] = editorial;
+            }
+            let error = get_ipc_response(&webview, invoke_request("video_start_render", args))
+                .expect_err("an invalid editorial evaluation must fail closed");
+            assert_eq!(error["code"], "invalid_editorial_evaluation", "{reason}");
+            assert_eq!(error["details"]["reason"], reason);
+        }
+        let jobs = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_list_media_jobs",
+                json!({ "request": {
+                    "limit": 100,
+                    "includeSettled": true,
+                    "projectId": null,
+                    "beforeUpdatedAt": null,
+                    "beforeJobId": null
+                } }),
+            ),
+        )
+        .expect("jobs must list")
+        .deserialize::<Value>()
+        .expect("jobs must be JSON");
+        let renders = jobs["jobs"]
+            .as_array()
+            .map(|jobs| {
+                jobs.iter()
+                    .filter(|job| job["kind"] == "final_render")
+                    .count()
+            })
+            .unwrap_or_default();
+        assert_eq!(renders, 0, "no render job may be queued: {jobs}");
+        assert!(!output.exists(), "nothing may be encoded");
+    }
+
     fn mock_transcription_app() -> tauri::App<tauri::test::MockRuntime> {
         // A unique identifier isolates app_config_dir, so consent records written
         // by this test never touch a real user profile's settings.
@@ -1483,7 +1595,6 @@ mod tests {
     #[cfg(windows)]
     const PACKAGED_CACHE_STAGE_DEADLINE: Duration = Duration::from_secs(120);
     #[cfg(windows)]
-    const PACKAGED_RENDER_REVISION_ID: &str = "44444444-4444-4444-8444-444444444444";
     #[cfg(windows)]
     const PACKAGED_COMPLETE_PLAN_ID: &str = "55555555-5555-4555-8555-555555555555";
     #[cfg(windows)]
@@ -1569,6 +1680,10 @@ mod tests {
                 video::derived::video_prepare_asset,
                 video::render::video_start_render,
                 video::render::video_cancel_render,
+                video::review_record::video_read_review_state,
+                video::review_record::video_record_review_decision,
+                video::delivery::video_start_delivery,
+                crate::crash_report::app_take_crash_reports,
                 video::jobs::ipc::video_reauthorize_media_job_output,
                 video::jobs::ipc::video_get_media_cache_status,
                 video::jobs::ipc::video_clear_legacy_media_cache,
@@ -1939,6 +2054,7 @@ mod tests {
         width: u64,
         height: u64,
         video_hidden: bool,
+        revision_id: &str,
     ) -> Value {
         let input = input.to_string_lossy().into_owned();
         let output = output.to_string_lossy().into_owned();
@@ -1963,7 +2079,7 @@ mod tests {
         json!({
             "schemaVersion": 1,
             "planId": plan_id,
-            "revisionId": PACKAGED_RENDER_REVISION_ID,
+            "revisionId": revision_id,
             "executable": "ffmpeg",
             "inputPath": input,
             "outputPath": output,
@@ -1984,8 +2100,34 @@ mod tests {
         plan_id: &str,
         width: u64,
         height: u64,
+        revision_id: &str,
     ) -> Value {
-        packaged_render_plan_with_visibility(input, output, plan_id, width, height, false)
+        packaged_render_plan_with_visibility(
+            input,
+            output,
+            plan_id,
+            width,
+            height,
+            false,
+            revision_id,
+        )
+    }
+
+    /// Editorial evaluation for a freshly created project revision (no findings).
+    fn packaged_editorial(project: &Value) -> Value {
+        json!({
+            "evaluatorVersion": "editorial-v1",
+            "revisionId": project["revision"]["id"],
+            "revisionStateHash": project["revision"]["stateHash"],
+            "findings": []
+        })
+    }
+
+    fn packaged_revision_id(project: &Value) -> String {
+        project["revision"]["id"]
+            .as_str()
+            .expect("packaged project revision ID must be present")
+            .to_owned()
     }
 
     #[cfg(windows)]
@@ -2307,9 +2449,11 @@ mod tests {
                         &output,
                         PACKAGED_COMPLETE_PLAN_ID,
                         320,
-                        180
+                        180,
+                        &packaged_revision_id(&created)
                     ),
-                    "overwrite": false
+                    "overwrite": false,
+                    "editorial": packaged_editorial(&created)
                 }),
             ),
         )
@@ -2366,9 +2510,11 @@ mod tests {
                         PACKAGED_HIDDEN_PLAN_ID,
                         320,
                         180,
-                        true
+                        true,
+                        &packaged_revision_id(&created)
                     ),
-                    "overwrite": false
+                    "overwrite": false,
+                    "editorial": packaged_editorial(&created)
                 }),
             ),
         )
@@ -2463,6 +2609,27 @@ mod tests {
         let output = grants
             .grant_destination("packaged-cancel", video::GrantCategory::Output, &output)
             .expect("packaged cancellation output must be granted");
+        let project_path = workspace.path().join("packaged-cancel.svpvideo");
+        grants
+            .grant_destination(
+                "packaged-cancel",
+                video::GrantCategory::Project,
+                &project_path,
+            )
+            .expect("packaged cancellation project path must be granted");
+        let created = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_create_project",
+                json!({
+                    "path": project_path.to_string_lossy(),
+                    "name": "Packaged cancel"
+                }),
+            ),
+        )
+        .expect("packaged cancellation project create IPC must succeed")
+        .deserialize::<Value>()
+        .expect("packaged cancellation project must be JSON");
         let captured = capture_render_events(&app);
 
         let started = get_ipc_response(
@@ -2475,9 +2642,11 @@ mod tests {
                         &output,
                         PACKAGED_CANCEL_PLAN_ID,
                         3840,
-                        2160
+                        2160,
+                        &packaged_revision_id(&created)
                     ),
-                    "overwrite": false
+                    "overwrite": false,
+                    "editorial": packaged_editorial(&created)
                 }),
             ),
         )

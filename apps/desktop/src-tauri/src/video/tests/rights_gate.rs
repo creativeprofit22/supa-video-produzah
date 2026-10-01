@@ -403,3 +403,60 @@ fn local_imports_still_export_without_credits() {
         "no credits sidecar for local-only exports"
     );
 }
+
+#[cfg(target_os = "windows")]
+#[test]
+fn withdrawn_rights_fail_every_delivery_preset_regardless_of_review_decisions() {
+    use super::delivery_export::{
+        accept, editorial_json, editorial_warning, fake_review_export_for, STATE,
+    };
+    use crate::video::delivery::{prepare_delivery, DeliveryRequest, DELIVERY_PRESETS};
+
+    let fixture = fixture();
+    let receipt = acquired_receipt(&fixture);
+    fixture
+        .store
+        .record_refresh(&receipt.receipt_id, NOW_MS, RefreshStatus::Withdrawn, None)
+        .expect("refresh");
+    // The source review export is releasable: its only finding was accepted.
+    let warning = editorial_warning();
+    let source = fake_review_export_for(
+        "owner",
+        fixture._dir.path(),
+        &fixture.grants,
+        vec![warning.clone()],
+    );
+    accept(
+        &source,
+        &warning.finding_id,
+        "00000000-0000-4000-8000-0000000000f1",
+    );
+    let plan = with_rights_context(
+        fixture.plan.clone(),
+        Some(&receipt.receipt_id),
+        "commercial-online",
+    );
+    let rights = rights(&fixture.store);
+    let lookup = |_: &str| Some(STATE.to_owned());
+    for preset in &DELIVERY_PRESETS {
+        let request: DeliveryRequest = serde_json::from_value(serde_json::json!({
+            "sourceOutputPath": source.to_string_lossy(),
+            "presets": [{
+                "presetId": preset.id,
+                "plan": plan.clone(),
+                "editorial": editorial_json(std::slice::from_ref(&warning)),
+            }],
+        }))
+        .expect("request");
+        let error = prepare_delivery("owner", &fixture.grants, &rights, request, &lookup)
+            .expect_err("withdrawn rights must block delivery");
+        let value = serde_json::to_value(&error).expect("error json");
+        assert_eq!(
+            value["details"]["category"], "rights_upstream_withdrawn",
+            "preset {}",
+            preset.id
+        );
+    }
+    let (json, text) = credits_sidecar_paths(&fixture.output).expect("sidecar paths");
+    assert!(!fixture.output.exists() && !json.exists() && !text.exists());
+}

@@ -24,6 +24,10 @@ pub enum VideoErrorCode {
     InvalidMedia,
     InvalidRenderPlan,
     OutputExists,
+    InvalidEditorialEvaluation,
+    QcReleaseBlocked,
+    QcUnavailable,
+    InvalidReviewRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

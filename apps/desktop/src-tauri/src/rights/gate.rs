@@ -137,7 +137,7 @@ pub enum GateOutcome {
     Blocked { failures: Vec<GateFailure> },
 }
 
-fn hash_file(path: &Path) -> std::io::Result<(String, u64)> {
+pub(crate) fn hash_file(path: &Path) -> std::io::Result<(String, u64)> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 256 * 1024];

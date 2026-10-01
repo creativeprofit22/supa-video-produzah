@@ -4632,6 +4632,7 @@ fn registered_render_worker(
         cancellation: ProcessCancellation::new(),
         identity,
         events,
+        hooks: super::render::RenderWorkerHooks::default(),
     };
     (request, captured)
 }
@@ -5421,6 +5422,10 @@ mod rights_export_e2e;
 mod audio_export;
 #[cfg(target_os = "windows")]
 mod audio_mix_export;
+#[cfg(target_os = "windows")]
+mod delivery_export;
+#[cfg(target_os = "windows")]
+mod qc_export;
 #[cfg(target_os = "windows")]
 mod speed_export_parity;
 

@@ -41,6 +41,8 @@ use super::{
         run_supervised_streaming, ProcessCancellation, ProcessFailure, ProcessSpec,
         StdoutRecordObserver,
     },
+    qc::{validate_editorial_evaluation, DeliveryGate, RenderQcContext, RenderQcResult},
+    render_manifest::{supersede_review_record, write_manifest},
     toolchain::MediaToolchainState,
     types::{
         RenderCaptionInput, RenderPlan, RenderPlanV1, RenderPlanV2, VerifiedRenderOutput,
@@ -120,6 +122,10 @@ pub(crate) struct ValidatedRenderPlan {
     pub(crate) input_paths: Vec<PathBuf>,
     pub(crate) output_path: PathBuf,
     pub(crate) duration_microseconds: u64,
+    /// QC context (editorial evaluation bound to the revision state hash, and
+    /// the Deliver gate). Always set by `video_start_render`; `None` only for
+    /// internal callers without a project (tests, legacy persisted jobs).
+    pub(crate) qc: Option<RenderQcContext>,
 }
 
 #[derive(Default)]
@@ -135,6 +141,8 @@ struct PersistedFinalRenderPayload {
     plan: RenderPlan,
     overwrite: bool,
     output_authorization_present: bool,
+    #[serde(default)]
+    qc: Option<RenderQcContext>,
 }
 
 struct FinalRenderWorker {
@@ -233,6 +241,7 @@ impl MediaJobWorker for FinalRenderWorker {
                 cancellation,
                 identity: identity.clone(),
                 events,
+                hooks: RenderWorkerHooks::default(),
             };
             match execute_render_worker(&request).await {
                 Ok(output) => {
@@ -312,13 +321,16 @@ impl MediaJobWorker for FinalRenderWorker {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn video_start_render<R: Runtime>(
     window: WebviewWindow<R>,
     grants: State<'_, VideoPathGrants>,
     jobs: State<'_, MediaJobService>,
     toolchain: State<'_, MediaToolchainState>,
+    projects: State<'_, super::VideoProjectService>,
     plan: Value,
     overwrite: bool,
+    editorial: Option<Value>,
 ) -> Result<VideoRenderStarted, VideoCommandError> {
     let app_cache_dir = window
         .app_handle()
@@ -341,14 +353,66 @@ pub async fn video_start_render<R: Runtime>(
         .try_state::<crate::rights::service::RightsService>()
         .ok_or_else(|| VideoCommandError::invalid_render_plan("rights_unavailable"))?;
     let rights = rights_service.render_rights();
-    start_render_with_rights(
-        window.label(),
+    let owner = window.label().to_owned();
+    let lookup = |revision_id: &str| projects.open_revision_state_hash(&owner, revision_id);
+    start_render_with_qc(
+        &owner,
         &grants,
         &rights,
         &jobs,
         programs,
         app_cache_dir,
-        plan,
+        RenderQcRequest {
+            plan,
+            editorial,
+            delivery: None,
+            revision_state_hash: &lookup,
+        },
+        overwrite,
+        events,
+    )
+    .await
+}
+
+/// Untrusted QC inputs of a render request plus the trusted revision lookup.
+pub(crate) struct RenderQcRequest<'a> {
+    pub(crate) plan: Value,
+    pub(crate) editorial: Option<Value>,
+    pub(crate) delivery: Option<DeliveryGate>,
+    pub(crate) revision_state_hash: &'a (dyn Fn(&str) -> Option<String> + Send + Sync),
+}
+
+/// Validates the plan (including the rights gate), then the editorial
+/// evaluation against the open revision; fails closed before any encoding.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start_render_with_qc(
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    rights: &RenderRights<'_>,
+    jobs: &MediaJobService,
+    programs: MediaPrograms,
+    app_cache_dir: PathBuf,
+    request: RenderQcRequest<'_>,
+    overwrite: bool,
+    events: RenderEventSink,
+) -> Result<VideoRenderStarted, VideoCommandError> {
+    let mut validated =
+        parse_and_validate_render_plan_with_rights(request.plan, owner_label, grants, rights)?;
+    let revision_id = validated.plan.revision_id().as_str().to_owned();
+    let state_hash = (request.revision_state_hash)(&revision_id);
+    let editorial =
+        validate_editorial_evaluation(request.editorial, &revision_id, state_hash.as_deref())?;
+    validated.qc = Some(RenderQcContext {
+        revision_state_hash: editorial.revision_state_hash.clone(),
+        editorial,
+        delivery: request.delivery,
+    });
+    start_validated_render_with_context(
+        owner_label,
+        jobs,
+        programs,
+        app_cache_dir,
+        validated,
         overwrite,
         events,
     )
@@ -365,32 +429,7 @@ pub(crate) fn no_receipts_rights() -> RenderRights<'static> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn start_render_with_rights(
-    owner_label: &str,
-    grants: &VideoPathGrants,
-    rights: &RenderRights<'_>,
-    jobs: &MediaJobService,
-    programs: MediaPrograms,
-    app_cache_dir: PathBuf,
-    plan: Value,
-    overwrite: bool,
-    events: RenderEventSink,
-) -> Result<VideoRenderStarted, VideoCommandError> {
-    let validated = parse_and_validate_render_plan_with_rights(plan, owner_label, grants, rights)?;
-    start_validated_render_with_context(
-        owner_label,
-        jobs,
-        programs,
-        app_cache_dir,
-        validated,
-        overwrite,
-        events,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn start_validated_render_with_context(
+pub(crate) async fn start_validated_render_with_context(
     owner_label: &str,
     jobs: &MediaJobService,
     programs: MediaPrograms,
@@ -426,6 +465,7 @@ async fn start_validated_render_with_context(
                 "plan": validated.plan,
                 "overwrite": overwrite,
                 "outputAuthorizationPresent": true,
+                "qc": validated.qc,
             }),
             created_at_ms: current_timestamp_millis(),
         })
@@ -576,7 +616,8 @@ pub(crate) async fn reauthorize_final_render_output_with_rights(
 
     let plan_id = payload.plan.plan_id().as_str().to_owned();
     let revision_id = payload.plan.revision_id().as_str().to_owned();
-    let validated = validate_persisted_render_plan(payload.plan, owner_label, grants, rights)?;
+    let mut validated = validate_persisted_render_plan(payload.plan, owner_label, grants, rights)?;
+    validated.qc = payload.qc;
     if stored.dedupe_key != render_dedupe_key(&validated, payload.overwrite) {
         return Err(VideoCommandError::invalid_render_plan("persisted_identity"));
     }
@@ -644,6 +685,11 @@ pub(crate) fn render_dedupe_key(validated: &ValidatedRenderPlan, overwrite: bool
     hasher.update(b"supa-video/final-render-job/v1");
     hasher.update(serde_json::to_vec(&validated.plan).unwrap_or_else(|_| Vec::new()));
     hasher.update([u8::from(overwrite)]);
+    // A different editorial evaluation or Deliver gate is a different job.
+    if let Some(qc) = &validated.qc {
+        hasher.update(b"qc");
+        hasher.update(serde_json::to_vec(qc).unwrap_or_else(|_| Vec::new()));
+    }
     let digest = hasher.finalize();
     let mut encoded = String::with_capacity(64);
     for byte in digest {
@@ -872,6 +918,7 @@ fn validate_render_plan_with_inputs(
         input_paths,
         output_path,
         duration_microseconds,
+        qc: None,
     })
 }
 
@@ -1648,6 +1695,16 @@ pub(crate) struct RenderWorkerRequest {
     pub(crate) cancellation: ProcessCancellation,
     pub(crate) identity: RenderEventIdentity,
     pub(crate) events: RenderEventSink,
+    /// Test seams for QC failure paths; always default in production.
+    pub(crate) hooks: RenderWorkerHooks,
+}
+
+/// Deterministic seams for QC failure-path tests. Production uses the default.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct RenderWorkerHooks {
+    pub(crate) manifest_failpoint: Option<super::render_manifest::ManifestFailpoint>,
+    pub(crate) qc_timeout: Option<std::time::Duration>,
+    pub(crate) before_qc: Option<fn(&ProcessCancellation, &std::path::Path)>,
 }
 
 #[cfg(test)]
@@ -1740,6 +1797,20 @@ async fn execute_render_worker(
     if !request.overwrite && request.validated.output_path.exists() {
         return Err(VideoCommandError::output_exists("promote_render"));
     }
+    let verdict = match &request.validated.qc {
+        Some(context) => Some(
+            super::render_qc::evaluate_render(
+                request,
+                context,
+                &partial_path,
+                &inspected,
+                loudness_report.as_deref(),
+                super::render_qc::now_rfc3339(),
+            )
+            .await?,
+        ),
+        None => None,
+    };
     let (preview_path, preview_probe) = prepare_render_preview(
         &request.app_cache_dir,
         &request.identity.job_id,
@@ -1750,17 +1821,80 @@ async fn execute_render_worker(
     )
     .await
     .map_err(map_render_preview_failure)?;
+    // The manifest is renamed into place before the output is promoted. If
+    // promotion fails or is cancelled, dropping it removes the manifest again.
+    // A manifest left without its output (deleted by the user) may be replaced.
+    let output_path = &request.validated.output_path;
+    let written = match &verdict {
+        Some(verdict) => {
+            if request.cancellation.is_cancelled() {
+                return Err(VideoCommandError::process_cancelled(
+                    "qc_analysis",
+                    "ffmpeg",
+                ));
+            }
+            let replace = request.overwrite || !output_path.exists();
+            Some(write_manifest(
+                output_path,
+                &verdict.manifest,
+                replace,
+                request.hooks.manifest_failpoint,
+            )?)
+        }
+        None => None,
+    };
+    let mut delivery_files = Vec::new();
+    if let (Some(verdict), Some(written), Some(context)) =
+        (&verdict, &written, &request.validated.qc)
+    {
+        if let Some(gate) = &context.delivery {
+            delivery_files = super::delivery::write_delivery_sidecars(
+                &request.programs,
+                request.cancellation.clone(),
+                &partial_path,
+                output_path,
+                gate,
+                &verdict.manifest,
+                &written.sha256,
+                super::render_qc::plan_captions(&request.validated.plan),
+                request.overwrite,
+            )
+            .await?;
+        }
+    }
     promote_render_partial_if_active(
         partial,
-        &request.validated.output_path,
+        output_path,
         request.overwrite,
         &request.cancellation,
     )?;
+    for file in delivery_files {
+        file.keep();
+    }
+    let qc = match (verdict, written) {
+        (Some(verdict), Some(written)) => {
+            if request.overwrite {
+                let _ = supersede_review_record(
+                    output_path,
+                    u64::try_from(current_timestamp_millis()).unwrap_or_default(),
+                );
+            }
+            let (manifest_path, manifest_sha256) = written.keep();
+            Some(Box::new(RenderQcResult {
+                status: verdict.manifest.qc.status,
+                findings: verdict.findings,
+                manifest_path: manifest_path.to_string_lossy().into_owned(),
+                manifest_sha256,
+            }))
+        }
+        _ => None,
+    };
     Ok(VerifiedRenderOutput {
-        output_path: request.validated.output_path.to_string_lossy().into_owned(),
+        output_path: output_path.to_string_lossy().into_owned(),
         preview_path: preview_path.to_string_lossy().into_owned(),
         probe: preview_probe.probe,
         loudness_report,
+        qc,
     })
 }
 
