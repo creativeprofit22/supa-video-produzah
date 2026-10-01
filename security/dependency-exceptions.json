@@ -84,9 +84,9 @@
       "reviewContext": {
         "version": 1,
         "targets": ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"],
-        "sha256": "2c8b3e58d69eeb0df4114e28f30326b0ccf431f1218eeddf42a1b797ddf71a22"
+        "sha256": "0749c867e0fb7c57ce5cc9873c2f63de3a6454a3a85f51dab13a50f76b934cd9"
       },
-      "rationale": "Absent from Windows graph. Reviewed locked all-feature Linux graph has no consumer of the sole public VariantStrIter producer across 323 packages/8902 Rust source files; 14 generated Rust files and the linked unstripped test ELF corroborate absence. Narrow function deferral, not library safety; reopen on lock/feature/target/consumer changes. Linux regression failures are separate, not evidence of safety.",
+      "rationale": "Absent from Windows graph. Reviewed locked all-feature Linux graph has no consumer of the sole public VariantStrIter producer across 401 packages/10646 Rust source files (2026-10-01 delta review); 14 generated Rust files and the 2026-09-15 unstripped test ELF corroborated absence. Narrow function deferral, not library safety; reopen on lock/feature/target/consumer changes. Linux regression failures are separate, not evidence of safety.",
       "evidence": "evidence/2026-09-06-p1-dependency-triage/rust-dispositions.md",
       "owner": "dependency/security maintainer",
       "expires": "2026-10-06"
