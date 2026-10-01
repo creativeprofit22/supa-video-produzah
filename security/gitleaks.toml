@@ -29,3 +29,29 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''^packages/video-media/fixtures/identity-v1\.json$''']
 regexes = ['''^\n?[ \t]*"key": "e27c60d494f85cb45da098ea8c803f3cf24b2dc9fdd56ad7569e4c02033c1cc5",?[ \t\r]*$''']
+
+# Reviewed 2026-10-01. Same class: computed SHA-256 transcript identities, not credentials.
+# Evidence: evidence/2026-10-p3-delivery/README.md (CI follow-up).
+[[allowlists]]
+description = "Exact computed transcript identity in multi-piece transcript fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/video-media/fixtures/transcript-artifact-multichunk-v1\.json$''']
+regexes = ['''^\n?[ \t]*"key": "635e3a9ec9747d125e01e5b0f8e713aad74b90fd4d19ca5f78ed2fff6a018e71",?[ \t\r]*$''']
+
+[[allowlists]]
+description = "Exact transcript identity recorded by the real two-speaker NeMo proof"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^evidence/2026-09-28-p3-transcription-audio/12-real-two-speaker-proof\.json$''']
+regexes = ['''^\n?[ \t]*"transcriptKey": "a014975cd38aed2dc9c45672b149639399664d19bfed9c91c16b33ef030f6fd2",?[ \t\r]*$''']
+
+[[allowlists]]
+description = "Exact transcript identity recorded by the real GPU NeMo proof"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^evidence/2026-09-28-p3-transcription-audio/10-real-gpu-proof\.json$''']
+regexes = ['''^\n?[ \t]*"transcriptKey": "580ef99ad84454c47312e69b61fbc067b8705cb1ea806d111d7b3339abd420f2",?[ \t\r]*$''']
