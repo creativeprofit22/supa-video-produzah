@@ -1594,8 +1594,6 @@ mod tests {
     const PACKAGED_MEDIA_RESOURCE_ROOT_ENV: &str = "SVP_MEDIA_RESOURCE_ROOT";
     #[cfg(windows)]
     const PACKAGED_CACHE_STAGE_DEADLINE: Duration = Duration::from_secs(120);
-    #[cfg(windows)]
-    #[cfg(windows)]
     const PACKAGED_COMPLETE_PLAN_ID: &str = "55555555-5555-4555-8555-555555555555";
     #[cfg(windows)]
     const PACKAGED_HIDDEN_PLAN_ID: &str = "55555555-5555-4555-8555-555555555556";
@@ -2046,7 +2044,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     fn packaged_render_plan_with_visibility(
         input: &Path,
         output: &Path,
@@ -2093,7 +2090,6 @@ mod tests {
         })
     }
 
-    #[cfg(windows)]
     fn packaged_render_plan(
         input: &Path,
         output: &Path,
