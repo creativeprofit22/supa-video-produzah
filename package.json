@@ -14,7 +14,8 @@
     "test": "pnpm -r --if-present test",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "licenses:check": "node scripts/license-inventory.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

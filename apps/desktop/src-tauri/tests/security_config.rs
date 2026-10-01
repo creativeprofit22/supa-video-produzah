@@ -152,6 +152,19 @@ fn windows_media_overlay_maps_only_pinned_resources_to_declared_destinations() {
     assert!(overlay["bundle"].get("externalBin").is_none());
 }
 
+#[test]
+fn base_bundle_ships_the_app_license_inventory() {
+    let config: Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+        .expect("tauri config must be valid JSON");
+    assert_eq!(
+        config["bundle"]["resources"],
+        json!({ "licenses/THIRD_PARTY_LICENSES.md": "licenses/THIRD_PARTY_LICENSES.md" })
+    );
+    let inventory = include_str!("../licenses/THIRD_PARTY_LICENSES.md");
+    assert!(inventory.starts_with("# Third-party licenses"));
+    assert!(inventory.contains("| tauri |") && inventory.contains("| react |"));
+}
+
 fn production_command(source: &str, command_name: &str) -> String {
     let marker = format!("pub async fn {command_name}");
     let start = source

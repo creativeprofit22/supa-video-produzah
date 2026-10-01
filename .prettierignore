@@ -11,3 +11,4 @@ ROADMAP.md
 # Immutable evidence; recorded sha256 hashes depend on exact bytes, so never reformat.
 evidence/
 apps/desktop/browser-tests/completion-media/
+apps/desktop/src-tauri/licenses/THIRD_PARTY_LICENSES.md

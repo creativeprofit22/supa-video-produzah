@@ -147,6 +147,11 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      - name: Test and check the app third-party license inventory
+        run: |
+          node --test scripts/tests/license-inventory.test.mjs
+          pnpm licenses:check
+
   rust:
     name: Rust canonical engine and crash recovery
     runs-on: ubuntu-24.04
