@@ -1673,6 +1673,7 @@ mod tests {
         );
         let app = mock_builder()
             .manage(video::VideoPathGrants::default())
+            .manage(test_rights_service("packaged"))
             .manage(video::VideoProjectService::default())
             .manage(video::toolchain::MediaToolchainState::from_ready(toolchain))
             .invoke_handler(tauri::generate_handler![
@@ -2415,6 +2416,9 @@ mod tests {
             reopened.projection.state.assets[0].content_identity,
             relinked.projection.state.assets[0].content_identity
         );
+        // Renders bind to the revision that is open now, not the one at creation.
+        let current =
+            serde_json::to_value(&reopened.projection).expect("reopened project must serialize");
 
         let mut mutated_bytes = fs::read(&duplicate_source).expect("duplicate source must read");
         mutated_bytes.push(0);
@@ -2450,10 +2454,10 @@ mod tests {
                         PACKAGED_COMPLETE_PLAN_ID,
                         320,
                         180,
-                        &packaged_revision_id(&created)
+                        &packaged_revision_id(&current)
                     ),
                     "overwrite": false,
-                    "editorial": packaged_editorial(&created)
+                    "editorial": packaged_editorial(&current)
                 }),
             ),
         )
@@ -2511,10 +2515,10 @@ mod tests {
                         320,
                         180,
                         true,
-                        &packaged_revision_id(&created)
+                        &packaged_revision_id(&current)
                     ),
                     "overwrite": false,
-                    "editorial": packaged_editorial(&created)
+                    "editorial": packaged_editorial(&current)
                 }),
             ),
         )
