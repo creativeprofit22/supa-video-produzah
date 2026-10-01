@@ -246,6 +246,19 @@ for (const severity of ["info", "low", "moderate", "high", "critical"]) {
     assert.equal(run("javascript", rated(severity), "0").ok, false);
   });
 }
+test("JavaScript counts are per finding, matching pnpm's metadata", () => {
+  // pnpm counts each finding; one advisory can match the same version through two importers.
+  const r = rated("moderate");
+  r.advisories["123"].findings.push({ version: "1.0.0", paths: [".>other>example"] });
+
+  r.metadata.vulnerabilities.moderate = 2;
+  const perFinding = run("javascript", r, "1");
+  r.metadata.vulnerabilities.moderate = 1;
+  const perAdvisory = run("javascript", r, "1");
+
+  assert.equal(perFinding.ok, true);
+  assert.equal(perAdvisory.ok, false);
+});
 test("JavaScript counts, ratings, missing findings and suppressions fail", () => {
   for (const mutate of [
     (r) => {

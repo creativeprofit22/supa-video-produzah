@@ -370,7 +370,8 @@ function checkJavascript(raw, result, guard) {
             ),
           "invalid advisory findings",
         );
-        actual[a.severity]++;
+        // pnpm's metadata counts findings, not advisories.
+        actual[a.severity] += a.findings.length;
         result.findings.push({
           advisory: id,
           package: a.module_name,
