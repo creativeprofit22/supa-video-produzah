@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
 import { videoCommandErrorSchema } from "./errors.js";
+import { graphicsClipSchema } from "./project-graphics.js";
 import { mediaProbeSchema, projectUuidSchema } from "./project.js";
+import { renderCaptionFontKeySchema } from "./render-fonts.js";
 import { renderQcResultSchema } from "./qc.js";
 import { usePolicyProfileSchema } from "./rights.js";
 import {
@@ -44,43 +46,13 @@ const renderExpectationSchema = z
   })
   .strict();
 
-/**
- * Caption fonts the exporter can burn in. Each key maps to a fixed Windows
- * core-font file in both render compilers; no user-supplied path reaches FFmpeg.
- */
-export const RENDER_CAPTION_FONT_FILES = {
-  "arial-regular": "arial.ttf",
-  "arial-bold": "arialbd.ttf",
-  "arial-italic": "ariali.ttf",
-  "arial-bold-italic": "arialbi.ttf",
-  "segoe-ui-regular": "segoeui.ttf",
-  "segoe-ui-bold": "segoeuib.ttf",
-  "segoe-ui-italic": "segoeuii.ttf",
-  "segoe-ui-bold-italic": "segoeuiz.ttf",
-  "verdana-regular": "verdana.ttf",
-  "verdana-bold": "verdanab.ttf",
-  "verdana-italic": "verdanai.ttf",
-  "verdana-bold-italic": "verdanaz.ttf",
-  "georgia-regular": "georgia.ttf",
-  "georgia-bold": "georgiab.ttf",
-  "georgia-italic": "georgiai.ttf",
-  "georgia-bold-italic": "georgiaz.ttf",
-  "consolas-regular": "consola.ttf",
-  "consolas-bold": "consolab.ttf",
-  "consolas-italic": "consolai.ttf",
-  "consolas-bold-italic": "consolaz.ttf",
-} as const;
-export type RenderCaptionFontKey = keyof typeof RENDER_CAPTION_FONT_FILES;
-const renderCaptionFontKeys = Object.keys(RENDER_CAPTION_FONT_FILES) as [
-  RenderCaptionFontKey,
-  ...RenderCaptionFontKey[],
-];
+export { RENDER_CAPTION_FONT_FILES, type RenderCaptionFontKey } from "./render-fonts.js";
 
 const permilleSchema = safeNonNegativeIntegerSchema.max(1_000);
 
 export const renderCaptionStyleV1Schema = z
   .object({
-    font: z.enum(renderCaptionFontKeys),
+    font: renderCaptionFontKeySchema,
     fontSizePx: z.number().int().min(8).max(400),
     lineSpacingPx: z.number().int().min(0).max(400),
     colorRgba: z.string().regex(/^#[0-9a-f]{8}$/u),
@@ -223,6 +195,40 @@ export const renderRightsContextSchema = z
   .strict();
 export type RenderRightsContext = z.infer<typeof renderRightsContextSchema>;
 
+/**
+ * One graphics clip composited over the video stack. The argv names it by the sentinel input
+ * `graphics:<index>`; the native renderer builds the overlay from `clip` (re-validated), renders it
+ * into job scratch and swaps the sentinel for that file. See docs/adr/0003-graphics-clips.md.
+ */
+export const renderGraphicsInputV2Schema = z
+  .object({
+    trackId: projectUuidSchema,
+    clip: graphicsClipSchema,
+    /** Output-time window of the clip, rounded like every other render boundary. */
+    startMicroseconds: z.number().int().safe().min(0),
+    endMicroseconds: z.number().int().safe().min(1),
+    /** Granted still-image paths for the clip's image layers, by asset id. */
+    imagePathsByAssetId: z.record(projectUuidSchema, pathSchema),
+  })
+  .strict()
+  .refine((input) => input.endMicroseconds > input.startMicroseconds, {
+    message: "Graphics input must end after it starts",
+  })
+  .refine(
+    (input) => {
+      const referenced = new Set(
+        input.clip.layers.flatMap((layer) => (layer.kind === "image" ? [layer.assetId] : [])),
+      );
+      const provided = Object.keys(input.imagePathsByAssetId);
+      return provided.length === referenced.size && provided.every((id) => referenced.has(id));
+    },
+    { message: "Graphics image paths must cover exactly the clip's image layers" },
+  );
+export type RenderGraphicsInputV2 = z.infer<typeof renderGraphicsInputV2Schema>;
+/** Sentinel input token for graphics overlay `index`; never a real path. */
+export const graphicsInputSentinel = (index: number): string => `graphics:${String(index)}`;
+export const MAX_RENDER_GRAPHICS_INPUTS = 64;
+
 export const renderPlanV2Schema = z
   .object({
     schemaVersion: z.literal(2),
@@ -232,6 +238,12 @@ export const renderPlanV2Schema = z
     inputPathsByAssetId: z.record(projectUuidSchema, pathSchema),
     videoInputs: z.array(renderVideoInputV2Schema).min(1).max(1_000),
     captions: z.array(renderCaptionInputV2Schema).max(100_000).optional(),
+    /** Graphics clips, composited in this order above the video stack and below captions. */
+    graphics: z
+      .array(renderGraphicsInputV2Schema)
+      .min(1)
+      .max(MAX_RENDER_GRAPHICS_INPUTS)
+      .optional(),
     /** Present when the sequence has a loudness target (two-pass loudnorm). */
     audioMix: sequenceLoudnessTargetSchema.optional(),
     rights: renderRightsContextSchema.optional(),
@@ -244,7 +256,9 @@ export const renderPlanV2Schema = z
     if (
       plan.rights !== undefined &&
       Object.keys(plan.rights.acquisitionReceiptIdsByAssetId).some(
-        (assetId) => !(assetId in plan.inputPathsByAssetId),
+        (assetId) =>
+          !(assetId in plan.inputPathsByAssetId) &&
+          !(plan.graphics ?? []).some((graphics) => assetId in graphics.imagePathsByAssetId),
       )
     ) {
       context.addIssue({

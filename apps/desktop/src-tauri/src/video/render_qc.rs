@@ -96,6 +96,28 @@ fn manifest_inputs(request: &RenderWorkerRequest) -> Result<Vec<ManifestInput>, 
                     rights_receipt_id: receipt,
                 });
             }
+            // Graphics still images are embedded in the export as well; record each one the
+            // rights gate checked (a media input at the same path is already listed).
+            for (asset_id, path) in &request.validated.graphics_image_paths {
+                let listed_as_media = v2.input_paths_by_asset_id.iter().any(|(id, media)| {
+                    id.as_str() == asset_id.as_str() && Path::new(media) == path.as_path()
+                });
+                if listed_as_media {
+                    continue;
+                }
+                let receipt = v2.rights.as_ref().and_then(|rights| {
+                    rights
+                        .acquisition_receipt_ids_by_asset_id
+                        .iter()
+                        .find(|(id, _)| id.as_str() == asset_id.as_str())
+                        .map(|(_, receipt)| receipt.to_string())
+                });
+                inputs.push(ManifestInput {
+                    asset_id: Some(asset_id.clone()),
+                    content_sha256: Some(hash_input(path)?),
+                    rights_receipt_id: receipt,
+                });
+            }
         }
     }
     inputs.sort();

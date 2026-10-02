@@ -404,6 +404,136 @@ fn local_imports_still_export_without_credits() {
     );
 }
 
+const LOGO_ASSET: &str = "99999999-9999-4999-8999-0000000000a1";
+
+/// Adds one graphics clip (frames 10..40 at 30 fps) whose only layer is the still image `logo`
+/// (bytes `b"logo"`), with the exact argv the Rust authority rebuilds. Both media inputs stay
+/// local imports, so any rights failure comes from the image.
+fn with_graphics_logo(fixture: &Fixture) -> Value {
+    let logo = fixture._dir.path().join("logo.png");
+    fs::write(&logo, b"logo").expect("logo must be written");
+    let logo = fixture
+        .grants
+        .grant_existing_file("owner", GrantCategory::Source, &logo)
+        .expect("logo must grant");
+    let hold = |value: f64| serde_json::json!([{ "timeMicroseconds": 0, "value": value }]);
+    let time = |value: u64| serde_json::json!({ "value": value, "rateNumerator": 30, "rateDenominator": 1 });
+    let mut plan = fixture.plan.clone();
+    plan["graphics"] = serde_json::json!([{
+        "trackId": "99999999-9999-4999-8999-0000000000a2",
+        "clip": {
+            "graphicsVersion": 1, "id": "99999999-9999-4999-8999-0000000000a3",
+            "timelineStart": time(10), "duration": time(30), "fontKey": "arial-bold",
+            "layers": [{ "kind": "image", "assetId": LOGO_ASSET, "width": 96, "height": 96,
+                "x": hold(1100.0), "y": hold(80.0), "scale": hold(1.0), "rotation": hold(0.0),
+                "opacity": hold(1.0) }]
+        },
+        "startMicroseconds": 333_333,
+        "endMicroseconds": 1_333_333,
+        "imagePathsByAssetId": { (LOGO_ASSET): logo.to_string_lossy() },
+    }]);
+    let argv = plan["argv"].as_array_mut().expect("argv");
+    let filter_at = argv
+        .iter()
+        .position(|argument| argument == "-filter_complex")
+        .expect("filter flag");
+    argv.splice(
+        filter_at..filter_at,
+        [Value::from("-i"), Value::from("graphics:0")],
+    );
+    let filter = argv[filter_at + 3].as_str().expect("filter").replace(
+        ";[stack1]null[vout]",
+        ";[2:v:0]setpts=PTS-STARTPTS+0.333333/TB[g0];[stack1][g0]overlay=x=0:y=0:eof_action=pass:format=auto:enable='gte(t\\,0.333333)*lt(t\\,1.333333)'[gfx0];[gfx0]null[vout]",
+    );
+    argv[filter_at + 3] = Value::String(filter);
+    plan
+}
+
+fn logo_receipt(fixture: &Fixture, seed: &str) -> AcquisitionReceipt {
+    let blobs = sample_blobs(seed);
+    let mut receipt = sample_receipt(&sha256_hex(b"logo"), &blobs);
+    receipt.content.byte_length = 4;
+    receipt.last_refresh_at_ms = NOW_MS - DAY_MS;
+    fixture
+        .store
+        .commit_receipt(&receipt, &blobs)
+        .expect("commit logo receipt");
+    receipt
+}
+
+fn with_logo_claim(mut plan: Value, receipt_id: &uuid::Uuid, intended_use: &str) -> Value {
+    plan["rights"] = serde_json::json!({
+        "intendedUse": intended_use,
+        "acquisitionReceiptIdsByAssetId": { (LOGO_ASSET): receipt_id.to_string() },
+    });
+    plan
+}
+
+#[test]
+fn graphics_image_with_blocked_rights_blocks_the_export() {
+    let fixture = fixture();
+    let plan = with_graphics_logo(&fixture);
+    // The plan is otherwise valid: with no receipt for the image it passes the gate.
+    assert!(parse_and_validate_render_plan(plan.clone(), "owner", &fixture.grants).is_ok());
+    let receipt = logo_receipt(&fixture, "logo-withdrawn");
+    fixture
+        .store
+        .record_refresh(&receipt.receipt_id, NOW_MS, RefreshStatus::Withdrawn, None)
+        .expect("withdraw");
+    // Found by digest even though the plan claims nothing for the image.
+    assert_blocked(&fixture, &plan, "rights_upstream_withdrawn");
+    let claimed = with_logo_claim(plan, &receipt.receipt_id, "commercial-online");
+    assert_blocked(&fixture, &claimed, "rights_upstream_withdrawn");
+}
+
+#[test]
+fn graphics_image_claimed_for_a_blocked_use_blocks() {
+    let fixture = fixture();
+    let plan = with_graphics_logo(&fixture);
+    let blobs = sample_blobs("logo-nc");
+    let mut receipt = sample_receipt(&sha256_hex(b"logo"), &blobs);
+    receipt.content.byte_length = 4;
+    receipt.last_refresh_at_ms = NOW_MS;
+    receipt.intended_use = UsePolicyProfile::NoncommercialPublic;
+    receipt.license = LicenseId {
+        code: LicenseCode::ByNc,
+        version: Some("4.0".into()),
+        url: Some("https://creativecommons.org/licenses/by-nc/4.0/".into()),
+    };
+    fixture
+        .store
+        .commit_receipt(&receipt, &blobs)
+        .expect("commit");
+    let plan = with_logo_claim(plan, &receipt.receipt_id, "broadcast");
+    assert_blocked(&fixture, &plan, "rights_use_blocked");
+}
+
+#[test]
+fn graphics_image_with_valid_receipt_is_credited() {
+    let fixture = fixture();
+    let receipt = logo_receipt(&fixture, "logo-ok");
+    let plan = with_logo_claim(
+        with_graphics_logo(&fixture),
+        &receipt.receipt_id,
+        "commercial-online",
+    );
+    for (path, result) in ["fresh", "persisted"]
+        .iter()
+        .zip(validate_both(&fixture, &plan))
+    {
+        assert_eq!(result, Ok(()), "{path} path must pass");
+    }
+    let (json_path, _) = credits_sidecar_paths(&fixture.output).expect("paths");
+    let json: Value =
+        serde_json::from_slice(&fs::read(&json_path).expect("credits.json")).expect("json");
+    assert_eq!(json["credits"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        json["credits"][0]["receiptId"],
+        receipt.receipt_id.to_string()
+    );
+    assert_eq!(json["credits"][0]["content"]["digest"], sha256_hex(b"logo"));
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn withdrawn_rights_fail_every_delivery_preset_regardless_of_review_decisions() {

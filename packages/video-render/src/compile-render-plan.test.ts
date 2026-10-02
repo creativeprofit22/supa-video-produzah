@@ -1,5 +1,6 @@
 import {
   DEFAULT_CLIP_TRANSFORM_GEOMETRY,
+  type GraphicsClip,
   type ProjectRevision,
   type ClipSpeed,
   type RationalRate,
@@ -141,6 +142,14 @@ interface V2RevisionOptions {
   readonly rotationMilliDegrees?: number;
   readonly captionHidden?: boolean;
   readonly dedicatedAudioTrack?: "empty" | "non-empty";
+  readonly emptyGraphicsTrack?: boolean;
+  /** Graphics tracks appended after the other tracks (each entry: hidden flag and clips). */
+  readonly graphicsTracks?: readonly {
+    readonly id: string;
+    readonly hidden?: boolean;
+    readonly graphicsClips: readonly GraphicsClip[];
+  }[];
+  readonly stillAsset?: boolean;
 }
 
 function makeRevision(options: RevisionOptions = {}): ProjectRevision {
@@ -194,6 +203,49 @@ function makeRevision(options: RevisionOptions = {}): ProjectRevision {
   };
 }
 
+const stillAsset = {
+  id: "9a000000-0000-4000-8000-0000000000a0",
+  displayName: "logo.png",
+  locator: { absolutePath: String.raw`C:\Media\logo.png` },
+  probe: {
+    durationMicroseconds: 1_000_000,
+    averageFrameRate: { numerator: 1, denominator: 1 },
+    realFrameRate: { numerator: 1, denominator: 1 },
+    variableFrameRate: false,
+    width: 64,
+    height: 64,
+    videoCodecName: "png",
+    audio: null,
+    fileSizeBytes: 900,
+    still: true as const,
+  },
+};
+const stillPath = String.raw`C:\Media\logo.png`;
+
+function graphicsClipAt(
+  id: string,
+  startFrame: number,
+  durationFrames: number,
+  withImage = false,
+): GraphicsClip {
+  const rate = createRationalRate(30_000, 1_001);
+  const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+  const tracks = { x: hold(10), y: hold(20), scale: hold(1), rotation: hold(0), opacity: hold(1) };
+  return {
+    graphicsVersion: 1,
+    id,
+    timelineStart: createRationalTime(startFrame, rate),
+    duration: createRationalTime(durationFrames, rate),
+    fontKey: "segoe-ui-bold",
+    layers: [
+      { kind: "text", text: "Title", fontSize: 40, fill: "#FFFFFF", ...tracks },
+      ...(withImage
+        ? [{ kind: "image" as const, assetId: stillAsset.id, width: 64, height: 64, ...tracks }]
+        : []),
+    ],
+  };
+}
+
 function makeV2Revision(options: V2RevisionOptions = {}) {
   const legacy = makeRevision(
     options.sourceOut === undefined ? {} : { sourceOut: options.sourceOut },
@@ -212,7 +264,7 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
       stateHash: "a".repeat(64),
     },
     state: {
-      assets: [asset],
+      assets: options.stillAsset === true ? [asset, stillAsset] : [asset],
       sequences: [
         {
           id: sequence.id,
@@ -297,6 +349,23 @@ function makeV2Revision(options: V2RevisionOptions = {}) {
                     ],
                   },
                 ]),
+            ...(options.graphicsTracks ?? []).map((track) => ({
+              id: track.id,
+              name: "Graphics",
+              kind: "graphics" as const,
+              ...(track.hidden === undefined ? {} : { hidden: track.hidden }),
+              graphicsClips: [...track.graphicsClips],
+            })),
+            ...(options.emptyGraphicsTrack === true
+              ? [
+                  {
+                    id: "9a000000-0000-4000-8000-000000000001",
+                    name: "Graphics 1",
+                    kind: "graphics" as const,
+                    graphicsClips: [],
+                  },
+                ]
+              : []),
           ],
         },
       ],
@@ -738,6 +807,12 @@ describe("V2 speed export", () => {
 });
 
 describe("compileSingleClipRenderPlan", () => {
+  it("skips a graphics track without clips and compiles the same plan as without it", () => {
+    const withGraphics = compile(makeV2Revision({ emptyGraphicsTrack: true }));
+
+    expect(withGraphics).toEqual(compile(makeV2Revision()));
+  });
+
   it("keeps exact AV argv and omits videoHidden when the V2 video track is shown", () => {
     const plan = compile(makeV2Revision({ muted: false, hidden: false }));
 
@@ -1050,6 +1125,201 @@ describe("compileActiveSequenceRenderPlan", () => {
       ].join(";"),
     );
     expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+  });
+
+  it("composites visible graphics clips through sentinel inputs in stacking order", () => {
+    const revision = makeV2Revision({
+      stillAsset: true,
+      graphicsTracks: [
+        // First graphics track ends on top, so it is composited last.
+        {
+          id: "9a000000-0000-4000-8000-0000000000b1",
+          graphicsClips: [graphicsClipAt("9a000000-0000-4000-8000-0000000000c1", 30, 15)],
+        },
+        {
+          id: "9a000000-0000-4000-8000-0000000000b2",
+          graphicsClips: [
+            graphicsClipAt("9a000000-0000-4000-8000-0000000000c2", 0, 30, true),
+            // Starts after the export ends: never rendered.
+            graphicsClipAt("9a000000-0000-4000-8000-0000000000c3", 400, 10),
+          ],
+        },
+        {
+          id: "9a000000-0000-4000-8000-0000000000b3",
+          hidden: true,
+          graphicsClips: [graphicsClipAt("9a000000-0000-4000-8000-0000000000c4", 0, 10)],
+        },
+      ],
+    });
+
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      graphicsImagePathsByAssetId: { [stillAsset.id]: stillPath },
+      outputPath,
+    });
+
+    expect(
+      plan.graphics?.map(
+        ({ clip, trackId, startMicroseconds, endMicroseconds, imagePathsByAssetId }) => ({
+          clipId: clip.id,
+          trackId,
+          startMicroseconds,
+          endMicroseconds,
+          imagePathsByAssetId,
+        }),
+      ),
+    ).toEqual([
+      {
+        clipId: "9a000000-0000-4000-8000-0000000000c2",
+        trackId: "9a000000-0000-4000-8000-0000000000b2",
+        startMicroseconds: 0,
+        endMicroseconds: 1_001_000,
+        imagePathsByAssetId: { [stillAsset.id]: stillPath },
+      },
+      {
+        clipId: "9a000000-0000-4000-8000-0000000000c1",
+        trackId: "9a000000-0000-4000-8000-0000000000b1",
+        startMicroseconds: 1_001_000,
+        endMicroseconds: 1_501_500,
+        imagePathsByAssetId: {},
+      },
+    ]);
+    const inputs = plan.argv.slice(0, plan.argv.indexOf("-filter_complex"));
+    expect(inputs.slice(-4)).toEqual(["-i", "graphics:0", "-i", "graphics:1"]);
+    expect(plan.argv[plan.argv.indexOf("-filter_complex") + 1]).toBe(
+      [
+        ...expectedActiveSequenceFilter("1.000").split(";").slice(0, 4),
+        "[1:v:0]setpts=PTS-STARTPTS+0.000000/TB[g0]",
+        String.raw`[stack0][g0]overlay=x=0:y=0:eof_action=pass:format=auto:enable='gte(t\,0.000000)*lt(t\,1.001000)'[gfx0]`,
+        "[2:v:0]setpts=PTS-STARTPTS+1.001000/TB[g1]",
+        String.raw`[gfx0][g1]overlay=x=0:y=0:eof_action=pass:format=auto:enable='gte(t\,1.001000)*lt(t\,1.501500)'[gfx1]`,
+        "[gfx1]null[vout]",
+        "[a0]anull[aout]",
+      ].join(";"),
+    );
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
+  });
+
+  it.each([["a missing image path", {}, "Every graphics image layer requires an input path"]])(
+    "refuses graphics with %s",
+    (_name, graphicsImagePathsByAssetId, message) => {
+      const revision = makeV2Revision({
+        stillAsset: true,
+        graphicsTracks: [
+          {
+            id: "9a000000-0000-4000-8000-0000000000b2",
+            graphicsClips: [graphicsClipAt("9a000000-0000-4000-8000-0000000000c2", 0, 30, true)],
+          },
+        ],
+      });
+
+      expect(() =>
+        compileActiveSequenceRenderPlan({
+          planId: ids.plan,
+          revision,
+          inputPathsByAssetId: { [ids.asset]: inputPath },
+          graphicsImagePathsByAssetId,
+          outputPath,
+        }),
+      ).toThrow(message);
+    },
+  );
+
+  it("refuses more graphics clips than one export can composite", () => {
+    const clips = Array.from({ length: 65 }, (_, index) =>
+      graphicsClipAt(
+        `9a000000-0000-4000-8000-${(0xd00 + index).toString(16).padStart(12, "0")}`,
+        index,
+        1,
+      ),
+    );
+    const revision = makeV2Revision({
+      graphicsTracks: [{ id: "9a000000-0000-4000-8000-0000000000b2", graphicsClips: clips }],
+    });
+
+    expect(() =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        outputPath,
+      }),
+    ).toThrow("At most 64 graphics clips can be exported per sequence");
+  });
+
+  it.each([
+    ["17 different images", 17, 900, "A graphics clip can use at most 16 different images"],
+    [
+      "images over 40 MB in total",
+      2,
+      21 * 1024 * 1024,
+      "The images in one graphics clip can total at most 40 MB",
+    ],
+  ])("refuses a graphics clip with %s", (_name, imageCount, fileSizeBytes, message) => {
+    const stills = Array.from({ length: imageCount }, (_, index) => ({
+      ...stillAsset,
+      id: `9a000000-0000-4000-8000-${(0xe00 + index).toString(16).padStart(12, "0")}`,
+      probe: { ...stillAsset.probe, fileSizeBytes },
+    }));
+    const clip = graphicsClipAt("9a000000-0000-4000-8000-0000000000c2", 0, 30, true);
+    const imageLayer = clip.layers[1];
+    if (imageLayer?.kind !== "image") throw new Error("expected image layer fixture");
+    const revision = makeV2Revision({
+      graphicsTracks: [
+        {
+          id: "9a000000-0000-4000-8000-0000000000b2",
+          graphicsClips: [
+            {
+              ...clip,
+              layers: stills.map((still) => ({ ...imageLayer, assetId: still.id })),
+            },
+          ],
+        },
+      ],
+    });
+    revision.state.assets.push(...stills);
+
+    expect(() =>
+      compileActiveSequenceRenderPlan({
+        planId: ids.plan,
+        revision,
+        inputPathsByAssetId: { [ids.asset]: inputPath },
+        graphicsImagePathsByAssetId: Object.fromEntries(
+          stills.map((still) => [still.id, String.raw`C:\Media\${still.id}.png`]),
+        ),
+        outputPath,
+      }),
+    ).toThrow(message);
+  });
+
+  it("rejects plans whose graphics image paths do not match the image layers", () => {
+    const revision = makeV2Revision({
+      stillAsset: true,
+      graphicsTracks: [
+        {
+          id: "9a000000-0000-4000-8000-0000000000b2",
+          graphicsClips: [graphicsClipAt("9a000000-0000-4000-8000-0000000000c2", 0, 30, true)],
+        },
+      ],
+    });
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      graphicsImagePathsByAssetId: { [stillAsset.id]: stillPath },
+      outputPath,
+    });
+    const graphics = plan.graphics?.[0];
+    if (graphics === undefined) throw new Error("expected graphics");
+
+    expect(
+      renderPlanV2Schema.safeParse({
+        ...plan,
+        graphics: [{ ...graphics, imagePathsByAssetId: {} }],
+      }).success,
+    ).toBe(false);
   });
 
   it("keeps zero-opacity clip audio independent from visual alpha", () => {
@@ -1369,6 +1639,36 @@ describe("V2 rights context", () => {
       intendedUse: "private-preview",
       acquisitionReceiptIdsByAssetId: {},
     });
+  });
+
+  it("claims acquired graphics still images so the release gate checks them", () => {
+    const revision = makeV2Revision({
+      stillAsset: true,
+      graphicsTracks: [
+        {
+          id: "9a000000-0000-4000-8000-0000000000b2",
+          graphicsClips: [graphicsClipAt("9a000000-0000-4000-8000-0000000000c2", 0, 30, true)],
+        },
+      ],
+    });
+    revision.state.assets = revision.state.assets.map((asset) =>
+      asset.id === stillAsset.id
+        ? { ...asset, origin: { kind: "acquired", acquisitionReceiptId: receiptId } }
+        : asset,
+    );
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      graphicsImagePathsByAssetId: { [stillAsset.id]: stillPath },
+      outputPath,
+      intendedUse: "broadcast",
+    });
+    expect(plan.rights).toEqual({
+      intendedUse: "broadcast",
+      acquisitionReceiptIdsByAssetId: { [stillAsset.id]: receiptId },
+    });
+    expect(renderPlanV2Schema.parse(plan)).toEqual(plan);
   });
 
   it("rejects claims for assets that are not render inputs", () => {

@@ -1,32 +1,38 @@
 import {
-  DEFAULT_CLIP_TRANSFORM_GEOMETRY,
-  type ClipTransform,
-  type ProjectRevision,
-  type ProjectRevisionDescriptorV2,
-  type RationalRate,
-  type RationalTime,
-  type RenderCaptionInputV2,
-  type RenderPlanV1,
-  type RenderPlanV2,
-  type UsePolicyProfile,
-  type VideoProjectStateV2,
-  VideoDomainError,
-  createRationalTime,
   clipTimelineDuration,
+  type ClipTransform,
+  createRationalTime,
+  DEFAULT_CLIP_TRANSFORM_GEOMETRY,
   formatMilliDegreesAsDegrees,
   formatPermilleDecimal,
+  isMediaTrack,
   isTrackHidden,
   isTrackMuted,
   microsecondsToSourceFrames,
+  type ProjectRevision,
+  type ProjectRevisionDescriptorV2,
   projectRevisionDescriptorV2Schema,
   projectRevisionSchema,
+  type RationalRate,
+  type RationalTime,
   rationalTimeToMicroseconds,
+  type RenderCaptionInputV2,
+  type RenderPlanV1,
   renderPlanV1Schema,
+  type RenderPlanV2,
   renderPlanV2Schema,
+  type UsePolicyProfile,
+  VideoDomainError,
+  type VideoProjectStateV2,
   videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 
 import { AudioMixPlanError, audioMixFilters, type AudibleInput } from "./audio-mix.js";
+import {
+  compileGraphicsInputs,
+  graphicsInputArguments,
+  graphicsOverlayFilters,
+} from "./graphics-render.js";
 import {
   CaptionRenderStyleError,
   artifactRenderCaptions,
@@ -49,6 +55,8 @@ export interface CompileActiveSequenceRenderPlanInput {
   readonly planId: string;
   readonly revision: Readonly<RenderableRevisionV2>;
   readonly inputPathsByAssetId: Readonly<Record<string, string>>;
+  /** Granted paths of still images used by graphics image layers, by asset id. */
+  readonly graphicsImagePathsByAssetId?: Readonly<Record<string, string>>;
   readonly outputPath: string;
   /** Declared use of this export. When present, the plan carries a rights context. */
   readonly intendedUse?: UsePolicyProfile;
@@ -65,7 +73,7 @@ function assertNormalSpeedRendering(sequence: VideoProjectStateV2["sequences"][n
   if (
     sequence.tracks.some(
       (track) =>
-        track.kind !== "caption" &&
+        isMediaTrack(track) &&
         track.clips.some(
           (clip) => clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator,
         ),
@@ -198,7 +206,7 @@ function adaptV2Revision(input: unknown): ValidatedSingleClipRevision | null {
   if (
     sequence.tracks.some(
       (track) =>
-        track.kind !== "caption" &&
+        isMediaTrack(track) &&
         track.clips.some(
           (item) =>
             item.fades !== undefined && (item.fades.inFrames > 0 || item.fades.outFrames > 0),
@@ -462,6 +470,7 @@ interface ValidatedActiveSequenceRevision {
     };
     readonly asset: V2Asset;
   }[];
+  readonly assets: readonly V2Asset[];
   readonly durationFrames: number;
 }
 
@@ -715,7 +724,7 @@ function validateActiveSequenceRevision(input: unknown): ValidatedActiveSequence
   });
   if (durationFrames === undefined) invalidRenderPlan("A render requires a duration");
 
-  return { descriptor: descriptor.data, sequence, clips, durationFrames };
+  return { descriptor: descriptor.data, sequence, clips, assets: state.assets, durationFrames };
 }
 
 /** Returns whether the active V2 composition exactly matches the compiler's supported shape. */
@@ -748,6 +757,7 @@ export function compileActiveSequenceRenderPlan(
       descriptor,
       sequence,
       clips: validatedClips,
+      assets,
       durationFrames,
     } = validateActiveSequenceRevision(input.revision);
     const clips = validatedClips.map(({ track, clip, asset }) => {
@@ -795,6 +805,15 @@ export function compileActiveSequenceRenderPlan(
       ...(track.audioRole === undefined ? {} : { audioRole: track.audioRole }),
     }));
     const captions = trackRenderCaptions(sequence.tracks, sequence);
+    const graphics = compileGraphicsInputs(
+      sequence,
+      rationalTimeToMicroseconds(
+        createRationalTime(durationFrames, sequence.rate),
+        "nearestTiesAwayFromZero",
+      ),
+      input.graphicsImagePathsByAssetId ?? {},
+      assets,
+    );
     const filterParts = [
       `color=c=black:s=${sequence.width}x${sequence.height}:r=${sequence.rate.numerator}/${sequence.rate.denominator}:d=${duration}[base]`,
     ];
@@ -828,6 +847,14 @@ export function compileActiveSequenceRenderPlan(
       );
       baseLabel = outputLabel;
     });
+    const graphicsFilters = graphicsOverlayFilters(
+      graphics,
+      clips.length,
+      baseLabel,
+      formatMicrosecondsAsSeconds,
+    );
+    filterParts.push(...graphicsFilters.parts);
+    baseLabel = graphicsFilters.baseLabel;
     captions.forEach((caption, captionIndex) => {
       const outputLabel = `caption${captionIndex}`;
       filterParts.push(`[${baseLabel}]${renderCaption(caption)}[${outputLabel}]`);
@@ -861,6 +888,7 @@ export function compileActiveSequenceRenderPlan(
         "-i",
         inputPath,
       ]),
+      ...graphicsInputArguments(graphics),
       "-filter_complex",
       filterParts.join(";"),
       "-map",
@@ -887,16 +915,26 @@ export function compileActiveSequenceRenderPlan(
       inputPathsByAssetId,
       videoInputs,
       captions,
+      ...(graphics.length === 0 ? {} : { graphics }),
       ...(audioMix === undefined || audibleInputs.length === 0 ? {} : { audioMix }),
       ...(input.intendedUse === undefined
         ? {}
         : {
             rights: {
               intendedUse: input.intendedUse,
+              // Media clips and graphics image layers both reach the export, so both carry
+              // their acquisition receipts to the release gate.
               acquisitionReceiptIdsByAssetId: Object.fromEntries(
                 [
                   ...new Map(
-                    clips.flatMap(({ asset }) =>
+                    [
+                      ...clips.map(({ asset }) => asset),
+                      ...graphics.flatMap((graphicsInput) =>
+                        Object.keys(graphicsInput.imagePathsByAssetId).flatMap((assetId) =>
+                          assets.filter((asset) => asset.id === assetId),
+                        ),
+                      ),
+                    ].flatMap((asset) =>
                       asset.origin === undefined
                         ? []
                         : [[asset.id, asset.origin.acquisitionReceiptId] as const],

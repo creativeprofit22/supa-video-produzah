@@ -45,8 +45,8 @@ use super::{
     render_manifest::{supersede_review_record, write_manifest},
     toolchain::MediaToolchainState,
     types::{
-        RenderCaptionInput, RenderPlan, RenderPlanV1, RenderPlanV2, VerifiedRenderOutput,
-        VideoRenderEvent, VideoRenderStarted, MAX_SAFE_INTEGER,
+        graphics_input_sentinel, RenderCaptionInput, RenderPlan, RenderPlanV1, RenderPlanV2,
+        VerifiedRenderOutput, VideoRenderEvent, VideoRenderStarted, MAX_SAFE_INTEGER,
     },
 };
 
@@ -120,6 +120,8 @@ impl RenderEventIdentity {
 pub(crate) struct ValidatedRenderPlan {
     pub(crate) plan: RenderPlan,
     pub(crate) input_paths: Vec<PathBuf>,
+    /// Grant-checked still images for graphics image layers, by asset id (ADR 0003).
+    pub(crate) graphics_image_paths: std::collections::BTreeMap<String, PathBuf>,
     pub(crate) output_path: PathBuf,
     pub(crate) duration_microseconds: u64,
     /// QC context (editorial evaluation bound to the revision state hash, and
@@ -912,21 +914,81 @@ fn validate_render_plan_with_inputs(
     if input_paths.is_empty() {
         return Err(VideoCommandError::invalid_render_plan("input_paths"));
     }
-    enforce_release_gate(&plan, &input_paths, &output_path, rights)?;
+    let graphics_image_paths = authorize_graphics_images(&plan, owner_label, grants, &output_path)?;
+    enforce_release_gate(
+        &plan,
+        &input_paths,
+        &graphics_image_paths,
+        &output_path,
+        rights,
+    )?;
     Ok(ValidatedRenderPlan {
         plan,
         input_paths,
+        graphics_image_paths,
         output_path,
         duration_microseconds,
         qc: None,
     })
 }
 
-/// Rights release gate for every input (fresh and persisted paths). Remote inputs are
-/// found by content digest; local imports (no receipt for their bytes) pass unchanged.
+/// Every graphics image path must be a granted, normalized source; one asset id maps to one path
+/// across all graphics inputs, and no image may alias the output.
+fn authorize_graphics_images(
+    plan: &RenderPlan,
+    owner_label: &str,
+    grants: &VideoPathGrants,
+    output_path: &Path,
+) -> Result<std::collections::BTreeMap<String, PathBuf>, VideoCommandError> {
+    let mut authorized = std::collections::BTreeMap::new();
+    let RenderPlan::V2(plan) = plan else {
+        return Ok(authorized);
+    };
+    for input in plan.graphics.iter().flatten() {
+        let mut clip_image_bytes: u64 = 0;
+        for (asset_id, requested) in &input.image_paths_by_asset_id {
+            let normalized = grants
+                .authorize(owner_label, GrantCategory::Source, Path::new(requested))
+                .map_err(|_| VideoCommandError::invalid_render_plan("graphics_image_grant"))?;
+            if normalized.to_string_lossy() != requested.as_str()
+                || paths_equal(&normalized, output_path)
+            {
+                return Err(VideoCommandError::invalid_render_plan(
+                    "graphics_image_path",
+                ));
+            }
+            match authorized.get(asset_id.as_str()) {
+                Some(existing) if existing != &normalized => {
+                    return Err(VideoCommandError::invalid_render_plan(
+                        "graphics_image_path",
+                    ));
+                }
+                _ => {
+                    authorized.insert(asset_id.as_str().to_owned(), normalized.clone());
+                }
+            }
+            // The renderer bounds a clip's embedded image bytes; reject before any overlay renders.
+            let bytes = std::fs::metadata(&normalized)
+                .map_err(|_| VideoCommandError::invalid_render_plan("graphics_image_path"))?
+                .len();
+            clip_image_bytes = clip_image_bytes.saturating_add(bytes);
+            if clip_image_bytes > MAX_GRAPHICS_IMAGE_BYTES_PER_CLIP {
+                return Err(VideoCommandError::invalid_render_plan(
+                    "graphics_image_bytes",
+                ));
+            }
+        }
+    }
+    Ok(authorized)
+}
+
+/// Rights release gate for every input (fresh and persisted paths), media clips and graphics
+/// still images alike. Remote inputs are found by content digest; local imports (no receipt for
+/// their bytes) pass unchanged.
 fn enforce_release_gate(
     plan: &RenderPlan,
     input_paths: &[PathBuf],
+    graphics_image_paths: &std::collections::BTreeMap<String, PathBuf>,
     output_path: &Path,
     rights: &RenderRights<'_>,
 ) -> Result<(), VideoCommandError> {
@@ -944,10 +1006,20 @@ fn enforce_release_gate(
             .map(|(id, path)| (Some(id.as_str()), Path::new(path.as_str())))
             .collect(),
     };
-    entries.sort_by(|left, right| left.0.cmp(&right.0));
     if entries.len() != input_paths.len() {
         return Err(VideoCommandError::invalid_render_plan("input_paths"));
     }
+    // Graphics still images are embedded in the export too. An asset already gated as a media
+    // input at the same path is not gated twice; its claimed receipt applies to both uses.
+    for (asset_id, path) in graphics_image_paths {
+        if !entries
+            .iter()
+            .any(|(id, gated)| *id == Some(asset_id.as_str()) && paths_equal(gated, path))
+        {
+            entries.push((Some(asset_id.as_str()), path.as_path()));
+        }
+    }
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
     let context = match plan {
         RenderPlan::V1(_) => None,
         RenderPlan::V2(plan) => plan.rights.as_ref(),
@@ -1503,6 +1575,19 @@ fn expected_v2_filter(
         ));
         base = output;
     }
+    let graphics = plan.graphics.as_deref().unwrap_or_default();
+    for (index, input) in graphics.iter().enumerate() {
+        let start = fixed_six_seconds(input.start_microseconds);
+        let end = fixed_six_seconds(input.end_microseconds);
+        parts.push(format!(
+            "[{}:v:0]setpts=PTS-STARTPTS+{start}/TB[g{index}]",
+            plan.video_inputs.len() + index
+        ));
+        parts.push(format!(
+            "[{base}][g{index}]overlay=x=0:y=0:eof_action=pass:format=auto:enable='gte(t\\,{start})*lt(t\\,{end})'[gfx{index}]"
+        ));
+        base = format!("gfx{index}");
+    }
     for (index, caption) in plan.captions.iter().enumerate() {
         let output = format!("caption{index}");
         parts.push(format!(
@@ -1533,6 +1618,107 @@ fn expected_v2_filter(
         .map_err(VideoCommandError::invalid_render_plan)?,
     );
     Ok(parts.join(";"))
+}
+
+pub(crate) const MAX_RENDER_GRAPHICS_INPUTS: usize = 64;
+/// Largest graphics canvas side: the renderer's `MAX_CANVAS_SIZE`.
+pub(crate) const MAX_GRAPHICS_CANVAS_SIDE: u32 = 4096;
+/// Distinct images per graphics clip: the renderer's `MAX_IMAGES` (graphics-renderer
+/// `description.rs`), mirrored by TypeScript `MAX_GRAPHICS_IMAGES_PER_CLIP`.
+pub(crate) const MAX_GRAPHICS_IMAGES_PER_CLIP: usize = 16;
+/// Image file bytes per graphics clip: the renderer's `MAX_TOTAL_IMAGE_BYTES`, mirrored by
+/// TypeScript `MAX_GRAPHICS_IMAGE_BYTES_PER_CLIP`.
+pub(crate) const MAX_GRAPHICS_IMAGE_BYTES_PER_CLIP: u64 = 40 * 1024 * 1024;
+
+/// Distinct still assets referenced by a clip's image layers.
+fn graphics_clip_image_ids(
+    clip: &super::project::graphics::GraphicsClip,
+) -> std::collections::BTreeSet<&str> {
+    clip.layers
+        .iter()
+        .filter_map(|layer| match layer {
+            super::project::graphics::GraphicsLayer::Image { asset_id, .. } => {
+                Some(asset_id.as_str())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// A clip may reference at most `MAX_GRAPHICS_IMAGES_PER_CLIP` distinct images, checked before
+/// any overlay renders so the export fails up front instead of mid-render.
+fn validate_graphics_image_count(
+    clip: &super::project::graphics::GraphicsClip,
+) -> Result<(), VideoCommandError> {
+    if graphics_clip_image_ids(clip).len() > MAX_GRAPHICS_IMAGES_PER_CLIP {
+        return Err(VideoCommandError::invalid_render_plan("graphics_images"));
+    }
+    Ok(())
+}
+
+/// Graphics inputs mirror `renderGraphicsInputV2Schema`: valid clips at the export rate, an output
+/// window that matches the clip's own times, and image paths for exactly the image layers.
+fn validate_graphics_inputs(
+    plan: &RenderPlanV2,
+    duration_microseconds: u64,
+) -> Result<(), VideoCommandError> {
+    let Some(graphics) = &plan.graphics else {
+        return Ok(());
+    };
+    let invalid = || VideoCommandError::invalid_render_plan("graphics_inputs");
+    if graphics.is_empty() || graphics.len() > MAX_RENDER_GRAPHICS_INPUTS {
+        return Err(invalid());
+    }
+    let expected = &plan.expected;
+    if !expected.width.is_multiple_of(2)
+        || !expected.height.is_multiple_of(2)
+        || expected.width > u64::from(MAX_GRAPHICS_CANVAS_SIDE)
+        || expected.height > u64::from(MAX_GRAPHICS_CANVAS_SIDE)
+    {
+        return Err(VideoCommandError::invalid_render_plan("graphics_canvas"));
+    }
+    for input in graphics {
+        let clip = &input.clip;
+        if !super::project::graphics::valid_graphics_clip_shape(clip)
+            || clip.timeline_start.rate_numerator != expected.rate.numerator
+            || clip.timeline_start.rate_denominator != expected.rate.denominator
+        {
+            return Err(invalid());
+        }
+        let end_frame = clip
+            .timeline_end()
+            .filter(|end| *end <= MAX_SAFE_INTEGER)
+            .ok_or_else(invalid)?;
+        let start = render_time_microseconds(&clip.timeline_start).map_err(|_| invalid())?;
+        let end = render_time_microseconds(&super::types::RationalTime {
+            value: end_frame,
+            ..clip.timeline_start.clone()
+        })
+        .map_err(|_| invalid())?;
+        if input.start_microseconds != start
+            || input.end_microseconds != end
+            || start >= duration_microseconds
+        {
+            return Err(invalid());
+        }
+        validate_graphics_image_count(clip)?;
+        let referenced = graphics_clip_image_ids(clip);
+        let provided: std::collections::BTreeSet<&str> = input
+            .image_paths_by_asset_id
+            .keys()
+            .map(super::types::ProjectUuid::as_str)
+            .collect();
+        if referenced != provided
+            || input.image_paths_by_asset_id.values().any(|path| {
+                path.is_empty()
+                    || path.contains('\0')
+                    || path.encode_utf16().count() > MAX_RENDER_ARGUMENT_UTF16
+            })
+        {
+            return Err(invalid());
+        }
+    }
+    Ok(())
 }
 
 fn expected_render_arguments_v2(
@@ -1578,6 +1764,7 @@ fn expected_render_arguments_v2(
     ]
     .map(str::to_owned)
     .to_vec();
+    validate_graphics_inputs(plan, duration_microseconds)?;
     for input in &plan.video_inputs {
         arguments.extend([
             "-ss".to_owned(),
@@ -1589,6 +1776,9 @@ fn expected_render_arguments_v2(
             "-i".to_owned(),
             input.path.clone(),
         ]);
+    }
+    for index in 0..plan.graphics.as_ref().map_or(0, Vec::len) {
+        arguments.extend(["-i".to_owned(), graphics_input_sentinel(index)]);
     }
     arguments.extend([
         "-filter_complex".to_owned(),
@@ -1719,11 +1909,52 @@ pub(crate) async fn run_render_worker(request: RenderWorkerRequest) {
     let _ = events(event);
 }
 
+/// Renders the plan's graphics overlays into a private scratch directory next to the partial
+/// output, under the job's cancellation (ADR 0003).
+async fn render_plan_graphics(
+    request: &RenderWorkerRequest,
+    partial_path: &Path,
+) -> Result<super::graphics_export::RenderedGraphics, VideoCommandError> {
+    let RenderPlan::V2(plan) = &request.validated.plan else {
+        return Ok(super::graphics_export::RenderedGraphics::none());
+    };
+    let Some(graphics) = plan.graphics.as_deref().filter(|inputs| !inputs.is_empty()) else {
+        return Ok(super::graphics_export::RenderedGraphics::none());
+    };
+    let renderer = request.programs.graphics_renderer("render_graphics")?;
+    let ffmpeg = PathBuf::from(request.programs.verified_ffmpeg("render_graphics").await?);
+    let scratch_parent = partial_path
+        .parent()
+        .ok_or_else(|| VideoCommandError::invalid_render_plan("graphics_scratch"))?;
+    super::graphics_export::render_export_graphics(
+        graphics,
+        &plan.expected.rate,
+        (plan.expected.width, plan.expected.height),
+        &request.validated.graphics_image_paths,
+        scratch_parent,
+        super::graphics_export::GraphicsPrograms {
+            renderer: &renderer,
+            ffmpeg: &ffmpeg,
+        },
+        &request.cancellation,
+        &|record| {
+            eprintln!(
+                "{}",
+                serde_json::json!({ "event": "graphics_export_overlay", "record": record })
+            );
+        },
+    )
+    .await
+}
+
 async fn execute_render_worker(
     request: &RenderWorkerRequest,
 ) -> Result<VerifiedRenderOutput, VideoCommandError> {
     let partial_path = partial_render_path(&request.validated)?;
     let mut arguments = render_execution_arguments(&request.validated, &partial_path)?;
+    // Kept alive until the export finishes: dropping it deletes every rendered overlay.
+    let graphics = render_plan_graphics(request, &partial_path).await?;
+    super::graphics_export::swap_graphics_sentinels(&mut arguments, &graphics.overlays)?;
     // Two-pass loudness: measure the exact mix first, then substitute the
     // pass-2 node. The report records which mode actually ran.
     let loudness = match request.validated.plan.audio_mix() {
@@ -2389,6 +2620,42 @@ fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
         right = remainder;
     }
     left
+}
+
+#[cfg(test)]
+mod graphics_limit_tests {
+    use super::{validate_graphics_image_count, MAX_GRAPHICS_IMAGES_PER_CLIP};
+
+    fn clip_with_images(count: usize) -> crate::video::project::graphics::GraphicsClip {
+        let hold = |value: f64| serde_json::json!([{ "timeMicroseconds": 0, "value": value }]);
+        let time = |value: u64| serde_json::json!({ "value": value, "rateNumerator": 30, "rateDenominator": 1 });
+        let layers: Vec<_> = (0..count)
+            .map(|index| {
+                serde_json::json!({
+                    "kind": "image", "assetId": format!("7f000000-0000-4000-8000-{index:012x}"),
+                    "width": 64, "height": 64, "x": hold(0.0), "y": hold(0.0),
+                    "scale": hold(1.0), "rotation": hold(0.0), "opacity": hold(1.0)
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "graphicsVersion": 1, "id": "7f000000-0000-4000-8000-0000000000c1",
+            "timelineStart": time(0), "duration": time(30), "fontKey": "arial-bold",
+            "layers": layers
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn render_plan_rejects_a_graphics_clip_with_more_images_than_the_renderer_embeds() {
+        assert!(
+            validate_graphics_image_count(&clip_with_images(MAX_GRAPHICS_IMAGES_PER_CLIP)).is_ok()
+        );
+        let error =
+            validate_graphics_image_count(&clip_with_images(MAX_GRAPHICS_IMAGES_PER_CLIP + 1))
+                .unwrap_err();
+        assert_eq!(error.details["category"], "graphics_images");
+    }
 }
 
 #[cfg(test)]

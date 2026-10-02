@@ -20,6 +20,8 @@ use super::{
     process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
 };
 
+/// Bundled renderer location under the resource directory (`tauri.conf.json` resources).
+pub(crate) const GRAPHICS_RENDERER_RESOURCE: &str = "graphics-renderer/supa-graphics-render.exe";
 const COMPILED_MANIFEST: &str = include_str!("../../media-toolchain/manifest.v1.json");
 const SUPPORTED_TARGET: &str = "x86_64-pc-windows-msvc";
 const PINNED_TOOLCHAIN_ID: &str = "ffmpeg-8.1.2-gyan-essentials-windows-x86_64";
@@ -156,6 +158,8 @@ pub struct MediaToolchainState {
     identity: ManifestIdentity,
     phase: watch::Receiver<MediaToolchainPhase>,
     resolution: Arc<MediaToolchainResolution>,
+    /// The bundled `supa-graphics-render` executable (ADR 0003), when this build ships one.
+    graphics_renderer: Option<PathBuf>,
 }
 
 type MediaToolchainResolver =
@@ -220,10 +224,29 @@ impl MediaToolchainResolution {
 
 impl MediaToolchainState {
     pub fn start_for_app<R: Runtime>(app: &AppHandle<R>) -> Self {
+        let graphics_renderer = app
+            .path()
+            .resource_dir()
+            .ok()
+            .map(|root| root.join(GRAPHICS_RENDERER_RESOURCE));
         let app = app.clone();
-        Self::start_with_resolver(INITIALIZATION_TIMEOUT, move || {
+        let mut state = Self::start_with_resolver(INITIALIZATION_TIMEOUT, move || {
             MediaToolchain::try_resolve_for_app(&app)
-        })
+        });
+        state.graphics_renderer = graphics_renderer;
+        state
+    }
+
+    /// The graphics renderer to run for exports with graphics clips. It must be a regular file in
+    /// the bundled renderer folder (the FFmpeg 9 DLLs sit beside it).
+    pub(crate) fn graphics_renderer(&self) -> Option<&Path> {
+        self.graphics_renderer.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_graphics_renderer(mut self, renderer: PathBuf) -> Self {
+        self.graphics_renderer = Some(renderer);
+        self
     }
 
     fn start_with_resolver(
@@ -246,6 +269,7 @@ impl MediaToolchainState {
             identity,
             phase,
             resolution,
+            graphics_renderer: None,
         }
     }
 
@@ -264,6 +288,7 @@ impl MediaToolchainState {
             identity,
             phase,
             resolution,
+            graphics_renderer: None,
         }
     }
 

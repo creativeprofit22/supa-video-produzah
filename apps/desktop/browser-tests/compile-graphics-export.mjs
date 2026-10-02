@@ -1,8 +1,28 @@
 // Synthetic inputs only; native test grants the paths and validates this compiler output.
 // Two video tracks: the graphics overlay clip (top, no audio) over a base clip (bottom).
 import { compileActiveSequenceRenderPlan } from "../../../packages/video-render/dist/index.js";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import console from "node:console";
+
+// Project mode (phase 15): `--project <request.json>` compiles a real project revision with
+// graphics clips. The request holds { planId, revision, inputPathsByAssetId,
+// graphicsImagePathsByAssetId, outputPath }, all written by the native test.
+// Preset mode: `--preset <request.json>` prints the one SetGraphicsClipLayers command that
+// `applyMotionPreset` builds for { state, clip, request, commandId }.
+if (process.argv[2] === "--preset") {
+  const { applyMotionPreset } = await import("../../../packages/video-project/dist/index.js");
+  const input = JSON.parse(readFileSync(process.argv[3], "utf8"));
+  const result = applyMotionPreset(input.state, input.clip, input.request, input.commandId);
+  if (!result.ok) throw new Error(result.error.message);
+  console.log(JSON.stringify(result.command));
+  process.exit(0);
+}
+if (process.argv[2] === "--project") {
+  const request = JSON.parse(readFileSync(process.argv[3], "utf8"));
+  console.log(JSON.stringify(compileActiveSequenceRenderPlan(request)));
+  process.exit(0);
+}
 
 const [basePath, overlayPath, outputPath, widthArg, heightArg, framesArg] = process.argv.slice(2);
 const width = Number(widthArg);

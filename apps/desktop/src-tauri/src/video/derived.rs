@@ -683,6 +683,7 @@ pub(crate) fn prepared_asset_plan_fixture(cache_root: &Path) -> serde_json::Valu
             duration_microseconds: None,
         }),
         file_size_bytes: 4_096,
+        still: false,
     };
     serde_json::to_value(PreparedAssetPlan {
         cache_root: cache_root.to_path_buf(),
@@ -1145,6 +1146,22 @@ impl MediaPrograms {
                 toolchain_id: toolchain_id.into(),
             },
         }
+    }
+
+    /// The graphics renderer for exports with graphics clips (ADR 0003).
+    pub(crate) fn graphics_renderer(
+        &self,
+        operation: &'static str,
+    ) -> Result<PathBuf, VideoCommandError> {
+        let renderer = match &self.source {
+            MediaProgramSource::Bundled(toolchain) => toolchain.graphics_renderer(),
+            #[cfg(test)]
+            MediaProgramSource::Explicit { .. } => None,
+        };
+        renderer
+            .filter(|path| path.is_file())
+            .map(Path::to_path_buf)
+            .ok_or_else(|| VideoCommandError::tool_unavailable(operation, "supa-graphics-render"))
     }
 
     pub(crate) fn toolchain_id(&self) -> &str {

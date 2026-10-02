@@ -352,6 +352,10 @@ pub struct MediaProbe {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub audio: Option<MediaAudioShape>,
     pub file_size_bytes: u64,
+    /// PNG/JPEG still image: one frame, nominally 1 s at 1 fps, no audio. Stills are graphics
+    /// image-layer sources and cannot be placed as media clips.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub still: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -568,6 +572,22 @@ pub struct RenderCaptionStyle {
     pub safe_left_permille: u64,
 }
 
+/// One graphics clip in a V2 render plan; argv names it by the sentinel `graphics:<index>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderGraphicsInputV2 {
+    pub track_id: ProjectUuid,
+    pub clip: super::project::graphics::GraphicsClip,
+    pub start_microseconds: u64,
+    pub end_microseconds: u64,
+    pub image_paths_by_asset_id: std::collections::BTreeMap<ProjectUuid, String>,
+}
+
+/// Sentinel FFmpeg input for graphics overlay `index`; swapped for a scratch file at run time.
+pub fn graphics_input_sentinel(index: usize) -> String {
+    format!("graphics:{index}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RenderPlanV2 {
@@ -579,6 +599,13 @@ pub struct RenderPlanV2 {
     pub video_inputs: Vec<RenderVideoInputV2>,
     #[serde(default)]
     pub captions: Vec<RenderCaptionInput>,
+    /// Graphics clips composited above the video stack, below captions (ADR 0003).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub graphics: Option<Vec<RenderGraphicsInputV2>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -768,6 +795,7 @@ impl MediaProbe {
             video_codec_name,
             audio,
             file_size_bytes,
+            still: false,
         })
     }
 }

@@ -1189,6 +1189,7 @@ fn derived_valid_inspected(source_has_audio: bool) -> InspectedMedia {
                 duration_microseconds: None,
             }),
             file_size_bytes: 4_096,
+            still: false,
         },
         video_stream_index: 0,
         audio_stream_index: source_has_audio.then_some(1),
@@ -5424,6 +5425,8 @@ mod audio_export;
 mod audio_mix_export;
 #[cfg(target_os = "windows")]
 mod delivery_export;
+#[cfg(target_os = "windows")]
+mod graphics_clip_export;
 #[cfg(target_os = "windows")]
 mod graphics_export;
 #[cfg(target_os = "windows")]
