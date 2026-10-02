@@ -305,6 +305,8 @@ jobs:
           pnpm --dir apps/desktop media:test:windows
           pnpm --dir apps/desktop media:bootstrap:windows -ArchivePath $env:FFMPEG_ARCHIVE
           pnpm --dir apps/desktop media:verify:windows
+          # Graphics renderer folder bundled by tauri.media-tools.windows.conf.json (ADR 0003).
+          pnpm --dir apps/desktop graphics:build:windows
 
       - name: Build desktop frontend
         run: pnpm --dir apps/desktop build
@@ -542,6 +544,8 @@ jobs:
           pnpm --dir apps/desktop media:test:windows
           pnpm --dir apps/desktop media:bootstrap:windows -ArchivePath $env:FFMPEG_ARCHIVE
           pnpm --dir apps/desktop media:verify:windows
+          # Graphics renderer folder bundled by tauri.media-tools.windows.conf.json (ADR 0003).
+          pnpm --dir apps/desktop graphics:build:windows
 
       - name: Import protected Windows signing certificate
         shell: pwsh

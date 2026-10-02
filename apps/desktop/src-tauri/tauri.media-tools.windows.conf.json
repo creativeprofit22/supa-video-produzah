@@ -8,7 +8,15 @@
       "media-toolchain/THIRD_PARTY_NOTICES.md": "media-tools/THIRD_PARTY_NOTICES.md",
       "media-toolchain/SOURCE_OFFER.md": "media-tools/SOURCE_OFFER.md",
       "media-toolchain/licenses/GPL-3.0.txt": "media-tools/licenses/GPL-3.0.txt",
-      "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt"
+      "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt",
+      "graphics-renderer/target/release/supa-graphics-render.exe": "graphics-renderer/supa-graphics-render.exe",
+      "graphics-renderer/target/release/avcodec-63.dll": "graphics-renderer/avcodec-63.dll",
+      "graphics-renderer/target/release/avdevice-63.dll": "graphics-renderer/avdevice-63.dll",
+      "graphics-renderer/target/release/avfilter-12.dll": "graphics-renderer/avfilter-12.dll",
+      "graphics-renderer/target/release/avformat-63.dll": "graphics-renderer/avformat-63.dll",
+      "graphics-renderer/target/release/avutil-61.dll": "graphics-renderer/avutil-61.dll",
+      "graphics-renderer/target/release/swresample-7.dll": "graphics-renderer/swresample-7.dll",
+      "graphics-renderer/target/release/swscale-10.dll": "graphics-renderer/swscale-10.dll"
     }
   }
 }

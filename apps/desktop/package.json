@@ -14,6 +14,7 @@
     "test:native": "node ../../scripts/test-native.mjs",
     "preview": "vite preview",
     "graphics:bootstrap:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-graphics-renderer-windows.ps1",
+    "graphics:build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-graphics-renderer-windows.ps1",
     "media:bootstrap:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1",
     "media:verify:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/bootstrap-ffmpeg-windows.ps1 -VerifyOnly",
     "media:test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/tests/bootstrap-ffmpeg-windows.Tests.ps1",
