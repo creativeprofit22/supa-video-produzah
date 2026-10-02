@@ -15,4 +15,6 @@
 - **Accept anyway (override)** — A recorded review decision, with a reason, that resolves one non-rights finding for release.
 - **Repair attempt** — One proposed fix for a finding, routed through the normal proposal/approval path and recorded in the review record; at most three per finding before repair stops.
 - **Release policy** — The rule that turns manifest findings plus review decisions into `releasable` or `blocked` with the unresolved finding ids.
+- **Graphics description** — The versioned JSON input of the graphics renderer: canvas size, frame rate, duration in frames, one font file and up to 64 rect/text layers whose x, y and opacity are keyframed by frame index. It is validated strictly; anything unknown or out of bounds is rejected. See `docs/adr/0002-graphics-render-engine.md`.
+- **Graphics overlay clip** — The transparent QuickTime Animation (`qtrle`, ARGB) `.mov` rendered from a graphics description. The export path composites it like any other video clip on a track above the footage.
 - **Delivery preset** — A named output shape for Deliver: frame size (16:9, 9:16 or 1:1), H.264/AAC MP4, caption mode (burn-in or SRT/VTT sidecar) and thumbnail frame. Deliver renders one job per preset from one reviewed revision.
