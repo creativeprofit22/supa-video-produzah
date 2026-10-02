@@ -47,3 +47,5 @@ export * from "./silence-gap-rule.js";
 export * from "./filler-words-rule.js";
 export * from "./proposal-lifecycle.js";
 export { derivedUuid } from "./transcript-edit-command-compiler.js";
+export * from "./motion-presets.js";
+export * from "./apply-motion-preset.js";
