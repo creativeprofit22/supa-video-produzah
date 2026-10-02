@@ -14,6 +14,7 @@ import {
   type EditorialInput,
 } from "./editorial.js";
 import { computeFindingId } from "./finding.js";
+import { evaluateRelease } from "./policy.js";
 
 const STATE = "a".repeat(64);
 const REVISION = "00000000-0000-4000-8000-0000000000aa";
@@ -254,5 +255,70 @@ describe("editorial checks", () => {
     const evaluation = await evaluateEditorial(withGraphics);
 
     expect(evaluation).toEqual(await evaluateEditorial(base));
+  });
+
+  it("reports graphics motion as editorial warnings that never block release", async () => {
+    const base = input({});
+    const keyAt = (seconds: number, value: number) => ({
+      timeMicroseconds: seconds * 1_000_000,
+      value,
+    });
+    const withMotion: EditorialInput = {
+      ...base,
+      sequence: {
+        ...base.sequence,
+        tracks: [
+          ...base.sequence.tracks,
+          {
+            id: uuid(950),
+            name: "Graphics 1",
+            kind: "graphics",
+            graphicsClips: [
+              {
+                graphicsVersion: 1,
+                id: uuid(951),
+                timelineStart: createRationalTime(30, RATE),
+                duration: createRationalTime(90, RATE),
+                fontKey: "arial-regular",
+                layers: [
+                  {
+                    kind: "rect",
+                    width: 100,
+                    height: 100,
+                    cornerRadius: 0,
+                    fill: "#FFFFFF",
+                    // Linear start/stop: fails SPARC.
+                    x: [keyAt(0, 0), keyAt(1, 600)],
+                    y: [keyAt(0, 0)],
+                    scale: [keyAt(0, 1)],
+                    rotation: [keyAt(0, 0)],
+                    opacity: [keyAt(0, 1)],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const evaluation = await evaluateEditorial(withMotion);
+
+    expect(evaluation.evaluatorVersion).toBe("editorial-v2");
+    expect(evaluation.findings).toEqual([
+      expect.objectContaining({
+        kind: "motion_stutter",
+        severity: "warning",
+        source: "editorial",
+        subject: `${uuid(951)}:0`,
+        range: { startUs: 1_000_000, endUs: 2_000_000 },
+      }),
+    ]);
+    for (const finding of evaluation.findings)
+      expect(finding.findingId).toBe(
+        await computeFindingId({ ...finding, revisionStateHash: STATE }),
+      );
+    expect((await evaluateEditorial(withMotion)).findings).toEqual(evaluation.findings);
+    expect(evaluateRelease(evaluation.findings, []).status).toBe("releasable");
   });
 });

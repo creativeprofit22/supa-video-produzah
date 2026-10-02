@@ -19,6 +19,9 @@ const kindLabels: Readonly<Record<QcFinding["kind"], string>> = {
   must_show_missing: "Must-show missing",
   must_not_show_present: "Must-not-show present",
   rights_blocked: "Rights blocked",
+  motion_stutter: "Stuttering motion",
+  motion_drift: "Slow drift",
+  motion_cut_jump: "Motion jumps across a cut",
 };
 
 const severityLabels: Readonly<Record<QcFinding["severity"], string>> = {

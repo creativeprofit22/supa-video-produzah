@@ -227,6 +227,28 @@ describe("DeliverPanel", () => {
     await expectNoAxeViolations(container);
   });
 
+  it("lists motion warnings in review without blocking Deliver", async () => {
+    const motion = await Promise.all([
+      finding("motion_stutter", "warning", "editorial"),
+      finding("motion_drift", "warning", "editorial"),
+      finding("motion_cut_jump", "warning", "editorial"),
+    ]);
+    const review = state(motion);
+    reviewPanel(review);
+    const list = screen.getByRole("list", { name: "Quality findings" });
+    for (const label of ["Stuttering motion", "Slow drift", "Motion jumps across a cut"])
+      expect(within(list).getByText(label)).toBeTruthy();
+    cleanup();
+
+    const { onDeliver, container } = deliverPanel(review);
+    const deliver = screen.getByRole("button", { name: "Deliver selected formats" });
+    expect((deliver as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(deliver);
+    expect(onDeliver).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("list", { name: "Unresolved findings" })).toBeNull();
+    await expectNoAxeViolations(container);
+  });
+
   it("asks for a review export first", () => {
     deliverPanel(null);
     expect(screen.getByText("Export and review the video first.")).toBeTruthy();

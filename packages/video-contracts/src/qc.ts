@@ -21,6 +21,9 @@ export const QC_FINDING_KIND = {
   mustShowMissing: "must_show_missing",
   mustNotShowPresent: "must_not_show_present",
   rightsBlocked: "rights_blocked",
+  motionStutter: "motion_stutter",
+  motionDrift: "motion_drift",
+  motionCutJump: "motion_cut_jump",
 } as const;
 export type QcFindingKind = (typeof QC_FINDING_KIND)[keyof typeof QC_FINDING_KIND];
 

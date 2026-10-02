@@ -23,8 +23,10 @@ import {
 } from "@supa-video/contracts";
 import { canonicalJson, normalizeTokens, sha256Hex, type NarrativeBeat } from "@supa-video/produce";
 import { createFinding, sortFindings } from "./finding.js";
+import { motionFindings } from "./motion.js";
 
-export const EDITORIAL_EVALUATOR_VERSION = "editorial-v1";
+/** v2 adds graphics motion findings (motion.ts). */
+export const EDITORIAL_EVALUATOR_VERSION = "editorial-v2";
 export const EDITORIAL_MAX_FINDINGS = 512;
 
 export const editorialEvaluationSchema = z.strictObject({
@@ -265,24 +267,39 @@ export async function evaluateEditorial(input: EditorialInput): Promise<Editoria
     ...beatFindings(input, clips),
     ...unresolvedMarkerFindings(input, clips),
   ];
-  const findings: QcFinding[] = [];
-  const seen = new Set<string>();
-  for (const draft of drafts) {
-    const finding = await createFinding({
-      ...draft,
-      source: "editorial",
-      revisionStateHash: input.revisionStateHash,
-    });
-    if (seen.has(finding.findingId)) continue;
-    seen.add(finding.findingId);
-    findings.push(finding);
-  }
+  const base = sortFindings(await toFindings(drafts, input.revisionStateHash)).slice(
+    0,
+    EDITORIAL_MAX_FINDINGS,
+  );
+  // Motion warnings only fill the room the other kinds leave, so they never displace them.
+  const known = new Set(base.map((finding) => finding.findingId));
+  const motion = sortFindings(
+    await toFindings(motionFindings(input.sequence), input.revisionStateHash),
+  )
+    .filter((finding) => !known.has(finding.findingId))
+    .slice(0, EDITORIAL_MAX_FINDINGS - base.length);
   return editorialEvaluationSchema.parse({
     evaluatorVersion: EDITORIAL_EVALUATOR_VERSION,
     revisionId: input.revisionId,
     revisionStateHash: input.revisionStateHash,
-    findings: sortFindings(findings).slice(0, EDITORIAL_MAX_FINDINGS),
+    findings: sortFindings([...base, ...motion]),
   });
+}
+
+/** Findings for `drafts`, first occurrence of each id kept. */
+async function toFindings(
+  drafts: readonly Draft[],
+  revisionStateHash: string,
+): Promise<QcFinding[]> {
+  const findings: QcFinding[] = [];
+  const seen = new Set<string>();
+  for (const draft of drafts) {
+    const finding = await createFinding({ ...draft, source: "editorial", revisionStateHash });
+    if (seen.has(finding.findingId)) continue;
+    seen.add(finding.findingId);
+    findings.push(finding);
+  }
+  return findings;
 }
 
 /** SHA-256 of the evaluation's canonical JSON (matches the manifest field). */

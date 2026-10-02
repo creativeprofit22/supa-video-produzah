@@ -86,7 +86,7 @@ describe("delivery plans", () => {
     expect(evaluation).toMatchObject({
       revisionId: projection.revision.id,
       revisionStateHash: projection.revision.stateHash,
-      evaluatorVersion: "editorial-v1",
+      evaluatorVersion: "editorial-v2",
     });
     for (const finding of evaluation.findings) expect(finding.source).toBe("editorial");
   });

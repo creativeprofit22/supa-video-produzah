@@ -96,6 +96,19 @@ describe("finding id", () => {
     expect(isOverridable(finding)).toBe(true);
   });
 
+  it.each([
+    ["motion_stutter", "1682eea84e1baf8f83fce463941ee3d2361359c3b07ee8e4a3e979eba04fef98"],
+    ["motion_drift", "b135767305521340768f1fdb56506ea385aea295add295826ff33ce2a86d63da"],
+    ["motion_cut_jump", "18aa181ee01b6ff06185a94c64f3e064bd8de32123590646697e3799ce55b4ac"],
+  ] as const)("%s parses, is overridable and matches the native golden id", async (kind, id) => {
+    const finding = await createFinding(
+      base({ kind, source: "editorial", subject: "clip:0", severity: "warning" }),
+    );
+    expect(finding.findingId).toBe(id);
+    expect(qcFindingSchema.parse(finding)).toEqual(finding);
+    expect(isOverridable(finding)).toBe(true);
+  });
+
   it("does not depend on severity or message", async () => {
     const a = await createFinding(base());
     const b = await createFinding(base({ severity: "warning", message: "other" }));

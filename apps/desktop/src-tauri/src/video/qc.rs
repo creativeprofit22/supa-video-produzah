@@ -118,6 +118,9 @@ pub enum QcFindingKind {
     MustShowMissing,
     MustNotShowPresent,
     RightsBlocked,
+    MotionStutter,
+    MotionDrift,
+    MotionCutJump,
 }
 
 impl QcFindingKind {
@@ -138,6 +141,9 @@ impl QcFindingKind {
             Self::MustShowMissing => "must_show_missing",
             Self::MustNotShowPresent => "must_not_show_present",
             Self::RightsBlocked => "rights_blocked",
+            Self::MotionStutter => "motion_stutter",
+            Self::MotionDrift => "motion_drift",
+            Self::MotionCutJump => "motion_cut_jump",
         }
     }
 
@@ -149,6 +155,9 @@ impl QcFindingKind {
                 | Self::MustShowMissing
                 | Self::MustNotShowPresent
                 | Self::MissingMedia
+                | Self::MotionStutter
+                | Self::MotionDrift
+                | Self::MotionCutJump
         )
     }
 }
@@ -1272,6 +1281,87 @@ mod tests {
             );
             assert_eq!(hex_sha256(payload.as_bytes()), golden, "{}", kind.as_str());
         }
+    }
+
+    /// Golden ids for the motion kinds, shared with `@supa-video/qc` qc.test.ts.
+    #[test]
+    fn motion_finding_ids_match_typescript() {
+        for (kind, golden) in [
+            (
+                QcFindingKind::MotionStutter,
+                "1682eea84e1baf8f83fce463941ee3d2361359c3b07ee8e4a3e979eba04fef98",
+            ),
+            (
+                QcFindingKind::MotionDrift,
+                "b135767305521340768f1fdb56506ea385aea295add295826ff33ce2a86d63da",
+            ),
+            (
+                QcFindingKind::MotionCutJump,
+                "18aa181ee01b6ff06185a94c64f3e064bd8de32123590646697e3799ce55b4ac",
+            ),
+        ] {
+            let payload = finding_id_payload(
+                kind,
+                QcSource::Editorial,
+                "clip:0",
+                QcRange {
+                    start_us: 1_000_000,
+                    end_us: 2_000_000,
+                },
+                STATE,
+            );
+            assert_eq!(hex_sha256(payload.as_bytes()), golden, "{}", kind.as_str());
+        }
+    }
+
+    #[test]
+    fn editorial_evaluation_accepts_motion_kinds_only_from_editorial() {
+        let revision_id = "00000000-0000-4000-8000-0000000000aa";
+        let evaluation_with = |source: QcSource| {
+            let findings: Vec<QcFinding> = [
+                QcFindingKind::MotionStutter,
+                QcFindingKind::MotionDrift,
+                QcFindingKind::MotionCutJump,
+            ]
+            .into_iter()
+            .map(|kind| {
+                QcFinding::new(
+                    kind,
+                    QcSeverity::Warning,
+                    source,
+                    "00000000-0000-4000-8000-0000000001f4:0",
+                    QcRange {
+                        start_us: 1_000_000,
+                        end_us: 2_000_000,
+                    },
+                    "Graphics rect layer 1 stutters".to_owned(),
+                    STATE,
+                )
+            })
+            .collect();
+            json!({
+                "evaluatorVersion": "editorial-v2",
+                "revisionId": revision_id,
+                "revisionStateHash": STATE,
+                "findings": findings,
+            })
+        };
+
+        let accepted = validate_editorial_evaluation(
+            Some(evaluation_with(QcSource::Editorial)),
+            revision_id,
+            Some(STATE),
+        )
+        .expect("motion kinds are editorial");
+        assert_eq!(accepted.findings.len(), 3);
+
+        let rejected = validate_editorial_evaluation(
+            Some(evaluation_with(QcSource::Deterministic)),
+            revision_id,
+            Some(STATE),
+        )
+        .expect_err("motion kinds must come from the editorial evaluator");
+        assert_eq!(rejected.details["reason"], "finding_source");
     }
 
     #[test]
