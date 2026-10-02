@@ -21,9 +21,9 @@ use super::{
     graphics_export::FONT_DIRECTORY,
     probe::InspectedMedia,
     qc::{
-        analyze_output, qc_release_blocked, qc_status, qc_timeout_for, sort_findings,
-        text_findings, unresolved_blockers, FontDirMeasurers, QcAnalysisConfig, QcFinding,
-        QcThresholds, RenderQcContext, TextQcInput, QC_DETECTOR_VERSION, QC_MAX_FINDINGS,
+        analyze_output, cap_findings, qc_release_blocked, qc_status, qc_timeout_for, text_findings,
+        unresolved_blockers, FontDirMeasurers, QcAnalysisConfig, QcFinding, QcThresholds,
+        RenderQcContext, TextQcInput, QC_DETECTOR_VERSION,
     },
     render::RenderWorkerRequest,
     render_manifest::{
@@ -40,16 +40,17 @@ pub(crate) struct QcVerdict {
     pub(crate) manifest: RenderManifest,
 }
 
-/// Native findings + validated editorial findings, deduplicated by id, sorted.
-pub(crate) fn merge_findings(native: Vec<QcFinding>, editorial: &[QcFinding]) -> Vec<QcFinding> {
+/// Native findings + validated editorial findings, deduplicated by id, sorted
+/// and capped without dropping a blocker (see `cap_findings`).
+pub(crate) fn merge_findings(
+    native: Vec<QcFinding>,
+    editorial: &[QcFinding],
+) -> Result<Vec<QcFinding>, VideoCommandError> {
     let mut by_id: BTreeMap<String, QcFinding> = BTreeMap::new();
     for finding in native.into_iter().chain(editorial.iter().cloned()) {
         by_id.entry(finding.finding_id.clone()).or_insert(finding);
     }
-    let mut findings: Vec<QcFinding> = by_id.into_values().collect();
-    sort_findings(&mut findings);
-    findings.truncate(QC_MAX_FINDINGS);
-    findings
+    cap_findings(by_id.into_values().collect())
 }
 
 /// Deliver gate: every blocker must have been accepted on the source review
@@ -198,7 +199,7 @@ pub(crate) async fn evaluate_render(
         &mut measurers,
         &context.revision_state_hash,
     ));
-    let findings = merge_findings(native, &context.editorial.findings);
+    let findings = merge_findings(native, &context.editorial.findings)?;
     let status = qc_status(&findings);
     eprintln!(
         "video.qc job={} status={status:?} findings={} elapsed_ms={}",
@@ -292,7 +293,10 @@ pub(crate) fn now_rfc3339() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::video::qc::{QcFindingKind, QcRange, QcSeverity, QcSource};
+    use crate::video::{
+        error::VideoErrorCode,
+        qc::{QcFindingKind, QcRange, QcSeverity, QcSource, QcStatus, QC_MAX_FINDINGS},
+    };
 
     const STATE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -333,8 +337,90 @@ mod tests {
         let merged = merge_findings(
             vec![black.clone(), black.clone()],
             &[repeat.clone(), repeat.clone()],
-        );
+        )
+        .expect("merge");
         assert_eq!(merged, vec![repeat, black]);
+    }
+
+    /// One stutter per layer, starting 1 ms apart. Ids round to deciseconds, so
+    /// the distinct subject keeps every id unique.
+    fn motion_warnings(count: u64) -> Vec<QcFinding> {
+        (0..count)
+            .map(|ms| {
+                QcFinding::new(
+                    QcFindingKind::MotionStutter,
+                    QcSeverity::Warning,
+                    QcSource::Editorial,
+                    &format!("clip:{ms}"),
+                    QcRange {
+                        start_us: ms * 1_000,
+                        end_us: ms * 1_000 + 500_000,
+                    },
+                    "stutter".to_owned(),
+                    STATE,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn merge_cap_never_drops_a_later_blocker_behind_motion_warnings() {
+        let motion = motion_warnings(QC_MAX_FINDINGS as u64);
+        let black = finding(
+            QcFindingKind::BlackFrames,
+            QcSource::Deterministic,
+            QcSeverity::Blocker,
+            10_000_000,
+        );
+
+        let merged = merge_findings(vec![black.clone()], &motion).expect("merge");
+
+        assert!(merged.len() <= QC_MAX_FINDINGS);
+        assert!(merged.contains(&black));
+        assert_eq!(qc_status(&merged), QcStatus::Blocked);
+        assert_eq!(
+            unresolved_for_delivery(&merged, &BTreeMap::new()),
+            vec![black.finding_id.clone()]
+        );
+        // Output order is still by time: the blocker is last.
+        assert_eq!(merged.last(), Some(&black));
+    }
+
+    #[test]
+    fn merge_cap_drops_motion_before_other_warnings() {
+        let motion = motion_warnings(QC_MAX_FINDINGS as u64);
+        let silence = finding(
+            QcFindingKind::Silence,
+            QcSource::Deterministic,
+            QcSeverity::Warning,
+            10_000_000,
+        );
+
+        let merged = merge_findings(vec![silence.clone()], &motion).expect("merge");
+
+        assert_eq!(merged.len(), QC_MAX_FINDINGS);
+        assert!(merged.contains(&silence));
+        // The latest motion warning is the one cut.
+        assert!(!merged.contains(&motion[QC_MAX_FINDINGS - 1]));
+        assert_eq!(merged.first(), motion.first());
+    }
+
+    #[test]
+    fn merge_fails_closed_when_blockers_alone_exceed_the_cap() {
+        let blockers: Vec<QcFinding> = (0..=QC_MAX_FINDINGS as u64)
+            .map(|index| {
+                finding(
+                    QcFindingKind::BlackFrames,
+                    QcSource::Deterministic,
+                    QcSeverity::Blocker,
+                    index * 1_000_000,
+                )
+            })
+            .collect();
+
+        let error = merge_findings(blockers, &[]).expect_err("too many blockers");
+
+        assert_eq!(error.code, VideoErrorCode::QcUnavailable);
     }
 
     #[test]

@@ -286,6 +286,45 @@ pub(crate) fn sort_findings(findings: &mut [QcFinding]) {
     });
 }
 
+/// Keep-order when more than `QC_MAX_FINDINGS` findings exist: blockers first,
+/// then other findings, then motion smoothness warnings (one graphics clip can
+/// emit dozens of those).
+fn retention_rank(finding: &QcFinding) -> u8 {
+    if finding.severity == QcSeverity::Blocker {
+        0
+    } else if matches!(
+        finding.kind,
+        QcFindingKind::MotionStutter | QcFindingKind::MotionDrift | QcFindingKind::MotionCutJump
+    ) {
+        2
+    } else {
+        1
+    }
+}
+
+/// Sorts and caps findings at `QC_MAX_FINDINGS` without ever dropping a
+/// blocker: lower-priority findings go first. More blockers than the manifest
+/// can hold fails closed as `qc_unavailable` rather than hiding any of them.
+pub(crate) fn cap_findings(
+    mut findings: Vec<QcFinding>,
+) -> Result<Vec<QcFinding>, VideoCommandError> {
+    let blockers = findings
+        .iter()
+        .filter(|finding| finding.severity == QcSeverity::Blocker)
+        .count();
+    if blockers > QC_MAX_FINDINGS {
+        return Err(qc_unavailable("too_many_blockers", None, String::new()));
+    }
+    sort_findings(&mut findings);
+    if findings.len() > QC_MAX_FINDINGS {
+        // Stable: within a rank the time order from `sort_findings` decides.
+        findings.sort_by_key(retention_rank);
+        findings.truncate(QC_MAX_FINDINGS);
+        sort_findings(&mut findings);
+    }
+    Ok(findings)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QcStatus {
@@ -1100,9 +1139,7 @@ pub(crate) async fn analyze_output(
         frame.1,
         revision_state_hash,
     ));
-    sort_findings(&mut findings);
-    findings.truncate(QC_MAX_FINDINGS);
-    Ok(findings)
+    cap_findings(findings)
 }
 
 /// QC result attached to a completed render (`renderQcResultSchema`).
