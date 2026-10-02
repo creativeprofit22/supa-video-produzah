@@ -1,11 +1,12 @@
 import {
+  type ClipSpeed,
   clipSpeedSchema,
   clipTimelineDuration,
+  isMediaTrack,
   isTrackLocked,
-  videoProjectStateV2Schema,
-  type ClipSpeed,
   type ProjectCommandV2,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 
 export interface BulkClipTarget {
@@ -34,10 +35,13 @@ export function planBulkClipEdit(
     string,
     {
       sequence: (typeof next.sequences)[number];
-      track: Exclude<(typeof next.sequences)[number]["tracks"][number], { kind: "caption" }>;
-      clip: Exclude<
+      track: Extract<
         (typeof next.sequences)[number]["tracks"][number],
-        { kind: "caption" }
+        { kind: "video" | "audio" }
+      >;
+      clip: Extract<
+        (typeof next.sequences)[number]["tracks"][number],
+        { kind: "video" | "audio" }
       >["clips"][number];
     }
   >();
@@ -48,6 +52,7 @@ export function planBulkClipEdit(
         if (track.activeCaptionArtifact) managed.add(sequence.id);
         continue;
       }
+      if (!isMediaTrack(track)) continue;
       for (const clip of track.clips) {
         if (clip.source.kind === "sequence") nested.add(clip.source.sequenceId);
         index.set(`${sequence.id}:${track.id}:${clip.id}`, { sequence, track, clip });
@@ -113,7 +118,7 @@ export function planBulkClipEdit(
   for (const sequence of next.sequences) {
     if (!affected.has(sequence.id)) continue;
     for (const track of sequence.tracks) {
-      if (track.kind === "caption") continue;
+      if (!isMediaTrack(track)) continue;
       track.clips = track.clips.filter(
         (clip) => !removed.has(`${sequence.id}:${track.id}:${clip.id}`),
       );

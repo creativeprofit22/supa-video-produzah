@@ -1,9 +1,10 @@
 import {
-  createRationalTime,
-  createTimelineViewport,
   type CaptionArtifactV1,
   type CommandGroupRequest,
   type CommandResult,
+  createRationalTime,
+  createTimelineViewport,
+  isMediaTrack,
   type OpenedProjectV2,
   type ProjectCommandV2,
   type ProjectProjection,
@@ -607,7 +608,7 @@ describe("mock project track locking", () => {
     ]);
     const unaffectedTrack = track(moved.projection, unaffectedTrackId);
     expect(
-      unaffectedTrack.kind === "caption" ? null : unaffectedTrack.clips[0]?.timelineStart.value,
+      isMediaTrack(unaffectedTrack) ? unaffectedTrack.clips[0]?.timelineStart.value : null,
     ).toBe(5);
     expect(track(moved.projection, lockedTrackId).locked).toBe(true);
 
@@ -889,7 +890,7 @@ describe("mock clip moves", () => {
       },
     ]);
     const affectedTrack = track(moved.projection, unaffectedTrackId);
-    if (affectedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(affectedTrack)) throw new Error("Expected mock clip track");
     expect(affectedTrack.clips.map(({ id: clipId }) => clipId)).toEqual([
       siblingClipId,
       unaffectedClipId,
@@ -897,7 +898,7 @@ describe("mock clip moves", () => {
     expect(affectedTrack.clips.map(({ timelineStart }) => timelineStart.value)).toEqual([30, 50]);
 
     const unrelatedTrack = track(moved.projection, lockedTrackId);
-    if (unrelatedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(unrelatedTrack)) throw new Error("Expected mock clip track");
     expect(unrelatedTrack.clips.map(({ id: clipId }) => clipId)).toEqual([
       lockedClipId,
       unrelatedSiblingClipId,
@@ -949,10 +950,153 @@ describe("mock clip moves", () => {
     });
     expect(service.projection.revision.number).toBe(revisionBeforeMove);
     const unchangedTrack = track(service.projection, unaffectedTrackId);
-    if (unchangedTrack.kind === "caption") throw new Error("Expected video track fixture");
+    if (!isMediaTrack(unchangedTrack)) throw new Error("Expected video track fixture");
     const unchangedClip = unchangedTrack.clips.find(
       ({ id: clipId }) => clipId === unaffectedClipId,
     );
     expect(unchangedClip?.timelineStart.value).toBe(0);
+  });
+});
+
+describe("mock media commands on a graphics track", () => {
+  const graphicsTrackId = id(40);
+  const graphicsClipId = id(41);
+  const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+  const graphicsTrackCommand: ProjectCommandV2 = {
+    type: "InsertTrack",
+    commandId: id(400),
+    sequenceId,
+    index: 0,
+    track: {
+      id: graphicsTrackId,
+      name: "Graphics 1",
+      kind: "graphics",
+      graphicsClips: [
+        {
+          graphicsVersion: 1,
+          id: graphicsClipId,
+          timelineStart: createRationalTime(0, rate),
+          duration: createRationalTime(20, rate),
+          fontKey: "segoe-ui-bold",
+          layers: [
+            {
+              kind: "rect",
+              width: 100,
+              height: 50,
+              cornerRadius: 0,
+              fill: "#FFFFFF",
+              x: hold(0),
+              y: hold(0),
+              scale: hold(1),
+              rotation: hold(0),
+              opacity: hold(1),
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const target = { sequenceId, trackId: graphicsTrackId, clipId: graphicsClipId };
+
+  // Codes match the Rust executor; speed keeps its existing speed-admission error code.
+  it.each<[string, ProjectCommandV2, string]>([
+    [
+      "TrimClip",
+      {
+        type: "TrimClip",
+        commandId: id(410),
+        ...target,
+        sourceIn: createRationalTime(0, rate),
+        sourceOut: createRationalTime(10, rate),
+      },
+      "non_media_track",
+    ],
+    [
+      "MoveClip",
+      {
+        type: "MoveClip",
+        commandId: id(411),
+        ...target,
+        timelineStart: createRationalTime(5, rate),
+      },
+      "non_media_track",
+    ],
+    [
+      "SplitClip",
+      {
+        type: "SplitClip",
+        commandId: id(412),
+        ...target,
+        splitAt: createRationalTime(5, rate),
+        rightClipId: id(42),
+      },
+      "non_media_track",
+    ],
+    [
+      "SetClipSpeed",
+      {
+        type: "SetClipSpeed",
+        commandId: id(413),
+        ...target,
+        speed: { numerator: 2, denominator: 1 },
+      },
+      "speed_video_asset_only",
+    ],
+    [
+      "SetClipFades",
+      {
+        type: "SetClipFades",
+        commandId: id(414),
+        ...target,
+        fades: { inFrames: 1, outFrames: 1 },
+      },
+      "non_media_track",
+    ],
+    [
+      "SetClipGain",
+      { type: "SetClipGain", commandId: id(415), ...target, gainMilliDecibels: -1000 },
+      "non_media_track",
+    ],
+    ["RemoveClip", { type: "RemoveClip", commandId: id(416), ...target }, "non_media_track"],
+    [
+      "AddCaption",
+      {
+        type: "AddCaption",
+        commandId: id(417),
+        sequenceId,
+        trackId: graphicsTrackId,
+        index: 0,
+        caption: {
+          id: id(43),
+          start: createRationalTime(0, rate),
+          end: createRationalTime(5, rate),
+          text: "Hi",
+        },
+      },
+      "non_caption_track",
+    ],
+  ])("%s refuses with %s and leaves the project unchanged", async (_name, command, category) => {
+    const service = createMockVideoService();
+    await service.invoke("video_create_project");
+    let groupNumber = 600;
+    const execute = async (commands: ProjectCommandV2[]): Promise<unknown> =>
+      service.invoke("video_execute_project_group", {
+        request: {
+          groupId: id(groupNumber++),
+          projectId: service.projection.projectId,
+          baseRevision: service.projection.revision.number,
+          commands,
+        },
+      });
+    await execute([...setupCommands(), graphicsTrackCommand]);
+    const before = structuredClone(service.projection);
+
+    await expect(execute([command])).rejects.toMatchObject({
+      code: command.type === "SetClipSpeed" ? "invalid_range" : "invalid_command",
+      details: { category },
+    });
+
+    expect(service.projection.revision).toEqual(before.revision);
+    expect(service.projection.state).toEqual(before.state);
   });
 });

@@ -1,9 +1,10 @@
 import {
-  VideoDomainError,
-  loudnessReportSchema,
+  isMediaTrack,
   type LoudnessReport,
+  loudnessReportSchema,
   type SequenceLoudnessTarget,
   type TrackAudioRole,
+  VideoDomainError,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 import { AudioLines } from "lucide-react";
@@ -77,7 +78,7 @@ export function AudioPanel({
   const [message, setMessage] = useState<string | null>(null);
   const busy = disabled || pending || sequence === null;
   const target = sequence?.loudnessTarget;
-  const audioTracks = (sequence?.tracks ?? []).filter((track) => track.kind !== "caption");
+  const audioTracks = (sequence?.tracks ?? []).filter((track) => isMediaTrack(track));
   const hasDialogue = audioTracks.some((track) => track.audioRole === "dialogue");
   const hasAudibleDialogue = audioTracks.some(
     (track) => track.audioRole === "dialogue" && track.muted !== true,

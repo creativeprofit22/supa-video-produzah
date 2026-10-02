@@ -8,13 +8,17 @@ import type {
   RecoveryReport,
 } from "@supa-video/contracts";
 import {
-  isTrackLocked,
-  projectTrackSchema,
-  VideoDomainError,
+  applyGraphicsCommand,
   clipTimelineDuration,
   createRationalTime,
-  sourceOffsetToTimeline,
+  graphicsStateViolation,
+  isGraphicsCommand,
+  isMediaTrack,
+  isTrackLocked,
+  projectTrackSchema,
   rateOf,
+  sourceOffsetToTimeline,
+  VideoDomainError,
 } from "@supa-video/contracts";
 import {
   listMediaJobsRequestSchema,
@@ -192,6 +196,14 @@ function commandSummary(command: ProjectCommandV2): string {
       return command.hidden ? "Hid track" : "Showed track";
     case "ApplyCaptionArtifact":
       return "Apply caption artifact";
+    case "AddGraphicsClip":
+      return "Added graphics clip";
+    case "RemoveGraphicsClip":
+      return "Removed graphics clip";
+    case "MoveGraphicsClip":
+      return "Moved graphics clip";
+    case "SetGraphicsClipLayers":
+      return "Edited graphics clip";
     default:
       return "Updated project";
   }
@@ -214,6 +226,10 @@ function lockedMutationTarget(command: ProjectCommandV2) {
     case "RemoveCaption":
     case "ApplyCaptionArtifact":
     case "RestoreActiveCaptionArtifact":
+    case "AddGraphicsClip":
+    case "RemoveGraphicsClip":
+    case "MoveGraphicsClip":
+    case "SetGraphicsClipLayers":
       return { sequenceId: command.sequenceId, trackId: command.trackId };
     default:
       return null;
@@ -275,9 +291,29 @@ function exactTimelineDuration(clip: ProjectClip): number {
 
 type ProjectTrack = ProjectProjection["state"]["sequences"][number]["tracks"][number];
 type VisualProjectTrack = Exclude<ProjectTrack, { kind: "audio" }>;
+type MediaProjectTrack = Extract<ProjectTrack, { kind: "video" | "audio" }>;
 type AffectedRange = CommandResult["affectedRanges"][number];
 
+/** Media clips of a video/audio track; the Rust executor's typed error for other kinds. */
+function mediaClipsOf(track: ProjectTrack): MediaProjectTrack["clips"] {
+  if (track.kind === "caption") throw commandError("caption_track");
+  if (track.kind === "graphics") throw commandError("non_media_track");
+  return track.clips;
+}
+
 function visualTrackRanges(sequenceId: string, track: VisualProjectTrack): AffectedRange[] {
+  if (track.kind === "graphics") {
+    const first = track.graphicsClips[0];
+    const last = track.graphicsClips.at(-1);
+    if (first === undefined || last === undefined) return [];
+    return [
+      {
+        sequenceId,
+        start: first.timelineStart,
+        end: { ...last.timelineStart, value: last.timelineStart.value + last.duration.value },
+      },
+    ];
+  }
   if (track.kind === "caption") {
     const first = track.captions[0];
     if (first === undefined) return [];
@@ -308,9 +344,16 @@ function visualTrackRanges(sequenceId: string, track: VisualProjectTrack): Affec
 }
 
 function validateNoClipOverlaps(candidate: ProjectProjection): void {
+  const graphicsViolation = graphicsStateViolation(candidate.state);
+  if (graphicsViolation !== null)
+    throw new VideoDomainError("invalid_project", "Project graph failed integrity validation", {
+      operation: "validate_project_v2",
+      category: graphicsViolation,
+    });
   for (const sequence of candidate.state.sequences) {
     for (const track of sequence.tracks) {
-      if (track.kind === "caption") continue;
+      if (track.kind === "graphics") continue;
+      if (!isMediaTrack(track)) continue;
       for (const clip of track.clips) {
         if (
           clip.fades !== undefined &&
@@ -457,7 +500,11 @@ export function createMockVideoService(
           const track = projection.state.sequences
             .find(({ id }) => id === item.sequenceId)
             ?.tracks.find(({ id }) => id === item.trackId);
-          if (track?.kind !== "caption" && track?.clips.some(({ id }) => id === item.clipId)) {
+          if (
+            track !== undefined &&
+            isMediaTrack(track) &&
+            track.clips.some(({ id }) => id === item.clipId)
+          ) {
             prepareClipSpeedState(projection.state, item, false, true);
           }
         }
@@ -540,7 +587,7 @@ export function createMockVideoService(
             .find(({ id }) => id === item.sequenceId)
             ?.tracks.find(({ id }) => id === item.trackId);
           if (!track) throw commandError("unknown_track");
-          if (track.kind === "caption") throw commandError("non_audio_track");
+          if (!isMediaTrack(track)) throw commandError("non_audio_track");
           if (item.role === null) delete track.audioRole;
           else track.audioRole = item.role;
           addCacheInvalidations(cacheInvalidations, ["audio_mix", "render_plan"]);
@@ -560,9 +607,9 @@ export function createMockVideoService(
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
           const track = sequence?.tracks.find(({ id }) => id === item.trackId);
           const clip =
-            track && track.kind !== "caption"
-              ? track.clips.find(({ id }) => id === item.clipId)
-              : undefined;
+            track === undefined
+              ? undefined
+              : mediaClipsOf(track).find(({ id }) => id === item.clipId);
           if (!sequence || !clip) throw commandError("unknown_clip");
           if (item.type === "SetClipGain") {
             if (
@@ -616,22 +663,23 @@ export function createMockVideoService(
         } else if (item.type === "RemoveClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
           const track = sequence?.tracks.find(({ id }) => id === item.trackId);
-          if (
-            !track ||
-            track.kind === "caption" ||
-            !track.clips.some(({ id }) => id === item.clipId)
-          )
-            throw commandError("unknown_clip");
-          track.clips = track.clips.filter(({ id }) => id !== item.clipId);
+          if (!track) throw commandError("unknown_clip");
+          const clips = mediaClipsOf(track);
+          if (!clips.some(({ id }) => id === item.clipId)) throw commandError("unknown_clip");
+          clips.splice(
+            clips.findIndex(({ id }) => id === item.clipId),
+            1,
+          );
           addCacheInvalidations(cacheInvalidations, ["timeline", "preview", "render_plan"]);
         } else if (item.type === "InsertClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
-          if (track.kind !== "caption") track.clips.push(item.clip);
+          mediaClipsOf(track).push(item.clip);
         } else if (item.type === "SplitClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
-          if (track.kind !== "caption") {
+          mediaClipsOf(track);
+          if (isMediaTrack(track)) {
             const clipIndex = track.clips.findIndex(({ id }) => id === item.clipId);
             const leftClip = track.clips[clipIndex]!;
             const originalSourceIn = leftClip.sourceIn.value;
@@ -657,7 +705,8 @@ export function createMockVideoService(
         } else if (item.type === "MoveClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
-          if (track.kind !== "caption") {
+          mediaClipsOf(track);
+          if (isMediaTrack(track)) {
             const clip = track.clips.find(({ id }) => id === item.clipId);
             if (clip) {
               clip.timelineStart = item.timelineStart;
@@ -671,7 +720,8 @@ export function createMockVideoService(
         } else if (item.type === "TrimClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
-          if (track.kind !== "caption") {
+          mediaClipsOf(track);
+          if (isMediaTrack(track)) {
             const clip = track.clips.find(({ id }) => id === item.clipId);
             if (clip) {
               clip.sourceIn = item.sourceIn;
@@ -681,7 +731,8 @@ export function createMockVideoService(
         } else if (item.type === "RippleDeleteClip") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId)!;
           const track = sequence.tracks.find(({ id }) => id === item.trackId)!;
-          if (track.kind !== "caption") {
+          mediaClipsOf(track);
+          if (isMediaTrack(track)) {
             const clipIndex = track.clips.findIndex(({ id }) => id === item.clipId);
             if (clipIndex < 0) throw new Error("Unknown mock ripple clip");
             const [removed] = track.clips.splice(clipIndex, 1);
@@ -693,6 +744,30 @@ export function createMockVideoService(
               clip.timelineStart = { ...clip.timelineStart, value };
             }
           }
+        } else if (isGraphicsCommand(item)) {
+          const result = applyGraphicsCommand(
+            next.state,
+            item,
+            (commandId, ordinal) => `${commandId.slice(0, 24)}${String(ordinal).padStart(12, "0")}`,
+          );
+          if (!result.ok) throw commandError(result.category);
+          next.state = result.state;
+          addCacheInvalidations(
+            cacheInvalidations,
+            item.type === "SetGraphicsClipLayers"
+              ? ["preview", "render_plan"]
+              : ["timeline", "preview", "render_plan"],
+          );
+        } else if (item.type === "AddCaption") {
+          const track = next.state.sequences
+            .find(({ id }) => id === item.sequenceId)
+            ?.tracks.find(({ id }) => id === item.trackId);
+          if (track === undefined) throw commandError("unknown_track");
+          if (track.kind !== "caption") throw commandError("non_caption_track");
+          const index = item.index ?? track.captions.length;
+          if (index > track.captions.length) throw commandError("caption_index");
+          track.captions.splice(index, 0, structuredClone(item.caption));
+          addCacheInvalidations(cacheInvalidations, ["captions", "render_plan"]);
         } else if (item.type === "ApplyCaptionArtifact") {
           const sequence = next.state.sequences.find(({ id }) => id === item.sequenceId);
           if (sequence === undefined) throw commandError("unknown_sequence");

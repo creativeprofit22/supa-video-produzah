@@ -1,3 +1,4 @@
+import { isMediaTrack } from "@supa-video/contracts";
 // @vitest-environment jsdom
 
 import type { ProjectProjection, VideoProjectFileV1 } from "@supa-video/contracts";
@@ -372,7 +373,7 @@ describe("VideoWorkspace", () => {
   it("enables direct-asset retimed preview and passes canonical timing metadata", () => {
     const projection = canonicalProjection(false, false);
     const track = projection.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected video track");
+    if (!isMediaTrack(track)) throw new Error("Expected video track");
     track.clips[0]!.speed = { numerator: 1, denominator: 2 };
     render(workspace(createController({ projection })));
     const props = captureProgramMonitorProps.mock.lastCall?.[0];
@@ -596,6 +597,79 @@ describe("VideoWorkspace", () => {
         previewSourceFrame: 7,
       });
     });
+  });
+
+  it("opens a project with a graphics track without changing the monitor, inspector, audio or project", () => {
+    const base = canonicalProjection();
+    const withGraphics = structuredClone(base);
+    const rate = withGraphics.state.sequences[0]!.rate;
+    const frames = (value: number) => ({
+      value,
+      rateNumerator: rate.numerator,
+      rateDenominator: rate.denominator,
+    });
+    const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+    withGraphics.state.sequences[0]!.tracks.push({
+      id: id(70),
+      name: "Graphics 1",
+      kind: "graphics",
+      graphicsClips: [
+        {
+          graphicsVersion: 1,
+          id: id(71),
+          timelineStart: frames(0),
+          duration: frames(10),
+          fontKey: "segoe-ui-bold",
+          layers: [
+            {
+              kind: "text",
+              text: "Graphics title",
+              fontSize: 48,
+              fill: "#FFFFFF",
+              x: hold(0),
+              y: hold(0),
+              scale: hold(1),
+              rotation: hold(0),
+              opacity: hold(1),
+            },
+          ],
+        },
+      ],
+    });
+    const snapshot = structuredClone(withGraphics);
+    const plain = render(workspace(createController({ projection: base })));
+    // Data props only; callbacks are fresh closures on every render.
+    const monitorData = (): unknown =>
+      JSON.parse(JSON.stringify(captureProgramMonitorProps.mock.lastCall?.[0] ?? null));
+    const plainMonitor = monitorData();
+    const plainRegions = screen
+      .queryAllByRole("region")
+      .map((region) => region.getAttribute("aria-label") ?? region.textContent);
+    plain.unmount();
+    captureProgramMonitorProps.mockClear();
+    captureTimelineProps.mockClear();
+    const controller = createController({ projection: withGraphics });
+
+    render(workspace(controller));
+
+    expect(monitorData()).toEqual(plainMonitor);
+    expect(
+      screen
+        .queryAllByRole("region")
+        .map((region) => region.getAttribute("aria-label") ?? region.textContent),
+    ).toEqual(plainRegions);
+    expect(screen.queryByText("Graphics title")).toBeNull();
+    const timelineProps = captureTimelineProps.mock.lastCall?.[0] as
+      { readonly projection: ProjectProjection } | undefined;
+    expect(timelineProps?.projection).toEqual(snapshot);
+    expect(withGraphics).toEqual(snapshot);
+    for (const action of [
+      controller.splitTimelineClip,
+      controller.moveTimelineClip,
+      controller.trimTimelineClip,
+      controller.setTimelineTrackHidden,
+    ])
+      expect(action).not.toHaveBeenCalled();
   });
 
   it("keeps speed drafts out of preview, routes Apply, and discards them on revision and selection changes", () => {

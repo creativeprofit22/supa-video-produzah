@@ -1,3 +1,4 @@
+import { isMediaTrack } from "@supa-video/contracts";
 // @vitest-environment jsdom
 
 import { invoke } from "@tauri-apps/api/core";
@@ -65,7 +66,7 @@ function RippleWorkflowHarness() {
   const sequence = controller.projection?.state.sequences.find(
     ({ id }) => id === controller.projection?.state.activeSequenceId,
   );
-  const firstClip = sequence?.tracks.find((track) => track.kind !== "caption")?.clips[0];
+  const firstClip = sequence?.tracks.find(isMediaTrack)?.clips[0];
   return (
     <>
       <button
@@ -469,7 +470,7 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Split ripple fixture" }));
     await screen.findByRole("button", { name: /clip\.mp4, frames 10 through 100/ });
     const splitTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (splitTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(splitTrack)) throw new Error("Expected mock clip track");
     const survivorId = splitTrack.clips[1]!.id;
     expect(splitTrack.clips.map((clip) => clip.timelineStart.value)).toEqual([0, 10]);
     expect(service.projection.revision.number).toBe(2);
@@ -480,7 +481,7 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
 
     await waitFor(() => expect(service.projection.revision.number).toBe(3));
     const rippleTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (rippleTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(rippleTrack)) throw new Error("Expected mock clip track");
     expect(rippleTrack.clips.map((clip) => [clip.id, clip.timelineStart.value])).toEqual([
       [survivorId, 0],
     ]);
@@ -502,14 +503,14 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(service.projection.revision.number).toBe(4));
     const undoTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (undoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(undoTrack)) throw new Error("Expected mock clip track");
     expect(undoTrack.clips.map((clip) => clip.timelineStart.value)).toEqual([0, 10]);
     expect(service.projection.lastCommand?.summary).toBe("Undid Ripple deleted clip");
 
     fireEvent.click(screen.getByRole("button", { name: "Redo" }));
     await waitFor(() => expect(service.projection.revision.number).toBe(5));
     const redoTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (redoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(redoTrack)) throw new Error("Expected mock clip track");
     expect(redoTrack.clips.map((clip) => [clip.id, clip.timelineStart.value])).toEqual([
       [survivorId, 0],
     ]);
@@ -542,7 +543,7 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
 
     await waitFor(() => expect(service.projection.revision.number).toBe(2));
     const movedTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (movedTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(movedTrack)) throw new Error("Expected mock clip track");
     expect(movedTrack.clips[0]!.timelineStart.value).toBe(1);
     const moveRequest = invokeMock.mock.calls
       .filter(([command]) => command === "video_execute_project_group")
@@ -563,14 +564,14 @@ describe("complete mocked Phase 2 workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(service.projection.revision.number).toBe(3));
     const undoTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (undoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(undoTrack)) throw new Error("Expected mock clip track");
     expect(undoTrack.clips[0]!.timelineStart.value).toBe(0);
     expect(service.projection.lastCommand?.summary).toBe("Undid Moved clip");
 
     fireEvent.click(screen.getByRole("button", { name: "Redo" }));
     await waitFor(() => expect(service.projection.revision.number).toBe(4));
     const redoTrack = service.projection.state.sequences[0]!.tracks[0]!;
-    if (redoTrack.kind === "caption") throw new Error("Expected mock clip track");
+    if (!isMediaTrack(redoTrack)) throw new Error("Expected mock clip track");
     expect(redoTrack.clips[0]!.timelineStart.value).toBe(1);
     expect(service.projection.lastCommand?.summary).toBe("Redid Moved clip");
 

@@ -1,11 +1,12 @@
 import {
+  type ClipSpeed,
   clipSpeedSchema,
   clipTimelineDuration,
+  isMediaTrack,
   isTrackLocked,
-  videoProjectStateV2Schema,
   VideoDomainError,
-  type ClipSpeed,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 
 export interface ClipSpeedEdit {
@@ -43,7 +44,7 @@ export function prepareClipSpeedState(
   const nested = next.sequences.some((candidate) =>
     candidate.tracks.some(
       (candidateTrack) =>
-        candidateTrack.kind !== "caption" &&
+        isMediaTrack(candidateTrack) &&
         candidateTrack.clips.some(
           (item) => item.source.kind === "sequence" && item.source.sequenceId === sequence.id,
         ),

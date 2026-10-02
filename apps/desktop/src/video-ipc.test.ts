@@ -26,6 +26,8 @@ import {
   listMediaJobs,
   loadManagedTranscriptArtifact,
   openVideoProject,
+  pickStillImage,
+  probeStillImage,
   redoVideoProject,
   reauthorizeMediaJobOutput,
   relinkVideoProjectAsset,
@@ -605,5 +607,35 @@ describe("strict V2 video IPC adapter", () => {
     });
     expect(tauriVideoBackend).not.toHaveProperty("saveVideoProject");
     expect(convertFileSrc("C:\\Cache\\proxy.mp4")).toBe("asset:C:\\Cache\\proxy.mp4");
+  });
+
+  it("probes still images and refuses a non-still or oversized probe", async () => {
+    const still = {
+      durationMicroseconds: 1_000_000,
+      averageFrameRate: { numerator: 1, denominator: 1 },
+      realFrameRate: { numerator: 1, denominator: 1 },
+      variableFrameRate: false,
+      width: 512,
+      height: 256,
+      videoCodecName: "png",
+      audio: null,
+      fileSizeBytes: 2048,
+      still: true,
+    };
+    const logoPath = String.raw`C:\Media\logo.png`;
+    invokeMock
+      .mockResolvedValueOnce(logoPath)
+      .mockResolvedValueOnce(still)
+      .mockResolvedValueOnce({ ...still, still: undefined })
+      .mockResolvedValueOnce({ ...still, width: 5000 });
+
+    await expect(pickStillImage()).resolves.toBe(logoPath);
+    await expect(probeStillImage(logoPath)).resolves.toEqual(still);
+    await expect(probeStillImage(logoPath)).rejects.toThrow();
+    await expect(probeStillImage(logoPath)).rejects.toThrow();
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "video_pick_still_image", undefined);
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "video_probe_still_image", {
+      path: logoPath,
+    });
   });
 });

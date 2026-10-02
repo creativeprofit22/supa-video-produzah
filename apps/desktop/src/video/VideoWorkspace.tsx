@@ -5,15 +5,16 @@ import { ClipSourceRangeInspector } from "./ClipSourceRangeInspector";
 import type { SelectedMediaClip } from "./clip-source-range";
 import {
   clipTimelineDuration,
-  microsecondsToSourceFrames,
   createRationalTime,
-  rateOf,
-  timelineOffsetToSource,
+  isMediaTrack,
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
+  microsecondsToSourceFrames,
   type ProjectClip,
   type ProjectTrack,
+  rateOf,
+  timelineOffsetToSource,
   type VideoClip,
   type VideoProjectFileV1,
   type VideoSequenceV2,
@@ -111,7 +112,7 @@ function selectableClipIds(
 ): readonly string[] {
   if (sequence === undefined) return [];
   return sequence.tracks.flatMap((track) =>
-    track.kind === "caption" ? [] : track.clips.map((clip) => clip.id),
+    isMediaTrack(track) ? track.clips.map((clip) => clip.id) : [],
   );
 }
 
@@ -325,7 +326,7 @@ export function VideoWorkspace({
     if (projectId === undefined || assetId === undefined || sourcePath === null) return null;
     const track = canonicalSequence?.tracks.find(
       (candidate) =>
-        candidate.kind !== "caption" &&
+        isMediaTrack(candidate) &&
         candidate.clips.some(
           (clip) => clip.source.kind === "asset" && clip.source.assetId === assetId,
         ),
@@ -346,7 +347,7 @@ export function VideoWorkspace({
       (candidate) => candidate.id === transcriptTarget.trackId,
     );
     const clipIds =
-      track === undefined || track.kind === "caption"
+      track === undefined || !isMediaTrack(track)
         ? []
         : track.clips
             .filter(
@@ -361,7 +362,7 @@ export function VideoWorkspace({
   const orderedMediaIds = useMemo(
     () =>
       canonicalSequence?.tracks.flatMap((track) =>
-        track.kind === "caption"
+        !isMediaTrack(track)
           ? []
           : [...track.clips]
               .sort((a, b) => a.timelineStart.value - b.timelineStart.value)
@@ -422,7 +423,7 @@ export function VideoWorkspace({
   );
   const bulkTargets =
     canonicalSequence?.tracks.flatMap((track) =>
-      track.kind === "caption"
+      !isMediaTrack(track)
         ? []
         : track.clips
             .filter((clip) => selection.ids.includes(clip.id) && clip.source.kind === "asset")
@@ -454,7 +455,7 @@ export function VideoWorkspace({
   const selectedSourceClip = useMemo(() => {
     if (!canonicalSequence) return null;
     for (const track of canonicalSequence.tracks) {
-      if (track.kind === "caption") continue;
+      if (!isMediaTrack(track)) continue;
       const clip = track.clips.find(({ id }) => id === selectedClipId);
       if (!clip) continue;
       if (clip.source.kind !== "asset") return "nested" as const;
@@ -485,7 +486,7 @@ export function VideoWorkspace({
   const selectedAudioClip = useMemo(() => {
     if (!canonicalSequence) return null;
     for (const track of canonicalSequence.tracks) {
-      if (track.kind === "caption") continue;
+      if (!isMediaTrack(track)) continue;
       const clip = track.clips.find(({ id }) => id === selectedClipId);
       if (!clip || clip.source.kind !== "asset") continue;
       const asset = controller.projection?.state.assets.find(
@@ -561,7 +562,7 @@ export function VideoWorkspace({
     () =>
       canonicalSequence?.tracks.some(
         (track) =>
-          track.kind !== "caption" &&
+          isMediaTrack(track) &&
           track.clips.some(
             (clip) =>
               clip.speed !== undefined &&
@@ -575,7 +576,7 @@ export function VideoWorkspace({
     if (canonicalSequence === null || controller.projection === null) return [];
     const assets = new Map(controller.projection.state.assets.map((item) => [item.id, item]));
     return canonicalSequence.tracks.flatMap((track, canonicalTrackIndex) => {
-      if (track.kind === "caption") return [];
+      if (!isMediaTrack(track)) return [];
       return track.clips.flatMap((canonicalClip) => {
         if (canonicalClip.source.kind !== "asset") return [];
         const canonicalAsset = assets.get(canonicalClip.source.assetId);

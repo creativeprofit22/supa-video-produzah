@@ -1,3 +1,4 @@
+import { isMediaTrack } from "@supa-video/contracts";
 import type {
   LoudnessReport,
   SequenceLoudnessTarget,
@@ -67,7 +68,7 @@ function Fixture() {
           setSequence((current) => ({
             ...current,
             tracks: current.tracks.map((track) => {
-              if (track.id !== trackId || track.kind === "caption") return track;
+              if (track.id !== trackId || !isMediaTrack(track)) return track;
               if (role !== null) return { ...track, audioRole: role };
               const next = { ...track };
               delete next.audioRole;

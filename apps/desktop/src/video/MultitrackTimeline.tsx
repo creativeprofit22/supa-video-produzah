@@ -2,6 +2,7 @@ import {
   createRationalTime,
   createTimelineViewport,
   frameToPixel,
+  isMediaTrack,
   pixelToFrame,
   type ProjectClip,
   type ProjectProjection,
@@ -152,6 +153,10 @@ function createGeometryViewport(
   });
 }
 
+function graphicsClipCountLabel(count: number): string {
+  return `${count} graphics ${count === 1 ? "clip" : "clips"}`;
+}
+
 function canonicalTimelineClip(
   projection: ProjectProjection,
   clipId: string | null,
@@ -162,7 +167,7 @@ function canonicalTimelineClip(
   );
   if (sequence === undefined) return null;
   for (const track of sequence.tracks) {
-    if (track.kind === "caption") continue;
+    if (!isMediaTrack(track)) continue;
     const clip = track.clips.find((candidate) => candidate.id === clipId);
     if (clip !== undefined) {
       return { clip, trackId: track.id, trackLocked: track.locked ?? false };
@@ -639,7 +644,9 @@ export function MultitrackTimeline({
               <small>
                 {track.kind === "caption"
                   ? `${track.totalCaptionCount ?? 0} ${(track.totalCaptionCount ?? 0) === 1 ? "cue" : "cues"} · Non-editable`
-                  : `${track.totalClipCount} clips · ${track.locked ? "Locked" : "Editable"}`}
+                  : track.kind === "graphics"
+                    ? `${graphicsClipCountLabel(track.totalGraphicsClipCount ?? 0)} · Non-editable`
+                    : `${track.totalClipCount} clips · ${track.locked ? "Locked" : "Editable"}`}
                 {track.canMute ? ` · ${track.muted ? "Muted" : "Audible"}` : ""}
                 {track.canToggleVisibility ? ` · ${track.hidden ? "Hidden" : "Shown"}` : ""}
               </small>
@@ -758,7 +765,7 @@ export function MultitrackTimeline({
                   data-track-muted={track.canMute ? track.muted : undefined}
                   data-track-hidden={track.canToggleVisibility ? track.hidden : undefined}
                   key={track.trackId}
-                  aria-label={`${track.name}, ${track.kind} track, ${track.kind === "caption" ? `${track.totalCaptionCount ?? 0} ${(track.totalCaptionCount ?? 0) === 1 ? "cue" : "cues"}, non-editable` : `${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}`}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}${track.canToggleVisibility ? `, ${track.hidden ? "hidden" : "shown"}` : ""}`}
+                  aria-label={`${track.name}, ${track.kind} track, ${track.kind === "caption" ? `${track.totalCaptionCount ?? 0} ${(track.totalCaptionCount ?? 0) === 1 ? "cue" : "cues"}, non-editable` : track.kind === "graphics" ? `${graphicsClipCountLabel(track.totalGraphicsClipCount ?? 0)}, non-editable` : `${track.totalClipCount} clips, ${track.locked ? "locked" : "editable"}`}${track.canMute ? `, ${track.muted ? "muted" : "audible"}` : ""}${track.canToggleVisibility ? `, ${track.hidden ? "hidden" : "shown"}` : ""}`}
                 >
                   {(track.captions ?? []).length === 0 ? null : (
                     <ol
@@ -782,6 +789,33 @@ export function MultitrackTimeline({
                             aria-label={`${caption.text}, frames ${caption.startFrame} through ${caption.endFrameExclusive}, end exclusive, non-editable`}
                           >
                             <span>{caption.text}</span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                  {(track.graphicsClips ?? []).length === 0 ? null : (
+                    <ol
+                      className="multitrack-graphics-list"
+                      aria-label={`${track.name} graphics clips`}
+                    >
+                      {(track.graphicsClips ?? []).map((graphicsClip) => {
+                        const left = frameToPixel(graphicsClip.startFrame, geometryViewport);
+                        const width = Math.max(
+                          2,
+                          frameToPixel(graphicsClip.endFrameExclusive, geometryViewport) - left,
+                        );
+                        return (
+                          <li
+                            className={`multitrack-graphics${track.hidden ? " is-hidden" : ""}`}
+                            data-graphics-clip-id={graphicsClip.graphicsClipId}
+                            data-start-frame={graphicsClip.startFrame}
+                            data-end-frame-exclusive={graphicsClip.endFrameExclusive}
+                            key={graphicsClip.graphicsClipId}
+                            style={{ left: `${left}px`, width: `${width}px` }}
+                            aria-label={`${graphicsClip.label}, graphics clip, frames ${graphicsClip.startFrame} through ${graphicsClip.endFrameExclusive}, end exclusive, non-editable`}
+                          >
+                            <span>{graphicsClip.label}</span>
                           </li>
                         );
                       })}
@@ -959,7 +993,9 @@ export function MultitrackTimeline({
         </div>
       </div>
 
-      {timeline.totalClipCount === 0 && (timeline.totalCaptionCount ?? 0) === 0 ? (
+      {timeline.totalClipCount === 0 &&
+      (timeline.totalCaptionCount ?? 0) === 0 &&
+      (timeline.totalGraphicsClipCount ?? 0) === 0 ? (
         <p className="multitrack-empty">
           <Film size={15} aria-hidden="true" />
           This sequence has no timeline clips or caption cues yet.
@@ -971,6 +1007,9 @@ export function MultitrackTimeline({
         >
           Showing {timeline.materializedClipCount} of {timeline.totalClipCount} clips ·{" "}
           {timeline.materializedCaptionCount ?? 0} of {timeline.totalCaptionCount ?? 0} caption cues
+          {(timeline.totalGraphicsClipCount ?? 0) === 0
+            ? null
+            : ` · ${timeline.materializedGraphicsClipCount ?? 0} of ${timeline.totalGraphicsClipCount ?? 0} graphics clips`}
         </p>
       )}
     </section>

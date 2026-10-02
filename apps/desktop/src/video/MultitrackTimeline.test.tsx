@@ -1,3 +1,4 @@
+import { isMediaTrack } from "@supa-video/contracts";
 // @vitest-environment jsdom
 import type { ProjectClip, ProjectProjection } from "@supa-video/contracts";
 import {
@@ -345,6 +346,74 @@ describe("MultitrackTimeline", () => {
       <MultitrackTimeline {...props} selectedClipId={firstId} previewSourceFrame={2} />,
     );
     expect((split as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a read-only graphics row whose blocks issue no edit commands", () => {
+    const projection = interactionProjection();
+    const graphicsClip = (value: number, start: number, duration: number, text: string) => ({
+      graphicsVersion: 1 as const,
+      id: id(value),
+      timelineStart: time(start),
+      duration: time(duration),
+      fontKey: "segoe-ui-bold" as const,
+      layers: [
+        {
+          kind: "text" as const,
+          text,
+          fontSize: 40,
+          fill: "#FFFFFF",
+          x: [{ timeMicroseconds: 0, value: 0 }],
+          y: [{ timeMicroseconds: 0, value: 0 }],
+          scale: [{ timeMicroseconds: 0, value: 1 }],
+          rotation: [{ timeMicroseconds: 0, value: 0 }],
+          opacity: [{ timeMicroseconds: 0, value: 1 }],
+        },
+      ],
+    });
+    projection.state.sequences[0]!.tracks.push({
+      id: id(13),
+      name: "Graphics 1",
+      kind: "graphics",
+      graphicsClips: [
+        graphicsClip(400_000, 0, 1, "Title card"),
+        graphicsClip(400_001, 2, 1, "Lower third"),
+      ],
+    });
+    const props = timelineProps({ projection });
+    render(<MultitrackTimeline {...props} />);
+
+    const row = screen.getByRole("listitem", {
+      name: "Graphics 1, graphics track, 2 graphics clips, non-editable, shown",
+    });
+    const block = screen.getByRole("listitem", {
+      name: "Title card, graphics clip, frames 0 through 1, end exclusive, non-editable",
+    });
+    expect(row.dataset.trackKind).toBe("graphics");
+    expect(block.dataset.graphicsClipId).toBe(id(400_000));
+    expect(block.querySelector("button")).toBeNull();
+    expect(screen.getByText("Lower third").closest("li")?.dataset.startFrame).toBe("2");
+    expect(screen.queryByRole("button", { name: /Graphics 1 track (mute|unmute)/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Graphics 1 graphics output" })).toBeTruthy();
+
+    fireEvent.pointerDown(block, { button: 0, pointerId: 1, clientX: 5 });
+    fireEvent.pointerMove(block, { pointerId: 1, clientX: 60 });
+    fireEvent.pointerUp(block, { pointerId: 1, clientX: 60 });
+    fireEvent.click(block);
+    fireEvent.keyDown(block, { code: "KeyS" });
+    fireEvent.keyDown(block, { key: "Delete", shiftKey: true });
+
+    for (const callback of [
+      props.onSelectClip,
+      props.onSplitClip,
+      props.onRippleDeleteClip,
+      props.onMoveClip,
+      props.onTrimClip,
+      props.onSetTrackLocked,
+      props.onSetTrackMuted,
+      props.onSetTrackHidden,
+    ])
+      expect(callback).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ })).toBeTruthy();
   });
 
   it("splits at the live playback frame while its playhead props stay frozen", () => {
@@ -761,7 +830,7 @@ describe("MultitrackTimeline", () => {
   it("moves the selected clip by exact frames through scoped keyboard commands", () => {
     const projection = interactionProjection();
     const track = projection.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected a video track");
+    if (!isMediaTrack(track)) throw new Error("Expected a video track");
     track.clips[0]!.timelineStart = timeAtRate(5, rate);
     const clipId = id(100_000);
     const onMoveClip = vi.fn();
@@ -825,7 +894,7 @@ describe("MultitrackTimeline", () => {
     });
     const firstId = id(100_000);
     const videoTrack = projection.state.sequences[0]!.tracks[0]!;
-    if (videoTrack.kind === "caption") throw new Error("Expected a video track");
+    if (!isMediaTrack(videoTrack)) throw new Error("Expected a video track");
     videoTrack.clips[0]!.sourceIn = sourceTime(10);
     videoTrack.clips[0]!.sourceOut = sourceTime(14);
     videoTrack.clips[1]!.timelineStart = time(40);
@@ -867,7 +936,7 @@ describe("MultitrackTimeline", () => {
     const projection = interactionProjection();
     const firstId = id(100_000);
     const videoTrack = projection.state.sequences[0]!.tracks[0]!;
-    if (videoTrack.kind === "caption") throw new Error("Expected a video track");
+    if (!isMediaTrack(videoTrack)) throw new Error("Expected a video track");
     videoTrack.clips[0]!.sourceIn = sourceTime(0);
     videoTrack.clips[0]!.sourceOut = sourceTime(4);
     const onTrimClip = vi.fn();
@@ -928,7 +997,7 @@ describe("MultitrackTimeline", () => {
     const projection = interactionProjection();
     const firstId = id(100_000);
     const firstTrack = projection.state.sequences[0]!.tracks[0]!;
-    if (firstTrack.kind === "caption") throw new Error("Expected a video track");
+    if (!isMediaTrack(firstTrack)) throw new Error("Expected a video track");
     firstTrack.clips[0]!.timelineStart = time(4);
     const onMoveClip = vi.fn();
     const rendered = render(
@@ -959,7 +1028,7 @@ describe("MultitrackTimeline", () => {
     const onTrimClip = vi.fn();
     const props = timelineProps({ selectedClipId: firstId, onTrimClip });
     const track = props.projection.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected video track");
+    if (!isMediaTrack(track)) throw new Error("Expected video track");
     track.clips[0]!.speed = { numerator: 3, denominator: 2 };
     track.clips[0]!.sourceOut.value = 30;
     render(<MultitrackTimeline {...props} />);

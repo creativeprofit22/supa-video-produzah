@@ -722,3 +722,59 @@ for (const evidenceCapture of [
     await timeline.screenshot({ path: evidencePath(evidenceCapture.path), animations: "disabled" });
   });
 }
+
+test("shows graphics tracks as a read-only row aligned with clip times", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${fixturePath}?graphics=1`);
+  await page.evaluate(() => document.fonts.ready);
+
+  const row = page.getByRole("listitem", {
+    name: "Titles, graphics track, 3 graphics clips, non-editable, shown",
+  });
+  await expect(row).toBeVisible();
+  const blocks = row.locator("[data-graphics-clip-id]");
+  await expect(blocks).toHaveCount(3);
+  await expect(
+    page.getByRole("listitem", {
+      name: "Opening title, graphics clip, frames 0 through 24, end exclusive, non-editable",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("listitem", {
+      name: "Graphics, graphics clip, frames 40 through 70, end exclusive, non-editable",
+    }),
+  ).toBeVisible();
+  await expect(row.locator("button")).toHaveCount(0);
+  await expect(page.locator("[data-clip-id]")).toHaveCount(5);
+
+  // Blocks line up with the clip frames: same pixels per frame as the media clips.
+  const firstClip = await page.locator("[data-clip-id]").first().boundingBox();
+  const title = await blocks.nth(0).boundingBox();
+  const lowerThird = await blocks.nth(2).boundingBox();
+  expect(firstClip).not.toBeNull();
+  expect(title).not.toBeNull();
+  expect(lowerThird).not.toBeNull();
+  expect(Math.abs(title!.x - firstClip!.x)).toBeLessThanOrEqual(1);
+  expect(lowerThird!.x).toBeGreaterThan(title!.x + title!.width);
+  const rowBox = await row.boundingBox();
+  for (const index of [0, 1, 2]) {
+    const box = await blocks.nth(index).boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(rowBox!.y);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(rowBox!.y + rowBox!.height);
+  }
+
+  const accessibility = await new AxeBuilder({ page })
+    .include(".multitrack-panel")
+    .withTags(wcagTags)
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  await blocks.nth(0).click();
+  await expect(page.locator(".multitrack-clip.is-selected")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await page.locator(".multitrack-panel").screenshot({
+    path: evidencePath("../../evidence/phase-15/multitrack-timeline-graphics-row.png"),
+    animations: "disabled",
+  });
+});

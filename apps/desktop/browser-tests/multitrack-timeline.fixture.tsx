@@ -1,4 +1,9 @@
-import { VideoDomainError, type ProjectClip, type ProjectProjection } from "@supa-video/contracts";
+import {
+  isMediaTrack,
+  type ProjectClip,
+  type ProjectProjection,
+  VideoDomainError,
+} from "@supa-video/contracts";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import React, { useState } from "react";
@@ -45,6 +50,44 @@ const fixtureParameters = new URLSearchParams(window.location.search);
 const longTrackLabel = fixtureParameters.has("long-label");
 const primaryTrackLocked = fixtureParameters.has("primary-track-locked");
 const keyboardMovement = fixtureParameters.has("keyboard-move");
+const withGraphicsTrack = fixtureParameters.has("graphics");
+const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+const graphicsClip = (value: number, start: number, duration: number, text: string | null) => ({
+  graphicsVersion: 1 as const,
+  id: id(value),
+  timelineStart: time(start),
+  duration: time(duration),
+  fontKey: "segoe-ui-bold" as const,
+  layers:
+    text === null
+      ? [
+          {
+            kind: "rect" as const,
+            width: 400,
+            height: 120,
+            cornerRadius: 16,
+            fill: "#1E88E5",
+            x: hold(0),
+            y: hold(0),
+            scale: hold(1),
+            rotation: hold(0),
+            opacity: hold(1),
+          },
+        ]
+      : [
+          {
+            kind: "text" as const,
+            text,
+            fontSize: 48,
+            fill: "#FFFFFF",
+            x: hold(0),
+            y: hold(0),
+            scale: hold(1),
+            rotation: hold(0),
+            opacity: hold(1),
+          },
+        ],
+});
 const primaryTrackName = longTrackLabel
   ? "Primäre Kameraausgabe für die außergewöhnlich lange Dokumentarfilmsequenz"
   : "Primary camera";
@@ -112,6 +155,20 @@ const initialProjection: ProjectProjection = {
               },
             ],
           },
+          ...(withGraphicsTrack
+            ? [
+                {
+                  id: id(13),
+                  name: "Titles",
+                  kind: "graphics" as const,
+                  graphicsClips: [
+                    graphicsClip(260, 0, 24, "Opening title"),
+                    graphicsClip(261, 40, 30, null),
+                    graphicsClip(262, 100, 50, "Speaker lower third"),
+                  ],
+                },
+              ]
+            : []),
         ],
         markers: [],
       },
@@ -236,7 +293,7 @@ function ControlledTimelineFixture() {
         sequences: current.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
-            track.id === trackId && track.kind !== "caption" ? { ...track, muted } : track,
+            track.id === trackId && isMediaTrack(track) ? { ...track, muted } : track,
           ),
         })),
       },
@@ -251,7 +308,7 @@ function ControlledTimelineFixture() {
         sequences: current.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
-            track.kind === "caption"
+            !isMediaTrack(track)
               ? track
               : {
                   ...track,
@@ -271,10 +328,9 @@ function ControlledTimelineFixture() {
     );
     const destinationTrack = sequence?.tracks.find(
       (track) =>
-        track.kind !== "caption" &&
-        track.clips.some(({ id: candidateId }) => candidateId === clipId),
+        isMediaTrack(track) && track.clips.some(({ id: candidateId }) => candidateId === clipId),
     );
-    if (destinationTrack !== undefined && destinationTrack.kind !== "caption") {
+    if (destinationTrack !== undefined && isMediaTrack(destinationTrack)) {
       const movedClip = destinationTrack.clips.find(
         ({ id: candidateId }) => candidateId === clipId,
       );
@@ -309,7 +365,7 @@ function ControlledTimelineFixture() {
         sequences: currentProjection.state.sequences.map((candidateSequence) => ({
           ...candidateSequence,
           tracks: candidateSequence.tracks.map((track) => {
-            if (track.kind === "caption" || !track.clips.some(({ id }) => id === clipId)) {
+            if (!isMediaTrack(track) || !track.clips.some(({ id }) => id === clipId)) {
               return track;
             }
             return {
@@ -341,7 +397,7 @@ function ControlledTimelineFixture() {
         sequences: current.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
-            track.kind === "caption"
+            !isMediaTrack(track)
               ? track
               : {
                   ...track,
@@ -369,7 +425,7 @@ function ControlledTimelineFixture() {
   const rippleDeleteClip = (clipId: string) => {
     const nextSelectedClipId = currentProjection.state.sequences
       .flatMap((sequence) => sequence.tracks)
-      .flatMap((track) => (track.kind === "caption" ? [] : track.clips))
+      .flatMap((track) => (isMediaTrack(track) ? track.clips : []))
       .find((candidate) => candidate.id !== clipId)?.id;
     setCurrentProjection((current) => ({
       ...current,
@@ -378,7 +434,7 @@ function ControlledTimelineFixture() {
         sequences: current.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) => {
-            if (track.kind === "caption") return track;
+            if (!isMediaTrack(track)) return track;
             const deleted = track.clips.find((candidate) => candidate.id === clipId);
             if (deleted === undefined) return track;
             const duration = deleted.sourceOut.value - deleted.sourceIn.value;

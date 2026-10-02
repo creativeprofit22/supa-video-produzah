@@ -1,4 +1,5 @@
 import type { AcquisitionReceipt, ProjectProjection } from "@supa-video/contracts";
+import { isMediaTrack } from "@supa-video/contracts";
 import { createTranscriptArtifactV1, type TranscriptArtifactV1 } from "@supa-video/media";
 import { firstCutFixtureSchema, type FirstCutFixture } from "@supa-video/produce";
 
@@ -110,7 +111,7 @@ function podcastARollClip() {
   if (source.workflow !== "podcast") throw new Error("podcast fixture");
   const clip = podcast.state.sequences
     .flatMap((sequence) => sequence.tracks)
-    .flatMap((track) => (track.kind === "caption" ? [] : track.clips))
+    .flatMap((track) => (isMediaTrack(track) ? track.clips : []))
     .find((candidate) => candidate.id === source.aRollClipId);
   if (clip === undefined || clip.source.kind !== "asset") throw new Error("A-roll clip");
   return { clip, assetId: clip.source.assetId };
@@ -148,7 +149,7 @@ export function splitPodcast(splitFrame: number): {
         sequences: base.state.sequences.map((sequence) => ({
           ...sequence,
           tracks: sequence.tracks.map((track) =>
-            track.kind === "caption"
+            !isMediaTrack(track)
               ? track
               : {
                   ...track,

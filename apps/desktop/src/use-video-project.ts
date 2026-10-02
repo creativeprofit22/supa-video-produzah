@@ -2,33 +2,34 @@ import { planBulkClipEdit, type BulkClipAction, type BulkClipTarget } from "./vi
 import { validClipAudio, type ClipAudioEdit } from "./video/clip-audio";
 import { prepareClipSpeedState, type ClipSpeedEdit } from "./video/clip-speed-edit";
 import {
+  canToggleTrackVisibility,
   clipSpeedPercent,
   clipSpeedSchema,
-  canToggleTrackVisibility,
-  clipTransformSchema,
   clipTimelineDuration,
-  sourceOffsetToTimeline,
-  rateOf,
+  type ClipTransform,
+  clipTransformSchema,
+  type CommandGroupRequest,
+  type CommandResult,
   createRationalTime,
+  isMediaTrack,
   isTrackHidden,
   isTrackLocked,
   isTrackMuted,
   microsecondsToSourceFrames,
-  VideoDomainError,
-  type ClipTransform,
-  type CommandGroupRequest,
-  type CommandResult,
   type ProjectCommandV2,
   type ProjectProjection,
+  rateOf,
   type RecoveryReport,
   type RenderPlan,
   type SequenceLoudnessTarget,
+  sourceOffsetToTimeline,
   type TrackAudioRole,
-  type VerifiedRenderOutput,
-  type VideoProjectFileV1,
-  type VideoSourceRecord,
-  videoProjectFileV1Schema,
   type UsePolicyProfile,
+  type VerifiedRenderOutput,
+  VideoDomainError,
+  type VideoProjectFileV1,
+  videoProjectFileV1Schema,
+  type VideoSourceRecord,
 } from "@supa-video/contracts";
 import type {
   CaptionArtifactV1,
@@ -48,6 +49,9 @@ import {
   prepareTrimClipCaptionLifecycleV1,
   type TranscriptEditProposal,
   type ActiveCaptionArtifact,
+  applyMotionPreset,
+  type GraphicsClipRef,
+  type GraphicsPresetRequest,
 } from "@supa-video/project";
 import {
   compileActiveSequenceRenderPlan,
@@ -106,7 +110,8 @@ export type TimelineEditOperation =
   | "clip-transform"
   | "track-lock"
   | "track-mute"
-  | "track-visibility";
+  | "track-visibility"
+  | "graphics-preset";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -265,7 +270,7 @@ function timelineClip(projection: ProjectProjection | null, clipId: string) {
   const sequence = activeSequence(projection);
   if (sequence === null) return null;
   for (const track of sequence.tracks) {
-    if (track.kind === "caption") continue;
+    if (!isMediaTrack(track)) continue;
     const clip = track.clips.find((candidate) => candidate.id === clipId);
     if (clip !== undefined) return { sequence, track, clip };
   }
@@ -389,6 +394,28 @@ export function renderInputPaths(
     const source = projection.sources.find((candidate) => candidate.assetId === assetId);
     if (source?.status !== "resolved") return null;
     paths[assetId] = source.resolvedPath;
+  }
+  return paths;
+}
+/**
+ * Resolved paths of the still images used by visible graphics image layers, or null when one is
+ * not resolved (the export cannot render that layer). See docs/adr/0003-graphics-clips.md.
+ */
+export function renderGraphicsImagePaths(
+  projection: ProjectProjection,
+): Readonly<Record<string, string>> | null {
+  const sequence = activeSequence(projection);
+  if (sequence === null) return {};
+  const paths: Record<string, string> = {};
+  for (const track of sequence.tracks) {
+    if (track.kind !== "graphics" || isTrackHidden(track)) continue;
+    for (const clip of track.graphicsClips)
+      for (const layer of clip.layers) {
+        if (layer.kind !== "image") continue;
+        const source = projection.sources.find((candidate) => candidate.assetId === layer.assetId);
+        if (source?.status !== "resolved") return null;
+        paths[layer.assetId] = source.resolvedPath;
+      }
   }
   return paths;
 }
@@ -1802,7 +1829,7 @@ export function useVideoProject(
           const sequence = snapshot.sequences.find(({ id }) => id === input.sequenceId);
           const track = sequence?.tracks.find(({ id }) => id === input.trackId);
           const clip =
-            track && track.kind !== "caption"
+            track && isMediaTrack(track)
               ? track.clips.find(({ id }) => id === input.clipId)
               : undefined;
           const key = `${input.sequenceId}:${input.trackId}:${input.clipId}`;
@@ -1976,7 +2003,7 @@ export function useVideoProject(
         base === null ||
         sequence === null ||
         track === undefined ||
-        track.kind === "caption" ||
+        !isMediaTrack(track) ||
         isTrackMuted(track) === muted
       )
         return;
@@ -2001,7 +2028,7 @@ export function useVideoProject(
         base === null ||
         sequence === null ||
         track === undefined ||
-        track.kind === "caption" ||
+        !isMediaTrack(track) ||
         (track.audioRole ?? null) === role ||
         editOperationPendingRef.current
       )
@@ -2075,6 +2102,26 @@ export function useVideoProject(
           hidden,
         },
       ]);
+    },
+    [executeTimelineCommandGroup],
+  );
+  /**
+   * Applies a motion preset to a graphics clip as one SetGraphicsClipLayers command, so it is a
+   * single undoable history entry. Refusals (unknown clip, locked track, preset does not fit)
+   * send nothing and are returned to the caller.
+   */
+  const applyGraphicsPreset = useCallback(
+    async (
+      clip: GraphicsClipRef,
+      request: GraphicsPresetRequest,
+    ): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current)
+        return { ok: false, message: "Another edit is in progress. Try again when it finishes." };
+      const built = applyMotionPreset(base.state, clip, request, newId());
+      if (!built.ok) return { ok: false, message: built.error.message };
+      const applied = await executeTimelineCommandGroup(base, "graphics-preset", [built.command]);
+      return applied ? { ok: true } : { ok: false, message: "The preset could not be applied." };
     },
     [executeTimelineCommandGroup],
   );
@@ -2185,10 +2232,14 @@ export function useVideoProject(
       );
       if (rightsError !== null) throw rightsError;
       if (operation !== destinationOperationRef.current) return;
+      const graphicsImagePathsByAssetId = renderGraphicsImagePaths(active);
+      if (graphicsImagePathsByAssetId === null)
+        throw unsupportedCompositionError("Relink the images used by graphics clips to export.");
       const plan = compileActiveSequenceRenderPlan({
         planId: newId(),
         revision: { revision: active.revision, state: active.state },
         inputPathsByAssetId,
+        graphicsImagePathsByAssetId,
         outputPath,
         ...(intendedUse === null ? {} : { intendedUse }),
       });
@@ -2318,6 +2369,7 @@ export function useVideoProject(
     setTimelineTrackLocked,
     setTimelineTrackMuted,
     setTimelineTrackHidden,
+    applyGraphicsPreset,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

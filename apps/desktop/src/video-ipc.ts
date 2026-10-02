@@ -220,6 +220,23 @@ export async function probeVideoSource(path: string): Promise<MediaProbe> {
   return parseResponse(mediaProbeSchema.safeParse(response));
 }
 
+/** Picks a PNG/JPEG for a graphics image layer; the path is granted as a source. */
+export async function pickStillImage(): Promise<string | null> {
+  const response = await invokeVideoCommand("video_pick_still_image");
+  return parseResponse(selectedPathSchema.safeParse(response));
+}
+
+const stillProbeSchema = mediaProbeSchema.refine(
+  (probe) => probe.still === true,
+  "The native still-image probe must report a still",
+);
+
+/** Header-validated probe of a granted still image (≤ 4096 px per side, ≤ 32 MB). */
+export async function probeStillImage(path: string): Promise<MediaProbe> {
+  const response = await invokeVideoCommand("video_probe_still_image", { path });
+  return parseResponse(stillProbeSchema.safeParse(response));
+}
+
 export async function prepareVideoAsset(
   request: PrepareVideoAssetRequest,
 ): Promise<PreparedVideoAsset> {

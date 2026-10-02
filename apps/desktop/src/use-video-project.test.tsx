@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { commandGroupRequestSchema, VideoDomainError } from "@supa-video/contracts";
+import { commandGroupRequestSchema, isMediaTrack, VideoDomainError } from "@supa-video/contracts";
 import type {
   CommandGroupRequest,
   CommandResult,
+  OpenedProjectV2,
   ProjectProjection,
   RenderPlan,
 } from "@supa-video/contracts";
@@ -22,7 +23,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { sampleReceipt } from "./rights-fixtures";
-import { useVideoProject } from "./use-video-project";
+import { createMockVideoService } from "./test-video-service";
+import { renderGraphicsImagePaths, useVideoProject } from "./use-video-project";
 import { ProposalsPanel } from "./video/ProposalsPanel";
 import {
   artifact as proposalArtifact,
@@ -396,7 +398,7 @@ function multitrackProjection(revision = 1): ProjectProjection {
 function rippleProjection(revision = 1): ProjectProjection {
   const projection = clipProjection(revision, 0, 20);
   const track = projection.state.sequences[0]!.tracks[0]!;
-  if (track.kind === "caption") throw new Error("Expected clip track fixture");
+  if (!isMediaTrack(track)) throw new Error("Expected clip track fixture");
   const successor = {
     ...structuredClone(track.clips[0]!),
     id: id(6),
@@ -568,7 +570,7 @@ describe("canonical project controller", () => {
   it("rejects inexact retimed split and trim before submitting a revision", async () => {
     const active = clipProjection();
     const track = active.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected video track");
+    if (!isMediaTrack(track)) throw new Error("Expected video track");
     track.clips[0]!.speed = { numerator: 3, denominator: 2 };
     const execute = vi.fn(async () => {
       throw new Error("Inexact edits must not execute");
@@ -633,7 +635,7 @@ describe("canonical project controller", () => {
         commandResultValue.projection.state.assets = [importedAsset.asset];
         const sequence = structuredClone(createdSequence.sequence);
         const track = sequence.tracks.find((item) => item.id === insertedClip.trackId);
-        if (track !== undefined && track.kind !== "caption") track.clips.push(insertedClip.clip);
+        if (track !== undefined && isMediaTrack(track)) track.clips.push(insertedClip.clip);
         commandResultValue.projection.state.sequences = [sequence];
         commandResultValue.projection.state.activeSequenceId = sequence.id;
         commandResultValue.projection.sources = [
@@ -715,7 +717,7 @@ describe("canonical project controller", () => {
       imported.state.assets = [importedAsset.asset];
       const sequence = structuredClone(createdSequence.sequence);
       const track = sequence.tracks.find((item) => item.id === insertedClip.trackId);
-      if (track === undefined || track.kind === "caption")
+      if (track === undefined || !isMediaTrack(track))
         throw new Error("Expected the imported media track");
       track.clips.push(insertedClip.clip);
       imported.state.sequences = [sequence];
@@ -1813,7 +1815,7 @@ describe("canonical project controller", () => {
       const track = next.state.sequences[0]?.tracks.find(
         ({ id: trackId }) => trackId === command.trackId,
       );
-      if (track === undefined || track.kind === "caption")
+      if (track === undefined || !isMediaTrack(track))
         throw new Error("Expected mutable track fixture");
       track.muted = command.muted;
       next.revision = {
@@ -2274,7 +2276,7 @@ describe("canonical project controller", () => {
       const track = next.state.sequences[0]?.tracks.find(
         ({ id: trackId }) => trackId === command.trackId,
       );
-      if (track === undefined || track.kind === "caption")
+      if (track === undefined || !isMediaTrack(track))
         throw new Error("Expected mutable track fixture");
       track.muted = command.muted;
       next.revision = {
@@ -2388,7 +2390,7 @@ describe("canonical project controller", () => {
     const proposal = await transcriptEditProposal(opened);
     const committed = structuredClone(opened);
     const track = committed.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected media track fixture");
+    if (!isMediaTrack(track)) throw new Error("Expected media track fixture");
     track.clips = [];
     committed.revision = {
       ...emptyProjection(2).revision,
@@ -2421,7 +2423,7 @@ describe("canonical project controller", () => {
     const proposal = await transcriptEditProposal(opened);
     const committed = structuredClone(opened);
     const committedTrack = committed.state.sequences[0]!.tracks[0]!;
-    if (committedTrack.kind === "caption") throw new Error("Expected media track fixture");
+    if (!isMediaTrack(committedTrack)) throw new Error("Expected media track fixture");
     committedTrack.clips = [];
     committed.revision = {
       ...emptyProjection(2).revision,
@@ -2518,7 +2520,7 @@ describe("canonical project controller", () => {
     const opened = rippleProjection(1);
     const deleted = structuredClone(opened);
     const deletedTrack = deleted.state.sequences[0]!.tracks[0]!;
-    if (deletedTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(deletedTrack)) throw new Error("Expected clip track fixture");
     deletedTrack.clips.splice(0, 1);
     deletedTrack.clips[0]!.timelineStart.value = 10;
     deleted.revision = { ...emptyProjection(2).revision, parentId: opened.revision.id };
@@ -2696,7 +2698,7 @@ describe("canonical project controller", () => {
     const opened = rippleCaptionedProjection(1);
     const sequence = opened.state.sequences[0]!;
     const sourceTrack = sequence.tracks[0]!;
-    if (sourceTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(sourceTrack)) throw new Error("Expected clip track fixture");
     const secondaryAssetId = id(20);
     opened.state.assets.push({
       ...structuredClone(opened.state.assets[0]!),
@@ -2749,7 +2751,7 @@ describe("canonical project controller", () => {
     const opened = rippleCaptionedProjection(1);
     const sequence = opened.state.sequences[0]!;
     const sourceTrack = sequence.tracks[0]!;
-    if (sourceTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(sourceTrack)) throw new Error("Expected clip track fixture");
     const secondaryAssetId = id(20);
     opened.state.assets.push({
       ...structuredClone(opened.state.assets[0]!),
@@ -3413,5 +3415,214 @@ describe("runProposalEdit", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("The project changed");
     expect(screen.getByTestId("edit-operation").textContent).toBe("agent-proposal");
     expect(proposals.applyProposal.calls).toHaveLength(1);
+  });
+});
+
+describe("useVideoProject graphics presets", () => {
+  async function graphicsBackend() {
+    const service = createMockVideoService();
+    const created = (await service.invoke("video_create_project")) as ProjectProjection;
+    const rate = { numerator: 30, denominator: 1 };
+    const sequence = { id: id(705) };
+    const time = (value: number) => ({
+      value,
+      rateNumerator: rate.numerator,
+      rateDenominator: rate.denominator,
+    });
+    const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+    await service.invoke("video_execute_project_group", {
+      request: {
+        groupId: id(700),
+        projectId: created.projectId,
+        baseRevision: created.revision.number,
+        commands: [
+          {
+            type: "CreateSequence",
+            commandId: id(706),
+            sequence: {
+              id: sequence.id,
+              name: "Main",
+              rate,
+              width: 1920,
+              height: 1080,
+              audioSampleRate: 48_000,
+              tracks: [{ id: id(702), name: "Graphics 1", kind: "graphics", graphicsClips: [] }],
+              markers: [],
+            },
+          },
+          {
+            type: "AddGraphicsClip",
+            commandId: id(703),
+            sequenceId: sequence.id,
+            trackId: id(702),
+            graphicsClip: {
+              graphicsVersion: 1,
+              id: id(704),
+              timelineStart: time(0),
+              duration: time(60),
+              fontKey: "segoe-ui-bold",
+              layers: [
+                {
+                  kind: "text",
+                  text: "One step",
+                  fontSize: 48,
+                  fill: "#FFFFFF",
+                  x: hold(100),
+                  y: hold(100),
+                  scale: hold(1),
+                  rotation: hold(0),
+                  opacity: hold(1),
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const execute = vi.fn(
+      (request: CommandGroupRequest) =>
+        service.invoke("video_execute_project_group", { request }) as Promise<CommandResult>,
+    );
+    const history =
+      (command: "video_undo_project" | "video_redo_project") =>
+      (projectId: string, baseRevision: number, operationId: string) =>
+        service.invoke(command, { projectId, baseRevision, operationId }) as Promise<CommandResult>;
+    const backend = createBackend({
+      openVideoProject: vi.fn(
+        async () => (await service.invoke("video_open_project")) as OpenedProjectV2,
+      ),
+      executeVideoProjectGroup: execute,
+      undoVideoProject: vi.fn(history("video_undo_project")),
+      redoVideoProject: vi.fn(history("video_redo_project")),
+    });
+    const ref = { sequenceId: sequence.id, trackId: id(702), graphicsClipId: id(704) };
+    return { backend, execute, ref };
+  }
+
+  const graphicsClips = (projection: ProjectProjection | null) => {
+    const track = projection?.state.sequences[0]?.tracks.find((item) => item.id === id(702));
+    return track?.kind === "graphics" ? track.graphicsClips : null;
+  };
+
+  it("applies a preset as one history entry that undo restores exactly and redo reapplies", async () => {
+    const { backend, execute, ref } = await graphicsBackend();
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+    const before = JSON.stringify(graphicsClips(result.current.projection));
+    const revisionBefore = result.current.projection!.revision.number;
+
+    let outcome: Awaited<ReturnType<typeof result.current.applyGraphicsPreset>> | undefined;
+    await act(async () => {
+      outcome = await result.current.applyGraphicsPreset(ref, {
+        kind: "textReveal",
+        split: "word",
+      });
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]![0].commands.map(({ type }) => type)).toEqual([
+      "SetGraphicsClipLayers",
+    ]);
+    expect(result.current.projection!.revision.number).toBe(revisionBefore + 1);
+    const applied = JSON.stringify(graphicsClips(result.current.projection));
+    expect(applied).not.toBe(before);
+    expect(graphicsClips(result.current.projection)?.[0]?.layers[0]).toMatchObject({
+      units: { split: "word" },
+    });
+
+    await act(() => result.current.undoEdit());
+
+    expect(JSON.stringify(graphicsClips(result.current.projection))).toBe(before);
+
+    await act(() => result.current.redoEdit());
+
+    expect(JSON.stringify(graphicsClips(result.current.projection))).toBe(applied);
+  });
+
+  it("refuses a preset that does not fit without sending a command", async () => {
+    const { backend, execute, ref } = await graphicsBackend();
+    const { result } = renderHook(() => useVideoProject(backend));
+    await act(() => result.current.openProject());
+
+    let outcome: Awaited<ReturnType<typeof result.current.applyGraphicsPreset>> | undefined;
+    await act(async () => {
+      outcome = await result.current.applyGraphicsPreset(
+        { ...ref, graphicsClipId: id(799) },
+        { kind: "entrance", name: "pop" },
+      );
+    });
+
+    expect(outcome).toMatchObject({ ok: false });
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderGraphicsImagePaths", () => {
+  function withImageLayer(status: "resolved" | "missing", hidden = false): ProjectProjection {
+    const base = clipProjection();
+    const sequence = base.state.sequences[0]!;
+    const hold = (value: number) => [{ timeMicroseconds: 0, value }];
+    const time = (value: number) => ({
+      value,
+      rateNumerator: sequence.rate.numerator,
+      rateDenominator: sequence.rate.denominator,
+    });
+    return {
+      ...base,
+      state: {
+        ...base.state,
+        sequences: [
+          {
+            ...sequence,
+            tracks: [
+              ...sequence.tracks,
+              {
+                id: id(810),
+                name: "Graphics",
+                kind: "graphics",
+                ...(hidden ? { hidden } : {}),
+                graphicsClips: [
+                  {
+                    graphicsVersion: 1,
+                    id: id(811),
+                    timelineStart: time(0),
+                    duration: time(10),
+                    fontKey: "arial-bold",
+                    layers: [
+                      {
+                        kind: "image",
+                        assetId: id(812),
+                        width: 64,
+                        height: 64,
+                        x: hold(0),
+                        y: hold(0),
+                        scale: hold(1),
+                        rotation: hold(0),
+                        opacity: hold(1),
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      sources: [
+        ...base.sources,
+        status === "resolved"
+          ? { assetId: id(812), status, resolvedPath: String.raw`C:\Media\logo.png` }
+          : { assetId: id(812), status, resolvedPath: null },
+      ],
+    };
+  }
+
+  it.each([
+    ["a resolved image", withImageLayer("resolved"), { [id(812)]: String.raw`C:\Media\logo.png` }],
+    ["a missing image", withImageLayer("missing"), null],
+    ["a hidden graphics track", withImageLayer("missing", true), {}],
+  ])("returns the paths for %s", (_name, projection, expected) => {
+    expect(renderGraphicsImagePaths(projection)).toEqual(expected);
   });
 });

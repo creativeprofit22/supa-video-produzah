@@ -1,15 +1,16 @@
 import {
-  VideoDomainError,
+  clipTimelineDuration,
   createRationalTime,
   createTimelineSnapIndex,
-  clipTimelineDuration,
-  rateOf,
-  sourceOffsetToTimeline,
-  snapTimelineTime,
+  isMediaTrack,
   type ProjectClip,
+  rateOf,
   type RationalRate,
+  snapTimelineTime,
+  sourceOffsetToTimeline,
   type TimelineSnapIndex,
   type TimelineSnapTarget,
+  VideoDomainError,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 
@@ -103,7 +104,7 @@ export function createTimelineMoveSnapContext(
           },
         ];
   for (const track of sequence.tracks) {
-    if (track.kind === "caption") continue;
+    if (!isMediaTrack(track)) continue;
     for (const clip of track.clips) {
       const startFrame = clip.timelineStart.value;
       const durationFrames = clipTimelineDuration(
