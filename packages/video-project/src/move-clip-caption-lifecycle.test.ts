@@ -1,10 +1,11 @@
 import {
-  VideoDomainError,
   createRationalTime,
+  isMediaTrack,
   type MediaContentIdentityV1,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
   type ProjectTrack,
+  VideoDomainError,
 } from "@supa-video/contracts";
 import {
   captionArtifactV1Schema,
@@ -18,6 +19,7 @@ import {
   prepareMoveClipCaptionLifecycleV1,
   type MoveClipCommandV2,
 } from "./move-clip-caption-lifecycle.js";
+import { withGraphicsTrack } from "./graphics-test-fixtures.js";
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const id = (value: number): string =>
@@ -289,7 +291,7 @@ async function expectReason(action: () => Promise<unknown>, reason: string): Pro
 
 function sourceTrack(input: ProjectProjection) {
   const track = input.state.sequences[0]!.tracks[0]!;
-  if (track.kind === "caption") throw new Error("Expected source track");
+  if (!isMediaTrack(track)) throw new Error("Expected source track");
   return track;
 }
 
@@ -504,5 +506,21 @@ describe("move clip caption lifecycle", () => {
       "caption_lifecycle_command_limit_exceeded",
     );
     expect(allocated).toBe(0);
+  });
+
+  it("skips a graphics track and prepares the same commands as without it", async () => {
+    const prepare = (input: ProjectProjection) =>
+      prepareMoveClipCaptionLifecycleV1({
+        projection: input,
+        transcriptArtifact: transcript(),
+        command: moveCommand(),
+        createCommandId: (trackId, ordinal) =>
+          `${trackId.slice(0, 24)}${String(ordinal + 40).padStart(12, "0")}`,
+      });
+    const base = projection([ids.captionTrack, ids.secondCaptionTrack]);
+
+    const withGraphics = await prepare(withGraphicsTrack(base));
+
+    expect(withGraphics).toEqual(await prepare(base));
   });
 });

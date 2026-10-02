@@ -6,7 +6,10 @@ use std::{
 
 use tempfile::NamedTempFile;
 
-use super::{integrity::validate_snapshot, journal::sidecar_path, types::VideoProjectSnapshotV2};
+use super::{
+    graphics::reject_future_graphics_versions, integrity::validate_snapshot, journal::sidecar_path,
+    types::VideoProjectSnapshotV2,
+};
 use crate::video::error::{VideoCommandError, VideoErrorCode};
 
 pub const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
@@ -51,6 +54,11 @@ pub fn read_snapshot(path: &Path) -> Result<VideoProjectSnapshotV2, VideoCommand
         .map_err(|_| error("read"))?;
     if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
         return Err(error("snapshot_bytes"));
+    }
+    // A graphics clip written by a newer build is unsupported, not corrupt; check before the
+    // strict parse so its fields are never misread as the current version.
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+        reject_future_graphics_versions(&value)?;
     }
     let snapshot: VideoProjectSnapshotV2 = serde_json::from_slice(&bytes).map_err(|_| {
         VideoCommandError::project_error(

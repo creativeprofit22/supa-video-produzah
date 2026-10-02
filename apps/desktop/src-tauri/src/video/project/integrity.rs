@@ -5,6 +5,10 @@ use uuid::Uuid;
 
 use super::clip_speed::validate_retimed_state;
 use super::clip_timing::{project_clip_timeline_duration, validate_speed};
+use super::graphics::{
+    valid_graphics_clip_shape, valid_graphics_layer, GraphicsClip, GraphicsLayer,
+    MAX_GRAPHICS_CLIPS_PER_TRACK, MAX_GRAPHICS_LAYERS,
+};
 use super::types::{
     AffectedRange, ClipSource, ClipTransform, ProjectCaption, ProjectClip, ProjectCommand,
     ProjectHistoryEntryV2, ProjectTrack, VideoProjectSnapshotV2, VideoProjectStateV2,
@@ -227,6 +231,17 @@ fn valid_probe(probe: &MediaProbe) -> bool {
                     .duration_microseconds
                     .is_none_or(|value| (1..=MAX_SAFE_INTEGER).contains(&value))
         })
+        && (!probe.still || valid_still_probe(probe))
+}
+
+/// Mirrors the `still` refinement of `mediaProbeSchema`.
+fn valid_still_probe(probe: &MediaProbe) -> bool {
+    probe.audio.is_none()
+        && !probe.variable_frame_rate
+        && matches!(probe.video_codec_name.as_str(), "png" | "mjpeg")
+        && probe.width <= 4096
+        && probe.height <= 4096
+        && probe.file_size_bytes <= 32 * 1024 * 1024
 }
 
 fn valid_content_identity(identity: &MediaContentIdentityV1) -> bool {
@@ -318,6 +333,17 @@ fn valid_track_shape(track: &ProjectTrack) -> bool {
                 && active_caption_artifact
                     .as_ref()
                     .is_none_or(|artifact| validate_caption_artifact(artifact).is_ok())
+        }
+        ProjectTrack::Graphics {
+            id,
+            name,
+            graphics_clips,
+            ..
+        } => {
+            is_canonical_uuid(id)
+                && valid_non_blank(name)
+                && graphics_clips.len() <= MAX_GRAPHICS_CLIPS_PER_TRACK
+                && graphics_clips.iter().all(valid_graphics_clip_shape)
         }
     }
 }
@@ -445,6 +471,9 @@ fn validate_sequence(
                             let probe = assets
                                 .get(asset_id.as_str())
                                 .ok_or_else(|| invalid("asset_reference"))?;
+                            if probe.still {
+                                return Err(invalid("still_asset_clip"));
+                            }
                             let source_rate = RationalRate {
                                 numerator: clip.source_in.rate_numerator,
                                 denominator: clip.source_in.rate_denominator,
@@ -465,6 +494,16 @@ fn validate_sequence(
                         ClipSource::Sequence { .. } => {}
                     }
                 }
+            }
+            ProjectTrack::Graphics {
+                name,
+                graphics_clips,
+                ..
+            } => {
+                if !valid_non_blank(name) || graphics_clips.len() > MAX_GRAPHICS_CLIPS_PER_TRACK {
+                    return Err(invalid("track_shape"));
+                }
+                validate_graphics_clips(graphics_clips, sequence, assets, ids)?;
             }
         }
     }
@@ -521,6 +560,44 @@ fn validate_acyclic(state: &VideoProjectStateV2) -> Result<(), VideoCommandError
     } else {
         Err(invalid("sequence_cycle"))
     }
+}
+
+fn validate_graphics_clips(
+    clips: &[GraphicsClip],
+    sequence: &VideoSequenceV2,
+    assets: &HashMap<&str, &MediaProbe>,
+    ids: &mut HashSet<String>,
+) -> Result<(), VideoCommandError> {
+    let mut previous_end = 0_u64;
+    for clip in clips {
+        register_id(ids, &clip.id)?;
+        if !valid_graphics_clip_shape(clip) {
+            return Err(invalid("graphics_clip"));
+        }
+        if clip.timeline_start.rate_numerator != sequence.rate.numerator
+            || clip.timeline_start.rate_denominator != sequence.rate.denominator
+        {
+            return Err(invalid("graphics_clip_rate"));
+        }
+        if clip.timeline_start.value < previous_end {
+            return Err(invalid("graphics_clip_overlap"));
+        }
+        previous_end = clip
+            .timeline_end()
+            .filter(|end| *end <= MAX_SAFE_INTEGER)
+            .ok_or_else(|| invalid("safe_integer"))?;
+        for layer in &clip.layers {
+            if let GraphicsLayer::Image { asset_id, .. } = layer {
+                let probe = assets
+                    .get(asset_id.as_str())
+                    .ok_or_else(|| invalid("graphics_image_asset"))?;
+                if !probe.still {
+                    return Err(invalid("graphics_image_not_still"));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn validate_state(state: &VideoProjectStateV2) -> Result<(), VideoCommandError> {
@@ -838,6 +915,60 @@ fn valid_command(command: &ProjectCommand) -> bool {
             is_canonical_uuid(sequence_id)
                 && is_canonical_uuid(track_id)
                 && is_canonical_uuid(caption_id)
+        }
+        ProjectCommand::AddGraphicsClip {
+            sequence_id,
+            track_id,
+            index,
+            graphics_clip,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && valid_optional_index(index)
+                && valid_graphics_clip_shape(graphics_clip)
+        }
+        ProjectCommand::RemoveGraphicsClip {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(graphics_clip_id)
+        }
+        ProjectCommand::MoveGraphicsClip {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            timeline_start,
+            duration,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(graphics_clip_id)
+                && valid_time_shape(timeline_start)
+                && valid_time_shape(duration)
+                && timeline_start.rate_numerator == duration.rate_numerator
+                && timeline_start.rate_denominator == duration.rate_denominator
+                && (1..=super::graphics::MAX_GRAPHICS_DURATION_FRAMES).contains(&duration.value)
+        }
+        ProjectCommand::SetGraphicsClipLayers {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            font_key,
+            layers,
+            ..
+        } => {
+            is_canonical_uuid(sequence_id)
+                && is_canonical_uuid(track_id)
+                && is_canonical_uuid(graphics_clip_id)
+                && crate::video::caption_render::caption_font_file(font_key).is_some()
+                && layers.len() <= MAX_GRAPHICS_LAYERS
+                && layers.iter().all(valid_graphics_layer)
         }
         ProjectCommand::ApplyCaptionArtifact {
             sequence_id,

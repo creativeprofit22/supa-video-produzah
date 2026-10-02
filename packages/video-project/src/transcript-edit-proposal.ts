@@ -1,16 +1,17 @@
 import {
-  commandGroupRequestSchema,
-  isTrackLocked,
-  projectProjectionSchema,
-  rateOf,
-  rescaleRationalTime,
-  transcriptEditProposalWireSchema,
   type CommandGroupRequest,
+  commandGroupRequestSchema,
+  isMediaTrack,
+  isTrackLocked,
   type MediaContentIdentityV1,
   type ProjectClip,
   type ProjectProjection,
+  projectProjectionSchema,
   type ProjectRevisionDescriptorV2,
+  rateOf,
   type RationalTime,
+  rescaleRationalTime,
+  transcriptEditProposalWireSchema,
 } from "@supa-video/contracts";
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
@@ -683,7 +684,7 @@ export function assertTranscriptEditProposalCurrent(
   if (
     sequence === undefined ||
     track === undefined ||
-    track.kind === "caption" ||
+    !isMediaTrack(track) ||
     isTrackLocked(track)
   ) {
     throw transcriptError(

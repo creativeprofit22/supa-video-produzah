@@ -325,7 +325,9 @@ fn source_regrant_target(
         "regrant_project_source",
         GrantCategory::Source,
     )?;
-    if !has_source_extension(&expected_source_path) {
+    if !has_source_extension(&expected_source_path)
+        && !super::still_image::has_still_extension(&expected_source_path)
+    {
         return Err(VideoCommandError::invalid_path(
             "regrant_project_source",
             "source",
@@ -456,6 +458,52 @@ pub async fn video_pick_source<R: Runtime>(
     }
     let normalized = grants.grant_existing_file(window.label(), GrantCategory::Source, &path)?;
     path_to_string(&normalized, "pick_source", "source").map(Some)
+}
+
+/// Picks a PNG/JPEG still image for a graphics image layer and grants it as a source.
+#[tauri::command]
+pub async fn video_pick_still_image<R: Runtime>(
+    window: WebviewWindow<R>,
+    grants: State<'_, VideoPathGrants>,
+) -> Result<Option<String>, VideoCommandError> {
+    let selection = window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Choose image")
+        .add_filter("Image", &super::still_image::STILL_EXTENSIONS)
+        .blocking_pick_file();
+    let Some(path) = dialog_path(selection, "pick_still_image", "source")? else {
+        return Ok(None);
+    };
+    if !super::still_image::has_still_extension(&path) {
+        return Err(VideoCommandError::invalid_path(
+            "pick_still_image",
+            "source",
+        ));
+    }
+    let normalized = grants.grant_existing_file(window.label(), GrantCategory::Source, &path)?;
+    path_to_string(&normalized, "pick_still_image", "source").map(Some)
+}
+
+/// Header-validated probe of a granted still image; never runs FFprobe or decodes pixels.
+#[tauri::command]
+pub async fn video_probe_still_image<R: Runtime>(
+    window: WebviewWindow<R>,
+    grants: State<'_, VideoPathGrants>,
+    path: String,
+) -> Result<crate::video::types::MediaProbe, VideoCommandError> {
+    let source = grants.authorize(window.label(), GrantCategory::Source, Path::new(&path))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        super::still_image::probe_still_image(&source, &|record| {
+            eprintln!(
+                "{}",
+                serde_json::json!({ "event": "probe_still_image", "record": record })
+            );
+        })
+    })
+    .await
+    .map_err(|_| VideoCommandError::invalid_media("probe_still_image", "worker"))?
 }
 
 pub async fn video_open_project<R: Runtime>(

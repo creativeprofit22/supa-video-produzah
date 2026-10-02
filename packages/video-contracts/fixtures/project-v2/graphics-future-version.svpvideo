@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 2,
+  "id": "10000000-0000-4000-8000-000000000001",
+  "name": "Graphics",
+  "createdAt": "2026-07-26T12:00:00Z",
+  "updatedAt": "2026-07-26T12:00:00Z",
+  "storageGenerationId": "10000000-0000-4000-8000-000000000002",
+  "revision": {
+    "number": 0,
+    "id": "10000000-0000-4000-8000-000000000003",
+    "parentId": null,
+    "committedAt": "2026-07-26T12:00:00Z",
+    "operationId": "10000000-0000-4000-8000-000000000004",
+    "stateHash": "4269a26cb068e3782a8888b615dc1d98806eb015623015324a54c6e708360b35"
+  },
+  "state": {
+    "assets": [
+      {
+        "id": "10000000-0000-4000-8000-000000000005",
+        "displayName": "clip.mp4",
+        "locator": {
+          "relativePath": "media/clip.mp4"
+        },
+        "probe": {
+          "durationMicroseconds": 1000000,
+          "averageFrameRate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "realFrameRate": {
+            "numerator": 30,
+            "denominator": 1
+          },
+          "variableFrameRate": false,
+          "width": 640,
+          "height": 360,
+          "videoCodecName": "h264",
+          "audio": null,
+          "fileSizeBytes": 1000
+        }
+      },
+      {
+        "id": "10000000-0000-4000-8000-000000000020",
+        "displayName": "logo.png",
+        "locator": {
+          "relativePath": "media/logo.png"
+        },
+        "probe": {
+          "durationMicroseconds": 1000000,
+          "averageFrameRate": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "realFrameRate": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "variableFrameRate": false,
+          "width": 256,
+          "height": 128,
+          "videoCodecName": "png",
+          "audio": null,
+          "fileSizeBytes": 4096,
+          "still": true
+        }
+      }
+    ],
+    "sequences": [
+      {
+        "id": "10000000-0000-4000-8000-000000000006",
+        "name": "Sequence 1",
+        "rate": {
+          "numerator": 30,
+          "denominator": 1
+        },
+        "width": 640,
+        "height": 360,
+        "audioSampleRate": 48000,
+        "tracks": [
+          {
+            "id": "10000000-0000-4000-8000-000000000007",
+            "name": "Video 1",
+            "kind": "video",
+            "clips": [
+              {
+                "id": "10000000-0000-4000-8000-000000000008",
+                "source": {
+                  "kind": "asset",
+                  "assetId": "10000000-0000-4000-8000-000000000005"
+                },
+                "timelineStart": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "sourceIn": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "sourceOut": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "transform": {
+                  "positionXPermille": 0,
+                  "positionYPermille": 0,
+                  "scaleXPermille": 1000,
+                  "scaleYPermille": 1000,
+                  "rotationMilliDegrees": 0,
+                  "opacityPermille": 1000
+                },
+                "gainMilliDecibels": 0
+              }
+            ]
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000021",
+            "name": "Graphics 1",
+            "kind": "graphics",
+            "graphicsClips": [
+              {
+                "graphicsVersion": 2,
+                "id": "10000000-0000-4000-8000-000000000022",
+                "timelineStart": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "duration": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "fontKey": "segoe-ui-bold",
+                "layers": [
+                  {
+                    "kind": "rect",
+                    "width": 320,
+                    "height": 80,
+                    "cornerRadius": 12,
+                    "fill": "#1E88E5",
+                    "x": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": -320,
+                        "easing": {
+                          "kind": "preset",
+                          "name": "snappy"
+                        }
+                      },
+                      {
+                        "timeMicroseconds": 400000,
+                        "value": 40
+                      }
+                    ],
+                    "y": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 260
+                      }
+                    ],
+                    "scale": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 1
+                      }
+                    ],
+                    "rotation": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": -8,
+                        "easing": {
+                          "kind": "cubicBezier",
+                          "x1": 0.34,
+                          "y1": 1.56,
+                          "x2": 0.64,
+                          "y2": 1
+                        }
+                      },
+                      {
+                        "timeMicroseconds": 300000,
+                        "value": 0
+                      }
+                    ],
+                    "opacity": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 0,
+                        "easing": {
+                          "kind": "steps",
+                          "count": 4
+                        }
+                      },
+                      {
+                        "timeMicroseconds": 200000,
+                        "value": 1
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "text",
+                    "text": "Hello graphics",
+                    "fontSize": 36,
+                    "fill": "#FFFFFF",
+                    "units": {
+                      "split": "word",
+                      "opacity": [
+                        [
+                          {
+                            "timeMicroseconds": 0,
+                            "value": 0
+                          },
+                          {
+                            "timeMicroseconds": 200000,
+                            "value": 1
+                          }
+                        ],
+                        [
+                          {
+                            "timeMicroseconds": 100000,
+                            "value": 0
+                          },
+                          {
+                            "timeMicroseconds": 300000,
+                            "value": 1
+                          }
+                        ]
+                      ],
+                      "offsetY": [
+                        [
+                          {
+                            "timeMicroseconds": 0,
+                            "value": 20,
+                            "easing": {
+                              "kind": "spring",
+                              "bounce": 0.3,
+                              "durationMs": 400
+                            }
+                          },
+                          {
+                            "timeMicroseconds": 300000,
+                            "value": 0
+                          }
+                        ],
+                        [
+                          {
+                            "timeMicroseconds": 100000,
+                            "value": 20
+                          },
+                          {
+                            "timeMicroseconds": 400000,
+                            "value": 0
+                          }
+                        ]
+                      ]
+                    },
+                    "x": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 60
+                      }
+                    ],
+                    "y": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 282
+                      }
+                    ],
+                    "scale": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 0.5,
+                        "easing": {
+                          "kind": "preset",
+                          "name": "bouncy"
+                        }
+                      },
+                      {
+                        "timeMicroseconds": 500000,
+                        "value": 1
+                      }
+                    ],
+                    "rotation": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 0
+                      }
+                    ],
+                    "opacity": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 1
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "image",
+                    "assetId": "10000000-0000-4000-8000-000000000020",
+                    "width": 128,
+                    "height": 64,
+                    "x": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 480
+                      }
+                    ],
+                    "y": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 20
+                      }
+                    ],
+                    "scale": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 1
+                      }
+                    ],
+                    "rotation": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 0
+                      }
+                    ],
+                    "opacity": [
+                      {
+                        "timeMicroseconds": 0,
+                        "value": 0.75
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "markers": []
+      }
+    ],
+    "activeSequenceId": "10000000-0000-4000-8000-000000000006"
+  },
+  "history": {
+    "undoStack": [],
+    "redoStack": []
+  },
+  "lastAppliedRecordNumber": 0,
+  "lastRecordHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

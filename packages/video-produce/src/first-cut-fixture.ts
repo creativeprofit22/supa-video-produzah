@@ -1,5 +1,6 @@
 import {
   acquisitionReceiptSchema,
+  isMediaTrack,
   usePolicyProfileSchema,
   videoProjectStateV2Schema,
 } from "@supa-video/contracts";
@@ -102,7 +103,7 @@ function fixtureBeats(fixture: FirstCutFixture): Result<NarrativeBeat[], FirstCu
   const clipId = fixture.source.aRollClipId;
   const clip = fixture.state.sequences
     .flatMap((sequence) => sequence.tracks)
-    .flatMap((track) => (track.kind === "caption" ? [] : track.clips))
+    .flatMap((track) => (isMediaTrack(track) ? track.clips : []))
     .find((item) => item.id === clipId);
   const assetId = clip?.source.kind === "asset" ? clip.source.assetId : null;
   const transcript = fixture.transcripts.find((item) => item.assetId === assetId);

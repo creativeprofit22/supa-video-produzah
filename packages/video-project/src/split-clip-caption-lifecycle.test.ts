@@ -1,11 +1,12 @@
 import {
-  VideoDomainError,
   createRationalTime,
+  isMediaTrack,
   type MediaContentIdentityV1,
   type ProjectCommandV2,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
   type ProjectTrack,
+  VideoDomainError,
 } from "@supa-video/contracts";
 import {
   captionArtifactV1Schema,
@@ -20,6 +21,7 @@ import {
   prepareTranscriptEditCaptionLifecycleV1,
   type SplitClipCommandV2,
 } from "./split-clip-caption-lifecycle.js";
+import { withGraphicsTrack } from "./graphics-test-fixtures.js";
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const id = (value: number): string =>
@@ -387,7 +389,7 @@ describe("split caption lifecycle", () => {
 
     const inexactProjection = projection();
     const sourceTrack = inexactProjection.state.sequences[0]!.tracks[0]!;
-    if (sourceTrack.kind === "caption") throw new Error("Invalid fixture");
+    if (!isMediaTrack(sourceTrack)) throw new Error("Invalid fixture");
     sourceTrack.clips[0]!.timelineStart = createRationalTime(10, { numerator: 3, denominator: 1 });
     expectReason(
       () =>
@@ -537,5 +539,18 @@ describe("split caption lifecycle", () => {
     expect((failure as VideoDomainError).details.reason).toBe(
       "caption_lifecycle_command_limit_exceeded",
     );
+  });
+
+  it("skips a graphics track and prepares the same commands as without it", () => {
+    const prepare = (input: ProjectProjection) =>
+      prepareSplitClipCaptionLifecycleV1({
+        projection: input,
+        transcriptArtifact: transcript(),
+        command: splitCommand(1),
+      });
+
+    const withGraphics = prepare(withGraphicsTrack(projection()));
+
+    expect(withGraphics).toEqual(prepare(projection()));
   });
 });

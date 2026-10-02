@@ -1,0 +1,2230 @@
+{
+  "base": "project-v2/valid-graphics.svpvideo",
+  "sequenceIndex": 0,
+  "trackIndex": 1,
+  "cases": [
+    {
+      "name": "add appends in start order",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-000000000064",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000002",
+            "timelineStart": {
+              "value": 60,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expectedGraphicsClips": [
+        {
+          "graphicsVersion": 1,
+          "id": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 0,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "segoe-ui-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 320,
+              "height": 80,
+              "cornerRadius": 12,
+              "fill": "#1E88E5",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -320,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "snappy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 40
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 260
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -8,
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.34,
+                    "y1": 1.56,
+                    "x2": 0.64,
+                    "y2": 1
+                  }
+                },
+                {
+                  "timeMicroseconds": 300000,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "steps",
+                    "count": 4
+                  }
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "image",
+              "assetId": "10000000-0000-4000-8000-000000000020",
+              "width": 128,
+              "height": 64,
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 480
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.75
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graphicsVersion": 1,
+          "id": "9c000000-0000-4000-8000-000000000002",
+          "timelineStart": {
+            "value": 60,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "arial-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#FF5722",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "add at an explicit index",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-000000000065",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "index": 1,
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000003",
+            "timelineStart": {
+              "value": 40,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 10,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expectedGraphicsClips": [
+        {
+          "graphicsVersion": 1,
+          "id": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 0,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "segoe-ui-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 320,
+              "height": 80,
+              "cornerRadius": 12,
+              "fill": "#1E88E5",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -320,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "snappy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 40
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 260
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -8,
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.34,
+                    "y1": 1.56,
+                    "x2": 0.64,
+                    "y2": 1
+                  }
+                },
+                {
+                  "timeMicroseconds": 300000,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "steps",
+                    "count": 4
+                  }
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "image",
+              "assetId": "10000000-0000-4000-8000-000000000020",
+              "width": 128,
+              "height": 64,
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 480
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.75
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graphicsVersion": 1,
+          "id": "9c000000-0000-4000-8000-000000000003",
+          "timelineStart": {
+            "value": 40,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 10,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "arial-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#FF5722",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "remove",
+      "commands": [
+        {
+          "type": "RemoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-000000000066",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022"
+        }
+      ],
+      "expectedGraphicsClips": []
+    },
+    {
+      "name": "move and resize",
+      "commands": [
+        {
+          "type": "MoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-000000000067",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 45,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 15,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          }
+        }
+      ],
+      "expectedGraphicsClips": [
+        {
+          "graphicsVersion": 1,
+          "id": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 45,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 15,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "segoe-ui-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 320,
+              "height": 80,
+              "cornerRadius": 12,
+              "fill": "#1E88E5",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -320,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "snappy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 40
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 260
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -8,
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.34,
+                    "y1": 1.56,
+                    "x2": 0.64,
+                    "y2": 1
+                  }
+                },
+                {
+                  "timeMicroseconds": 300000,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "steps",
+                    "count": 4
+                  }
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "image",
+              "assetId": "10000000-0000-4000-8000-000000000020",
+              "width": 128,
+              "height": 64,
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 480
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.75
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set layers and font",
+      "commands": [
+        {
+          "type": "SetGraphicsClipLayers",
+          "commandId": "9c000000-0000-4000-8000-000000000068",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+          "fontKey": "georgia-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#4CAF50",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedGraphicsClips": [
+        {
+          "graphicsVersion": 1,
+          "id": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 0,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "georgia-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#4CAF50",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "group add then move the first clip after it keeps start order",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-000000000069",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000002",
+            "timelineStart": {
+              "value": 60,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "MoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-00000000006a",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 100,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          }
+        }
+      ],
+      "expectedGraphicsClips": [
+        {
+          "graphicsVersion": 1,
+          "id": "9c000000-0000-4000-8000-000000000002",
+          "timelineStart": {
+            "value": 60,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "arial-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#FF5722",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graphicsVersion": 1,
+          "id": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 100,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "segoe-ui-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 320,
+              "height": 80,
+              "cornerRadius": 12,
+              "fill": "#1E88E5",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -320,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "snappy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 40
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 260
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -8,
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.34,
+                    "y1": 1.56,
+                    "x2": 0.64,
+                    "y2": 1
+                  }
+                },
+                {
+                  "timeMicroseconds": 300000,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "steps",
+                    "count": 4
+                  }
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Hello graphics",
+              "fontSize": 36,
+              "fill": "#FFFFFF",
+              "units": {
+                "split": "word",
+                "opacity": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 200000,
+                      "value": 1
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 0
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 1
+                    }
+                  ]
+                ],
+                "offsetY": [
+                  [
+                    {
+                      "timeMicroseconds": 0,
+                      "value": 20,
+                      "easing": {
+                        "kind": "spring",
+                        "bounce": 0.3,
+                        "durationMs": 400
+                      }
+                    },
+                    {
+                      "timeMicroseconds": 300000,
+                      "value": 0
+                    }
+                  ],
+                  [
+                    {
+                      "timeMicroseconds": 100000,
+                      "value": 20
+                    },
+                    {
+                      "timeMicroseconds": 400000,
+                      "value": 0
+                    }
+                  ]
+                ]
+              },
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 60
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 282
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.5,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "bouncy"
+                  }
+                },
+                {
+                  "timeMicroseconds": 500000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "kind": "image",
+              "assetId": "10000000-0000-4000-8000-000000000020",
+              "width": 128,
+              "height": 64,
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 480
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0.75
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "name": "overlapping clip",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000c8",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000004",
+            "timelineStart": {
+              "value": 10,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "category": "graphics_clip_overlap",
+      "code": "invalid_project"
+    },
+    {
+      "name": "duplicate clip id",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000c9",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "10000000-0000-4000-8000-000000000022",
+            "timelineStart": {
+              "value": 60,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "category": "duplicate_graphics_clip",
+      "code": "invalid_command"
+    },
+    {
+      "name": "unknown clip",
+      "commands": [
+        {
+          "type": "RemoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000ca",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "9c000000-0000-4000-8000-000000000063"
+        }
+      ],
+      "category": "unknown_graphics_clip",
+      "code": "invalid_command"
+    },
+    {
+      "name": "media track target",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000cb",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000007",
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000002",
+            "timelineStart": {
+              "value": 60,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "category": "non_graphics_track",
+      "code": "invalid_command"
+    },
+    {
+      "name": "index past the end",
+      "commands": [
+        {
+          "type": "AddGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000cc",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "index": 5,
+          "graphicsClip": {
+            "graphicsVersion": 1,
+            "id": "9c000000-0000-4000-8000-000000000002",
+            "timelineStart": {
+              "value": 60,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "duration": {
+              "value": 30,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
+            "fontKey": "arial-bold",
+            "layers": [
+              {
+                "kind": "rect",
+                "width": 200,
+                "height": 60,
+                "cornerRadius": 8,
+                "fill": "#FF5722",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 10
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 20
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0,
+                    "easing": {
+                      "kind": "preset",
+                      "name": "strong"
+                    }
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0
+                  }
+                ],
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "category": "graphics_clip_index",
+      "code": "invalid_command"
+    },
+    {
+      "name": "clip at another rate",
+      "commands": [
+        {
+          "type": "MoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000cd",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+          "timelineStart": {
+            "value": 0,
+            "rateNumerator": 25,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 25,
+            "rateDenominator": 1
+          }
+        }
+      ],
+      "category": "graphics_clip_rate",
+      "code": "invalid_project"
+    },
+    {
+      "name": "locked track",
+      "lockTrack": true,
+      "commands": [
+        {
+          "type": "RemoveGraphicsClip",
+          "commandId": "9c000000-0000-4000-8000-0000000000ce",
+          "sequenceId": "10000000-0000-4000-8000-000000000006",
+          "trackId": "10000000-0000-4000-8000-000000000021",
+          "graphicsClipId": "10000000-0000-4000-8000-000000000022"
+        }
+      ],
+      "category": "track_locked",
+      "code": "invalid_command"
+    }
+  ],
+  "invalidWire": [
+    {
+      "name": "opacity above 1",
+      "command": {
+        "type": "SetGraphicsClipLayers",
+        "commandId": "9c000000-0000-4000-8000-00000000012c",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+        "fontKey": "arial-bold",
+        "layers": [
+          {
+            "kind": "rect",
+            "width": 200,
+            "height": 60,
+            "cornerRadius": 8,
+            "fill": "#FF5722",
+            "x": [
+              {
+                "timeMicroseconds": 0,
+                "value": 10
+              }
+            ],
+            "y": [
+              {
+                "timeMicroseconds": 0,
+                "value": 20
+              }
+            ],
+            "scale": [
+              {
+                "timeMicroseconds": 0,
+                "value": 0,
+                "easing": {
+                  "kind": "preset",
+                  "name": "strong"
+                }
+              },
+              {
+                "timeMicroseconds": 400000,
+                "value": 1
+              }
+            ],
+            "rotation": [
+              {
+                "timeMicroseconds": 0,
+                "value": 0
+              }
+            ],
+            "opacity": [
+              {
+                "timeMicroseconds": 0,
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown font",
+      "command": {
+        "type": "SetGraphicsClipLayers",
+        "commandId": "9c000000-0000-4000-8000-00000000012d",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+        "fontKey": "comic-sans",
+        "layers": []
+      }
+    },
+    {
+      "name": "string easing",
+      "command": {
+        "type": "SetGraphicsClipLayers",
+        "commandId": "9c000000-0000-4000-8000-00000000012e",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+        "fontKey": "arial-bold",
+        "layers": [
+          {
+            "kind": "rect",
+            "width": 200,
+            "height": 60,
+            "cornerRadius": 8,
+            "fill": "#FF5722",
+            "x": [
+              {
+                "timeMicroseconds": 0,
+                "value": 0,
+                "easing": "snappy"
+              }
+            ],
+            "y": [
+              {
+                "timeMicroseconds": 0,
+                "value": 20
+              }
+            ],
+            "scale": [
+              {
+                "timeMicroseconds": 0,
+                "value": 0,
+                "easing": {
+                  "kind": "preset",
+                  "name": "strong"
+                }
+              },
+              {
+                "timeMicroseconds": 400000,
+                "value": 1
+              }
+            ],
+            "rotation": [
+              {
+                "timeMicroseconds": 0,
+                "value": 0
+              }
+            ],
+            "opacity": [
+              {
+                "timeMicroseconds": 0,
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "future graphics version",
+      "command": {
+        "type": "AddGraphicsClip",
+        "commandId": "9c000000-0000-4000-8000-00000000012f",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClip": {
+          "graphicsVersion": 2,
+          "id": "9c000000-0000-4000-8000-000000000002",
+          "timelineStart": {
+            "value": 60,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "duration": {
+            "value": 30,
+            "rateNumerator": 30,
+            "rateDenominator": 1
+          },
+          "fontKey": "arial-bold",
+          "layers": [
+            {
+              "kind": "rect",
+              "width": 200,
+              "height": 60,
+              "cornerRadius": 8,
+              "fill": "#FF5722",
+              "x": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 10
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 20
+                }
+              ],
+              "scale": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0,
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  }
+                },
+                {
+                  "timeMicroseconds": 400000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 0
+                }
+              ],
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "zero duration",
+      "command": {
+        "type": "MoveGraphicsClip",
+        "commandId": "9c000000-0000-4000-8000-000000000130",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+        "timelineStart": {
+          "value": 0,
+          "rateNumerator": 30,
+          "rateDenominator": 1
+        },
+        "duration": {
+          "value": 0,
+          "rateNumerator": 30,
+          "rateDenominator": 1
+        }
+      }
+    },
+    {
+      "name": "extra field",
+      "command": {
+        "type": "RemoveGraphicsClip",
+        "commandId": "9c000000-0000-4000-8000-000000000131",
+        "sequenceId": "10000000-0000-4000-8000-000000000006",
+        "trackId": "10000000-0000-4000-8000-000000000021",
+        "graphicsClipId": "10000000-0000-4000-8000-000000000022",
+        "clipId": "9c000000-0000-4000-8000-000000000001"
+      }
+    }
+  ]
+}

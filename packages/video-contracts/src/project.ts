@@ -80,8 +80,24 @@ export const mediaProbeSchema = z
     videoCodecName: nonBlankSchema,
     audio: mediaAudioShapeSchema.nullable(),
     fileSizeBytes: safePositiveIntegerSchema,
+    /**
+     * Present only for PNG/JPEG still images: one frame, nominally 1 second at 1 fps, no audio.
+     * Stills are graphics image-layer sources and cannot be placed as media clips.
+     */
+    still: z.literal(true).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (probe) =>
+      probe.still !== true ||
+      (probe.audio === null &&
+        !probe.variableFrameRate &&
+        (probe.videoCodecName === "png" || probe.videoCodecName === "mjpeg") &&
+        probe.width <= 4096 &&
+        probe.height <= 4096 &&
+        probe.fileSizeBytes <= 32 * 1024 * 1024),
+    "Still-image probes are PNG/JPEG, at most 4096 px per side and 32 MB, without audio",
+  );
 
 export type MediaProbe = z.infer<typeof mediaProbeSchema>;
 

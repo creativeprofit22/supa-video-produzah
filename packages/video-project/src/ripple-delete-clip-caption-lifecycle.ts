@@ -1,11 +1,12 @@
 import {
-  VideoDomainError,
   applyCaptionArtifactCommandSchemaV2,
-  projectProjectionSchema,
-  rippleDeleteClipCommandSchemaV2,
+  isMediaTrack,
   type MediaContentIdentityV1,
   type ProjectCommandV2,
   type ProjectProjection,
+  projectProjectionSchema,
+  rippleDeleteClipCommandSchemaV2,
+  VideoDomainError,
 } from "@supa-video/contracts";
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
@@ -51,7 +52,7 @@ export function selectRippleDeleteAffectedCaptionTracksV1({
 }: SelectRippleDeleteAffectedCaptionTracksV1Input): readonly RippleDeleteAffectedCaptionTrackV1[] {
   const sequence = projection.state.sequences.find(({ id }) => id === sequenceId);
   const track = sequence?.tracks.find(({ id }) => id === trackId);
-  if (sequence === undefined || track === undefined || track.kind === "caption") return [];
+  if (sequence === undefined || track === undefined || !isMediaTrack(track)) return [];
 
   const targetIndex = track.clips.findIndex(({ id }) => id === clipId);
   if (targetIndex < 0) return [];
@@ -160,7 +161,7 @@ export async function prepareRippleDeleteClipCaptionLifecycleV1(
   const command = parseRippleCommand(input.command);
   const sequence = projection.state.sequences.find(({ id }) => id === command.sequenceId);
   const track = sequence?.tracks.find(({ id }) => id === command.trackId);
-  if (sequence === undefined || track === undefined || track.kind === "caption") {
+  if (sequence === undefined || track === undefined || !isMediaTrack(track)) {
     rippleFailure(
       "caption_lifecycle_command_target_mismatch",
       "Ripple delete command targets an unknown media track",

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import type { VideoProjectStateV2 } from "@supa-video/contracts";
+import { isMediaTrack, type VideoProjectStateV2 } from "@supa-video/contracts";
 import { describe, expect, it } from "vitest";
 
 import { planBeatsForARollClip, planBeatsForARollClips } from "./a-roll-beats.js";
@@ -37,7 +37,7 @@ function splitARoll(
     sequences: fixture.state.sequences.map((sequence) => ({
       ...sequence,
       tracks: sequence.tracks.map((track) => {
-        if (track.kind === "caption") return track;
+        if (!isMediaTrack(track)) return track;
         return {
           ...track,
           clips: track.clips.flatMap((clip) => {
@@ -157,5 +157,30 @@ describe("planBeatsForARollClips", () => {
       ok: false,
       error: { code: "no-clips" },
     });
+  });
+
+  it("skips a graphics track and plans the same beats as without it", () => {
+    const fixture = podcastFixture();
+    const { words, language } = transcript(fixture);
+    const clipId = aRollClipId(fixture);
+    const withGraphics: VideoProjectStateV2 = {
+      ...fixture.state,
+      sequences: fixture.state.sequences.map((sequence) => ({
+        ...sequence,
+        tracks: [
+          ...sequence.tracks,
+          {
+            id: "9a000000-0000-4000-8000-000000000001",
+            name: "Graphics 1",
+            kind: "graphics",
+            graphicsClips: [],
+          },
+        ],
+      })),
+    };
+
+    const plan = planBeatsForARollClips(withGraphics, [clipId], words, language);
+
+    expect(plan).toEqual(planBeatsForARollClips(fixture.state, [clipId], words, language));
   });
 });

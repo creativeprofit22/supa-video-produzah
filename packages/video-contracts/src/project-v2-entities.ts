@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { captionArtifactV1Schema } from "./caption.js";
 import { clipSpeedSchema, clipTimelineDuration } from "./clip-timing.js";
-import { projectUuidSchema, videoAssetSchema } from "./project.js";
+import { graphicsClipSchema, MAX_GRAPHICS_CLIPS_PER_TRACK } from "./project-graphics.js";
+import { projectUuidSchema, type VideoAsset, videoAssetSchema } from "./project.js";
 import { rationalRateSchema, rationalTimeSchema } from "./time.js";
 
 const nonBlankSchema = z.string().trim().min(1).max(512);
@@ -183,8 +184,24 @@ export const projectTrackSchema = z.discriminatedUnion("kind", [
       activeCaptionArtifact: captionArtifactV1Schema.optional(),
     })
     .strict(),
+  z
+    .object({
+      ...trackBase,
+      kind: z.literal("graphics"),
+      hidden: z.boolean().optional(),
+      graphicsClips: z.array(graphicsClipSchema).max(MAX_GRAPHICS_CLIPS_PER_TRACK),
+    })
+    .strict(),
 ]);
 export type ProjectTrack = z.infer<typeof projectTrackSchema>;
+/** Tracks that hold media clips (`clips`). */
+export type MediaProjectTrack = Extract<ProjectTrack, { kind: "video" | "audio" }>;
+export type CaptionProjectTrack = Extract<ProjectTrack, { kind: "caption" }>;
+export type GraphicsProjectTrack = Extract<ProjectTrack, { kind: "graphics" }>;
+
+export function isMediaTrack(track: ProjectTrack): track is MediaProjectTrack {
+  return track.kind === "video" || track.kind === "audio";
+}
 
 /** Tracks persisted before locking was introduced are semantically unlocked. */
 export function isTrackLocked(track: ProjectTrack): boolean {
@@ -193,7 +210,7 @@ export function isTrackLocked(track: ProjectTrack): boolean {
 
 /** Tracks persisted before muting was introduced are semantically audible. */
 export function isTrackMuted(track: ProjectTrack): boolean {
-  return track.kind === "caption" ? false : (track.muted ?? false);
+  return isMediaTrack(track) ? (track.muted ?? false) : false;
 }
 
 /** Visual tracks persisted before visibility was introduced are semantically shown. */
@@ -202,7 +219,7 @@ export function isTrackHidden(track: ProjectTrack): boolean {
 }
 
 export function canToggleTrackVisibility(track: ProjectTrack): boolean {
-  return track.kind === "video" || track.kind === "caption";
+  return track.kind === "video" || track.kind === "caption" || track.kind === "graphics";
 }
 
 /** Frame sides are even (4:2:0 video) and at most 16384. */
@@ -228,6 +245,41 @@ export const videoSequenceV2Schema = z
   .strict();
 export type VideoSequenceV2 = z.infer<typeof videoSequenceV2Schema>;
 
+function checkGraphicsTrack(
+  track: GraphicsProjectTrack,
+  sequence: VideoSequenceV2,
+  [sequenceIndex, trackIndex]: readonly [number, number],
+  assetsById: ReadonlyMap<string, VideoAsset>,
+  seenClipIds: Set<string>,
+  context: z.RefinementCtx,
+): void {
+  let previousEnd = -1;
+  track.graphicsClips.forEach((clip, clipIndex) => {
+    const path = ["sequences", sequenceIndex, "tracks", trackIndex, "graphicsClips", clipIndex];
+    const issue = (message: string, ...rest: (string | number)[]): void => {
+      context.addIssue({ code: "custom", path: [...path, ...rest], message });
+    };
+    if (seenClipIds.has(clip.id)) issue("Graphics clip ids must be unique", "id");
+    seenClipIds.add(clip.id);
+    if (
+      clip.timelineStart.rateNumerator !== sequence.rate.numerator ||
+      clip.timelineStart.rateDenominator !== sequence.rate.denominator
+    )
+      issue("Graphics clip times must use the sequence rate", "timelineStart");
+    if (clip.timelineStart.value < previousEnd)
+      issue("Graphics clips must be ordered and must not overlap", "timelineStart");
+    previousEnd = clip.timelineStart.value + clip.duration.value;
+    clip.layers.forEach((layer, layerIndex) => {
+      if (layer.kind !== "image") return;
+      const asset = assetsById.get(layer.assetId);
+      if (asset === undefined)
+        issue("Image layer asset must resolve", "layers", layerIndex, "assetId");
+      else if (asset.probe.still !== true)
+        issue("Image layer asset must be a still image", "layers", layerIndex, "assetId");
+    });
+  });
+}
+
 export const videoProjectStateV2Schema = z
   .object({
     assets: z.array(videoAssetSchema).max(100_000),
@@ -240,9 +292,10 @@ export const videoProjectStateV2Schema = z
     const sequenceIds = new Set(state.sequences.map((sequence) => sequence.id));
     const assetsById = new Map(state.assets.map((asset) => [asset.id, asset]));
     const nestedIds = new Set<string>();
+    const graphicsClipIds = new Set<string>();
     for (const sequence of state.sequences)
       for (const track of sequence.tracks) {
-        if (track.kind === "caption") continue;
+        if (!isMediaTrack(track)) continue;
         for (const clip of track.clips)
           if (clip.source.kind === "sequence") nestedIds.add(clip.source.sequenceId);
       }
@@ -308,6 +361,17 @@ export const videoProjectStateV2Schema = z
           }
           return;
         }
+        if (track.kind === "graphics") {
+          checkGraphicsTrack(
+            track,
+            sequence,
+            [sequenceIndex, trackIndex],
+            assetsById,
+            graphicsClipIds,
+            context,
+          );
+          return;
+        }
         track.clips.forEach((clip, clipIndex) => {
           if (clip.speed !== undefined && clip.speed.numerator !== clip.speed.denominator) {
             let reason: string | null = null;
@@ -347,6 +411,25 @@ export const videoProjectStateV2Schema = z
                 ],
                 message: reason,
               });
+          }
+          if (
+            clip.source.kind === "asset" &&
+            assetsById.get(clip.source.assetId)?.probe.still === true
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [
+                "sequences",
+                sequenceIndex,
+                "tracks",
+                trackIndex,
+                "clips",
+                clipIndex,
+                "source",
+                "assetId",
+              ],
+              message: "Media clips cannot use a still-image asset",
+            });
           }
           const referenceExists =
             clip.source.kind === "asset"
@@ -389,11 +472,11 @@ export const videoProjectStateV2Schema = z
       state.sequences.map((sequence) => [
         sequence.id,
         sequence.tracks.flatMap((track) =>
-          track.kind === "caption"
-            ? []
-            : track.clips.flatMap((clip) =>
+          isMediaTrack(track)
+            ? track.clips.flatMap((clip) =>
                 clip.source.kind === "sequence" ? [clip.source.sequenceId] : [],
-              ),
+              )
+            : [],
         ),
       ]),
     );

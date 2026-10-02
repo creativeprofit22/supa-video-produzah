@@ -187,9 +187,17 @@ pub fn create_journal_for_snapshot(
 }
 
 pub fn recover(project_path: &Path) -> Result<RecoveredProject, VideoCommandError> {
-    let main = read_snapshot(project_path).ok();
+    let main = read_snapshot(project_path);
     let previous_path = previous_snapshot_path(project_path)?;
-    let previous = read_snapshot(&previous_path).ok();
+    let previous = read_snapshot(&previous_path);
+    // A project written by a newer build must not be "recovered" from an older snapshot or
+    // rewritten: surface the unsupported-schema error instead.
+    if let Err(unsupported) = &main {
+        if unsupported.code == VideoErrorCode::UnsupportedSchema {
+            return Err(unsupported.clone());
+        }
+    }
+    let (main, previous) = (main.ok(), previous.ok());
     let journal = journal_path(project_path)?;
     if !journal.exists() {
         let mut snapshot = main.or(previous).ok_or_else(|| error("no_snapshot"))?;

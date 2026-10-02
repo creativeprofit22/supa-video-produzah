@@ -9,14 +9,15 @@
 import { z } from "zod";
 import {
   clipTimelineDuration,
-  qcFindingSchema,
-  qcSha256HexSchema,
-  rationalTimeToMicroseconds,
+  isMediaTrack,
   type ProjectClip,
   type QcFinding,
   type QcFindingKind,
+  qcFindingSchema,
   type QcRange,
   type QcSeverity,
+  qcSha256HexSchema,
+  rationalTimeToMicroseconds,
   type VideoAsset,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
@@ -163,7 +164,7 @@ function missingMediaFindings(sequence: VideoSequenceV2, assets: readonly VideoA
   const known = new Set(assets.map((asset) => asset.id));
   const drafts: Draft[] = [];
   for (const track of sequence.tracks) {
-    if (track.kind === "caption") continue;
+    if (!isMediaTrack(track)) continue;
     for (const clip of track.clips) {
       if (clip.source.kind !== "asset" || known.has(clip.source.assetId)) continue;
       const placed = placeClip(clip, sequence);

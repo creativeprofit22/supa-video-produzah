@@ -1,6 +1,7 @@
 mod clip_speed;
 pub mod clip_timing;
 pub mod commands;
+pub mod graphics;
 pub mod hash;
 pub mod history;
 pub mod integrity;
@@ -22,6 +23,10 @@ mod clip_speed_compatibility_tests;
 mod editor_controls_persistence_tests;
 #[cfg(test)]
 mod first_cut_tests;
+#[cfg(test)]
+mod graphics_contract_tests;
+#[cfg(test)]
+mod graphics_entity_tests;
 #[cfg(test)]
 mod proposal_tests;
 #[cfg(test)]

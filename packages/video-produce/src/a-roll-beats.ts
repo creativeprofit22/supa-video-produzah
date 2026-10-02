@@ -1,4 +1,5 @@
 import type { RationalTime, VideoProjectStateV2 } from "@supa-video/contracts";
+import { isMediaTrack } from "@supa-video/contracts";
 
 import type { NarrativeBeat } from "./narrative-beat.js";
 import {
@@ -47,7 +48,7 @@ function resolveClip(
 ): Result<ResolvedClip, ARollBeatError> {
   const sequence = state.sequences.find((item) => item.id === state.activeSequenceId);
   const clip = sequence?.tracks
-    .flatMap((track) => (track.kind === "caption" ? [] : track.clips))
+    .flatMap((track) => (isMediaTrack(track) ? track.clips : []))
     .find((item) => item.id === clipId);
   if (clip === undefined) return { ok: false, error: { code: "clip-not-found" } };
   if (clip.source.kind !== "asset") return { ok: false, error: { code: "clip-not-asset" } };

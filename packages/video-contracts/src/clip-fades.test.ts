@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { isMediaTrack } from "./project-v2-entities.js";
 import { clipTimelineDuration } from "./clip-timing.js";
 import { projectCommandSchemaV2 } from "./project-commands-v2.js";
 import { videoProjectStateV2Schema } from "./project-v2.js";
@@ -14,7 +15,7 @@ function fixture() {
   const state = videoProjectStateV2Schema.parse(raw.state);
   const sequence = state.sequences[0]!;
   const track = sequence.tracks[0]!;
-  if (track.kind === "caption") throw new Error("Expected media fixture");
+  if (!isMediaTrack(track)) throw new Error("Expected media fixture");
   return { state, sequence, track, clip: track.clips[0]! };
 }
 function command() {

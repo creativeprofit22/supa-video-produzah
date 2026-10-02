@@ -1,10 +1,11 @@
 import {
-  VideoDomainError,
   createRationalTime,
+  isMediaTrack,
   type MediaContentIdentityV1,
   type ProjectProjection,
   type ProjectRevisionDescriptorV2,
   type ProjectTrack,
+  VideoDomainError,
 } from "@supa-video/contracts";
 import {
   captionArtifactV1Schema,
@@ -19,6 +20,7 @@ import {
   type PrepareRippleDeleteClipCaptionLifecycleV1Input,
 } from "./ripple-delete-clip-caption-lifecycle.js";
 import type { RippleDeleteClipCommandV2 } from "./split-clip-caption-lifecycle.js";
+import { withGraphicsTrack } from "./graphics-test-fixtures.js";
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const id = (value: number): string =>
@@ -344,7 +346,7 @@ function command(clipId = ids.target): RippleDeleteClipCommandV2 {
 
 function sourceTrack(input: ProjectProjection) {
   const track = input.state.sequences[0]!.tracks[0]!;
-  if (track.kind === "caption") throw new Error("Expected media track");
+  if (!isMediaTrack(track)) throw new Error("Expected media track");
   return track;
 }
 
@@ -727,5 +729,11 @@ describe("prepareRippleDeleteClipCaptionLifecycleV1", () => {
       `${ids.captionA.slice(0, 24)}${String(700).padStart(12, "0")}`,
       `${ids.captionA2.slice(0, 24)}${String(701).padStart(12, "0")}`,
     ]);
+  });
+
+  it("skips a graphics track and prepares the same commands as without it", async () => {
+    const withGraphics = await prepare({ projection: withGraphicsTrack(projection()) });
+
+    expect(withGraphics).toEqual(await prepare());
   });
 });

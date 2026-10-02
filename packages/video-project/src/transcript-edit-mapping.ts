@@ -1,18 +1,19 @@
 import {
-  VideoDomainError,
   createRationalTime,
+  isMediaTrack,
   isTrackLocked,
-  projectProjectionSchema,
-  rateOf,
-  ratesEqual,
-  rescaleRationalTime,
-  videoProjectStateV2Schema,
   type MediaContentIdentityV1,
   type ProjectProjection,
+  projectProjectionSchema,
   type ProjectRevisionDescriptorV2,
+  rateOf,
+  ratesEqual,
   type RationalRate,
   type RationalTime,
+  rescaleRationalTime,
+  VideoDomainError,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 import {
   transcriptArtifactV1Schema,
@@ -171,7 +172,7 @@ function resolveScopeFromState(
       },
     );
   }
-  if (track.kind === "caption") {
+  if (!isMediaTrack(track)) {
     throw transcriptError(
       "invalid_project",
       "Transcript edits require an asset-backed media track",

@@ -1,6 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 use super::clip_timing::{deserialize_valid_speed, validate_speed, ClipSpeed};
+pub use super::graphics::GraphicsClip;
+use crate::video::error::{VideoCommandError, VideoErrorCode};
+
+fn invalid_command_category(category: &'static str) -> VideoCommandError {
+    VideoCommandError::project_error(
+        VideoErrorCode::InvalidCommand,
+        "Project command failed its preconditions",
+        "execute_project_command",
+        category,
+    )
+}
 
 use crate::video::caption::CaptionArtifactV1;
 use crate::video::types::{
@@ -235,6 +246,16 @@ pub enum ProjectTrack {
         )]
         active_caption_artifact: Option<CaptionArtifactV1>,
     },
+    Graphics {
+        id: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        locked: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        hidden: bool,
+        #[serde(rename = "graphicsClips")]
+        graphics_clips: Vec<GraphicsClip>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,46 +271,57 @@ pub enum TrackVisibilityError {
 impl ProjectTrack {
     pub fn id(&self) -> &str {
         match self {
-            Self::Video { id, .. } | Self::Audio { id, .. } | Self::Caption { id, .. } => id,
+            Self::Video { id, .. }
+            | Self::Audio { id, .. }
+            | Self::Caption { id, .. }
+            | Self::Graphics { id, .. } => id,
         }
     }
     pub fn is_locked(&self) -> bool {
         match self {
             Self::Video { locked, .. }
             | Self::Audio { locked, .. }
-            | Self::Caption { locked, .. } => *locked,
+            | Self::Caption { locked, .. }
+            | Self::Graphics { locked, .. } => *locked,
         }
     }
     pub fn set_locked(&mut self, value: bool) -> bool {
         let locked = match self {
             Self::Video { locked, .. }
             | Self::Audio { locked, .. }
-            | Self::Caption { locked, .. } => locked,
+            | Self::Caption { locked, .. }
+            | Self::Graphics { locked, .. } => locked,
         };
         std::mem::replace(locked, value)
     }
     pub fn is_muted(&self) -> Result<bool, TrackMuteError> {
         match self {
             Self::Video { muted, .. } | Self::Audio { muted, .. } => Ok(*muted),
-            Self::Caption { .. } => Err(TrackMuteError::InvalidTarget),
+            Self::Caption { .. } | Self::Graphics { .. } => Err(TrackMuteError::InvalidTarget),
         }
     }
     pub fn set_muted(&mut self, value: bool) -> Result<bool, TrackMuteError> {
         let muted = match self {
             Self::Video { muted, .. } | Self::Audio { muted, .. } => muted,
-            Self::Caption { .. } => return Err(TrackMuteError::InvalidTarget),
+            Self::Caption { .. } | Self::Graphics { .. } => {
+                return Err(TrackMuteError::InvalidTarget)
+            }
         };
         Ok(std::mem::replace(muted, value))
     }
     pub fn is_hidden(&self) -> Result<bool, TrackVisibilityError> {
         match self {
-            Self::Video { hidden, .. } | Self::Caption { hidden, .. } => Ok(*hidden),
+            Self::Video { hidden, .. }
+            | Self::Caption { hidden, .. }
+            | Self::Graphics { hidden, .. } => Ok(*hidden),
             Self::Audio { .. } => Err(TrackVisibilityError::InvalidTarget),
         }
     }
     pub fn set_hidden(&mut self, value: bool) -> Result<bool, TrackVisibilityError> {
         let hidden = match self {
-            Self::Video { hidden, .. } | Self::Caption { hidden, .. } => hidden,
+            Self::Video { hidden, .. }
+            | Self::Caption { hidden, .. }
+            | Self::Graphics { hidden, .. } => hidden,
             Self::Audio { .. } => return Err(TrackVisibilityError::InvalidTarget),
         };
         Ok(std::mem::replace(hidden, value))
@@ -297,13 +329,33 @@ impl ProjectTrack {
     pub fn clips(&self) -> Option<&[ProjectClip]> {
         match self {
             Self::Video { clips, .. } | Self::Audio { clips, .. } => Some(clips),
-            Self::Caption { .. } => None,
+            Self::Caption { .. } | Self::Graphics { .. } => None,
         }
     }
     pub fn clips_mut(&mut self) -> Option<&mut Vec<ProjectClip>> {
         match self {
             Self::Video { clips, .. } | Self::Audio { clips, .. } => Some(clips),
-            Self::Caption { .. } => None,
+            Self::Caption { .. } | Self::Graphics { .. } => None,
+        }
+    }
+    /// Media clips of a video/audio track; the typed precondition error for any other kind.
+    pub fn media_clips_mut(&mut self) -> Result<&mut Vec<ProjectClip>, VideoCommandError> {
+        match self {
+            Self::Video { clips, .. } | Self::Audio { clips, .. } => Ok(clips),
+            Self::Caption { .. } => Err(invalid_command_category("caption_track")),
+            Self::Graphics { .. } => Err(invalid_command_category("non_media_track")),
+        }
+    }
+    pub fn graphics_clips(&self) -> Option<&[GraphicsClip]> {
+        match self {
+            Self::Graphics { graphics_clips, .. } => Some(graphics_clips),
+            _ => None,
+        }
+    }
+    pub fn graphics_clips_mut(&mut self) -> Option<&mut Vec<GraphicsClip>> {
+        match self {
+            Self::Graphics { graphics_clips, .. } => Some(graphics_clips),
+            _ => None,
         }
     }
 }
@@ -716,6 +768,58 @@ pub enum ProjectCommand {
         #[serde(rename = "captionId")]
         caption_id: String,
     },
+    /// Inserts a graphics clip; the inverse is `RemoveGraphicsClip`.
+    AddGraphicsClip {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u64>,
+        #[serde(rename = "graphicsClip")]
+        graphics_clip: GraphicsClip,
+    },
+    /// Removes a graphics clip; the inverse is `AddGraphicsClip` at the same index.
+    RemoveGraphicsClip {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "graphicsClipId")]
+        graphics_clip_id: String,
+    },
+    /// Sets a graphics clip's timeline start and duration; its own inverse.
+    MoveGraphicsClip {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "graphicsClipId")]
+        graphics_clip_id: String,
+        #[serde(rename = "timelineStart")]
+        timeline_start: RationalTime,
+        duration: RationalTime,
+    },
+    /// Replaces a graphics clip's layers (and font); its own inverse.
+    SetGraphicsClipLayers {
+        #[serde(rename = "commandId")]
+        command_id: String,
+        #[serde(rename = "sequenceId")]
+        sequence_id: String,
+        #[serde(rename = "trackId")]
+        track_id: String,
+        #[serde(rename = "graphicsClipId")]
+        graphics_clip_id: String,
+        #[serde(rename = "fontKey")]
+        font_key: String,
+        layers: Vec<super::graphics::GraphicsLayer>,
+    },
     ApplyCaptionArtifact {
         #[serde(rename = "commandId")]
         command_id: String,
@@ -794,6 +898,10 @@ impl ProjectCommand {
             | Self::RestoreClipSpeed { command_id, .. }
             | Self::AddMarker { command_id, .. }
             | Self::RemoveMarker { command_id, .. }
+            | Self::AddGraphicsClip { command_id, .. }
+            | Self::RemoveGraphicsClip { command_id, .. }
+            | Self::MoveGraphicsClip { command_id, .. }
+            | Self::SetGraphicsClipLayers { command_id, .. }
             | Self::AddCaption { command_id, .. }
             | Self::RemoveCaption { command_id, .. }
             | Self::ApplyCaptionArtifact { command_id, .. }

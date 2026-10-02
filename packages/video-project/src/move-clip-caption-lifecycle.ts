@@ -1,15 +1,16 @@
 import {
-  VideoDomainError,
   clipTimelineDuration,
+  isMediaTrack,
   isTrackLocked,
   moveClipCommandSchemaV2,
+  type ProjectCommandV2,
+  type ProjectProjection,
   projectProjectionSchema,
   rateOf,
   ratesEqual,
-  videoProjectStateV2Schema,
-  type ProjectCommandV2,
-  type ProjectProjection,
+  VideoDomainError,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 import { transcriptArtifactV1Schema, type TranscriptArtifactV1 } from "@supa-video/media";
 
@@ -95,7 +96,7 @@ function replayMoveAgainstCandidateState(
   const candidateState = structuredClone(projection.state);
   const sequence = candidateState.sequences.find(({ id }) => id === command.sequenceId);
   const track = sequence?.tracks.find(({ id }) => id === command.trackId);
-  if (sequence === undefined || track === undefined || track.kind === "caption") {
+  if (sequence === undefined || track === undefined || !isMediaTrack(track)) {
     moveFailure(
       "caption_lifecycle_command_target_mismatch",
       "Move command targets an unknown media track",

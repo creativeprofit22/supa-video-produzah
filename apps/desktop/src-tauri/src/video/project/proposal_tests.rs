@@ -995,3 +995,94 @@ fn failed_store_write_on_submit_keeps_nothing_half_written() {
     let listing = service.list_proposals(OWNER, &snapshot.id, NOW_MS).unwrap();
     assert!(listing.proposals.is_empty());
 }
+
+/// Graphics commands stay outside the agent proposal surface until phase 19 (ADR 0003).
+fn graphics_proposal(snapshot: &VideoProjectSnapshotV2, seed: u64, command: Value) -> Value {
+    let mut proposal = sample_proposal(snapshot, seed);
+    let mut graphics = command;
+    graphics["commandId"] = json!(pid(seed + 20));
+    graphics["sequenceId"] = proposal["sequenceId"].clone();
+    graphics["trackId"] = proposal["trackId"].clone();
+    proposal["commandGroup"]["commands"]
+        .as_array_mut()
+        .unwrap()
+        .push(graphics);
+    proposal
+}
+
+fn hold(value: f64) -> Value {
+    json!([{ "timeMicroseconds": 0, "value": value }])
+}
+
+fn graphics_layers() -> Value {
+    json!([{
+        "kind": "rect", "width": 100, "height": 50, "cornerRadius": 0, "fill": "#FFFFFF",
+        "x": hold(0.0), "y": hold(0.0), "scale": hold(1.0), "rotation": hold(0.0), "opacity": hold(1.0),
+    }])
+}
+
+fn graphics_commands() -> [(&'static str, Value); 2] {
+    [
+        (
+            "AddGraphicsClip",
+            json!({
+                "type": "AddGraphicsClip",
+                "graphicsClip": {
+                    "graphicsVersion": 1,
+                    "id": pid(501),
+                    "timelineStart": time(0),
+                    "duration": time(30),
+                    "fontKey": "segoe-ui-bold",
+                    "layers": graphics_layers(),
+                },
+            }),
+        ),
+        (
+            "SetGraphicsClipLayers",
+            json!({
+                "type": "SetGraphicsClipLayers",
+                "graphicsClipId": pid(501),
+                "fontKey": "segoe-ui-bold",
+                "layers": graphics_layers(),
+            }),
+        ),
+    ]
+}
+
+#[test]
+fn proposals_carrying_graphics_commands_are_rejected_by_policy() {
+    let snapshot = fixture();
+    for (name, command) in graphics_commands() {
+        let proposal = graphics_proposal(&snapshot, 100, command);
+        let error = validate_proposal(&proposal, &snapshot).unwrap_err();
+        assert_eq!(
+            error.code,
+            crate::video::error::VideoErrorCode::InvalidCommand,
+            "{name}"
+        );
+        assert_eq!(
+            error.details["category"], "proposal_command_policy",
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn submitting_a_graphics_proposal_leaves_no_pending_proposal() {
+    let service = VideoProjectService::default();
+    let project = open_project(&service);
+    let snapshot = &project.original;
+    for (name, command) in graphics_commands() {
+        let proposal = graphics_proposal(snapshot, 100, command);
+        let error = service
+            .submit_proposal(OWNER, &snapshot.id, &proposal, NOW_MS, 60_000)
+            .unwrap_err();
+        assert_eq!(
+            error.code,
+            crate::video::error::VideoErrorCode::InvalidCommand,
+            "{name}"
+        );
+    }
+    let listing = service.list_proposals(OWNER, &snapshot.id, NOW_MS).unwrap();
+    assert!(listing.proposals.is_empty());
+}

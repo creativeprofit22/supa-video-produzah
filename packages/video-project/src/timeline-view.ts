@@ -10,6 +10,7 @@ import {
   ratesEqual,
   rescaleRationalTime,
   timelineFrameRangesIntersect,
+  type GraphicsClip,
   type MediaContentIdentityV1,
   type ProjectCaption,
   type ProjectClip,
@@ -45,6 +46,14 @@ export interface TimelineCaptionViewModel extends TimelineRangeViewModel {
   readonly text: string;
 }
 
+/** A read-only graphics clip block; graphics editing arrives with the graphics editor. */
+export interface TimelineGraphicsClipViewModel extends TimelineRangeViewModel {
+  readonly graphicsClipId: string;
+  readonly trackId: string;
+  /** The first text layer's text, or "Graphics". */
+  readonly label: string;
+}
+
 export interface TimelineTrackViewModel {
   readonly trackId: string;
   readonly name: string;
@@ -57,8 +66,10 @@ export interface TimelineTrackViewModel {
   readonly range: TimelineRangeViewModel;
   readonly totalClipCount: number;
   readonly totalCaptionCount: number;
+  readonly totalGraphicsClipCount: number;
   readonly clips: readonly TimelineClipViewModel[];
   readonly captions: readonly TimelineCaptionViewModel[];
+  readonly graphicsClips: readonly TimelineGraphicsClipViewModel[];
 }
 
 export interface TimelineSequenceViewModel {
@@ -72,6 +83,8 @@ export interface TimelineSequenceViewModel {
   readonly materializedClipCount: number;
   readonly totalCaptionCount: number;
   readonly materializedCaptionCount: number;
+  readonly totalGraphicsClipCount: number;
+  readonly materializedGraphicsClipCount: number;
 }
 
 interface IndexedClip extends TimelineRangeViewModel {
@@ -81,6 +94,11 @@ interface IndexedClip extends TimelineRangeViewModel {
 
 interface IndexedCaption extends TimelineRangeViewModel {
   readonly caption: ProjectCaption;
+  readonly canonicalIndex: number;
+}
+
+interface IndexedGraphicsClip extends TimelineRangeViewModel {
+  readonly clip: GraphicsClip;
   readonly canonicalIndex: number;
 }
 
@@ -97,8 +115,10 @@ interface PreparedTrack {
   readonly range: TimelineRangeViewModel;
   readonly clipIndex: IntervalNode<IndexedClip> | null;
   readonly captionIndex: IntervalNode<IndexedCaption> | null;
+  readonly graphicsIndex: IntervalNode<IndexedGraphicsClip> | null;
   readonly totalClipCount: number;
   readonly totalCaptionCount: number;
+  readonly totalGraphicsClipCount: number;
 }
 
 interface PreparedTimeline {
@@ -107,6 +127,7 @@ interface PreparedTimeline {
   readonly tracks: readonly PreparedTrack[];
   readonly totalClipCount: number;
   readonly totalCaptionCount: number;
+  readonly totalGraphicsClipCount: number;
   readonly assetsById: ReadonlyMap<string, ProjectProjection["state"]["assets"][number]>;
   readonly sequencesById: ReadonlyMap<string, VideoSequenceV2>;
 }
@@ -157,6 +178,25 @@ function captionRange(caption: ProjectCaption, sequenceRate: RationalRate): Time
     });
   }
   return { startFrame, endFrameExclusive };
+}
+
+function graphicsClipRange(clip: GraphicsClip, sequenceRate: RationalRate): TimelineRangeViewModel {
+  if (!timeUsesRate(clip.timelineStart, sequenceRate)) {
+    throw new VideoDomainError(
+      "mixed_rate",
+      "Timeline graphics clip start must use the active sequence rate",
+      { graphicsClipId: clip.id },
+    );
+  }
+  return {
+    startFrame: clip.timelineStart.value,
+    endFrameExclusive: clip.timelineStart.value + clip.duration.value,
+  };
+}
+
+function graphicsClipLabel(clip: GraphicsClip): string {
+  for (const layer of clip.layers) if (layer.kind === "text") return layer.text;
+  return "Graphics";
 }
 
 function activeSequence(projection: ProjectProjection): VideoSequenceV2 | null {
@@ -242,6 +282,7 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
       tracks: Object.freeze([]),
       totalClipCount: 0,
       totalCaptionCount: 0,
+      totalGraphicsClipCount: 0,
       assetsById,
       sequencesById,
     };
@@ -252,7 +293,31 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
   let timelineEndFrameExclusive = 0;
   let totalClipCount = 0;
   let totalCaptionCount = 0;
+  let totalGraphicsClipCount = 0;
   const tracks = sequence.tracks.map((track): PreparedTrack => {
+    if (track.kind === "graphics") {
+      const indexed = track.graphicsClips.map((clip, canonicalIndex): IndexedGraphicsClip => ({
+        clip,
+        canonicalIndex,
+        ...graphicsClipRange(clip, sequence.rate),
+      }));
+      const trackEndFrameExclusive = indexed.reduce(
+        (maximum, clip) => Math.max(maximum, clip.endFrameExclusive),
+        0,
+      );
+      timelineEndFrameExclusive = Math.max(timelineEndFrameExclusive, trackEndFrameExclusive);
+      totalGraphicsClipCount += indexed.length;
+      return {
+        track,
+        range: Object.freeze({ startFrame: 0, endFrameExclusive: trackEndFrameExclusive }),
+        clipIndex: null,
+        captionIndex: null,
+        graphicsIndex: buildIntervalIndex(indexed),
+        totalClipCount: 0,
+        totalCaptionCount: 0,
+        totalGraphicsClipCount: indexed.length,
+      };
+    }
     if (track.kind === "caption") {
       const indexedCaptions = track.captions.map((caption, canonicalIndex): IndexedCaption => ({
         caption,
@@ -270,8 +335,10 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
         range: Object.freeze({ startFrame: 0, endFrameExclusive: trackEndFrameExclusive }),
         clipIndex: null,
         captionIndex: buildIntervalIndex(indexedCaptions),
+        graphicsIndex: null,
         totalClipCount: 0,
         totalCaptionCount: indexedCaptions.length,
+        totalGraphicsClipCount: 0,
       };
     }
     const indexedClips = track.clips.map((clip, canonicalIndex): IndexedClip => ({
@@ -290,8 +357,10 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
       range: Object.freeze({ startFrame: 0, endFrameExclusive: trackEndFrameExclusive }),
       clipIndex: buildIntervalIndex(indexedClips),
       captionIndex: null,
+      graphicsIndex: null,
       totalClipCount: indexedClips.length,
       totalCaptionCount: 0,
+      totalGraphicsClipCount: 0,
     };
   });
 
@@ -301,6 +370,7 @@ function prepareTimeline(projectionInput: ProjectProjection): PreparedTimeline {
     tracks,
     totalClipCount,
     totalCaptionCount,
+    totalGraphicsClipCount,
     assetsById,
     sequencesById,
   };
@@ -389,8 +459,41 @@ export function projectVisibleTimeline(
 
   let materializedClipCount = 0;
   let materializedCaptionCount = 0;
+  let materializedGraphicsClipCount = 0;
   const tracks: TimelineTrackViewModel[] = prepared.tracks.map((preparedTrack) => {
     const { track } = preparedTrack;
+    if (track.kind === "graphics") {
+      const visible: IndexedGraphicsClip[] = [];
+      queryIntervalIndex(preparedTrack.graphicsIndex, viewport.overscanRange, visible);
+      visible.sort((left, right) => left.canonicalIndex - right.canonicalIndex);
+      const graphicsClips = visible.map(
+        ({ clip, startFrame, endFrameExclusive }): TimelineGraphicsClipViewModel => ({
+          graphicsClipId: clip.id,
+          trackId: track.id,
+          label: graphicsClipLabel(clip),
+          startFrame,
+          endFrameExclusive,
+        }),
+      );
+      materializedGraphicsClipCount += graphicsClips.length;
+      return {
+        trackId: track.id,
+        name: track.name,
+        kind: track.kind,
+        locked: isTrackLocked(track),
+        canMute: false,
+        muted: false,
+        canToggleVisibility: canToggleTrackVisibility(track),
+        hidden: isTrackHidden(track),
+        range: preparedTrack.range,
+        totalClipCount: 0,
+        totalCaptionCount: 0,
+        totalGraphicsClipCount: preparedTrack.totalGraphicsClipCount,
+        clips: Object.freeze([]),
+        captions: Object.freeze([]),
+        graphicsClips,
+      };
+    }
     if (track.kind === "caption") {
       const visibleCaptions: IndexedCaption[] = [];
       queryIntervalIndex(preparedTrack.captionIndex, viewport.overscanRange, visibleCaptions);
@@ -417,8 +520,10 @@ export function projectVisibleTimeline(
         range: preparedTrack.range,
         totalClipCount: 0,
         totalCaptionCount: preparedTrack.totalCaptionCount,
+        totalGraphicsClipCount: 0,
         clips: Object.freeze([]),
         captions,
+        graphicsClips: Object.freeze([]),
       };
     }
 
@@ -446,8 +551,10 @@ export function projectVisibleTimeline(
       range: preparedTrack.range,
       totalClipCount: preparedTrack.totalClipCount,
       totalCaptionCount: 0,
+      totalGraphicsClipCount: 0,
       clips,
       captions: Object.freeze([]),
+      graphicsClips: Object.freeze([]),
     };
   });
 
@@ -462,5 +569,7 @@ export function projectVisibleTimeline(
     materializedClipCount,
     totalCaptionCount: prepared.totalCaptionCount,
     materializedCaptionCount,
+    totalGraphicsClipCount: prepared.totalGraphicsClipCount,
+    materializedGraphicsClipCount,
   });
 }

@@ -27,8 +27,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 31, "rateNumerator": 30, "rateDenominator": 1 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 31,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -63,8 +71,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 31, "rateNumerator": 60, "rateDenominator": 1 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 31,
+                  "rateNumerator": 60,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -99,8 +115,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 60, "rateNumerator": 60, "rateDenominator": 1 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 60,
+                  "rateNumerator": 60,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -135,8 +159,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 90, "rateNumerator": 60, "rateDenominator": 1 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 90,
+                  "rateNumerator": 60,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -171,8 +203,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 2, "rateNumerator": 30, "rateDenominator": 7 }
+                "start": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 2,
+                  "rateNumerator": 30,
+                  "rateDenominator": 7
+                }
               }
             ],
             "cacheInvalidations": []
@@ -207,8 +247,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30000, "rateDenominator": 1001 },
-                "end": { "value": 31, "rateNumerator": 30000, "rateDenominator": 1001 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30000,
+                  "rateDenominator": 1001
+                },
+                "end": {
+                  "value": 31,
+                  "rateNumerator": 30000,
+                  "rateDenominator": 1001
+                }
               }
             ],
             "cacheInvalidations": []
@@ -243,8 +291,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 }
+                "start": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -279,8 +335,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 31, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 30, "rateNumerator": 30, "rateDenominator": 1 }
+                "start": {
+                  "value": 31,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 30,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -315,8 +379,16 @@
             "affectedRanges": [
               {
                 "sequenceId": "20000000-0000-4000-8000-000000000024",
-                "start": { "value": 9007199254740990, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 9007199254740991, "rateNumerator": 30, "rateDenominator": 1 }
+                "start": {
+                  "value": 9007199254740990,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 9007199254740991,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                }
               }
             ],
             "cacheInvalidations": []
@@ -324,40 +396,80 @@
         }
       ]
     },
-    { "name": "minimal-v2", "path": "valid-minimal.svpvideo", "expected": "valid" },
-    { "name": "relative-source", "path": "valid-relative-source.svpvideo", "expected": "valid" },
-    { "name": "mixed-rate-source", "path": "valid-mixed-rate.svpvideo", "expected": "valid" },
+    {
+      "name": "minimal-v2",
+      "path": "valid-minimal.svpvideo",
+      "expected": "valid"
+    },
+    {
+      "name": "relative-source",
+      "path": "valid-relative-source.svpvideo",
+      "expected": "valid"
+    },
+    {
+      "name": "mixed-rate-source",
+      "path": "valid-mixed-rate.svpvideo",
+      "expected": "valid"
+    },
     {
       "name": "all-text-format-boundaries",
       "path": "valid-relative-source.svpvideo",
       "expected": "valid",
       "rehashState": true,
       "mutations": [
-        { "pointer": "/name", "repeatString": { "value": "p", "count": 512 } },
+        {
+          "pointer": "/name",
+          "repeatString": {
+            "value": "p",
+            "count": 512
+          }
+        },
         {
           "pointer": "/state/assets/0/displayName",
-          "repeatString": { "value": "a", "count": 512 }
+          "repeatString": {
+            "value": "a",
+            "count": 512
+          }
         },
         {
           "pointer": "/state/assets/0/probe/videoCodecName",
-          "repeatString": { "value": "v", "count": 512 }
+          "repeatString": {
+            "value": "v",
+            "count": 512
+          }
         },
-        { "pointer": "/state/sequences/0/name", "repeatString": { "value": "s", "count": 512 } },
+        {
+          "pointer": "/state/sequences/0/name",
+          "repeatString": {
+            "value": "s",
+            "count": 512
+          }
+        },
         {
           "pointer": "/state/sequences/0/tracks/0/name",
-          "repeatString": { "value": "t", "count": 512 }
+          "repeatString": {
+            "value": "t",
+            "count": 512
+          }
         },
         {
           "pointer": "/state/sequences/0/markers/-",
           "value": {
             "id": "20000000-0000-4000-8000-000000000001",
-            "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+            "time": {
+              "value": 0,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
             "label": "marker"
           }
         },
         {
           "pointer": "/state/sequences/0/markers/0/label",
-          "repeatString": { "value": "m", "count": 512 }
+          "repeatString": {
+            "value": "m",
+            "count": 512
+          }
         },
         {
           "pointer": "/state/sequences/0/tracks/-",
@@ -368,8 +480,16 @@
             "captions": [
               {
                 "id": "20000000-0000-4000-8000-000000000003",
-                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "start": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
                 "text": "caption",
                 "language": "en"
               }
@@ -378,15 +498,24 @@
         },
         {
           "pointer": "/state/sequences/0/tracks/1/name",
-          "repeatString": { "value": "c", "count": 512 }
+          "repeatString": {
+            "value": "c",
+            "count": 512
+          }
         },
         {
           "pointer": "/state/sequences/0/tracks/1/captions/0/text",
-          "repeatString": { "value": "x", "count": 16384 }
+          "repeatString": {
+            "value": "x",
+            "count": 16384
+          }
         },
         {
           "pointer": "/state/sequences/0/tracks/1/captions/0/language",
-          "repeatString": { "value": "a", "count": 64 }
+          "repeatString": {
+            "value": "a",
+            "count": 64
+          }
         }
       ]
     },
@@ -395,9 +524,18 @@
       "path": "valid-minimal.svpvideo",
       "expected": "valid",
       "mutations": [
-        { "pointer": "/createdAt", "value": "2026-07-26T12:00+01:00" },
-        { "pointer": "/updatedAt", "value": "2026-07-26T12:00+01:00" },
-        { "pointer": "/revision/committedAt", "value": "2026-07-26T12:00+01:00" }
+        {
+          "pointer": "/createdAt",
+          "value": "2026-07-26T12:00+01:00"
+        },
+        {
+          "pointer": "/updatedAt",
+          "value": "2026-07-26T12:00+01:00"
+        },
+        {
+          "pointer": "/revision/committedAt",
+          "value": "2026-07-26T12:00+01:00"
+        }
       ]
     },
     {
@@ -405,7 +543,10 @@
       "path": "valid-minimal.svpvideo",
       "expected": "valid",
       "mutations": [
-        { "pointer": "/revision/parentId", "value": "20000000-0000-4000-8000-000000000010" }
+        {
+          "pointer": "/revision/parentId",
+          "value": "20000000-0000-4000-8000-000000000010"
+        }
       ]
     },
     {
@@ -440,7 +581,10 @@
         },
         {
           "pointer": "/history/undoStack/0/summary",
-          "repeatString": { "value": "h", "count": 512 }
+          "repeatString": {
+            "value": "h",
+            "count": 512
+          }
         },
         {
           "pointer": "/history/undoStack/0/forwardCommands",
@@ -470,8 +614,16 @@
             "count": 10000,
             "value": {
               "sequenceId": "20000000-0000-4000-8000-000000000024",
-              "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-              "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 }
+              "start": {
+                "value": 0,
+                "rateNumerator": 30,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 1,
+                "rateNumerator": 30,
+                "rateDenominator": 1
+              }
             }
           }
         },
@@ -518,7 +670,15 @@
       "name": "project-name-over-limit",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
-      "mutations": [{ "pointer": "/name", "repeatString": { "value": "p", "count": 513 } }]
+      "mutations": [
+        {
+          "pointer": "/name",
+          "repeatString": {
+            "value": "p",
+            "count": 513
+          }
+        }
+      ]
     },
     {
       "name": "sequence-name-600-character-regression",
@@ -526,7 +686,13 @@
       "expected": "invalid_project",
       "rehashState": true,
       "mutations": [
-        { "pointer": "/state/sequences/0/name", "repeatString": { "value": "s", "count": 600 } }
+        {
+          "pointer": "/state/sequences/0/name",
+          "repeatString": {
+            "value": "s",
+            "count": 600
+          }
+        }
       ]
     },
     {
@@ -537,7 +703,10 @@
       "mutations": [
         {
           "pointer": "/state/sequences/0/tracks/0/name",
-          "repeatString": { "value": "t", "count": 513 }
+          "repeatString": {
+            "value": "t",
+            "count": 513
+          }
         }
       ]
     },
@@ -551,13 +720,20 @@
           "pointer": "/state/sequences/0/markers/-",
           "value": {
             "id": "20000000-0000-4000-8000-000000000001",
-            "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+            "time": {
+              "value": 0,
+              "rateNumerator": 30,
+              "rateDenominator": 1
+            },
             "label": "marker"
           }
         },
         {
           "pointer": "/state/sequences/0/markers/0/label",
-          "repeatString": { "value": "m", "count": 513 }
+          "repeatString": {
+            "value": "m",
+            "count": 513
+          }
         }
       ]
     },
@@ -576,8 +752,16 @@
             "captions": [
               {
                 "id": "20000000-0000-4000-8000-000000000003",
-                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "start": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
                 "text": "caption",
                 "language": "en"
               }
@@ -586,7 +770,10 @@
         },
         {
           "pointer": "/state/sequences/0/tracks/1/captions/0/text",
-          "repeatString": { "value": "x", "count": 16385 }
+          "repeatString": {
+            "value": "x",
+            "count": 16385
+          }
         }
       ]
     },
@@ -605,8 +792,16 @@
             "captions": [
               {
                 "id": "20000000-0000-4000-8000-000000000003",
-                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "start": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
                 "text": "caption",
                 "language": "a"
               }
@@ -630,8 +825,16 @@
             "captions": [
               {
                 "id": "20000000-0000-4000-8000-000000000003",
-                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "start": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
                 "text": "caption",
                 "language": "en_US"
               }
@@ -655,8 +858,16 @@
             "captions": [
               {
                 "id": "20000000-0000-4000-8000-000000000003",
-                "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-                "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 },
+                "start": {
+                  "value": 0,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
+                "end": {
+                  "value": 1,
+                  "rateNumerator": 30,
+                  "rateDenominator": 1
+                },
                 "text": "caption",
                 "language": "en"
               }
@@ -665,7 +876,10 @@
         },
         {
           "pointer": "/state/sequences/0/tracks/1/captions/0/language",
-          "repeatString": { "value": "a", "count": 65 }
+          "repeatString": {
+            "value": "a",
+            "count": 65
+          }
         }
       ]
     },
@@ -675,7 +889,13 @@
       "expected": "invalid_project",
       "rehashState": true,
       "mutations": [
-        { "pointer": "/state/assets/0/displayName", "repeatString": { "value": "a", "count": 513 } }
+        {
+          "pointer": "/state/assets/0/displayName",
+          "repeatString": {
+            "value": "a",
+            "count": 513
+          }
+        }
       ]
     },
     {
@@ -686,7 +906,10 @@
       "mutations": [
         {
           "pointer": "/state/assets/0/probe/videoCodecName",
-          "repeatString": { "value": "v", "count": 513 }
+          "repeatString": {
+            "value": "v",
+            "count": 513
+          }
         }
       ]
     },
@@ -698,7 +921,10 @@
       "mutations": [
         {
           "pointer": "/state/assets/0/locator/relativePath",
-          "repeatString": { "value": "a", "count": 32769 }
+          "repeatString": {
+            "value": "a",
+            "count": 32769
+          }
         }
       ]
     },
@@ -708,31 +934,59 @@
       "expected": "invalid_project",
       "rehashState": true,
       "mutations": [
-        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateNumerator", "value": 2 },
-        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateDenominator", "value": 2 },
-        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateNumerator", "value": 2 },
-        { "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateDenominator", "value": 2 }
+        {
+          "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateNumerator",
+          "value": 2
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/0/clips/0/sourceIn/rateDenominator",
+          "value": 2
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateNumerator",
+          "value": 2
+        },
+        {
+          "pointer": "/state/sequences/0/tracks/0/clips/0/sourceOut/rateDenominator",
+          "value": 2
+        }
       ]
     },
     {
       "name": "invalid-created-datetime-format",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
-      "mutations": [{ "pointer": "/createdAt", "value": "2026-07-26t12:00:00z" }]
+      "mutations": [
+        {
+          "pointer": "/createdAt",
+          "value": "2026-07-26t12:00:00z"
+        }
+      ]
     },
     {
       "name": "invalid-committed-datetime-format",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
-      "mutations": [{ "pointer": "/revision/committedAt", "value": "2026-07-26 12:00:00Z" }]
+      "mutations": [
+        {
+          "pointer": "/revision/committedAt",
+          "value": "2026-07-26 12:00:00Z"
+        }
+      ]
     },
     {
       "name": "updated-before-created",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
       "mutations": [
-        { "pointer": "/createdAt", "value": "2026-07-26T12:00:01Z" },
-        { "pointer": "/updatedAt", "value": "2026-07-26T12:00:00Z" }
+        {
+          "pointer": "/createdAt",
+          "value": "2026-07-26T12:00:01Z"
+        },
+        {
+          "pointer": "/updatedAt",
+          "value": "2026-07-26T12:00:00Z"
+        }
       ]
     },
     {
@@ -740,20 +994,39 @@
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
       "mutations": [
-        { "pointer": "/revision/stateHash", "repeatString": { "value": "A", "count": 64 } }
+        {
+          "pointer": "/revision/stateHash",
+          "repeatString": {
+            "value": "A",
+            "count": 64
+          }
+        }
       ]
     },
     {
       "name": "uppercase-last-record-sha256",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
-      "mutations": [{ "pointer": "/lastRecordHash", "repeatString": { "value": "A", "count": 64 } }]
+      "mutations": [
+        {
+          "pointer": "/lastRecordHash",
+          "repeatString": {
+            "value": "A",
+            "count": 64
+          }
+        }
+      ]
     },
     {
       "name": "invalid-revision-parent-id",
       "path": "valid-minimal.svpvideo",
       "expected": "invalid_project",
-      "mutations": [{ "pointer": "/revision/parentId", "value": "not-a-uuid" }]
+      "mutations": [
+        {
+          "pointer": "/revision/parentId",
+          "value": "not-a-uuid"
+        }
+      ]
     },
     {
       "name": "history-summary-over-limit",
@@ -787,7 +1060,10 @@
         },
         {
           "pointer": "/history/undoStack/0/summary",
-          "repeatString": { "value": "h", "count": 513 }
+          "repeatString": {
+            "value": "h",
+            "count": 513
+          }
         }
       ]
     },
@@ -896,8 +1172,16 @@
             "count": 10001,
             "value": {
               "sequenceId": "20000000-0000-4000-8000-000000000024",
-              "start": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
-              "end": { "value": 1, "rateNumerator": 30, "rateDenominator": 1 }
+              "start": {
+                "value": 0,
+                "rateNumerator": 30,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 1,
+                "rateNumerator": 30,
+                "rateDenominator": 1
+              }
             }
           }
         }
@@ -995,7 +1279,11 @@
                   "index": 9007199254740992,
                   "marker": {
                     "id": "20000000-0000-4000-8000-000000000025",
-                    "time": { "value": 0, "rateNumerator": 30, "rateDenominator": 1 },
+                    "time": {
+                      "value": 0,
+                      "rateNumerator": 30,
+                      "rateDenominator": 1
+                    },
                     "label": "marker"
                   }
                 }
@@ -1028,6 +1316,100 @@
       "name": "future-schema",
       "path": "unsupported-future.svpvideo",
       "expected": "unsupported_schema"
+    },
+    {
+      "name": "graphics-track",
+      "path": "valid-graphics.svpvideo",
+      "expected": "valid"
+    },
+    {
+      "name": "graphics-future-version",
+      "path": "graphics-future-version.svpvideo",
+      "expected": "unsupported_schema"
+    },
+    {
+      "name": "graphics-image-missing-asset",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/1/graphicsClips/0/layers/2/assetId",
+          "value": "10000000-0000-4000-8000-0000000000ff"
+        }
+      ]
+    },
+    {
+      "name": "graphics-image-not-still",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/assets/1/probe/still",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "graphics-unknown-field",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/1/graphicsClips/0/extra",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "graphics-string-easing",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/1/graphicsClips/0/layers/0/x/0/easing",
+          "value": "snappy"
+        }
+      ]
+    },
+    {
+      "name": "graphics-muted-track",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/1/muted",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "graphics-clip-mixed-rate",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/1/graphicsClips/0/timelineStart/rateNumerator",
+          "value": 25
+        }
+      ]
+    },
+    {
+      "name": "still-asset-as-media-clip",
+      "path": "valid-graphics.svpvideo",
+      "expected": "invalid_project",
+      "rehashState": true,
+      "mutations": [
+        {
+          "pointer": "/state/sequences/0/tracks/0/clips/0/source/assetId",
+          "value": "10000000-0000-4000-8000-000000000020"
+        }
+      ]
     }
   ]
 }

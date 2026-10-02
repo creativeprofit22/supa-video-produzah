@@ -237,4 +237,22 @@ describe("editorial checks", () => {
     const b = await evaluateEditorial(input({ ...overrides, revisionStateHash: "b".repeat(64) }));
     expect(a.findings[0]?.findingId).not.toBe(b.findings[0]?.findingId);
   });
+
+  it("skips a graphics track and reports the same findings as without it", async () => {
+    const base = input({ beats: [beat(0, 0, 10), beat(1, 10, 20)] });
+    const withGraphics: EditorialInput = {
+      ...base,
+      sequence: {
+        ...base.sequence,
+        tracks: [
+          ...base.sequence.tracks,
+          { id: uuid(950), name: "Graphics 1", kind: "graphics", graphicsClips: [] },
+        ],
+      },
+    };
+
+    const evaluation = await evaluateEditorial(withGraphics);
+
+    expect(evaluation).toEqual(await evaluateEditorial(base));
+  });
 });

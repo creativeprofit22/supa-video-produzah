@@ -13,7 +13,8 @@ fn track_name(track: &ProjectTrack) -> &str {
     match track {
         ProjectTrack::Video { name, .. }
         | ProjectTrack::Audio { name, .. }
-        | ProjectTrack::Caption { name, .. } => name,
+        | ProjectTrack::Caption { name, .. }
+        | ProjectTrack::Graphics { name, .. } => name,
     }
 }
 

@@ -1,9 +1,10 @@
 import {
+  isMediaTrack,
   type ProjectClip,
   type ProjectProjection,
+  projectProjectionSchema,
   type ProjectTrack,
   type VideoSequenceV2,
-  projectProjectionSchema,
 } from "@supa-video/contracts";
 
 export interface ActiveClipSelection {
@@ -19,7 +20,7 @@ export function selectActiveClip(projectionInput: ProjectProjection): ActiveClip
   );
   if (sequence === undefined) return null;
   for (const track of sequence.tracks) {
-    if (track.kind !== "caption" && track.clips[0] !== undefined) {
+    if (isMediaTrack(track) && track.clips[0] !== undefined) {
       return { sequence, track, clip: track.clips[0] };
     }
   }

@@ -1,9 +1,10 @@
 import {
-  VideoDomainError,
+  isMediaTrack,
   isTrackLocked,
   type ProjectCommandV2,
   type ProjectProjection,
   type ProjectTrack,
+  VideoDomainError,
   type VideoProjectStateV2,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
@@ -11,7 +12,7 @@ import type { CaptionArtifactV1, TranscriptArtifactV1 } from "@supa-video/media"
 
 import { identitiesEqual } from "./transcript-edit-mapping.js";
 
-export type MediaProjectTrack = Exclude<ProjectTrack, { readonly kind: "caption" }>;
+export type MediaProjectTrack = Extract<ProjectTrack, { readonly kind: "video" | "audio" }>;
 export type CaptionProjectTrack = Extract<ProjectTrack, { readonly kind: "caption" }>;
 export type ApplyCaptionArtifactCommandV2 = Extract<
   ProjectCommandV2,
@@ -118,7 +119,7 @@ export function resolveCaptionLifecycleContext(
   }
 
   const sourceTrack = sequence.tracks.find(({ id }) => id === input.sourceTrackId);
-  if (sourceTrack === undefined || sourceTrack.kind === "caption") {
+  if (sourceTrack === undefined || !isMediaTrack(sourceTrack)) {
     fail(reasons.sourceTrackMissing, "Caption lifecycle source media track does not exist", {
       trackId: input.sourceTrackId,
     });

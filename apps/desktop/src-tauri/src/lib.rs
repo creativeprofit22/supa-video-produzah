@@ -115,6 +115,8 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::probe::video_probe_media,
             video::video_load_managed_transcript_artifact,
             video::project_io::video_pick_source,
+            video::project_io::video_pick_still_image,
+            video::project_io::video_probe_still_image,
             video::derived::video_prepare_asset,
             video::render::video_start_render,
             video::render::video_cancel_render,

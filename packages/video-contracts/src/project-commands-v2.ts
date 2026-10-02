@@ -3,6 +3,11 @@ import { z } from "zod";
 import { captionArtifactV1Schema } from "./caption.js";
 import { clipSpeedSchema } from "./clip-timing.js";
 import {
+  graphicsClipSchema,
+  graphicsLayersSchema,
+  MAX_GRAPHICS_DURATION_FRAMES,
+} from "./project-graphics.js";
+import {
   clipTransformSchema,
   clipFadesSchema,
   sequenceFrameHeightSchema,
@@ -21,6 +26,7 @@ import {
   projectUuidSchema,
   videoAssetSchema,
 } from "./project.js";
+import { renderCaptionFontKeySchema } from "./render-fonts.js";
 import { mediaContentIdentityV1Schema } from "./source-content.js";
 import { rationalTimeSchema } from "./time.js";
 
@@ -306,6 +312,53 @@ export const removeCaptionCommandSchemaV2 = z
     captionId: projectUuidSchema,
   })
   .strict();
+export const addGraphicsClipCommandSchemaV2 = z
+  .object({
+    type: z.literal("AddGraphicsClip"),
+    ...commandId,
+    ...target,
+    index: insertionIndex,
+    graphicsClip: graphicsClipSchema,
+  })
+  .strict();
+export const removeGraphicsClipCommandSchemaV2 = z
+  .object({
+    type: z.literal("RemoveGraphicsClip"),
+    ...commandId,
+    ...target,
+    graphicsClipId: projectUuidSchema,
+  })
+  .strict();
+/** Sets a graphics clip's timeline start and duration; its own inverse. */
+export const moveGraphicsClipCommandSchemaV2 = z
+  .object({
+    type: z.literal("MoveGraphicsClip"),
+    ...commandId,
+    ...target,
+    graphicsClipId: projectUuidSchema,
+    timelineStart: rationalTimeSchema,
+    duration: rationalTimeSchema,
+  })
+  .strict()
+  .refine(
+    (command) =>
+      command.timelineStart.rateNumerator === command.duration.rateNumerator &&
+      command.timelineStart.rateDenominator === command.duration.rateDenominator &&
+      command.duration.value >= 1 &&
+      command.duration.value <= MAX_GRAPHICS_DURATION_FRAMES,
+    `Graphics clip duration must be 1..${String(MAX_GRAPHICS_DURATION_FRAMES)} frames at the start's rate`,
+  );
+/** Replaces a graphics clip's font and layers; its own inverse. Motion presets apply through it. */
+export const setGraphicsClipLayersCommandSchemaV2 = z
+  .object({
+    type: z.literal("SetGraphicsClipLayers"),
+    ...commandId,
+    ...target,
+    graphicsClipId: projectUuidSchema,
+    fontKey: renderCaptionFontKeySchema,
+    layers: graphicsLayersSchema,
+  })
+  .strict();
 export const applyCaptionArtifactCommandSchemaV2 = z
   .object({
     type: z.literal("ApplyCaptionArtifact"),
@@ -406,6 +459,10 @@ export const projectCommandSchemaV2 = z.discriminatedUnion("type", [
   removeMarkerCommandSchemaV2,
   addCaptionCommandSchemaV2,
   removeCaptionCommandSchemaV2,
+  addGraphicsClipCommandSchemaV2,
+  removeGraphicsClipCommandSchemaV2,
+  moveGraphicsClipCommandSchemaV2,
+  setGraphicsClipLayersCommandSchemaV2,
   applyCaptionArtifactCommandSchemaV2,
   restoreActiveCaptionArtifactCommandSchemaV2,
   relinkAssetCommandSchemaV2,

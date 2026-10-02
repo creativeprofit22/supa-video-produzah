@@ -1,18 +1,19 @@
 import {
-  VideoDomainError,
+  clipTimelineDuration,
   createRationalTime,
+  isMediaTrack,
   isTrackLocked,
+  type ProjectCommandV2,
+  type ProjectProjection,
   projectProjectionSchema,
   rateOf,
   ratesEqual,
-  clipTimelineDuration,
-  sourceOffsetToTimeline,
   rippleDeleteClipCommandSchemaV2,
+  sourceOffsetToTimeline,
   splitClipCommandSchemaV2,
-  videoProjectStateV2Schema,
-  type ProjectCommandV2,
-  type ProjectProjection,
+  VideoDomainError,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 import {
   transcriptArtifactV1Schema,
@@ -66,7 +67,10 @@ function resolveReplayTarget(
   command: SplitDeleteCommandV2,
 ): {
   sequence: VideoProjectStateV2["sequences"][number];
-  track: Exclude<VideoProjectStateV2["sequences"][number]["tracks"][number], { kind: "caption" }>;
+  track: Extract<
+    VideoProjectStateV2["sequences"][number]["tracks"][number],
+    { kind: "video" | "audio" }
+  >;
   clipIndex: number;
 } {
   const sequence = state.sequences.find(({ id }) => id === command.sequenceId);
@@ -78,7 +82,7 @@ function resolveReplayTarget(
     );
   }
   const track = sequence.tracks.find(({ id }) => id === command.trackId);
-  if (track === undefined || track.kind === "caption") {
+  if (track === undefined || !isMediaTrack(track)) {
     replayFailure(
       "caption_lifecycle_command_target_mismatch",
       "Caption lifecycle command targets an unknown media track",
@@ -104,9 +108,9 @@ function resolveReplayTarget(
 }
 
 function exactTimelineDuration(
-  clip: Exclude<
+  clip: Extract<
     VideoProjectStateV2["sequences"][number]["tracks"][number],
-    { kind: "caption" }
+    { kind: "video" | "audio" }
   >["clips"][number],
   reason: string,
 ): number {
@@ -129,7 +133,7 @@ function replaySplit(state: VideoProjectStateV2, command: SplitClipCommandV2): v
   if (
     state.sequences.some(({ tracks }) =>
       tracks.some((candidateTrack) =>
-        candidateTrack.kind === "caption"
+        !isMediaTrack(candidateTrack)
           ? false
           : candidateTrack.clips.some(({ id }) => id === command.rightClipId),
       ),

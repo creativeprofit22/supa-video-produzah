@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { isMediaTrack } from "./project-v2-entities.js";
 
 import { normalizeClipSpeed, parseClipSpeedPercent } from "./clip-timing.js";
 import { parseVideoProjectFile } from "./migrations.js";
@@ -18,7 +19,7 @@ function fixture(name = "valid-relative-source") {
 }
 function firstClip(snapshot: VideoProjectSnapshotV2) {
   const track = snapshot.state.sequences[0]!.tracks[0]!;
-  if (track.kind === "caption") throw new Error("Expected video fixture");
+  if (!isMediaTrack(track)) throw new Error("Expected video fixture");
   return track.clips[0]!;
 }
 // Fixture-only canonical JSON: these fixtures contain JSON values with integer numbers
@@ -126,7 +127,7 @@ describe("clip speed serialization compatibility", () => {
     const parent = structuredClone(nested.state.sequences[0]!);
     parent.id = "10000000-0000-4000-8000-000000000030";
     const track = parent.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected video fixture");
+    if (!isMediaTrack(track)) throw new Error("Expected video fixture");
     track.id = "10000000-0000-4000-8000-000000000031";
     const child = track.clips[0]!;
     delete child.speed;

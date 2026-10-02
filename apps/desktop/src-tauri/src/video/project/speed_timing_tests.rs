@@ -58,6 +58,14 @@ fn retimed_split_trim_move_and_ripple_use_exact_sequence_frames_and_restore_hash
                         }
                     }
                 }
+                ProjectTrack::Graphics { graphics_clips, .. } => {
+                    for clip in graphics_clips {
+                        for time in [&mut clip.timeline_start, &mut clip.duration] {
+                            time.rate_numerator = sequence_rate.numerator;
+                            time.rate_denominator = sequence_rate.denominator;
+                        }
+                    }
+                }
             }
         }
         for marker in &mut sequence.markers {

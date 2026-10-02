@@ -18,6 +18,7 @@ import {
   prepareTrimClipCaptionLifecycleV1,
   type PrepareTrimClipCaptionLifecycleV1Input,
 } from "./trim-clip-caption-lifecycle.js";
+import { withGraphicsTrack } from "./graphics-test-fixtures.js";
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const id = (value: number): string =>
@@ -490,5 +491,16 @@ describe("prepareTrimClipCaptionLifecycleV1", () => {
 
     expectFailure(input, reason);
     expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it("skips a graphics track and prepares the same group as without it", () => {
+    const input = fixture();
+
+    const withGraphics = prepareTrimClipCaptionLifecycleV1({
+      ...input,
+      projection: withGraphicsTrack(input.projection),
+    });
+
+    expect(withGraphics).toEqual(prepareTrimClipCaptionLifecycleV1(input));
   });
 });

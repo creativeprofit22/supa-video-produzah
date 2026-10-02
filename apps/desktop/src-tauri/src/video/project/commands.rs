@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use super::graphics::valid_graphics_clip_shape;
 use super::types::{SequenceLoudnessTarget, TrackAudioRole};
 use super::{
     clip_speed::{find_speed_target, validate_retimed_context},
@@ -12,9 +13,9 @@ use super::{
     },
     integrity::{is_canonical_uuid, valid_transform, validate_state},
     types::{
-        AffectedRange, CacheInvalidation, ClipFades, ProjectClip, ProjectCommand, ProjectTrack,
-        TrackMuteError, TrackVisibilityError, VideoProjectStateV2, MAX_NON_BLANK_UTF16,
-        MAX_SAFE_INTEGER,
+        AffectedRange, CacheInvalidation, ClipFades, GraphicsClip, ProjectClip, ProjectCommand,
+        ProjectTrack, TrackMuteError, TrackVisibilityError, VideoProjectStateV2,
+        MAX_NON_BLANK_UTF16, MAX_SAFE_INTEGER,
     },
 };
 use crate::video::{
@@ -131,8 +132,7 @@ fn find_clip_mut<'a>(
     clip_id: &str,
 ) -> Result<&'a mut ProjectClip, VideoCommandError> {
     find_unlocked_track_mut(state, sequence_id, track_id)?
-        .clips_mut()
-        .ok_or_else(|| invalid("caption_track"))?
+        .media_clips_mut()?
         .iter_mut()
         .find(|clip| clip.id == clip_id)
         .ok_or_else(|| invalid("unknown_clip"))
@@ -257,12 +257,43 @@ fn track_range(
         end,
     }])
 }
+pub(crate) fn graphics_clip_range(
+    sequence_id: &str,
+    clip: &GraphicsClip,
+) -> Result<AffectedRange, VideoCommandError> {
+    let end = clip
+        .timeline_start
+        .value
+        .checked_add(clip.duration.value)
+        .filter(|value| *value <= MAX_SAFE_INTEGER)
+        .ok_or_else(|| invalid("graphics_clip_range"))?;
+    Ok(AffectedRange {
+        sequence_id: sequence_id.to_owned(),
+        start: clip.timeline_start.clone(),
+        end: RationalTime {
+            value: end,
+            ..clip.timeline_start.clone()
+        },
+    })
+}
+
 fn visual_track_range(
     sequence_id: &str,
     track: &ProjectTrack,
 ) -> Result<Vec<AffectedRange>, VideoCommandError> {
     match track {
         ProjectTrack::Video { .. } => track_range(sequence_id, track),
+        ProjectTrack::Graphics { graphics_clips, .. } => {
+            let (Some(first), Some(last)) = (graphics_clips.first(), graphics_clips.last()) else {
+                return Ok(vec![]);
+            };
+            // Graphics clips are stored ordered and non-overlapping.
+            Ok(vec![AffectedRange {
+                sequence_id: sequence_id.to_owned(),
+                start: graphics_clip_range(sequence_id, first)?.start,
+                end: graphics_clip_range(sequence_id, last)?.end,
+            }])
+        }
         ProjectTrack::Caption { captions, .. } => {
             let Some(first) = captions.first() else {
                 return Ok(vec![]);
@@ -488,6 +519,34 @@ fn command_metadata(command: &ProjectCommand) -> (&'static str, Vec<CacheInvalid
             "Removed caption",
             vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan],
         ),
+        ProjectCommand::AddGraphicsClip { .. } => (
+            "Added graphics clip",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::RemoveGraphicsClip { .. } => (
+            "Removed graphics clip",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::MoveGraphicsClip { .. } => (
+            "Moved graphics clip",
+            vec![
+                CacheInvalidation::Timeline,
+                CacheInvalidation::Preview,
+                CacheInvalidation::RenderPlan,
+            ],
+        ),
+        ProjectCommand::SetGraphicsClipLayers { .. } => (
+            "Edited graphics clip",
+            vec![CacheInvalidation::Preview, CacheInvalidation::RenderPlan],
+        ),
         ProjectCommand::ApplyCaptionArtifact { .. } => (
             "Apply caption artifact",
             vec![CacheInvalidation::Captions, CacheInvalidation::RenderPlan],
@@ -529,7 +588,9 @@ fn set_track_audio_role(
         ProjectTrack::Video { audio_role, .. } | ProjectTrack::Audio { audio_role, .. } => {
             audio_role
         }
-        ProjectTrack::Caption { .. } => return Err(invalid("non_audio_track")),
+        ProjectTrack::Caption { .. } | ProjectTrack::Graphics { .. } => {
+            return Err(invalid("non_audio_track"))
+        }
     };
     let previous = std::mem::replace(slot, desired);
     Ok((
@@ -597,6 +658,28 @@ fn set_sequence_frame_size(
         }],
         vec![],
     ))
+}
+
+fn graphics_clips_mut<'a>(
+    state: &'a mut VideoProjectStateV2,
+    sequence_id: &str,
+    track_id: &str,
+) -> Result<&'a mut Vec<GraphicsClip>, VideoCommandError> {
+    find_track_mut(state, sequence_id, track_id)?
+        .graphics_clips_mut()
+        .ok_or_else(|| invalid("non_graphics_track"))
+}
+
+fn graphics_clip_mut<'a>(
+    state: &'a mut VideoProjectStateV2,
+    sequence_id: &str,
+    track_id: &str,
+    graphics_clip_id: &str,
+) -> Result<&'a mut GraphicsClip, VideoCommandError> {
+    graphics_clips_mut(state, sequence_id, track_id)?
+        .iter_mut()
+        .find(|clip| clip.id == graphics_clip_id)
+        .ok_or_else(|| invalid("unknown_graphics_clip"))
 }
 
 pub(crate) fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, &str)> {
@@ -681,6 +764,26 @@ pub(crate) fn locked_mutation_target(command: &ProjectCommand) -> Option<(&str, 
             track_id,
             ..
         }
+        | ProjectCommand::AddGraphicsClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::RemoveGraphicsClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::MoveGraphicsClip {
+            sequence_id,
+            track_id,
+            ..
+        }
+        | ProjectCommand::SetGraphicsClipLayers {
+            sequence_id,
+            track_id,
+            ..
+        }
         | ProjectCommand::ApplyCaptionArtifact {
             sequence_id,
             track_id,
@@ -726,6 +829,7 @@ fn apply_one(
         }
         ProjectCommand::RemoveAsset { asset_id, .. } => {
             if state.sequences.iter().flat_map(|sequence| &sequence.tracks).flat_map(|track| track.clips().unwrap_or_default()).any(|clip| matches!(&clip.source, super::types::ClipSource::Asset { asset_id: source } if source == asset_id)) { return Err(invalid("asset_in_use")); }
+            if state.sequences.iter().flat_map(|sequence| &sequence.tracks).flat_map(|track| track.graphics_clips().unwrap_or_default()).flat_map(|clip| &clip.layers).any(|layer| matches!(layer, super::graphics::GraphicsLayer::Image { asset_id: source, .. } if source == asset_id)) { return Err(invalid("asset_in_use")); }
             let index = state
                 .assets
                 .iter()
@@ -947,9 +1051,7 @@ fn apply_one(
             ..
         } => {
             let range = clip_range(sequence_id, clip)?;
-            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
-                .clips_mut()
-                .ok_or_else(|| invalid("caption_track"))?;
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?.media_clips_mut()?;
             if clips.iter().any(|item| item.id == clip.id) {
                 return Err(invalid("duplicate_clip"));
             }
@@ -975,9 +1077,7 @@ fn apply_one(
             clip_id,
             ..
         } => {
-            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
-                .clips_mut()
-                .ok_or_else(|| invalid("caption_track"))?;
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?.media_clips_mut()?;
             let index = clips
                 .iter()
                 .position(|clip| clip.id == *clip_id)
@@ -1001,9 +1101,7 @@ fn apply_one(
             clip_id,
             ..
         } => {
-            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
-                .clips_mut()
-                .ok_or_else(|| invalid("caption_track"))?;
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?.media_clips_mut()?;
             let index = clips
                 .iter()
                 .position(|clip| clip.id == *clip_id)
@@ -1046,9 +1144,7 @@ fn apply_one(
             ..
         } => {
             let duration = clip_duration_on_timeline(clip)?;
-            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
-                .clips_mut()
-                .ok_or_else(|| invalid("caption_track"))?;
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?.media_clips_mut()?;
             if clips.iter().any(|item| item.id == clip.id) {
                 return Err(invalid("duplicate_clip"));
             }
@@ -1095,9 +1191,7 @@ fn apply_one(
             if !is_canonical_uuid(right_clip_id) {
                 return Err(invalid("right_clip_id"));
             }
-            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?
-                .clips_mut()
-                .ok_or_else(|| invalid("caption_track"))?;
+            let clips = find_unlocked_track_mut(state, sequence_id, track_id)?.media_clips_mut()?;
             if clips.iter().any(|clip| clip.id == *right_clip_id) {
                 return Err(invalid("duplicate_clip"));
             }
@@ -1447,6 +1541,121 @@ fn apply_one(
                     caption,
                 }],
                 vec![],
+            ))
+        }
+        ProjectCommand::AddGraphicsClip {
+            sequence_id,
+            track_id,
+            index,
+            graphics_clip,
+            ..
+        } => {
+            if !valid_graphics_clip_shape(graphics_clip) {
+                return Err(invalid("graphics_clip"));
+            }
+            let range = graphics_clip_range(sequence_id, graphics_clip)?;
+            let clips = graphics_clips_mut(state, sequence_id, track_id)?;
+            if clips.iter().any(|item| item.id == graphics_clip.id) {
+                return Err(invalid("duplicate_graphics_clip"));
+            }
+            match insertion_index(*index, clips.len(), "graphics_clip_index")? {
+                Some(index) => clips.insert(index, graphics_clip.clone()),
+                None => {
+                    clips.push(graphics_clip.clone());
+                    clips.sort_by_key(|item| item.timeline_start.value);
+                }
+            }
+            Ok((
+                vec![ProjectCommand::RemoveGraphicsClip {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    graphics_clip_id: graphics_clip.id.clone(),
+                }],
+                vec![range],
+            ))
+        }
+        ProjectCommand::RemoveGraphicsClip {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            ..
+        } => {
+            let clips = graphics_clips_mut(state, sequence_id, track_id)?;
+            let index = clips
+                .iter()
+                .position(|clip| clip.id == *graphics_clip_id)
+                .ok_or_else(|| invalid("unknown_graphics_clip"))?;
+            let graphics_clip = clips.remove(index);
+            let range = graphics_clip_range(sequence_id, &graphics_clip)?;
+            Ok((
+                vec![ProjectCommand::AddGraphicsClip {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    index: Some(index as u64),
+                    graphics_clip,
+                }],
+                vec![range],
+            ))
+        }
+        ProjectCommand::MoveGraphicsClip {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            timeline_start,
+            duration,
+            ..
+        } => {
+            let clip = graphics_clip_mut(state, sequence_id, track_id, graphics_clip_id)?;
+            let before = graphics_clip_range(sequence_id, clip)?;
+            let previous_start =
+                std::mem::replace(&mut clip.timeline_start, timeline_start.clone());
+            let previous_duration = std::mem::replace(&mut clip.duration, duration.clone());
+            if !valid_graphics_clip_shape(clip) {
+                return Err(invalid("graphics_clip"));
+            }
+            let after = graphics_clip_range(sequence_id, clip)?;
+            // Keep clips ordered by start; validate_state rejects any overlap afterwards.
+            graphics_clips_mut(state, sequence_id, track_id)?
+                .sort_by_key(|item| item.timeline_start.value);
+            Ok((
+                vec![ProjectCommand::MoveGraphicsClip {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    graphics_clip_id: graphics_clip_id.clone(),
+                    timeline_start: previous_start,
+                    duration: previous_duration,
+                }],
+                vec![before, after],
+            ))
+        }
+        ProjectCommand::SetGraphicsClipLayers {
+            sequence_id,
+            track_id,
+            graphics_clip_id,
+            font_key,
+            layers,
+            ..
+        } => {
+            let clip = graphics_clip_mut(state, sequence_id, track_id, graphics_clip_id)?;
+            let previous_font = std::mem::replace(&mut clip.font_key, font_key.clone());
+            let previous_layers = std::mem::replace(&mut clip.layers, layers.clone());
+            if !valid_graphics_clip_shape(clip) {
+                return Err(invalid("graphics_clip"));
+            }
+            let range = graphics_clip_range(sequence_id, clip)?;
+            Ok((
+                vec![ProjectCommand::SetGraphicsClipLayers {
+                    command_id: inverse_id(id, 0),
+                    sequence_id: sequence_id.clone(),
+                    track_id: track_id.clone(),
+                    graphics_clip_id: graphics_clip_id.clone(),
+                    font_key: previous_font,
+                    layers: previous_layers,
+                }],
+                vec![range],
             ))
         }
         ProjectCommand::ApplyCaptionArtifact {

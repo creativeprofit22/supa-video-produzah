@@ -1,15 +1,17 @@
 import {
-  VideoDomainError,
   createRationalTime,
   createTimelineViewport,
+  isMediaTrack,
   type ProjectClip,
   type ProjectProjection,
   type ProjectTrack,
+  VideoDomainError,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 import { describe, expect, it } from "vitest";
 
 import { deriveActiveTimelineRange, projectVisibleTimeline } from "./timeline-view.js";
+import { fixtureGraphicsClip, fixtureGraphicsTrack } from "./graphics-test-fixtures.js";
 
 const rate = { numerator: 10, denominator: 1 } as const;
 const identity = {
@@ -294,6 +296,77 @@ describe("visible timeline projection", () => {
     expect(Object.isFrozen(result?.tracks[0]?.captions[0])).toBe(true);
   });
 
+  it("projects a read-only graphics row with every clip at its frames", () => {
+    const rectOnly = {
+      ...fixtureGraphicsClip(id(301), rate, 30, 15),
+      layers: [],
+    };
+    const value = projection([
+      { id: id(3), name: "V1", kind: "video", clips: [clip(4, 0, 50)] },
+      fixtureGraphicsTrack(id(13), [
+        fixtureGraphicsClip(id(300), rate, 0, 10, "Lower third"),
+        rectOnly,
+        fixtureGraphicsClip(id(302), rate, 60, 20, "Outro"),
+      ]),
+    ]);
+
+    expect(deriveActiveTimelineRange(value)).toEqual({ startFrame: 0, endFrameExclusive: 80 });
+    const result = projectVisibleTimeline(value, viewportFor(value, 0, 80, 0));
+
+    expect(result).toMatchObject({
+      totalClipCount: 1,
+      totalGraphicsClipCount: 3,
+      materializedGraphicsClipCount: 3,
+    });
+    expect(result?.tracks[1]).toMatchObject({
+      kind: "graphics",
+      canMute: false,
+      canToggleVisibility: true,
+      totalGraphicsClipCount: 3,
+      clips: [],
+      captions: [],
+      graphicsClips: [
+        {
+          graphicsClipId: id(300),
+          trackId: id(13),
+          label: "Lower third",
+          startFrame: 0,
+          endFrameExclusive: 10,
+        },
+        {
+          graphicsClipId: id(301),
+          trackId: id(13),
+          label: "Graphics",
+          startFrame: 30,
+          endFrameExclusive: 45,
+        },
+        {
+          graphicsClipId: id(302),
+          trackId: id(13),
+          label: "Outro",
+          startFrame: 60,
+          endFrameExclusive: 80,
+        },
+      ],
+    });
+  });
+
+  it("materializes only graphics clips that intersect the viewport but keeps the total", () => {
+    const value = projection([
+      fixtureGraphicsTrack(id(13), [
+        fixtureGraphicsClip(id(300), rate, 0, 10),
+        fixtureGraphicsClip(id(301), rate, 30, 10),
+      ]),
+    ]);
+
+    const result = projectVisibleTimeline(value, viewportFor(value, 25, 10, 0));
+
+    expect(result).toMatchObject({ totalGraphicsClipCount: 2, materializedGraphicsClipCount: 1 });
+    expect(result?.tracks[0]?.graphicsClips.map(({ graphicsClipId }) => graphicsClipId)).toEqual([
+      id(301),
+    ]);
+  });
+
   it("retains hidden rows, clips selected by ID, canonical order, and viewport geometry", () => {
     const tracks = (hidden: boolean): ProjectTrack[] => [
       {
@@ -442,7 +515,7 @@ describe("visible timeline projection", () => {
       { id: id(11), name: "Video 2", kind: "video", clips: clips.slice(5_000) },
     ]);
     const firstTrack = value.state.sequences[0]?.tracks[0];
-    if (firstTrack === undefined || firstTrack.kind === "caption") {
+    if (firstTrack === undefined || !isMediaTrack(firstTrack)) {
       throw new Error("Expected a clip track");
     }
     const firstClip = firstTrack.clips[0]!;

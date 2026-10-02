@@ -18,6 +18,7 @@ use crate::video::{
     probe::probe_trusted_media_with_program,
     process::ProcessCancellation,
     project_io::{dialog_path, require_extension},
+    still_image::{has_still_extension, probe_still_object, StillProbeLog},
     toolchain::MediaToolchainState,
     types::{AssetLocator, MediaContentIdentityV1, MediaProbe},
 };
@@ -83,6 +84,43 @@ struct NativeImport {
     canonical_path: PathBuf,
     probe: MediaProbe,
     content_identity: MediaContentIdentityV1,
+}
+
+fn log_still_probe(operation: &'static str, record: &StillProbeLog) {
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "event": "probe_still_image",
+            "operation": operation,
+            "record": record
+        })
+    );
+}
+
+/// Header-validated still probe of an ingested object. The object is named `<digest>.blob`, so
+/// the expected PNG/JPEG format comes from the granted source path the bytes were ingested from.
+fn probe_ingested_still_blocking(
+    canonical_path: &Path,
+    ingested: &IngestedSource,
+    operation: &'static str,
+) -> Result<MediaProbe, VideoCommandError> {
+    probe_still_object(&ingested.object_path, canonical_path, &|record| {
+        log_still_probe(operation, record);
+    })
+}
+
+async fn probe_ingested_still(
+    canonical_path: &Path,
+    ingested: &IngestedSource,
+    operation: &'static str,
+) -> Result<MediaProbe, VideoCommandError> {
+    let canonical_path = canonical_path.to_owned();
+    let ingested = ingested.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        probe_ingested_still_blocking(&canonical_path, &ingested, operation)
+    })
+    .await
+    .map_err(|_| VideoCommandError::invalid_media(operation, "worker"))?
 }
 
 fn collect_import_targets(
@@ -208,7 +246,10 @@ pub async fn video_execute_project_group<R: Runtime>(
             ingested_sources.push((canonical_path, ingested));
         }
     }
-    let ffprobe = if ingested_sources.is_empty() {
+    let needs_ffprobe = ingested_sources
+        .iter()
+        .any(|(canonical_path, _)| !has_still_extension(canonical_path));
+    let ffprobe = if !needs_ffprobe {
         None
     } else {
         Some(
@@ -221,17 +262,21 @@ pub async fn video_execute_project_group<R: Runtime>(
     };
     let mut native_imports = Vec::with_capacity(ingested_sources.len());
     for (canonical_path, ingested) in ingested_sources {
-        let probe = probe_trusted_media_with_program(
-            &ingested.object_path,
-            ffprobe
-                .as_ref()
-                .expect("non-empty imports must resolve managed FFprobe")
-                .clone(),
-            ProcessCancellation::new(),
-            "import_project_asset",
-        )
-        .await?
-        .probe;
+        let probe = if has_still_extension(&canonical_path) {
+            probe_ingested_still(&canonical_path, &ingested, "import_project_asset").await?
+        } else {
+            probe_trusted_media_with_program(
+                &ingested.object_path,
+                ffprobe
+                    .as_ref()
+                    .expect("non-still imports must resolve managed FFprobe")
+                    .clone(),
+                ProcessCancellation::new(),
+                "import_project_asset",
+            )
+            .await?
+            .probe
+        };
         native_imports.push(NativeImport {
             canonical_path,
             probe,
@@ -314,19 +359,23 @@ pub(crate) async fn relink_project_asset_from_path<R: Runtime>(
         let grants = app.state::<VideoPathGrants>();
         ingest_source(&owner, &grants, &normalized, &cache_root).await?
     };
-    let ffprobe = toolchain
-        .verified_ffprobe()
-        .await
-        .map_err(|error| error.into_command_error("relink_project_asset"))?
-        .into_os_string();
-    let probe = probe_trusted_media_with_program(
-        &ingested.object_path,
-        ffprobe,
-        ProcessCancellation::new(),
-        "relink_project_asset",
-    )
-    .await?
-    .probe;
+    let probe = if has_still_extension(&normalized) {
+        probe_ingested_still(&normalized, &ingested, "relink_project_asset").await?
+    } else {
+        let ffprobe = toolchain
+            .verified_ffprobe()
+            .await
+            .map_err(|error| error.into_command_error("relink_project_asset"))?
+            .into_os_string();
+        probe_trusted_media_with_program(
+            &ingested.object_path,
+            ffprobe,
+            ProcessCancellation::new(),
+            "relink_project_asset",
+        )
+        .await?
+        .probe
+    };
     let absolute_path = normalized
         .to_str()
         .ok_or_else(|| VideoCommandError::invalid_path("relink_project_asset", "source"))?
@@ -438,13 +487,15 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        collect_import_targets, execute_project_group_with_native_imports, run_project_worker,
-        NativeImport,
+        collect_import_targets, execute_project_group_with_native_imports, probe_ingested_still,
+        run_project_worker, NativeImport,
     };
     use crate::video::{
+        media_store::ingest_source,
         project::{
             journal::journal_path, service::VideoProjectService, types::CommandGroupRequest,
         },
+        still_image::probe_still_image,
         types::{MediaContentAlgorithm, MediaContentIdentityV1, MediaProbe, RationalRate},
         GrantCategory, VideoErrorCode, VideoPathGrants,
     };
@@ -516,6 +567,7 @@ mod tests {
             video_codec_name: "h264".to_owned(),
             audio: None,
             file_size_bytes: 12_000_000,
+            still: false,
         }
     }
 
@@ -775,5 +827,132 @@ mod tests {
         )
         .expect("an idempotent retry must return before source revalidation");
         assert_eq!(duplicate, result);
+    }
+
+    fn still_import_group(
+        project_id: &str,
+        source_path: &str,
+        probe: &MediaProbe,
+        identity: &MediaContentIdentityV1,
+    ) -> CommandGroupRequest {
+        serde_json::from_value(json!({
+            "groupId": "82000000-0000-4000-8000-000000000001",
+            "projectId": project_id,
+            "baseRevision": 0,
+            "commands": [{
+                "type": "ImportAsset",
+                "commandId": "82000000-0000-4000-8000-000000000002",
+                "asset": {
+                    "id": "82000000-0000-4000-8000-000000000003",
+                    "displayName": "badge.png",
+                    "locator": { "absolutePath": source_path },
+                    "probe": probe,
+                    "contentIdentity": identity
+                }
+            }]
+        }))
+        .expect("still import group must deserialize")
+    }
+
+    #[tokio::test]
+    async fn native_import_gateway_binds_still_images_to_the_header_probe() {
+        let workspace = tempfile::tempdir().expect("still import workspace must exist");
+        let project_path = workspace.path().join("still-import.svpvideo");
+        let source_path = workspace.path().join("badge.png");
+        fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("graphics-renderer/fixtures/images/badge.png"),
+            &source_path,
+        )
+        .expect("PNG fixture must copy");
+        let cache_root = workspace.path().join("cache");
+
+        let owner = "still-import-owner";
+        let grants = VideoPathGrants::default();
+        grants
+            .grant_destination(owner, GrantCategory::Project, &project_path)
+            .expect("project destination must be granted");
+        let canonical_source = grants
+            .grant_existing_file(owner, GrantCategory::Source, &source_path)
+            .expect("still must be picker-granted");
+        let service = VideoProjectService::default();
+        let created = service
+            .create(owner, &project_path, "Still import", &grants)
+            .expect("project must be created");
+
+        // The webview's probe, as `video_probe_still_image` returns it.
+        let webview_probe = probe_still_image(&canonical_source, &|_| {})
+            .expect("the PNG fixture must probe as a still");
+        assert!(webview_probe.still);
+        let ingested = ingest_source(owner, &grants, &canonical_source, &cache_root)
+            .await
+            .expect("still source must ingest");
+        assert_ne!(
+            ingested.object_path.extension(),
+            canonical_source.extension(),
+            "the ingested object must not carry the still extension"
+        );
+        let native_probe =
+            probe_ingested_still(&canonical_source, &ingested, "import_project_asset")
+                .await
+                .expect("the still branch must probe the ingested object");
+        assert_eq!(native_probe, webview_probe);
+        let source_str = canonical_source
+            .to_str()
+            .expect("test source path must be UTF-8");
+        let native_import = || NativeImport {
+            canonical_path: canonical_source.clone(),
+            probe: native_probe.clone(),
+            content_identity: ingested.identity.clone(),
+        };
+
+        let mut tampered_probe = webview_probe.clone();
+        tampered_probe.width += 1;
+        let journal = journal_path(&project_path).expect("journal path must resolve");
+        let journal_before = fs::read(&journal).expect("journal must exist");
+        let error = execute_project_group_with_native_imports(
+            &service,
+            owner,
+            still_import_group(
+                &created.project_id,
+                source_str,
+                &tampered_probe,
+                &ingested.identity,
+            ),
+            &grants,
+            vec![native_import()],
+            None,
+        )
+        .expect_err("a tampered still probe must be rejected");
+        assert_eq!(error.code, VideoErrorCode::InvalidMedia);
+        assert_eq!(error.details["category"], "probe_mismatch");
+        assert_eq!(
+            fs::read(&journal).expect("journal must remain readable"),
+            journal_before,
+            "a rejected still import must not append a journal record"
+        );
+
+        let result = execute_project_group_with_native_imports(
+            &service,
+            owner,
+            still_import_group(
+                &created.project_id,
+                source_str,
+                &webview_probe,
+                &ingested.identity,
+            ),
+            &grants,
+            vec![native_import()],
+            None,
+        )
+        .expect("a still import bound to its header probe must commit");
+        assert_eq!(result.new_revision.number, 1);
+        let stored = &result.projection.state.assets[0];
+        assert!(
+            stored.probe.still,
+            "the stored still asset must stay a still"
+        );
+        assert_eq!(stored.probe, webview_probe);
+        assert_eq!(stored.content_identity, Some(ingested.identity.clone()));
     }
 }

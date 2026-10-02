@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
+import { isMediaTrack } from "./project-v2-entities.js";
 
 import { parseVideoProjectFile } from "./migrations.js";
 import {
@@ -296,17 +297,17 @@ describe("V2 project contracts", () => {
       JSON.parse(await readFile(fixtureUrl, "utf8")) as unknown,
     );
     const track = fixture.state.sequences[0]!.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(track)) throw new Error("Expected clip track fixture");
 
     const danglingAsset = structuredClone(fixture);
     const danglingAssetTrack = danglingAsset.state.sequences[0]!.tracks[0]!;
-    if (danglingAssetTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(danglingAssetTrack)) throw new Error("Expected clip track fixture");
     danglingAssetTrack.clips[0]!.source = { kind: "asset", assetId: ids.project };
     expect(videoProjectSnapshotV2Schema.safeParse(danglingAsset).success).toBe(false);
 
     const danglingSequence = structuredClone(fixture);
     const danglingSequenceTrack = danglingSequence.state.sequences[0]!.tracks[0]!;
-    if (danglingSequenceTrack.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(danglingSequenceTrack)) throw new Error("Expected clip track fixture");
     danglingSequenceTrack.clips[0]!.source = { kind: "sequence", sequenceId: ids.project };
     expect(videoProjectSnapshotV2Schema.safeParse(danglingSequence).success).toBe(false);
   });
@@ -560,7 +561,7 @@ describe("V2 project contracts", () => {
     );
     const sequence = fixture.state.sequences[0]!;
     const track = sequence.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(track)) throw new Error("Expected clip track fixture");
     const clip = track.clips[0]!;
     const rippleDelete = {
       type: "RippleDeleteClip" as const,
@@ -653,7 +654,7 @@ describe("V2 project contracts", () => {
     const asset = fixture.state.assets[0]!;
     const sequence = fixture.state.sequences[0]!;
     const track = sequence.tracks[0]!;
-    if (track.kind === "caption") throw new Error("Expected clip track fixture");
+    if (!isMediaTrack(track)) throw new Error("Expected clip track fixture");
     const clip = track.clips[0]!;
     const indexedCommands = [
       { type: "ImportAsset", commandId: ids.command, index: 2, asset },

@@ -1,17 +1,18 @@
 import {
-  VideoDomainError,
+  isMediaTrack,
   isTrackLocked,
   mediaContentIdentityV1Schema,
+  type ProjectProjection,
   projectProjectionSchema,
+  type ProjectRevisionDescriptorV2,
   projectRevisionDescriptorV2Schema,
+  ratesEqual,
+  type RationalRate,
   rationalRateSchema,
   rationalTimeSchema,
-  ratesEqual,
-  videoProjectStateV2Schema,
-  type ProjectProjection,
-  type ProjectRevisionDescriptorV2,
-  type RationalRate,
+  VideoDomainError,
   type VideoProjectStateV2,
+  videoProjectStateV2Schema,
 } from "@supa-video/contracts";
 import { captionArtifactV1Schema, type CaptionArtifactV1 } from "@supa-video/media";
 
@@ -192,7 +193,7 @@ function validateRemapInputWithState(
   const sourceTrack = sequence.tracks.find(({ id }) => id === timeline.trackId);
   if (
     sourceTrack === undefined ||
-    sourceTrack.kind === "caption" ||
+    !isMediaTrack(sourceTrack) ||
     sourceTrack.id === artifact.trackLink.captionTrackId
   ) {
     throw remapError(
