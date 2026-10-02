@@ -12,8 +12,8 @@ use fframes::{AudioMap, Color, FFramesContext, Frame, Svgr, Video, usvgr::Preloa
 
 use crate::{
     description::{
-        GraphicsDescription, Keyframe, Layer, MAX_IMAGE_SIDE, TextUnits, parse_hex_color,
-        split_text,
+        GraphicsDescription, Keyframe, Layer, MAX_IMAGE_SIDE, TEXT_LINE_HEIGHT_EM, TextUnits,
+        parse_hex_color, split_text, text_lines,
     },
     easing::{CompiledTrack, SampleKey},
 };
@@ -55,14 +55,24 @@ enum Shape {
 
 enum TextContent {
     Plain(String),
+    /// Wrapped plain text, one entry per line.
+    Lines(Vec<String>),
     /// One span per reveal unit; each holds the unit and the spaces that follow it.
     Units(Vec<TextUnit>),
 }
 
 struct TextUnit {
-    text: String,
+    /// The unit's text, split where a line break falls inside it (one piece when unwrapped).
+    pieces: Vec<UnitPiece>,
     opacity: CompiledTrack,
     offset_y: CompiledTrack,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnitPiece {
+    text: String,
+    /// True when this piece begins a new line (never on the first line).
+    starts_line: bool,
 }
 
 fn track(keys: &[Keyframe]) -> CompiledTrack {
@@ -78,8 +88,9 @@ fn track(keys: &[Keyframe]) -> CompiledTrack {
 }
 
 /// Spans covering the whole text: each unit plus the spaces after it (leading spaces join the
-/// first unit), so the rendered line matches the plain text.
-fn text_units(text: &str, units: &TextUnits) -> Vec<TextUnit> {
+/// first unit), so the rendered line matches the plain text. A span that crosses one of the
+/// validated `line_breaks` is split into pieces sharing the unit's tracks.
+fn text_units(text: &str, units: &TextUnits, line_breaks: &[usize]) -> Vec<TextUnit> {
     let parts = split_text(text, units.split);
     let mut spans: Vec<String> = Vec::with_capacity(parts.len());
     let mut rest = text;
@@ -98,15 +109,51 @@ fn text_units(text: &str, units: &TextUnits) -> Vec<TextUnit> {
         rest = &rest[spaces..];
         spans.push(span);
     }
+    let mut span_start = 0;
     spans
         .into_iter()
         .zip(units.opacity.iter().zip(&units.offset_y))
-        .map(|(text, (opacity, offset_y))| TextUnit {
-            text,
-            opacity: track(opacity),
-            offset_y: track(offset_y),
+        .map(|(span, (opacity, offset_y))| {
+            let span_end = span_start + span.len();
+            let mut pieces = Vec::new();
+            let mut piece_start = span_start;
+            for offset in line_breaks
+                .iter()
+                .copied()
+                .filter(|offset| *offset > span_start && *offset < span_end)
+            {
+                pieces.push(UnitPiece {
+                    text: text[piece_start..offset].to_owned(),
+                    starts_line: line_breaks.contains(&piece_start),
+                });
+                piece_start = offset;
+            }
+            pieces.push(UnitPiece {
+                text: text[piece_start..span_end].to_owned(),
+                starts_line: line_breaks.contains(&piece_start),
+            });
+            span_start = span_end;
+            TextUnit {
+                pieces,
+                opacity: track(opacity),
+                offset_y: track(offset_y),
+            }
         })
         .collect()
+}
+
+/// The text content to draw: plain, wrapped lines, or reveal units.
+fn text_content(text: &str, units: Option<&TextUnits>, line_breaks: &[usize]) -> TextContent {
+    match units {
+        Some(units) => TextContent::Units(text_units(text, units, line_breaks)),
+        None if line_breaks.is_empty() => TextContent::Plain(text.to_owned()),
+        None => TextContent::Lines(
+            text_lines(text, line_breaks)
+                .into_iter()
+                .map(|line| text[line].to_owned())
+                .collect(),
+        ),
+    }
 }
 
 impl GraphicsVideo {
@@ -151,14 +198,16 @@ impl GraphicsVideo {
                         font_size,
                         fill,
                         units,
+                        line_breaks,
                         ..
                     } => Shape::Text {
                         font_size: *font_size as f32,
                         fill: normalized_fill(fill),
-                        content: match units {
-                            Some(units) => TextContent::Units(text_units(text, units)),
-                            None => TextContent::Plain(text.clone()),
-                        },
+                        content: text_content(
+                            text,
+                            units.as_ref(),
+                            line_breaks.as_deref().unwrap_or_default(),
+                        ),
                     },
                     Layer::Image { image, .. } => Shape::Image(Arc::clone(&images[*image])),
                 };
@@ -293,22 +342,49 @@ impl GraphicsVideo {
                             </text>
                         )
                     }
-                    TextContent::Units(units) => {
-                        let mut previous_offset = 0.0;
-                        let spans: Vec<Svgr<'a>> = units
+                    TextContent::Lines(lines) => {
+                        let line_height = *font_size * TEXT_LINE_HEIGHT_EM as f32;
+                        let spans: Vec<Svgr<'a>> = lines
                             .iter()
-                            .map(|unit| {
-                                let offset = unit.offset_y.sample(time);
-                                // `dy` is relative to the previous glyph, so emit the change.
-                                let dy = (offset - previous_offset) as f32;
-                                previous_offset = offset;
-                                let unit_opacity = unit.opacity.sample(time).clamp(0.0, 1.0) as f32;
-                                let text = unit.text.as_str();
-                                fframes::svgr!(
-                                    <tspan dy={dy} fill-opacity={unit_opacity}>{text}</tspan>
-                                )
+                            .enumerate()
+                            .map(|(index, line)| {
+                                let dy = if index == 0 { 0.0 } else { line_height };
+                                let line = line.as_str();
+                                fframes::svgr!(<tspan x={0.0} dy={dy}>{line}</tspan>)
                             })
                             .collect();
+                        fframes::svgr!(
+                            <text x={0.0} y={0.0} dominant-baseline="text-before-edge"
+                                font-family={family} font-size={*font_size} fill={fill}>
+                                {spans}
+                            </text>
+                        )
+                    }
+                    TextContent::Units(units) => {
+                        let line_height = f64::from(*font_size) * TEXT_LINE_HEIGHT_EM;
+                        let mut previous_offset = 0.0;
+                        let mut spans: Vec<Svgr<'a>> = Vec::new();
+                        for unit in units {
+                            let offset = unit.offset_y.sample(time);
+                            let unit_opacity = unit.opacity.sample(time).clamp(0.0, 1.0) as f32;
+                            for piece in &unit.pieces {
+                                // `dy` is relative to the previous glyph, so emit the change
+                                // (plus one line height when the piece starts a new line).
+                                let text = piece.text.as_str();
+                                if piece.starts_line {
+                                    let dy = (line_height + offset - previous_offset) as f32;
+                                    spans.push(fframes::svgr!(
+                                        <tspan x={0.0} dy={dy} fill-opacity={unit_opacity}>{text}</tspan>
+                                    ));
+                                } else {
+                                    let dy = (offset - previous_offset) as f32;
+                                    spans.push(fframes::svgr!(
+                                        <tspan dy={dy} fill-opacity={unit_opacity}>{text}</tspan>
+                                    ));
+                                }
+                                previous_offset = offset;
+                            }
+                        }
                         fframes::svgr!(
                             <text x={0.0} y={0.0} dominant-baseline="text-before-edge"
                                 font-family={family} font-size={*font_size} fill={fill}>
@@ -381,12 +457,61 @@ mod tests {
                 opacity: vec![hold.clone(); count],
                 offset_y: vec![hold.clone(); count],
             };
-            let spans: Vec<String> = text_units(text, &units)
+            let spans: Vec<String> = text_units(text, &units, &[])
                 .into_iter()
-                .map(|unit| unit.text)
+                .map(|unit| {
+                    assert_eq!(unit.pieces.len(), 1);
+                    assert!(!unit.pieces[0].starts_line);
+                    unit.pieces[0].text.clone()
+                })
                 .collect();
             assert_eq!(spans, expected, "{text:?}");
             assert_eq!(spans.concat(), text);
         }
+    }
+
+    #[test]
+    fn wrapped_units_split_at_line_breaks() {
+        let hold = vec![Keyframe {
+            frame: 0.0,
+            value: 1.0,
+            easing: None,
+        }];
+        let piece = |text: &str, starts_line| UnitPiece {
+            text: text.to_owned(),
+            starts_line,
+        };
+        // Breaks after "Hello " (a word boundary) and inside "bigword" (a forced break).
+        let text = "Hello bigword end";
+        let units = TextUnits {
+            split: TextSplit::Word,
+            opacity: vec![hold.clone(); 3],
+            offset_y: vec![hold.clone(); 3],
+        };
+        let pieces: Vec<Vec<UnitPiece>> = text_units(text, &units, &[6, 9])
+            .into_iter()
+            .map(|unit| unit.pieces)
+            .collect();
+        assert_eq!(
+            pieces,
+            vec![
+                vec![piece("Hello ", false)],
+                vec![piece("big", true), piece("word ", true)],
+                vec![piece("end", false)],
+            ]
+        );
+        let joined: String = pieces.iter().flatten().map(|p| p.text.as_str()).collect();
+        assert_eq!(joined, text);
+    }
+
+    #[test]
+    fn plain_text_splits_into_lines_only_when_wrapped() {
+        assert!(
+            matches!(text_content("One line", None, &[]), TextContent::Plain(text) if text == "One line")
+        );
+        assert!(matches!(
+            text_content("Two lines here", None, &[4]),
+            TextContent::Lines(lines) if lines == ["Two ", "lines here"]
+        ));
     }
 }

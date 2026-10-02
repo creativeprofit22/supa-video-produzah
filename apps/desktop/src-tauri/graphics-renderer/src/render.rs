@@ -183,4 +183,80 @@ mod tests {
             }
         }
     }
+
+    /// Rows that contain any visible pixel, as (first, last) of each run.
+    #[cfg(windows)]
+    fn ink_rows(frame: &RgbaFrame) -> Vec<(u32, u32)> {
+        let width = frame.width as usize;
+        let mut runs: Vec<(u32, u32)> = Vec::new();
+        for (row, pixels) in frame.pixels.chunks(width * 4).enumerate() {
+            if !pixels.chunks(4).any(|pixel| pixel[3] > 0) {
+                continue;
+            }
+            let row = row as u32;
+            match runs.last_mut() {
+                Some(run) if run.1 + 1 == row => run.1 = row,
+                _ => runs.push((row, row)),
+            }
+        }
+        runs
+    }
+
+    /// Wrapped text draws one band of ink per line, a line height apart, for plain and reveal
+    /// text alike; the same text without `lineBreaks` draws a single band.
+    #[cfg(windows)]
+    #[test]
+    fn wrapped_text_renders_one_band_per_line() {
+        use serde_json::json;
+        let hold = |value: f64| json!([{ "frame": 0, "value": value }]);
+        let describe = |line_breaks: Option<Vec<usize>>, units: bool| {
+            let mut layer = json!({
+                "kind": "text", "text": "Wrap me please", "fontSize": 40.0, "fill": "#FFFFFF",
+                "x": hold(10.0), "y": hold(10.0), "scale": hold(1.0), "rotation": hold(0.0),
+                "opacity": hold(1.0)
+            });
+            if let Some(breaks) = line_breaks {
+                layer["lineBreaks"] = json!(breaks);
+            }
+            if units {
+                layer["units"] = json!({
+                    "split": "word",
+                    "opacity": [hold(1.0), hold(1.0), hold(1.0)],
+                    "offsetY": [hold(0.0), hold(0.0), hold(0.0)]
+                });
+            }
+            let bytes = serde_json::to_vec(&json!({
+                "schemaVersion": 2,
+                "canvas": { "width": 400, "height": 200 },
+                "frameRate": { "numerator": 30, "denominator": 1 },
+                "durationFrames": 1,
+                "font": { "file": r"C:\Windows\Fonts\arial.ttf", "family": "Arial" },
+                "images": [],
+                "layers": [layer]
+            }))
+            .unwrap();
+            GraphicsDescription::parse(&bytes).unwrap()
+        };
+        let bands = |description: &GraphicsDescription| {
+            let mut rows = Vec::new();
+            render_frames(description, BackendChoice::Cpu, |_, frame| {
+                rows = ink_rows(frame);
+                Ok(())
+            })
+            .unwrap();
+            rows
+        };
+        for units in [false, true] {
+            assert_eq!(bands(&describe(None, units)).len(), 1, "units={units}");
+            // "Wrap me " / "please": the break falls between reveal units.
+            let two = bands(&describe(Some(vec![8]), units));
+            assert_eq!(two.len(), 2, "units={units}: {two:?}");
+            // Descender-free first line vs "please" (with p): compare band tops.
+            let pitch = f64::from(two[1].0) - f64::from(two[0].0);
+            assert!((pitch - 48.0).abs() <= 3.0, "units={units}: pitch {pitch}");
+            // A break inside the word "please" (a unit split across lines) gives three bands.
+            let three = bands(&describe(Some(vec![8, 11]), units));
+            assert_eq!(three.len(), 3, "units={units}: {three:?}");
+        }
+    }
 }

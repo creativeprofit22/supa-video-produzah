@@ -5,9 +5,16 @@
 //!
 //! Schema 2 (docs/adr/0003-graphics-clips.md): every layer has `x`, `y`, `scale`, `rotation` and
 //! `opacity` keyframe tracks with structured easing; keyframe frames may be fractional (they come
-//! from microsecond times). `x`/`y` place the layer's top-left corner (text: the top of a
-//! `fontSize`-tall line box); `scale` and `rotation` (degrees, clockwise) apply around the layer
+//! from microsecond times). `x`/`y` place the layer's top-left corner (text: the top of the first
+//! line's `fontSize`-tall box); `scale` and `rotation` (degrees, clockwise) apply around the layer
 //! center. Images are embedded as bounded `data:` URIs, so the renderer never opens other files.
+//!
+//! Text layers may carry an optional, non-empty `lineBreaks` array: byte offsets where each new
+//! line starts, strictly ascending, strictly inside the text and on char boundaries; absent means
+//! one line. Lines are drawn `TEXT_LINE_HEIGHT_EM` (1.2) font sizes apart. The scale/rotation
+//! pivot box (`Layer::bounds`) is the longest line's estimated width (`TEXT_ADVANCE_EM` per char)
+//! by `fontSize` plus one line pitch per extra line; the desktop's `video::text_boxes` mirrors it.
+//! See docs/adr/0003-graphics-clips.md ("Text auto-fit (`lineBreaks`)").
 
 use std::{fmt, path::PathBuf};
 
@@ -36,6 +43,8 @@ pub const MAX_FONT_SIZE: f64 = 1_000.0;
 /// Text box width estimate until real glyph layout exists: 0.55 em per character. Shared with
 /// the TypeScript presets (`graphicsLayerBounds`) so scale and rotation pivot on the same center.
 pub const TEXT_ADVANCE_EM: f64 = 0.55;
+/// Line pitch of wrapped text, in font sizes (the desktop's `text_layout::LINE_HEIGHT_RATIO`).
+pub const TEXT_LINE_HEIGHT_EM: f64 = 1.2;
 /// Position and unit offset bound in pixels, the same as the project's graphics clips, so every
 /// valid project clip yields a valid description.
 pub const MAX_POSITION: f64 = 32_768.0;
@@ -127,6 +136,9 @@ pub enum Layer {
         fill: String,
         #[serde(default)]
         units: Option<TextUnits>,
+        /// Byte offsets where a new line starts (auto-fit wrapping); absent = one line.
+        #[serde(default)]
+        line_breaks: Option<Vec<usize>>,
         x: Vec<Keyframe>,
         y: Vec<Keyframe>,
         scale: Vec<Keyframe>,
@@ -191,20 +203,47 @@ impl Layer {
         }
     }
 
-    /// Width and height used for the scale/rotation pivot (text: the estimated line box).
+    /// Width and height used for the scale/rotation pivot (text: the estimated box of the
+    /// longest line, one font size tall plus one line height per extra line).
     pub fn bounds(&self) -> (f64, f64) {
         match self {
             Self::Rect { width, height, .. } | Self::Image { width, height, .. } => {
                 (*width, *height)
             }
             Self::Text {
-                text, font_size, ..
-            } => (
-                (text.chars().count() as f64 * TEXT_ADVANCE_EM * font_size).max(1.0),
-                *font_size,
-            ),
+                text,
+                font_size,
+                line_breaks,
+                ..
+            } => {
+                let lines = text_lines(text, line_breaks.as_deref().unwrap_or_default());
+                let longest = lines
+                    .iter()
+                    .map(|line| text[line.clone()].chars().count())
+                    .max()
+                    .unwrap_or(0);
+                (
+                    (longest as f64 * TEXT_ADVANCE_EM * font_size).max(1.0),
+                    font_size + (lines.len() - 1) as f64 * TEXT_LINE_HEIGHT_EM * font_size,
+                )
+            }
         }
     }
+}
+
+/// Byte ranges of each line of `text` split at validated `line_breaks` (always at least one).
+pub fn text_lines(text: &str, line_breaks: &[usize]) -> Vec<std::ops::Range<usize>> {
+    let mut start = 0;
+    line_breaks
+        .iter()
+        .copied()
+        .chain([text.len()])
+        .map(|end| {
+            let line = start..end;
+            start = end;
+            line
+        })
+        .collect()
 }
 
 /// Words are maximal runs of non-space characters; letters are non-space characters. Matches
@@ -456,6 +495,7 @@ fn validate_layer(index: usize, layer: &Layer, limits: &Limits) -> Result<(), De
             font_size,
             fill,
             units,
+            line_breaks,
             ..
         } => {
             let chars = text.chars().count();
@@ -470,6 +510,12 @@ fn validate_layer(index: usize, layer: &Layer, limits: &Limits) -> Result<(), De
             }
             if parse_hex_color(fill).is_none() {
                 return Err(DescriptionError::Color { layer: index });
+            }
+            if line_breaks
+                .as_deref()
+                .is_some_and(|breaks| !valid_line_breaks(text, breaks))
+            {
+                return Err(DescriptionError::Text { layer: index });
             }
             if let Some(units) = units {
                 let count = split_text(text, units.split).len();
@@ -534,6 +580,17 @@ fn validate_layer(index: usize, layer: &Layer, limits: &Limits) -> Result<(), De
         &(0.0..=1.0),
         MAX_KEYFRAMES,
     )
+}
+
+/// Line breaks are strictly ascending byte offsets strictly inside `text`, on char boundaries,
+/// at most one per character.
+fn valid_line_breaks(text: &str, breaks: &[usize]) -> bool {
+    !breaks.is_empty()
+        && breaks.len() < MAX_TEXT_CHARS
+        && breaks.windows(2).all(|pair| pair[0] < pair[1])
+        && breaks
+            .iter()
+            .all(|offset| *offset > 0 && *offset < text.len() && text.is_char_boundary(*offset))
 }
 
 fn validate_track(
@@ -745,6 +802,58 @@ mod tests {
     fn with(mut value: Value, pointer: &str, replacement: Value) -> Value {
         *value.pointer_mut(pointer).unwrap() = replacement;
         value
+    }
+
+    fn with_line_breaks(mut value: Value, breaks: Value) -> Value {
+        value["layers"][1]["lineBreaks"] = breaks;
+        value
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn accepts_line_breaks_and_widens_the_pivot_box() {
+        // "Hello big world": lines "Hello " / "big " / "world".
+        let description = parse(&with_line_breaks(valid(), json!([6, 10]))).unwrap();
+        let layer = &description.layers[1];
+        assert!(matches!(layer, Layer::Text { line_breaks: Some(b), .. } if b == &[6, 10]));
+        let (width, height) = layer.bounds();
+        assert!((width - 6.0 * TEXT_ADVANCE_EM * 96.0).abs() < 1e-9);
+        assert!((height - (96.0 + 2.0 * TEXT_LINE_HEIGHT_EM * 96.0)).abs() < 1e-9);
+        // Without breaks the pivot is the single-line box, as before.
+        let single = parse(&valid()).unwrap();
+        assert_eq!(
+            single.layers[1].bounds(),
+            (15.0 * TEXT_ADVANCE_EM * 96.0, 96.0)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_invalid_line_breaks() {
+        let plain_cafe = with(
+            with(valid(), "/layers/1/units", Value::Null),
+            "/layers/1/text",
+            json!("café au lait"),
+        );
+        let cases = [
+            ("empty", with_line_breaks(valid(), json!([]))),
+            ("at start", with_line_breaks(valid(), json!([0]))),
+            ("at end", with_line_breaks(valid(), json!([15]))),
+            ("past end", with_line_breaks(valid(), json!([99]))),
+            ("descending", with_line_breaks(valid(), json!([10, 6]))),
+            ("repeated", with_line_breaks(valid(), json!([6, 6]))),
+            ("inside a char", with_line_breaks(plain_cafe, json!([4]))),
+        ];
+        for (name, value) in cases {
+            assert!(
+                matches!(parse(&value), Err(DescriptionError::Text { layer: 1 })),
+                "{name}"
+            );
+        }
+        assert!(matches!(
+            parse(&with_line_breaks(valid(), json!([-1]))),
+            Err(DescriptionError::Malformed(_))
+        ));
     }
 
     #[cfg(windows)]
