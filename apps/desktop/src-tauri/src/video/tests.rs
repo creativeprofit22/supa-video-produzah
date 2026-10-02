@@ -5425,6 +5425,8 @@ mod audio_mix_export;
 #[cfg(target_os = "windows")]
 mod delivery_export;
 #[cfg(target_os = "windows")]
+mod graphics_export;
+#[cfg(target_os = "windows")]
 mod qc_export;
 #[cfg(target_os = "windows")]
 mod speed_export_parity;

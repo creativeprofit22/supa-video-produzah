@@ -11,6 +11,9 @@ pub(crate) mod delivery;
 pub(crate) mod derived;
 pub(crate) mod error;
 pub(crate) mod grants;
+// Wired into exports in a later phase; exercised by tests until then.
+#[allow(dead_code)]
+pub(crate) mod graphics_render;
 pub(crate) mod jobs;
 pub(crate) mod media_store;
 mod nemo_transcription;
