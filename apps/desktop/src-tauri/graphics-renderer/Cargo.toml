@@ -1,0 +1,25 @@
+[package]
+name = "supa-graphics-render"
+version = "0.1.0"
+description = "Renders graphics descriptions to transparent PNG frames with fframes"
+edition = "2024"
+publish = false
+
+# Kept out of the desktop app's dependency graph on purpose: fframes links FFmpeg 9 libav as
+# shared libraries and needs libclang to build (see docs/adr/0002-graphics-render-engine.md).
+[workspace]
+
+[[bin]]
+name = "supa-graphics-render"
+path = "src/main.rs"
+
+[dependencies]
+fframes = { git = "https://github.com/dmtrKovalenko/fframes", rev = "7bbec1278c7687ac43f88524d9b149a31b7cfdf6", default-features = false, features = ["cpu_renderer", "compile-time-svgtree"] }
+fframes_skia_renderer = { git = "https://github.com/dmtrKovalenko/fframes", rev = "7bbec1278c7687ac43f88524d9b149a31b7cfdf6", default-features = false, features = ["gpu", "binary-cache", "vulkan"] }
+png = "=0.18.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+sha2 = "=0.10.9"
+
+[profile.release]
+debug = false

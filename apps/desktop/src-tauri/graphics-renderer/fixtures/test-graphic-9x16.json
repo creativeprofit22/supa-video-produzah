@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "canvas": { "width": 1080, "height": 1920 },
+  "frameRate": { "numerator": 30, "denominator": 1 },
+  "durationFrames": 60,
+  "font": { "file": "C:\\Windows\\Fonts\\arial.ttf", "family": "Arial" },
+  "layers": [
+    {
+      "kind": "rect",
+      "width": 760,
+      "height": 220,
+      "cornerRadius": 32,
+      "fill": "#1E3A8A",
+      "x": {
+        "keyframes": [
+          { "frame": 0, "value": -760, "easing": "easeOut" },
+          { "frame": 30, "value": 160 }
+        ]
+      },
+      "y": { "keyframes": [{ "frame": 0, "value": 1400 }] },
+      "opacity": {
+        "keyframes": [
+          { "frame": 0, "value": 0.85 },
+          { "frame": 45, "value": 0.85 },
+          { "frame": 59, "value": 0.4 }
+        ]
+      }
+    },
+    {
+      "kind": "text",
+      "text": "Supa Video",
+      "fontSize": 96,
+      "fill": "#FFFFFF",
+      "x": { "keyframes": [{ "frame": 0, "value": 230 }] },
+      "y": {
+        "keyframes": [
+          { "frame": 0, "value": 1600, "easing": "easeInOut" },
+          { "frame": 40, "value": 1545 }
+        ]
+      },
+      "opacity": {
+        "keyframes": [
+          { "frame": 0, "value": 0 },
+          { "frame": 20, "value": 1 }
+        ]
+      }
+    }
+  ]
+}
