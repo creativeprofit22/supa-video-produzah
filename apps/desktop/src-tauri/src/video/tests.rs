@@ -5430,6 +5430,8 @@ mod graphics_clip_export;
 #[cfg(target_os = "windows")]
 mod graphics_export;
 #[cfg(target_os = "windows")]
+mod graphics_text_fit;
+#[cfg(target_os = "windows")]
 mod qc_export;
 #[cfg(target_os = "windows")]
 mod speed_export_parity;

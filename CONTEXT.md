@@ -26,3 +26,4 @@
 - **Text reveal** — A motion preset that splits a text layer into words or letters (its units) and fades and lifts each unit in turn.
 - **Delivery preset** — A named output shape for Deliver: frame size (16:9, 9:16 or 1:1), H.264/AAC MP4, caption mode (burn-in or SRT/VTT sidecar), thumbnail frame and safe area. Deliver renders one job per preset from one reviewed revision.
 - **Safe area** — The inset of the frame, per side in permille, that text must stay inside. Each delivery preset defines one (16:9 and 1:1: 5 % each side; 9:16: top 12 %, right 12 %, bottom 20 %, left 6 %, clear of social-app UI); other frames use the preset with the same aspect ratio, else 5 %.
+- **Auto-fit** — At export, an unrotated graphics text layer whose laid-out text would cross the safe area at its resting position is first shrunk (down to 80 % of its size, never below 12 px), then wrapped at that size. Measurement uses real font shaping (parley) with the clip's font file.

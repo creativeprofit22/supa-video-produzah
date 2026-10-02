@@ -50,7 +50,11 @@ const fail = <T>(code: MotionPresetErrorCode, message: string): MotionPresetResu
   error: { code, message },
 });
 
-/** Text box estimate until real glyph layout exists (phase 16): 0.55 em per character. */
+/**
+ * Text box estimate (0.55 em per character, one font size tall) used to size motion-preset
+ * offsets. Export measures text with the real font and may shrink or wrap it to the safe area
+ * (ADR 0003), so this estimate can differ from the drawn box.
+ */
 const TEXT_ADVANCE_EM = 0.55;
 
 export interface LayerBounds {

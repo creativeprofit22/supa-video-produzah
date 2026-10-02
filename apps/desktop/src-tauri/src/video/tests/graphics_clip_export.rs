@@ -389,6 +389,10 @@ async fn export_graphics_render_into_scratch_and_clean_up_on_drop() {
         &rate_30(),
         (640, 360),
         &std::collections::BTreeMap::new(),
+        crate::video::graphics_export::TextFitContext {
+            safe_area: crate::video::delivery::safe_area_for_frame(640, 360, None),
+            font_dir: std::path::Path::new(crate::video::graphics_export::FONT_DIRECTORY),
+        },
         &parent,
         crate::video::graphics_export::GraphicsPrograms {
             renderer: &renderer,
@@ -430,6 +434,10 @@ async fn cancelled_export_graphics_leave_no_scratch() {
         &rate_30(),
         (640, 360),
         &std::collections::BTreeMap::new(),
+        crate::video::graphics_export::TextFitContext {
+            safe_area: crate::video::delivery::safe_area_for_frame(640, 360, None),
+            font_dir: std::path::Path::new(crate::video::graphics_export::FONT_DIRECTORY),
+        },
         &parent,
         crate::video::graphics_export::GraphicsPrograms {
             renderer: &renderer,

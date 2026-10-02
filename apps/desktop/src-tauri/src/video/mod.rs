@@ -29,6 +29,8 @@ pub(crate) mod render_qc;
 pub(crate) mod review_record;
 pub(crate) mod still_image;
 pub(crate) mod subtitle_export;
+pub(crate) mod text_boxes;
+pub(crate) mod text_layout;
 pub(crate) mod toolchain;
 mod transcript;
 pub(crate) mod transcription_job;

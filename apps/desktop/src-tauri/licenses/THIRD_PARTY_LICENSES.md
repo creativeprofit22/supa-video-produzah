@@ -18,7 +18,7 @@ Full license texts are available from each package's published source.
 | scheduler | 0.27.0 | MIT |
 | zod | 4.4.3 | MIT |
 
-## Rust (crates.io) — 330 packages
+## Rust (crates.io) — 346 packages
 
 | Package | Version | License |
 |---|---|---|
@@ -38,6 +38,8 @@ Full license texts are available from each package's published source.
 | brotli | 8.0.4 | BSD-3-Clause AND MIT |
 | brotli-decompressor | 5.0.3 | BSD-3-Clause OR MIT |
 | bs58 | 0.5.1 | MIT OR Apache-2.0 |
+| bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
+| bytemuck_derive | 1.12.1 | Zlib OR Apache-2.0 OR MIT |
 | byteorder | 1.5.0 | Unlicense OR MIT |
 | bytes | 1.12.1 | MIT |
 | camino | 1.2.4 | MIT OR Apache-2.0 |
@@ -90,6 +92,8 @@ Full license texts are available from each package's published source.
 | flate2 | 1.1.9 | MIT OR Apache-2.0 |
 | fnv | 1.0.7 | Apache-2.0 OR MIT |
 | foldhash | 0.2.0 | Zlib |
+| font-types | 0.12.5 | MIT OR Apache-2.0 |
+| fontique | 0.11.1 | Apache-2.0 OR MIT |
 | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 |
 | fs4 | 1.1.0 | MIT OR Apache-2.0 |
 | futures | 0.3.33 | MIT OR Apache-2.0 |
@@ -106,6 +110,7 @@ Full license texts are available from each package's published source.
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
 | glob | 0.3.4 | MIT OR Apache-2.0 |
+| harfrust | 0.12.0 | MIT |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
@@ -121,12 +126,16 @@ Full license texts are available from each package's published source.
 | hyper-util | 0.1.20 | MIT |
 | ico | 0.5.0 | MIT |
 | icu_collections | 2.2.0 | Unicode-3.0 |
+| icu_locale | 2.2.0 | Unicode-3.0 |
 | icu_locale_core | 2.2.0 | Unicode-3.0 |
+| icu_locale_data | 2.2.0 | Unicode-3.0 |
 | icu_normalizer | 2.2.0 | Unicode-3.0 |
 | icu_normalizer_data | 2.2.0 | Unicode-3.0 |
 | icu_properties | 2.2.0 | Unicode-3.0 |
 | icu_properties_data | 2.2.0 | Unicode-3.0 |
 | icu_provider | 2.2.0 | Unicode-3.0 |
+| icu_segmenter | 2.2.0 | Unicode-3.0 |
+| icu_segmenter_data | 2.2.0 | Unicode-3.0 |
 | ident_case | 1.0.1 | MIT OR Apache-2.0 |
 | idna | 1.1.0 | MIT OR Apache-2.0 |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
@@ -141,12 +150,14 @@ Full license texts are available from each package's published source.
 | keyring | 3.6.3 | MIT OR Apache-2.0 |
 | libc | 0.2.189 | MIT OR Apache-2.0 |
 | libsqlite3-sys | 0.38.1 | MIT |
+| linebender_resource_handle | 0.1.1 | Apache-2.0 OR MIT |
 | litemap | 0.8.2 | Unicode-3.0 |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 |
 | log | 0.4.33 | MIT OR Apache-2.0 |
 | lru-slab | 0.1.3 | MIT OR Apache-2.0 OR Zlib |
 | markup5ever | 0.38.0 | MIT OR Apache-2.0 |
 | memchr | 2.8.3 | Unlicense OR MIT |
+| memmap2 | 0.9.11 | MIT OR Apache-2.0 |
 | mime | 0.3.17 | MIT OR Apache-2.0 |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | mio | 1.2.2 | MIT |
@@ -159,6 +170,9 @@ Full license texts are available from each package's published source.
 | option-ext | 0.2.0 | MPL-2.0 |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
+| parlance | 0.1.0 | Apache-2.0 OR MIT |
+| parley | 0.11.1 | Apache-2.0 OR MIT |
+| parley_data | 0.11.1 | Apache-2.0 OR MIT |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
 | phf | 0.13.1 | MIT |
 | phf_codegen | 0.13.1 | MIT |
@@ -183,6 +197,7 @@ Full license texts are available from each package's published source.
 | rand_core | 0.10.1 | MIT OR Apache-2.0 |
 | rand_pcg | 0.10.2 | MIT OR Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
+| read-fonts | 0.41.0 | MIT OR Apache-2.0 |
 | ref-cast | 1.0.26 | MIT OR Apache-2.0 |
 | ref-cast-impl | 1.0.26 | MIT OR Apache-2.0 |
 | regex | 1.13.1 | MIT OR Apache-2.0 |
@@ -226,6 +241,7 @@ Full license texts are available from each package's published source.
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
 | simd-adler32 | 0.3.10 | MIT |
 | siphasher | 1.0.3 | MIT OR Apache-2.0 |
+| skrifa | 0.44.0 | MIT OR Apache-2.0 |
 | slab | 0.4.12 | MIT |
 | smallvec | 1.15.2 | MIT OR Apache-2.0 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 |

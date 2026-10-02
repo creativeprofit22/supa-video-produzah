@@ -1909,6 +1909,18 @@ pub(crate) async fn run_render_worker(request: RenderWorkerRequest) {
     let _ = events(event);
 }
 
+/// The safe area text must stay inside: the delivery preset's when delivering, else the preset
+/// matching the output frame's aspect ratio (`delivery::safe_area_for_frame`).
+pub(crate) fn render_safe_area(validated: &ValidatedRenderPlan) -> super::delivery::SafeAreaRect {
+    let expected = validated.plan.expected();
+    let preset_id = validated
+        .qc
+        .as_ref()
+        .and_then(|context| context.delivery.as_ref())
+        .map(|gate| gate.preset_id.as_str());
+    super::delivery::safe_area_for_frame(expected.width, expected.height, preset_id)
+}
+
 /// Renders the plan's graphics overlays into a private scratch directory next to the partial
 /// output, under the job's cancellation (ADR 0003).
 async fn render_plan_graphics(
@@ -1931,6 +1943,10 @@ async fn render_plan_graphics(
         &plan.expected.rate,
         (plan.expected.width, plan.expected.height),
         &request.validated.graphics_image_paths,
+        super::graphics_export::TextFitContext {
+            safe_area: render_safe_area(&request.validated),
+            font_dir: Path::new(super::graphics_export::FONT_DIRECTORY),
+        },
         scratch_parent,
         super::graphics_export::GraphicsPrograms {
             renderer: &renderer,

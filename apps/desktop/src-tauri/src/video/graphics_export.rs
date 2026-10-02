@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use super::{
+    delivery::SafeAreaRect,
     error::VideoCommandError,
     graphics_render::{
         render_graphics_overlay, GraphicsBackend, GraphicsRenderError, GraphicsRenderLog,
@@ -25,11 +26,20 @@ use super::{
     process::ProcessCancellation,
     project::graphics::{GraphicsEasing, GraphicsKeyframe, GraphicsLayer, GraphicsTextSplit},
     still_image::{parse_still_header, MAX_STILL_BYTES},
+    text_boxes::fit_graphics_text,
+    text_layout::{load_text_font, TextMeasurer},
     types::{graphics_input_sentinel, RationalRate, RenderGraphicsInputV2},
 };
 
 /// Windows core-font directory shared with burned-in captions.
-const FONT_DIRECTORY: &str = r"C:\Windows\Fonts";
+pub(crate) const FONT_DIRECTORY: &str = r"C:\Windows\Fonts";
+
+/// Where text must stay and which fonts measure it, for one export.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TextFitContext<'a> {
+    pub(crate) safe_area: SafeAreaRect,
+    pub(crate) font_dir: &'a Path,
+}
 
 /// Rendered overlays for one export; dropping it deletes the scratch directory and every overlay.
 pub(crate) struct RenderedGraphics {
@@ -134,11 +144,17 @@ fn base64(bytes: &[u8]) -> String {
 ///
 /// `image_paths` maps asset ids to grant-checked paths. The description covers the clip's own
 /// duration; times are clip-relative, as stored.
+///
+/// Unrotated text layers are auto-fitted into `fit.safe_area` at their resting pose (shrink, then
+/// wrap) with the clip's real font: the fitted `fontSize` replaces the authored one, and wrapped
+/// text carries `lineBreaks` (byte offsets of each new line). Text that already fits is emitted
+/// exactly as authored.
 pub(crate) fn graphics_description(
     input: &RenderGraphicsInputV2,
     rate: &RationalRate,
     canvas: (u64, u64),
     image_paths: &BTreeMap<String, PathBuf>,
+    fit: TextFitContext<'_>,
 ) -> Result<Value, VideoCommandError> {
     let clip = &input.clip;
     let font_file = super::caption_render::caption_font_file(&clip.font_key)
@@ -146,6 +162,8 @@ pub(crate) fn graphics_description(
     let family = graphics_font_family(&clip.font_key).ok_or_else(|| invalid("graphics_font"))?;
     let duration_frames =
         u32::try_from(clip.duration.value).map_err(|_| invalid("graphics_duration"))?;
+    // Loaded only when the clip has text, so text-free clips never touch the font directory.
+    let mut measurer: Option<TextMeasurer> = None;
     let mut image_indexes: BTreeMap<&str, usize> = BTreeMap::new();
     let mut images = Vec::new();
     let mut layers = Vec::with_capacity(clip.layers.len());
@@ -171,12 +189,37 @@ pub(crate) fn graphics_description(
                 units,
                 ..
             } => {
+                let measure = match &mut measurer {
+                    Some(measure) => measure,
+                    None => measurer.insert(TextMeasurer::new(
+                        load_text_font(&clip.font_key, fit.font_dir)
+                            .map_err(|_| invalid("graphics_font"))?,
+                    )),
+                };
+                let fitted = fit_graphics_text(
+                    measure,
+                    text,
+                    font_size.get(),
+                    &layer.tracks(),
+                    &fit.safe_area,
+                );
                 let mut entry = json!({
                     "kind": "text",
                     "text": text,
                     "fontSize": font_size.get(),
                     "fill": fill,
                 });
+                if let Some(fitted) = fitted {
+                    let authored = font_size.get();
+                    // Floored to 1/100 px so the drawn size never exceeds the fitted one.
+                    let size = (f64::from(fitted.font_size) * 100.0).floor() / 100.0;
+                    if size < authored {
+                        entry["fontSize"] = json!(size);
+                    }
+                    if !fitted.line_breaks.is_empty() {
+                        entry["lineBreaks"] = json!(fitted.line_breaks);
+                    }
+                }
                 if let Some(units) = units {
                     entry["units"] = json!({
                         "split": match units.split {
@@ -225,7 +268,7 @@ pub(crate) fn graphics_description(
         "canvas": { "width": canvas.0, "height": canvas.1 },
         "frameRate": { "numerator": rate.numerator, "denominator": rate.denominator },
         "durationFrames": duration_frames,
-        "font": { "file": Path::new(FONT_DIRECTORY).join(font_file), "family": family },
+        "font": { "file": fit.font_dir.join(font_file), "family": family },
         "images": images,
         "layers": layers,
     }))
@@ -275,6 +318,7 @@ pub(crate) async fn render_export_graphics(
     rate: &RationalRate,
     canvas: (u64, u64),
     image_paths: &BTreeMap<String, PathBuf>,
+    fit: TextFitContext<'_>,
     scratch_parent: &Path,
     programs: GraphicsPrograms<'_>,
     cancellation: &ProcessCancellation,
@@ -310,7 +354,7 @@ pub(crate) async fn render_export_graphics(
                 "graphics",
             ));
         }
-        let description = match graphics_description(input, rate, canvas, image_paths) {
+        let description = match graphics_description(input, rate, canvas, image_paths, fit) {
             Ok(description) => description,
             Err(error) => {
                 record("invalid_input", None, 0);
