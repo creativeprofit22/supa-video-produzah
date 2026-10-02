@@ -6,7 +6,7 @@ import {
   roundToDeciseconds,
   type NewFinding,
 } from "./finding.js";
-import type { QcFinding } from "@supa-video/contracts";
+import { qcFindingSchema, type QcFinding } from "@supa-video/contracts";
 import {
   parseRenderManifest,
   qcStatusFor,
@@ -83,6 +83,17 @@ describe("finding id", () => {
     ]) {
       expect(await computeFindingId(changed)).not.toBe(id);
     }
+  });
+
+  it.each([
+    ["reading_time_short", "c3f9d2224de525d2b655b8c9039014bca20b9a0b433aefbb01d549086e48c8b1"],
+    ["text_outside_safe_area", "ebde4e964f18eeeba36ad119479ae4f2ee5462441af8131cac1f048686c86dbf"],
+    ["text_overlap", "69f9f60aa4567153e2725f3c637b62d974e2e6a6d89546c1b536cadee82ff92f"],
+  ] as const)("%s parses, is overridable and matches the native golden id", async (kind, id) => {
+    const finding = await createFinding(base({ kind, subject: "clip:0", severity: "warning" }));
+    expect(finding.findingId).toBe(id);
+    expect(qcFindingSchema.parse(finding)).toEqual(finding);
+    expect(isOverridable(finding)).toBe(true);
   });
 
   it("does not depend on severity or message", async () => {

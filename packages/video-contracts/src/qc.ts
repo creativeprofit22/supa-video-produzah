@@ -12,6 +12,9 @@ export const QC_FINDING_KIND = {
   audioClipping: "audio_clipping",
   loudnessOffTarget: "loudness_off_target",
   subtitleOutOfBounds: "subtitle_out_of_bounds",
+  readingTimeShort: "reading_time_short",
+  textOutsideSafeArea: "text_outside_safe_area",
+  textOverlap: "text_overlap",
   missingMedia: "missing_media",
   repeatedAsset: "repeated_asset",
   uncoveredBeat: "uncovered_beat",
@@ -59,7 +62,14 @@ export const qcFindingSchema = z.strictObject({
   kind: z.enum(kindValues),
   severity: z.enum(severityValues),
   source: z.enum(sourceValues),
-  /** Stable subject inside the range (asset id, beat id, caption id); "" when none. */
+  /**
+   * Stable subject inside the range. Part of the `findingId` hash. One of:
+   * - an asset id, beat id or caption id;
+   * - `"<graphicsClipId>:<layerIndex>"` for a graphics text layer;
+   * - for `text_overlap`, the two involved subjects sorted (byte order) and
+   *   joined with `+`, e.g. `"<captionId>+<graphicsClipId>:0"`;
+   * - `""` when there is none.
+   */
   subject: z.string().max(QC_FINDING_SUBJECT_MAX),
   range: qcRangeSchema,
   message: z.string().min(1).max(QC_FINDING_MESSAGE_MAX),

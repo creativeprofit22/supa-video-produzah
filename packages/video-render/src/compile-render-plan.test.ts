@@ -8,8 +8,10 @@ import {
   VideoDomainError,
   createRationalRate,
   createRationalTime,
+  captionArtifactV1Schema,
   renderPlanV1Schema,
   renderPlanV2Schema,
+  type VideoProjectStateV2,
 } from "@supa-video/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -1498,6 +1500,86 @@ describe("compileActiveSequenceRenderPlan", () => {
     expect(hiddenFilter).not.toContain("drawtext");
     expect(shown.videoInputs).toEqual(hidden.videoInputs);
     expect(shown.expected).toEqual(hidden.expected);
+  });
+
+  it("carries the caption artifact's reading-speed limit onto its cues for QC", () => {
+    const revision = structuredClone(makeV2Revision({ captionHidden: false }));
+    const state: VideoProjectStateV2 = revision.state;
+    const sequence = state.sequences[0]!;
+    const track = sequence.tracks.find((item) => item.kind === "caption");
+    if (track?.kind !== "caption") throw new Error("expected caption track fixture");
+    const rate = sequence.rate;
+    track.activeCaptionArtifact = captionArtifactV1Schema.parse({
+      schemaVersion: 1,
+      trackLink: {
+        schemaVersion: 1,
+        projectId: ids.plan,
+        projectRevision: revision.revision,
+        sequenceId: sequence.id,
+        captionTrackId: track.id,
+      },
+      sourceIdentity: {
+        schemaVersion: 1,
+        algorithm: "sha256",
+        digest: "12".repeat(32),
+        byteLength: 1,
+      },
+      transcriptArtifactIdentityKey: "ab".repeat(32),
+      language: "en-US",
+      timelineRate: rate,
+      style: {
+        schemaVersion: 1,
+        typography: {
+          fontFamily: "Arial",
+          fontSizePx: 48,
+          fontWeight: 600,
+          fontStyle: "normal",
+          lineHeightPermille: 1_200,
+          foregroundColorRgba: "#ffffffff",
+        },
+        alignment: { horizontal: "center", vertical: "bottom" },
+      },
+      validationProfile: {
+        schemaVersion: 1,
+        maxLinesPerCue: 2,
+        maxCharactersPerLine: 42,
+        maxCharactersPerSecond: 20,
+        minimumCueDuration: createRationalTime(0, rate),
+        maximumCueDuration: createRationalTime(300, rate),
+        safeArea: { topPermille: 50, rightPermille: 50, bottomPermille: 100, leftPermille: 50 },
+      },
+      cues: [
+        {
+          schemaVersion: 1,
+          cueId: "cue-1",
+          start: createRationalTime(0, rate),
+          end: createRationalTime(30, rate),
+          lines: ["Hello there"],
+          anchor: { xPermille: 500, yPermille: 900 },
+          sourceLinks: [
+            {
+              transcriptArtifactIdentityKey: "ab".repeat(32),
+              sourceStartUs: 0,
+              sourceEndUs: 1_000_000,
+              transcriptWordIds: ["chunk-0:0", "chunk-0:1"],
+            },
+          ],
+        },
+      ],
+    });
+
+    const plan = compileActiveSequenceRenderPlan({
+      planId: ids.plan,
+      revision,
+      inputPathsByAssetId: { [ids.asset]: inputPath },
+      outputPath,
+    });
+
+    const legacy = plan.captions?.[0];
+    const artifactCue = plan.captions?.[1];
+    expect(legacy).not.toHaveProperty("maxCharactersPerSecond");
+    expect(artifactCue).toMatchObject({ cueId: "cue-1", maxCharactersPerSecond: 20 });
+    expect(renderPlanV2Schema.parse(plan).captions?.[1]?.maxCharactersPerSecond).toBe(20);
   });
 
   it("binds canonical track order, visibility, source time, and audio policy into V2 metadata", () => {

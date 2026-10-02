@@ -16,12 +16,14 @@ use std::{collections::BTreeMap, path::Path};
 use serde_json::Value;
 
 use super::{
+    delivery::safe_area_for_frame,
     error::VideoCommandError,
+    graphics_export::FONT_DIRECTORY,
     probe::InspectedMedia,
     qc::{
         analyze_output, qc_release_blocked, qc_status, qc_timeout_for, sort_findings,
-        unresolved_blockers, QcAnalysisConfig, QcFinding, QcThresholds, RenderQcContext,
-        QC_DETECTOR_VERSION, QC_MAX_FINDINGS,
+        text_findings, unresolved_blockers, FontDirMeasurers, QcAnalysisConfig, QcFinding,
+        QcThresholds, RenderQcContext, TextQcInput, QC_DETECTOR_VERSION, QC_MAX_FINDINGS,
     },
     render::RenderWorkerRequest,
     render_manifest::{
@@ -29,7 +31,7 @@ use super::{
         ManifestProject, ManifestQc, ManifestSource, RenderManifest,
         RENDER_MANIFEST_SCHEMA_VERSION,
     },
-    types::{RenderCaptionInput, RenderPlan},
+    types::{RenderCaptionInput, RenderGraphicsInputV2, RenderPlan},
 };
 
 /// Findings and the manifest ready to be written before promotion.
@@ -64,6 +66,13 @@ pub(crate) fn plan_captions(plan: &RenderPlan) -> &[RenderCaptionInput] {
     match plan {
         RenderPlan::V1(plan) => &plan.captions,
         RenderPlan::V2(plan) => &plan.captions,
+    }
+}
+
+pub(crate) fn plan_graphics(plan: &RenderPlan) -> &[RenderGraphicsInputV2] {
+    match plan {
+        RenderPlan::V1(_) => &[],
+        RenderPlan::V2(plan) => plan.graphics.as_deref().unwrap_or_default(),
     }
 }
 
@@ -166,6 +175,29 @@ pub(crate) async fn evaluate_render(
         &context.revision_state_hash,
     )
     .await?;
+    // Text checks run beside the caption-bounds check, on the same frame and captions.
+    let text_input = TextQcInput {
+        captions: plan_captions(plan),
+        graphics: plan_graphics(plan),
+        frame: (probe.width, probe.height),
+        safe_area: safe_area_for_frame(
+            probe.width,
+            probe.height,
+            context
+                .delivery
+                .as_ref()
+                .map(|gate| gate.preset_id.as_str()),
+        ),
+        duration_us: config.duration_us,
+        chars_per_second: config.thresholds.reading_chars_per_second,
+    };
+    let mut measurers = FontDirMeasurers::new(Path::new(FONT_DIRECTORY));
+    let mut native = native;
+    native.extend(text_findings(
+        &text_input,
+        &mut measurers,
+        &context.revision_state_hash,
+    ));
     let findings = merge_findings(native, &context.editorial.findings);
     let status = qc_status(&findings);
     eprintln!(

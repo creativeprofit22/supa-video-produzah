@@ -5433,6 +5433,7 @@ mod graphics_export;
 mod graphics_text_fit;
 #[cfg(target_os = "windows")]
 mod qc_export;
+mod qc_text;
 #[cfg(target_os = "windows")]
 mod speed_export_parity;
 

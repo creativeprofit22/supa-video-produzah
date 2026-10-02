@@ -548,6 +548,9 @@ pub struct RenderCaptionInput {
     pub cue_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<RenderCaptionStyle>,
+    /// Reading-speed limit of the cue's caption artifact; QC judges the cue by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_characters_per_second: Option<u32>,
     pub start_microseconds: u64,
     pub end_microseconds: u64,
     pub text: String,

@@ -133,6 +133,7 @@ export function artifactRenderCaptions(
       anchorXPermille: cue.anchor.xPermille,
       anchorYPermille: cue.anchor.yPermille,
     },
+    maxCharactersPerSecond: artifact.validationProfile.maxCharactersPerSecond,
     startMicroseconds: rationalTimeToMicroseconds(cue.start, "nearestTiesAwayFromZero"),
     endMicroseconds: rationalTimeToMicroseconds(cue.end, "nearestTiesAwayFromZero"),
     text: cue.lines.join("\n"),

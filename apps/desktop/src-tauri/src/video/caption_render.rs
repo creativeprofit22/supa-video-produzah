@@ -52,7 +52,11 @@ fn is_rgba(value: &str) -> bool {
 
 /// Mirrors `renderCaptionStyleV1Schema` bounds.
 pub(crate) fn valid_caption_style_fields(caption: &RenderCaptionInput) -> bool {
-    if caption.cue_id.as_deref().is_some_and(|cue| !is_cue_id(cue)) {
+    if caption.cue_id.as_deref().is_some_and(|cue| !is_cue_id(cue))
+        || caption
+            .max_characters_per_second
+            .is_some_and(|rate| !(1..=1_000).contains(&rate))
+    {
         return false;
     }
     let Some(style) = &caption.style else {
@@ -206,6 +210,7 @@ mod tests {
             track_id: id.clone(),
             caption_id: id,
             cue_id: Some("cue-0001".to_owned()),
+            max_characters_per_second: Some(20),
             style: Some(RenderCaptionStyle {
                 font: "arial-bold".to_owned(),
                 font_size_px: 32,
@@ -250,6 +255,11 @@ mod tests {
         let mut input = golden_input();
         input.cue_id = Some("bad id".to_owned());
         assert!(!valid_caption_style_fields(&input));
+        for rate in [0, 1_001] {
+            let mut input = golden_input();
+            input.max_characters_per_second = Some(rate);
+            assert!(!valid_caption_style_fields(&input));
+        }
     }
 
     /// The escaped `text=` value, inside `-filter_complex` exactly as the

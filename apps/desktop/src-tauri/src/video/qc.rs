@@ -8,20 +8,32 @@
 //! revision state hash) that matches `@supa-video/qc` `computeFindingId`, so
 //! the id excludes frame size and survives across delivery presets.
 
-use std::{collections::BTreeSet, ffi::OsString, path::Path, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
+    path::Path,
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{
+    delivery::SafeAreaRect,
     derived::MediaPrograms,
     error::{VideoCommandError, VideoErrorCode},
     process::{run_supervised, ProcessCancellation, ProcessFailure, ProcessSpec},
-    types::RenderCaptionInput,
+    project::graphics::GraphicsLayer,
+    text_boxes::{
+        caption_box, caption_font, caption_text_size, drawn_text, layer_box, renderer_pivot_size,
+        resting_intervals, visible_spans, Rect,
+    },
+    text_layout::{load_text_font, MeasureText, TextMeasurer},
+    types::{RenderCaptionInput, RenderGraphicsInputV2},
 };
 
-pub(crate) const QC_DETECTOR_VERSION: &str = "qc-v1";
+pub(crate) const QC_DETECTOR_VERSION: &str = "qc-v2";
 pub(crate) const QC_MAX_FINDINGS: usize = 512;
 pub(crate) const QC_MESSAGE_MAX: usize = 480;
 pub(crate) const QC_SUBJECT_MAX: usize = 128;
@@ -42,6 +54,8 @@ pub(crate) struct QcThresholds {
     pub(crate) silence_min_seconds: f64,
     pub(crate) clipping_peak_dbfs: f64,
     pub(crate) loudness_tolerance_lu: f64,
+    /// Fastest comfortable reading speed for on-screen text, in characters per second.
+    pub(crate) reading_chars_per_second: f64,
 }
 
 impl Default for QcThresholds {
@@ -55,6 +69,7 @@ impl Default for QcThresholds {
             silence_min_seconds: 2.0,
             clipping_peak_dbfs: -0.1,
             loudness_tolerance_lu: 1.0,
+            reading_chars_per_second: 17.0,
         }
     }
 }
@@ -94,6 +109,9 @@ pub enum QcFindingKind {
     AudioClipping,
     LoudnessOffTarget,
     SubtitleOutOfBounds,
+    ReadingTimeShort,
+    TextOutsideSafeArea,
+    TextOverlap,
     MissingMedia,
     RepeatedAsset,
     UncoveredBeat,
@@ -111,6 +129,9 @@ impl QcFindingKind {
             Self::AudioClipping => "audio_clipping",
             Self::LoudnessOffTarget => "loudness_off_target",
             Self::SubtitleOutOfBounds => "subtitle_out_of_bounds",
+            Self::ReadingTimeShort => "reading_time_short",
+            Self::TextOutsideSafeArea => "text_outside_safe_area",
+            Self::TextOverlap => "text_overlap",
             Self::MissingMedia => "missing_media",
             Self::RepeatedAsset => "repeated_asset",
             Self::UncoveredBeat => "uncovered_beat",
@@ -146,6 +167,12 @@ pub struct QcFinding {
     pub kind: QcFindingKind,
     pub severity: QcSeverity,
     pub source: QcSource,
+    /// Stable subject inside the range. Part of the `findingId` hash. One of:
+    /// - an asset id, beat id or caption id;
+    /// - `"<graphicsClipId>:<layerIndex>"` for a graphics text layer;
+    /// - for `text_overlap`, the two involved subjects sorted (byte order) and
+    ///   joined with `+`, e.g. `"<captionId>+<graphicsClipId>:0"`;
+    /// - `""` when there is none.
     pub subject: String,
     pub range: QcRange,
     pub message: String,
@@ -613,6 +640,351 @@ pub(crate) fn subtitle_findings(
     findings
 }
 
+/// A timeline range clamped to the output (`start <= end <= duration`).
+fn clamped_range(start_us: u64, end_us: u64, duration_us: u64) -> QcRange {
+    let start = start_us.min(duration_us);
+    QcRange {
+        start_us: start,
+        end_us: end_us.min(duration_us).max(start),
+    }
+}
+
+/// Characters a viewer reads: Unicode scalars, excluding line breaks.
+fn reading_chars(text: &str) -> usize {
+    text.chars().filter(|c| *c != '\n' && *c != '\r').count()
+}
+
+/// True when `chars` cannot be read in `span_us` at `chars_per_second`.
+fn too_fast(chars: usize, span_us: u64, chars_per_second: f64) -> bool {
+    chars > 0 && (span_us as f64) * chars_per_second < chars as f64 * 1_000_000.0
+}
+
+/// Subject of a graphics text layer: its clip id and layer index.
+fn graphics_text_subject(clip_id: &str, layer_index: usize) -> String {
+    format!("{clip_id}:{layer_index}")
+}
+
+/// Clip-relative duration of a graphics input on the timeline.
+fn graphics_span_us(input: &RenderGraphicsInputV2) -> u64 {
+    input
+        .end_microseconds
+        .saturating_sub(input.start_microseconds)
+}
+
+/// Caption cues and graphics text shown for less time than it takes to read them (warning).
+/// A caption cue is judged by its artifact's own reading-speed limit when it carries one;
+/// everything else uses `chars_per_second`. Graphics text is timed by each span where its
+/// layer is visible.
+pub(crate) fn reading_time_findings(
+    captions: &[RenderCaptionInput],
+    graphics: &[RenderGraphicsInputV2],
+    duration_us: u64,
+    chars_per_second: f64,
+    revision_state_hash: &str,
+) -> Vec<QcFinding> {
+    let finding = |subject: &str, start: u64, end: u64, chars: usize, chars_per_second: f64| {
+        let range = clamped_range(start, end, duration_us);
+        let needed = chars as f64 / chars_per_second;
+        let shown = (end - start) as f64 / 1_000_000.0;
+        QcFinding::new(
+            QcFindingKind::ReadingTimeShort,
+            QcSeverity::Warning,
+            QcSource::Deterministic,
+            subject,
+            range,
+            format!(
+                "{chars} characters are on screen for {shown:.1} s; reading them needs {needed:.1} s at {chars_per_second} characters per second"
+            ),
+            revision_state_hash,
+        )
+    };
+    let mut findings = Vec::new();
+    for caption in captions {
+        // Cues timed outside the export are already `subtitle_out_of_bounds`.
+        if caption.end_microseconds <= caption.start_microseconds
+            || caption.start_microseconds >= duration_us
+        {
+            continue;
+        }
+        let chars = reading_chars(&caption.text);
+        let caption_rate = caption
+            .max_characters_per_second
+            .map(f64::from)
+            .unwrap_or(chars_per_second);
+        if too_fast(
+            chars,
+            caption.end_microseconds - caption.start_microseconds,
+            caption_rate,
+        ) {
+            findings.push(finding(
+                caption.caption_id.as_str(),
+                caption.start_microseconds,
+                caption.end_microseconds,
+                chars,
+                caption_rate,
+            ));
+        }
+    }
+    for input in graphics {
+        let span_us = graphics_span_us(input);
+        for (index, layer) in input.clip.layers.iter().enumerate() {
+            let GraphicsLayer::Text { text, .. } = layer else {
+                continue;
+            };
+            let chars = reading_chars(text);
+            let subject = graphics_text_subject(&input.clip.id, index);
+            for (start, end) in visible_spans(layer.tracks().opacity, span_us) {
+                if too_fast(chars, end - start, chars_per_second) {
+                    findings.push(finding(
+                        &subject,
+                        input.start_microseconds + start,
+                        input.start_microseconds + end,
+                        chars,
+                        chars_per_second,
+                    ));
+                }
+            }
+        }
+    }
+    findings
+}
+
+/// Measurers for closed font keys. `None` when a font cannot be loaded, in which case the
+/// geometric text checks skip that text (reading time still runs).
+pub(crate) trait TextMeasurers {
+    fn measurer(&mut self, font_key: &str) -> Option<&mut dyn MeasureText>;
+}
+
+/// Loads each font key once from a font directory, for one QC run.
+pub(crate) struct FontDirMeasurers<'a> {
+    font_dir: &'a Path,
+    loaded: BTreeMap<String, Option<TextMeasurer>>,
+}
+
+impl<'a> FontDirMeasurers<'a> {
+    pub(crate) fn new(font_dir: &'a Path) -> Self {
+        Self {
+            font_dir,
+            loaded: BTreeMap::new(),
+        }
+    }
+}
+
+impl TextMeasurers for FontDirMeasurers<'_> {
+    fn measurer(&mut self, font_key: &str) -> Option<&mut dyn MeasureText> {
+        let font_dir = self.font_dir;
+        self.loaded
+            .entry(font_key.to_owned())
+            .or_insert_with(|| {
+                load_text_font(font_key, font_dir)
+                    .ok()
+                    .map(TextMeasurer::new)
+            })
+            .as_mut()
+            .map(|measurer| measurer as &mut dyn MeasureText)
+    }
+}
+
+/// Where one piece of text sits on the frame for one timeline span.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TimedTextBox {
+    pub(crate) subject: String,
+    pub(crate) start_us: u64,
+    pub(crate) end_us: u64,
+    pub(crate) rect: Rect,
+    /// Graphics text (checked against the safe area); captions have their own bounds check.
+    pub(crate) graphics: bool,
+}
+
+/// Laid-out boxes of every graphics text layer during each resting interval (drawn at the
+/// auto-fitted size the export uses) and of every caption cue, on the timeline.
+pub(crate) fn timed_text_boxes(
+    captions: &[RenderCaptionInput],
+    graphics: &[RenderGraphicsInputV2],
+    frame: (u64, u64),
+    safe_area: &SafeAreaRect,
+    measurers: &mut dyn TextMeasurers,
+) -> Vec<TimedTextBox> {
+    let mut boxes = Vec::new();
+    for input in graphics {
+        let span_us = graphics_span_us(input);
+        for (index, layer) in input.clip.layers.iter().enumerate() {
+            let GraphicsLayer::Text {
+                text, font_size, ..
+            } = layer
+            else {
+                continue;
+            };
+            let Some(measure) = measurers.measurer(&input.clip.font_key) else {
+                continue;
+            };
+            let tracks = layer.tracks();
+            let drawn = drawn_text(measure, text, font_size.get(), &tracks, safe_area);
+            let pivot = renderer_pivot_size(text, f64::from(drawn.font_size), &drawn.line_breaks);
+            let ink = (f64::from(drawn.width), f64::from(drawn.height));
+            let subject = graphics_text_subject(&input.clip.id, index);
+            for interval in resting_intervals(&tracks, span_us) {
+                boxes.push(TimedTextBox {
+                    subject: subject.clone(),
+                    start_us: input.start_microseconds + interval.start_us,
+                    end_us: input.start_microseconds + interval.end_us,
+                    rect: layer_box(interval.pose, pivot, ink),
+                    graphics: true,
+                });
+            }
+        }
+    }
+    let (width, height) = (frame.0 as f64, frame.1 as f64);
+    for caption in captions {
+        if caption.end_microseconds <= caption.start_microseconds {
+            continue;
+        }
+        let (font_key, font_size, line_spacing) = caption_font(caption.style.as_ref(), height);
+        let Some(measure) = measurers.measurer(font_key) else {
+            continue;
+        };
+        let size = caption_text_size(measure, &caption.text, font_size, line_spacing);
+        boxes.push(TimedTextBox {
+            subject: caption.caption_id.as_str().to_owned(),
+            start_us: caption.start_microseconds,
+            end_us: caption.end_microseconds,
+            rect: caption_box(caption.style.as_ref(), (width, height), size),
+            graphics: false,
+        });
+    }
+    boxes
+}
+
+/// Graphics text that crosses the safe area while resting: a warning inside the frame, a
+/// blocker when part of it leaves the frame. Captions keep `subtitle_out_of_bounds`.
+pub(crate) fn text_safe_area_findings(
+    boxes: &[TimedTextBox],
+    frame: (u64, u64),
+    safe_area: &SafeAreaRect,
+    duration_us: u64,
+    revision_state_hash: &str,
+) -> Vec<QcFinding> {
+    let (width, height) = (frame.0 as f64, frame.1 as f64);
+    boxes
+        .iter()
+        .filter(|text| text.graphics && text.start_us < duration_us)
+        .filter(|text| {
+            !text.rect.within(
+                safe_area.left,
+                safe_area.top,
+                safe_area.right,
+                safe_area.bottom,
+            )
+        })
+        .map(|text| {
+            let off_frame = !text.rect.within(0.0, 0.0, width, height);
+            let (severity, message) = if off_frame {
+                (
+                    QcSeverity::Blocker,
+                    format!("Text is cut off by the edge of the {width}×{height} frame"),
+                )
+            } else {
+                (
+                    QcSeverity::Warning,
+                    format!("Text crosses the safe area at {width}×{height}"),
+                )
+            };
+            QcFinding::new(
+                QcFindingKind::TextOutsideSafeArea,
+                severity,
+                QcSource::Deterministic,
+                &text.subject,
+                clamped_range(text.start_us, text.end_us, duration_us),
+                message,
+                revision_state_hash,
+            )
+        })
+        .collect()
+}
+
+/// Two text boxes on screen at the same time that overlap (warning), for the time they share.
+/// The subject is both subjects, sorted, joined with `+`.
+pub(crate) fn text_overlap_findings(
+    boxes: &[TimedTextBox],
+    duration_us: u64,
+    revision_state_hash: &str,
+) -> Vec<QcFinding> {
+    let mut findings = Vec::new();
+    for (index, first) in boxes.iter().enumerate() {
+        for second in &boxes[index + 1..] {
+            if first.subject == second.subject {
+                continue;
+            }
+            let start = first.start_us.max(second.start_us);
+            let end = first.end_us.min(second.end_us);
+            if start >= end
+                || start >= duration_us
+                || first.rect.intersection_area(&second.rect) <= 0.0
+            {
+                continue;
+            }
+            let mut subjects = [first.subject.as_str(), second.subject.as_str()];
+            subjects.sort_unstable();
+            findings.push(QcFinding::new(
+                QcFindingKind::TextOverlap,
+                QcSeverity::Warning,
+                QcSource::Deterministic,
+                &subjects.join("+"),
+                clamped_range(start, end, duration_us),
+                "Two pieces of text overlap on screen".to_owned(),
+                revision_state_hash,
+            ));
+        }
+    }
+    findings
+}
+
+/// Inputs to the text checks for one output.
+pub(crate) struct TextQcInput<'a> {
+    pub(crate) captions: &'a [RenderCaptionInput],
+    pub(crate) graphics: &'a [RenderGraphicsInputV2],
+    pub(crate) frame: (u64, u64),
+    pub(crate) safe_area: SafeAreaRect,
+    pub(crate) duration_us: u64,
+    pub(crate) chars_per_second: f64,
+}
+
+/// Reading time, safe area and overlap findings. Geometric checks skip text whose font cannot be
+/// loaded; reading time always runs.
+pub(crate) fn text_findings(
+    input: &TextQcInput<'_>,
+    measurers: &mut dyn TextMeasurers,
+    revision_state_hash: &str,
+) -> Vec<QcFinding> {
+    let mut findings = reading_time_findings(
+        input.captions,
+        input.graphics,
+        input.duration_us,
+        input.chars_per_second,
+        revision_state_hash,
+    );
+    let boxes = timed_text_boxes(
+        input.captions,
+        input.graphics,
+        input.frame,
+        &input.safe_area,
+        measurers,
+    );
+    findings.extend(text_safe_area_findings(
+        &boxes,
+        input.frame,
+        &input.safe_area,
+        input.duration_us,
+        revision_state_hash,
+    ));
+    findings.extend(text_overlap_findings(
+        &boxes,
+        input.duration_us,
+        revision_state_hash,
+    ));
+    findings
+}
+
 fn bounded_tail(stderr: &[u8], redact: &str) -> String {
     let start = stderr.len().saturating_sub(QC_FAILURE_TAIL_BYTES);
     let text = String::from_utf8_lossy(&stderr[start..]);
@@ -869,6 +1241,37 @@ mod tests {
             hex_sha256(payload.as_bytes()),
             "6d198444bde0eaba78dd2fde8f268b9132b968b9277b6e2924c83b729a940f53"
         );
+    }
+
+    /// Golden ids for the text kinds, shared with `@supa-video/qc` qc.test.ts.
+    #[test]
+    fn text_finding_ids_match_typescript() {
+        for (kind, golden) in [
+            (
+                QcFindingKind::ReadingTimeShort,
+                "c3f9d2224de525d2b655b8c9039014bca20b9a0b433aefbb01d549086e48c8b1",
+            ),
+            (
+                QcFindingKind::TextOutsideSafeArea,
+                "ebde4e964f18eeeba36ad119479ae4f2ee5462441af8131cac1f048686c86dbf",
+            ),
+            (
+                QcFindingKind::TextOverlap,
+                "69f9f60aa4567153e2725f3c637b62d974e2e6a6d89546c1b536cadee82ff92f",
+            ),
+        ] {
+            let payload = finding_id_payload(
+                kind,
+                QcSource::Deterministic,
+                "clip:0",
+                QcRange {
+                    start_us: 1_000_000,
+                    end_us: 2_000_000,
+                },
+                STATE,
+            );
+            assert_eq!(hex_sha256(payload.as_bytes()), golden, "{}", kind.as_str());
+        }
     }
 
     #[test]

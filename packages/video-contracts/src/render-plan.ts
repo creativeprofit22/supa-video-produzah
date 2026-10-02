@@ -80,6 +80,8 @@ export const renderCaptionInputV2Schema = z
       .max(128)
       .optional(),
     style: renderCaptionStyleV1Schema.optional(),
+    /** The caption artifact's reading-speed limit; QC judges the cue by it. */
+    maxCharactersPerSecond: safePositiveIntegerSchema.max(1_000).optional(),
     startMicroseconds: safeNonNegativeIntegerSchema,
     endMicroseconds: safePositiveIntegerSchema,
     text: z
