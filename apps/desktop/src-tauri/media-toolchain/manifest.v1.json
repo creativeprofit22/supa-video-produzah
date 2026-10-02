@@ -47,8 +47,8 @@
         }
       },
       "requiredCapabilities": {
-        "encoders": ["libx264", "aac", "mjpeg"],
-        "muxers": ["mp4", "image2"],
+        "encoders": ["libx264", "aac", "mjpeg", "qtrle"],
+        "muxers": ["mp4", "image2", "mov"],
         "filters": [
           "scale",
           "fps",

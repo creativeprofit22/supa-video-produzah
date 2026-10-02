@@ -835,9 +835,14 @@ fn validate_manifest(manifest: &ToolchainManifest) -> Result<(), ManifestError> 
     }
     assert_exact_values(
         &target.required_capabilities.encoders,
-        &["libx264", "aac", "mjpeg"],
+        &["libx264", "aac", "mjpeg", "qtrle"],
     )
-    .and_then(|()| assert_exact_values(&target.required_capabilities.muxers, &["mp4", "image2"]))
+    .and_then(|()| {
+        assert_exact_values(
+            &target.required_capabilities.muxers,
+            &["mp4", "image2", "mov"],
+        )
+    })
     .and_then(|()| {
         assert_exact_values(
             &target.required_capabilities.filters,

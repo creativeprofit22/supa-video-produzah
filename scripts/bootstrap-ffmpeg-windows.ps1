@@ -221,8 +221,8 @@ function Read-StrictManifest {
     }
 
     Assert-ExactProperties $target.requiredCapabilities @("encoders", "muxers", "filters") "target.requiredCapabilities"
-    $null = Assert-ExactStringSet $target.requiredCapabilities.encoders @("libx264", "aac", "mjpeg") "target.requiredCapabilities.encoders"
-    $null = Assert-ExactStringSet $target.requiredCapabilities.muxers @("mp4", "image2") "target.requiredCapabilities.muxers"
+    $null = Assert-ExactStringSet $target.requiredCapabilities.encoders @("libx264", "aac", "mjpeg", "qtrle") "target.requiredCapabilities.encoders"
+    $null = Assert-ExactStringSet $target.requiredCapabilities.muxers @("mp4", "image2", "mov") "target.requiredCapabilities.muxers"
     $null = Assert-ExactStringSet $target.requiredCapabilities.filters @(
         "scale", "fps", "pad", "tile", "setsar", "zscale", "tonemap", "drawbox",
         "color", "setpts", "format", "overlay", "null", "asetpts", "anull", "amix",

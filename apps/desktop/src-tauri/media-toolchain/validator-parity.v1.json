@@ -130,7 +130,7 @@
       "mutations": [
         {
           "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/encoders",
-          "value": ["libx264", "aac", "mjpeg", "libx265"]
+          "value": ["libx264", "aac", "mjpeg", "qtrle", "libx265"]
         }
       ]
     },
@@ -140,7 +140,7 @@
       "mutations": [
         {
           "path": "/targets/x86_64-pc-windows-msvc/requiredCapabilities/muxers",
-          "value": ["mp4", "image2", "matroska"]
+          "value": ["mp4", "image2", "mov", "matroska"]
         }
       ]
     },
