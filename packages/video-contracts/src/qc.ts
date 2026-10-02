@@ -95,6 +95,15 @@ const presetIdValues = Object.values(DELIVERY_PRESET_ID) as [
   ...DeliveryPresetId[],
 ];
 
+/** Text-safe insets per side in permille (top/bottom of height, left/right of width). */
+export const safeAreaPermilleSchema = z.strictObject({
+  top: z.number().int().min(0).max(450),
+  right: z.number().int().min(0).max(450),
+  bottom: z.number().int().min(0).max(450),
+  left: z.number().int().min(0).max(450),
+});
+export type SafeAreaPermille = z.infer<typeof safeAreaPermilleSchema>;
+
 export const deliveryPresetSchema = z.strictObject({
   id: z.enum(presetIdValues),
   label: z.string().min(1).max(64),
@@ -106,6 +115,8 @@ export const deliveryPresetSchema = z.strictObject({
   captions: z.enum(["burn_in", "sidecar"]),
   /** Thumbnail frame as a permille of duration (0 = first frame). */
   thumbnailAtPermille: z.number().int().min(0).max(1000),
+  /** Area text must stay inside; mirrors `safe_area` in `video/delivery.rs`. */
+  safeArea: safeAreaPermilleSchema,
 });
 export type DeliveryPreset = z.infer<typeof deliveryPresetSchema>;
 
@@ -115,6 +126,7 @@ export const DELIVERY_PRESETS: readonly DeliveryPreset[] = [
     label: "Landscape 16:9 (1920×1080)",
     width: 1920,
     height: 1080,
+    safeArea: { top: 50, right: 50, bottom: 50, left: 50 },
     container: "mp4",
     videoCodec: "h264",
     audioCodec: "aac",
@@ -124,8 +136,10 @@ export const DELIVERY_PRESETS: readonly DeliveryPreset[] = [
   {
     id: DELIVERY_PRESET_ID.portrait,
     label: "Vertical 9:16 (1080×1920)",
+    // The safe area stays clear of the social apps' top bar, side buttons and caption UI.
     width: 1080,
     height: 1920,
+    safeArea: { top: 120, right: 120, bottom: 200, left: 60 },
     container: "mp4",
     videoCodec: "h264",
     audioCodec: "aac",
@@ -137,6 +151,7 @@ export const DELIVERY_PRESETS: readonly DeliveryPreset[] = [
     label: "Square 1:1 (1080×1080)",
     width: 1080,
     height: 1080,
+    safeArea: { top: 50, right: 50, bottom: 50, left: 50 },
     container: "mp4",
     videoCodec: "h264",
     audioCodec: "aac",

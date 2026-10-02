@@ -44,6 +44,14 @@ describe("delivery presets", () => {
     expect(deliveryPresetSchema.parse(preset)).toEqual(preset);
   });
 
+  it.each([
+    [DELIVERY_PRESET_ID.landscape, { top: 50, right: 50, bottom: 50, left: 50 }],
+    [DELIVERY_PRESET_ID.portrait, { top: 120, right: 120, bottom: 200, left: 60 }],
+    [DELIVERY_PRESET_ID.square, { top: 50, right: 50, bottom: 50, left: 50 }],
+  ])("%s defines its text safe area", (id, safeArea) => {
+    expect(deliveryPresetById(id)?.safeArea).toEqual(safeArea);
+  });
+
   it("has unique ids", () => {
     expect(new Set(DELIVERY_PRESETS.map((preset) => preset.id)).size).toBe(DELIVERY_PRESETS.length);
   });
@@ -52,6 +60,8 @@ describe("delivery presets", () => {
     { container: "mov" },
     { videoCodec: "hevc" },
     { thumbnailAtPermille: 1001 },
+    { safeArea: { top: 50, right: 50, bottom: 50 } },
+    { safeArea: { top: 500, right: 50, bottom: 50, left: 50 } },
     { id: "custom" },
     { extra: true },
   ])("rejects %j", (patch) => {

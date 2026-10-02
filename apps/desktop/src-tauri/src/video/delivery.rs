@@ -52,6 +52,40 @@ pub(crate) struct DeliveryPresetSpec {
     pub(crate) width: u64,
     pub(crate) height: u64,
     pub(crate) thumbnail_at_permille: u64,
+    /// Inset kept clear of text, per side, as permille of the frame side it borders.
+    pub(crate) safe_area: SafeAreaPermille,
+}
+
+/// Safe-area insets in permille: `top`/`bottom` of the frame height, `left`/`right` of the width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SafeAreaPermille {
+    pub(crate) top: u32,
+    pub(crate) right: u32,
+    pub(crate) bottom: u32,
+    pub(crate) left: u32,
+}
+
+impl SafeAreaPermille {
+    pub(crate) const fn uniform(inset: u32) -> Self {
+        Self {
+            top: inset,
+            right: inset,
+            bottom: inset,
+            left: inset,
+        }
+    }
+}
+
+/// Safe area used when no preset matches the frame (title-safe 90 %).
+pub(crate) const DEFAULT_SAFE_AREA: SafeAreaPermille = SafeAreaPermille::uniform(50);
+
+/// A safe area resolved to pixels for one frame size.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SafeAreaRect {
+    pub(crate) left: f64,
+    pub(crate) top: f64,
+    pub(crate) right: f64,
+    pub(crate) bottom: f64,
 }
 
 /// Mirrors `DELIVERY_PRESETS` in `@supa-video/contracts` `qc.ts`.
@@ -61,20 +95,54 @@ pub(crate) const DELIVERY_PRESETS: [DeliveryPresetSpec; 3] = [
         width: 1920,
         height: 1080,
         thumbnail_at_permille: 100,
+        safe_area: SafeAreaPermille::uniform(50),
     },
     DeliveryPresetSpec {
         id: "portrait_9x16_1080p",
         width: 1080,
         height: 1920,
         thumbnail_at_permille: 100,
+        // Clear of the social apps' top bar, side action buttons and bottom caption UI.
+        safe_area: SafeAreaPermille {
+            top: 120,
+            right: 120,
+            bottom: 200,
+            left: 60,
+        },
     },
     DeliveryPresetSpec {
         id: "square_1x1_1080p",
         width: 1080,
         height: 1080,
         thumbnail_at_permille: 100,
+        safe_area: SafeAreaPermille::uniform(50),
     },
 ];
+
+/// The safe area for a frame: the named delivery preset's, else the preset with exactly the
+/// frame's aspect ratio, else [`DEFAULT_SAFE_AREA`].
+pub(crate) fn safe_area_for_frame(
+    width: u64,
+    height: u64,
+    preset_id: Option<&str>,
+) -> SafeAreaRect {
+    let permille = preset_id
+        .and_then(|id| DELIVERY_PRESETS.iter().find(|preset| preset.id == id))
+        .or_else(|| {
+            DELIVERY_PRESETS.iter().find(|preset| {
+                u128::from(preset.width) * u128::from(height)
+                    == u128::from(preset.height) * u128::from(width)
+            })
+        })
+        .map_or(DEFAULT_SAFE_AREA, |preset| preset.safe_area);
+    let (w, h) = (width as f64, height as f64);
+    SafeAreaRect {
+        left: w * f64::from(permille.left) / 1000.0,
+        top: h * f64::from(permille.top) / 1000.0,
+        right: w - w * f64::from(permille.right) / 1000.0,
+        bottom: h - h * f64::from(permille.bottom) / 1000.0,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -531,6 +599,70 @@ mod tests {
                 "portrait_9x16_1080p",
                 "square_1x1_1080p"
             ]
+        );
+    }
+
+    /// Every Rust preset's safe area appears, field for field, in the TS mirror.
+    #[test]
+    fn safe_areas_match_the_typescript_presets() {
+        let ts = include_str!("../../../../../packages/video-contracts/src/qc.ts");
+        let compact: String = ts.chars().filter(|c| !c.is_whitespace()).collect();
+        for preset in &DELIVERY_PRESETS {
+            let area = preset.safe_area;
+            let expected = format!(
+                "width:{},height:{},safeArea:{{top:{},right:{},bottom:{},left:{}}}",
+                preset.width, preset.height, area.top, area.right, area.bottom, area.left
+            );
+            assert!(
+                compact.contains(&expected),
+                "{} missing {expected}",
+                preset.id
+            );
+        }
+    }
+
+    #[test]
+    fn safe_area_resolves_per_preset() {
+        let check = |actual: SafeAreaRect, expected: [f64; 4]| {
+            let got = [actual.left, actual.top, actual.right, actual.bottom];
+            for (got, want) in got.iter().zip(expected) {
+                assert!((got - want).abs() < 1e-9, "{got} != {want}");
+            }
+        };
+        check(
+            safe_area_for_frame(1920, 1080, Some("landscape_16x9_1080p")),
+            [96.0, 54.0, 1824.0, 1026.0],
+        );
+        check(
+            safe_area_for_frame(1080, 1920, Some("portrait_9x16_1080p")),
+            [64.8, 230.4, 950.4, 1536.0],
+        );
+        check(
+            safe_area_for_frame(1080, 1080, Some("square_1x1_1080p")),
+            [54.0, 54.0, 1026.0, 1026.0],
+        );
+    }
+
+    #[test]
+    fn safe_area_falls_back_to_aspect_ratio_then_default() {
+        // A 720p review export of a vertical project uses the 9:16 insets.
+        assert_eq!(
+            safe_area_for_frame(720, 1280, None),
+            safe_area_for_frame(720, 1280, Some("portrait_9x16_1080p"))
+        );
+        assert_eq!(
+            safe_area_for_frame(1000, 800, None),
+            SafeAreaRect {
+                left: 50.0,
+                top: 40.0,
+                right: 950.0,
+                bottom: 760.0
+            }
+        );
+        // An unknown preset id falls through to the aspect-ratio match.
+        assert_eq!(
+            safe_area_for_frame(1280, 720, Some("custom")),
+            safe_area_for_frame(1280, 720, None)
         );
     }
 }
