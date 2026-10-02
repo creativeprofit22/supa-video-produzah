@@ -2,21 +2,45 @@
 //!
 //! Untrusted input is parsed with `deny_unknown_fields` and checked against fixed bounds before
 //! any rendering happens; everything after `GraphicsDescription::parse` works with validated data.
+//!
+//! Schema 2 (docs/adr/0003-graphics-clips.md): every layer has `x`, `y`, `scale`, `rotation` and
+//! `opacity` keyframe tracks with structured easing; keyframe frames may be fractional (they come
+//! from microsecond times). `x`/`y` place the layer's top-left corner (text: the top of a
+//! `fontSize`-tall line box); `scale` and `rotation` (degrees, clockwise) apply around the layer
+//! center. Images are embedded as bounded `data:` URIs, so the renderer never opens other files.
 
 use std::{fmt, path::PathBuf};
 
 use serde::Deserialize;
 
-pub const SCHEMA_VERSION: u32 = 1;
+use crate::easing::Easing;
+
+pub const SCHEMA_VERSION: u32 = 2;
 pub const MAX_CANVAS_SIZE: u32 = 4096;
 pub const MAX_DURATION_FRAMES: u32 = 36_000;
 pub const MAX_LAYERS: usize = 64;
 pub const MAX_TEXT_CHARS: usize = 500;
 pub const MAX_KEYFRAMES: usize = 256;
+pub const MAX_UNIT_KEYFRAMES: usize = 16;
 pub const MAX_FRAME_RATE: u32 = 240;
-pub const MAX_DESCRIPTION_BYTES: usize = 1024 * 1024;
-/// Positions may leave the canvas (for fly-ins) but stay within this many canvases of it.
-const POSITION_MARGIN_CANVASES: f64 = 4.0;
+/// One hour at the maximum frame rate: keyframes may sit past the end but are never reached.
+pub const MAX_KEYFRAME_FRAME: f64 = 864_000.0;
+pub const MAX_IMAGES: usize = 16;
+pub const MAX_IMAGE_SIDE: u32 = 4096;
+pub const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_TOTAL_IMAGE_BYTES: usize = 40 * 1024 * 1024;
+pub const MAX_DESCRIPTION_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_SCALE: f64 = 100.0;
+pub const MAX_ROTATION_DEGREES: f64 = 36_000.0;
+pub const MAX_FONT_SIZE: f64 = 1_000.0;
+/// Text box width estimate until real glyph layout exists: 0.55 em per character. Shared with
+/// the TypeScript presets (`graphicsLayerBounds`) so scale and rotation pivot on the same center.
+pub const TEXT_ADVANCE_EM: f64 = 0.55;
+/// Position and unit offset bound in pixels, the same as the project's graphics clips, so every
+/// valid project clip yields a valid description.
+pub const MAX_POSITION: f64 = 32_768.0;
+/// Layer side bound in pixels, the same as the project's graphics clips.
+pub const MAX_LAYER_SIDE: f64 = 16_384.0;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,7 +50,12 @@ pub struct GraphicsDescription {
     pub frame_rate: FrameRate,
     pub duration_frames: u32,
     pub font: FontSpec,
+    #[serde(default)]
+    pub images: Vec<EmbeddedImage>,
     pub layers: Vec<Layer>,
+    /// Container bytes of `images`, decoded during validation.
+    #[serde(skip)]
+    pub image_bytes: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -52,6 +81,30 @@ pub struct FontSpec {
     pub family: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmbeddedImage {
+    /// `data:image/png;base64,…` or `data:image/jpeg;base64,…`.
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextSplit {
+    Word,
+    Letter,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextUnits {
+    pub split: TextSplit,
+    /// One track per unit, multiplied with the layer opacity.
+    pub opacity: Vec<Vec<Keyframe>>,
+    /// One track per unit, added to the layer y in pixels.
+    pub offset_y: Vec<Vec<Keyframe>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Layer {
@@ -61,46 +114,121 @@ pub enum Layer {
         height: f64,
         corner_radius: f64,
         fill: String,
-        x: Track,
-        y: Track,
-        opacity: Track,
+        x: Vec<Keyframe>,
+        y: Vec<Keyframe>,
+        scale: Vec<Keyframe>,
+        rotation: Vec<Keyframe>,
+        opacity: Vec<Keyframe>,
     },
     #[serde(rename_all = "camelCase")]
     Text {
         text: String,
         font_size: f64,
         fill: String,
-        x: Track,
-        y: Track,
-        opacity: Track,
+        #[serde(default)]
+        units: Option<TextUnits>,
+        x: Vec<Keyframe>,
+        y: Vec<Keyframe>,
+        scale: Vec<Keyframe>,
+        rotation: Vec<Keyframe>,
+        opacity: Vec<Keyframe>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Image {
+        /// Index into `images`.
+        image: usize,
+        width: f64,
+        height: f64,
+        x: Vec<Keyframe>,
+        y: Vec<Keyframe>,
+        scale: Vec<Keyframe>,
+        rotation: Vec<Keyframe>,
+        opacity: Vec<Keyframe>,
     },
 }
 
-/// Keyframed value; before the first and after the last keyframe the value holds.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Track {
-    pub keyframes: Vec<Keyframe>,
+/// The five keyframed properties every layer has.
+pub struct LayerTracks<'a> {
+    pub x: &'a [Keyframe],
+    pub y: &'a [Keyframe],
+    pub scale: &'a [Keyframe],
+    pub rotation: &'a [Keyframe],
+    pub opacity: &'a [Keyframe],
 }
 
+impl Layer {
+    pub fn tracks(&self) -> LayerTracks<'_> {
+        let (Self::Rect {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity,
+            ..
+        }
+        | Self::Text {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity,
+            ..
+        }
+        | Self::Image {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity,
+            ..
+        }) = self;
+        LayerTracks {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity,
+        }
+    }
+
+    /// Width and height used for the scale/rotation pivot (text: the estimated line box).
+    pub fn bounds(&self) -> (f64, f64) {
+        match self {
+            Self::Rect { width, height, .. } | Self::Image { width, height, .. } => {
+                (*width, *height)
+            }
+            Self::Text {
+                text, font_size, ..
+            } => (
+                (text.chars().count() as f64 * TEXT_ADVANCE_EM * font_size).max(1.0),
+                *font_size,
+            ),
+        }
+    }
+}
+
+/// Words are maximal runs of non-space characters; letters are non-space characters. Matches
+/// `splitGraphicsText` in `packages/video-contracts`.
+pub fn split_text(text: &str, split: TextSplit) -> Vec<&str> {
+    match split {
+        TextSplit::Word => text.split(' ').filter(|word| !word.is_empty()).collect(),
+        TextSplit::Letter => text
+            .char_indices()
+            .filter(|(_, character)| *character != ' ')
+            .map(|(index, character)| &text[index..index + character.len_utf8()])
+            .collect(),
+    }
+}
+
+/// A keyframe at a (possibly fractional) frame of the description rate.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Keyframe {
-    pub frame: u32,
+    pub frame: f64,
     pub value: f64,
-    /// Easing of the segment that starts at this keyframe.
+    /// Easing of the segment from this keyframe to the next; absent = linear.
     #[serde(default)]
-    pub easing: Easing,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Easing {
-    #[default]
-    Linear,
-    EaseIn,
-    EaseOut,
-    EaseInOut,
+    pub easing: Option<Easing>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +263,13 @@ pub enum DescriptionError {
         layer: usize,
         property: &'static str,
         reason: &'static str,
+    },
+    Image {
+        index: usize,
+        reason: &'static str,
+    },
+    ImageReference {
+        layer: usize,
     },
 }
 
@@ -176,7 +311,7 @@ impl fmt::Display for DescriptionError {
             Self::FontFamily => write!(f, "font family must be 1..=64 printable characters"),
             Self::Text { layer } => write!(
                 f,
-                "layer {layer}: text must be 1..={MAX_TEXT_CHARS} characters without control characters"
+                "layer {layer}: text must be 1..={MAX_TEXT_CHARS} characters without control characters, with matching unit tracks"
             ),
             Self::Color { layer } => write!(f, "layer {layer}: fill must be #RRGGBB"),
             Self::Size { layer } => write!(
@@ -190,6 +325,10 @@ impl fmt::Display for DescriptionError {
             } => {
                 write!(f, "layer {layer}: {property} track {reason}")
             }
+            Self::Image { index, reason } => write!(f, "image {index}: {reason}"),
+            Self::ImageReference { layer } => {
+                write!(f, "layer {layer}: image index does not exist")
+            }
         }
     }
 }
@@ -202,9 +341,10 @@ impl GraphicsDescription {
         if bytes.len() > MAX_DESCRIPTION_BYTES {
             return Err(DescriptionError::TooLarge { bytes: bytes.len() });
         }
-        let description: Self = serde_json::from_slice(bytes)
+        let mut description: Self = serde_json::from_slice(bytes)
             .map_err(|error| DescriptionError::Malformed(error.to_string()))?;
         description.validate()?;
+        description.image_bytes = decode_images(&description.images)?;
         Ok(description)
     }
 
@@ -239,11 +379,15 @@ impl GraphicsDescription {
         if self.layers.len() > MAX_LAYERS {
             return Err(DescriptionError::LayerCount(self.layers.len()));
         }
+        if self.images.len() > MAX_IMAGES {
+            return Err(DescriptionError::Image {
+                index: MAX_IMAGES,
+                reason: "too many images",
+            });
+        }
         validate_font(&self.font)?;
         let limits = Limits {
-            width: f64::from(width),
-            height: f64::from(height),
-            duration_frames: self.duration_frames,
+            images: self.images.len(),
         };
         for (index, layer) in self.layers.iter().enumerate() {
             validate_layer(index, layer, &limits)?;
@@ -253,9 +397,7 @@ impl GraphicsDescription {
 }
 
 struct Limits {
-    width: f64,
-    height: f64,
-    duration_frames: u32,
+    images: usize,
 }
 
 fn validate_font(font: &FontSpec) -> Result<(), DescriptionError> {
@@ -287,18 +429,16 @@ fn validate_font(font: &FontSpec) -> Result<(), DescriptionError> {
 }
 
 fn validate_layer(index: usize, layer: &Layer, limits: &Limits) -> Result<(), DescriptionError> {
-    let max_side = f64::from(MAX_CANVAS_SIZE) * POSITION_MARGIN_CANVASES;
-    let (fill, x, y, opacity) = match layer {
+    let size_ok = |value: f64| value.is_finite() && value > 0.0 && value <= MAX_LAYER_SIDE;
+    let position_range = -MAX_POSITION..=MAX_POSITION;
+    match layer {
         Layer::Rect {
             width,
             height,
             corner_radius,
             fill,
-            x,
-            y,
-            opacity,
+            ..
         } => {
-            let size_ok = |value: f64| value.is_finite() && value > 0.0 && value <= max_side;
             if !size_ok(*width)
                 || !size_ok(*height)
                 || !corner_radius.is_finite()
@@ -307,50 +447,101 @@ fn validate_layer(index: usize, layer: &Layer, limits: &Limits) -> Result<(), De
             {
                 return Err(DescriptionError::Size { layer: index });
             }
-            (fill, x, y, opacity)
+            if parse_hex_color(fill).is_none() {
+                return Err(DescriptionError::Color { layer: index });
+            }
         }
         Layer::Text {
             text,
             font_size,
             fill,
-            x,
-            y,
-            opacity,
+            units,
+            ..
         } => {
             let chars = text.chars().count();
-            if !(1..=MAX_TEXT_CHARS).contains(&chars) || text.chars().any(char::is_control) {
+            if !(1..=MAX_TEXT_CHARS).contains(&chars)
+                || text.chars().any(char::is_control)
+                || text.trim().is_empty()
+            {
                 return Err(DescriptionError::Text { layer: index });
             }
-            if !font_size.is_finite() || *font_size < 1.0 || *font_size > 1000.0 {
+            if !font_size.is_finite() || *font_size < 1.0 || *font_size > MAX_FONT_SIZE {
                 return Err(DescriptionError::Size { layer: index });
             }
-            (fill, x, y, opacity)
+            if parse_hex_color(fill).is_none() {
+                return Err(DescriptionError::Color { layer: index });
+            }
+            if let Some(units) = units {
+                let count = split_text(text, units.split).len();
+                if units.opacity.len() != count || units.offset_y.len() != count {
+                    return Err(DescriptionError::Text { layer: index });
+                }
+                for track in &units.opacity {
+                    validate_track(
+                        index,
+                        "unit opacity",
+                        track,
+                        &(0.0..=1.0),
+                        MAX_UNIT_KEYFRAMES,
+                    )?;
+                }
+                for track in &units.offset_y {
+                    validate_track(
+                        index,
+                        "unit offsetY",
+                        track,
+                        &position_range,
+                        MAX_UNIT_KEYFRAMES,
+                    )?;
+                }
+            }
         }
-    };
-    if parse_hex_color(fill).is_none() {
-        return Err(DescriptionError::Color { layer: index });
+        Layer::Image {
+            image,
+            width,
+            height,
+            ..
+        } => {
+            if !size_ok(*width) || !size_ok(*height) {
+                return Err(DescriptionError::Size { layer: index });
+            }
+            if *image >= limits.images {
+                return Err(DescriptionError::ImageReference { layer: index });
+            }
+        }
     }
-    let x_range =
-        -limits.width * POSITION_MARGIN_CANVASES..=limits.width * (1.0 + POSITION_MARGIN_CANVASES);
-    let y_range = -limits.height * POSITION_MARGIN_CANVASES
-        ..=limits.height * (1.0 + POSITION_MARGIN_CANVASES);
-    validate_track(index, "x", x, &x_range, limits.duration_frames)?;
-    validate_track(index, "y", y, &y_range, limits.duration_frames)?;
+    let tracks = layer.tracks();
+    validate_track(index, "x", tracks.x, &position_range, MAX_KEYFRAMES)?;
+    validate_track(index, "y", tracks.y, &position_range, MAX_KEYFRAMES)?;
+    validate_track(
+        index,
+        "scale",
+        tracks.scale,
+        &(0.0..=MAX_SCALE),
+        MAX_KEYFRAMES,
+    )?;
+    validate_track(
+        index,
+        "rotation",
+        tracks.rotation,
+        &(-MAX_ROTATION_DEGREES..=MAX_ROTATION_DEGREES),
+        MAX_KEYFRAMES,
+    )?;
     validate_track(
         index,
         "opacity",
-        opacity,
+        tracks.opacity,
         &(0.0..=1.0),
-        limits.duration_frames,
+        MAX_KEYFRAMES,
     )
 }
 
 fn validate_track(
     layer: usize,
     property: &'static str,
-    track: &Track,
+    track: &[Keyframe],
     range: &std::ops::RangeInclusive<f64>,
-    duration_frames: u32,
+    max_keyframes: usize,
 ) -> Result<(), DescriptionError> {
     let error = |reason| {
         Err(DescriptionError::Track {
@@ -359,16 +550,16 @@ fn validate_track(
             reason,
         })
     };
-    if track.keyframes.is_empty() {
+    if track.is_empty() {
         return error("needs at least one keyframe");
     }
-    if track.keyframes.len() > MAX_KEYFRAMES {
+    if track.len() > max_keyframes {
         return error("has too many keyframes");
     }
-    let mut previous = None;
-    for keyframe in &track.keyframes {
-        if keyframe.frame >= duration_frames {
-            return error("has a keyframe after the last frame");
+    let mut previous: Option<f64> = None;
+    for keyframe in track {
+        if !keyframe.frame.is_finite() || !(0.0..=MAX_KEYFRAME_FRAME).contains(&keyframe.frame) {
+            return error("has a keyframe outside 0..=864000 frames");
         }
         if previous.is_some_and(|frame| keyframe.frame <= frame) {
             return error("keyframes must have strictly increasing frames");
@@ -376,9 +567,92 @@ fn validate_track(
         if !keyframe.value.is_finite() || !range.contains(&keyframe.value) {
             return error("has a value out of range");
         }
+        if keyframe.easing.is_some_and(|easing| !easing.is_valid()) {
+            return error("has an easing out of range");
+        }
         previous = Some(keyframe.frame);
     }
     Ok(())
+}
+
+/// Decodes each `data:` URI to container bytes and checks the PNG/JPEG signature and limits.
+/// Pixel decoding (and the 4096 px bound) happens in the renderer with the decoder's own limits.
+fn decode_images(images: &[EmbeddedImage]) -> Result<Vec<Vec<u8>>, DescriptionError> {
+    let mut total = 0_usize;
+    images
+        .iter()
+        .enumerate()
+        .map(|(index, image)| {
+            let error = |reason| DescriptionError::Image { index, reason };
+            let (mime, payload) = image
+                .data
+                .strip_prefix("data:image/png;base64,")
+                .map(|payload| ("png", payload))
+                .or_else(|| {
+                    image
+                        .data
+                        .strip_prefix("data:image/jpeg;base64,")
+                        .map(|payload| ("jpeg", payload))
+                })
+                .ok_or_else(|| error("must be a data:image/png or data:image/jpeg base64 URI"))?;
+            if payload.len() / 4 * 3 > MAX_IMAGE_BYTES {
+                return Err(error("is larger than 32 MB"));
+            }
+            let bytes = decode_base64(payload).ok_or_else(|| error("is not valid base64"))?;
+            total = total.saturating_add(bytes.len());
+            if bytes.len() > MAX_IMAGE_BYTES || total > MAX_TOTAL_IMAGE_BYTES {
+                return Err(error("is larger than the image byte limit"));
+            }
+            let signature_ok = match mime {
+                "png" => bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]),
+                _ => bytes.starts_with(&[0xFF, 0xD8, 0xFF]),
+            };
+            if !signature_ok {
+                return Err(error("bytes do not match the declared image type"));
+            }
+            Ok(bytes)
+        })
+        .collect()
+}
+
+/// Strict standard base64 (RFC 4648 §4) with `=` padding; no whitespace.
+pub fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    let bytes = input.as_bytes();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    let value = |byte: u8| -> Option<u32> {
+        Some(u32::from(match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        }))
+    };
+    let mut output = Vec::with_capacity(bytes.len() / 4 * 3);
+    let chunks = bytes.len() / 4;
+    for (index, chunk) in bytes.chunks_exact(4).enumerate() {
+        let last = index + 1 == chunks;
+        let padding = match (chunk[2], chunk[3]) {
+            (b'=', b'=') if last => 2,
+            (_, b'=') if last => 1,
+            _ => 0,
+        };
+        let mut word = 0_u32;
+        for &byte in &chunk[..4 - padding] {
+            word = (word << 6) | value(byte)?;
+        }
+        word <<= 6 * padding as u32;
+        let decoded = word.to_be_bytes();
+        output.extend_from_slice(&decoded[1..4 - padding]);
+        // Non-canonical trailing bits are rejected so each input has exactly one meaning.
+        if padding > 0 && decoded[4 - padding] != 0 {
+            return None;
+        }
+    }
+    Some(output)
 }
 
 /// `#RRGGBB` → (r, g, b). Only this exact form is accepted.
@@ -400,35 +674,68 @@ mod tests {
         PathBuf::from(r"C:\Windows\Fonts\arial.ttf")
     }
 
+    fn hold(value: f64) -> Value {
+        json!([{ "frame": 0, "value": value }])
+    }
+
+    /// A PNG signature followed by filler: enough for description validation (pixels are decoded
+    /// by the renderer).
+    const PNG_URI: &str = "data:image/png;base64,iVBORw0KGgoAAAA=";
+
     fn valid() -> Value {
         json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "canvas": { "width": 1080, "height": 1920 },
             "frameRate": { "numerator": 30, "denominator": 1 },
             "durationFrames": 60,
             "font": { "file": font_file(), "family": "Arial" },
+            "images": [{ "data": PNG_URI }],
             "layers": [
                 {
                     "kind": "rect", "width": 400.0, "height": 200.0, "cornerRadius": 24.0,
                     "fill": "#FF3355",
-                    "x": { "keyframes": [
-                        { "frame": 0, "value": 100.0, "easing": "easeInOut" },
-                        { "frame": 59, "value": 580.0 }
-                    ] },
-                    "y": { "keyframes": [{ "frame": 0, "value": 300.0 }] },
-                    "opacity": { "keyframes": [{ "frame": 0, "value": 1.0 }] }
+                    "x": [
+                        { "frame": 0, "value": 100.0, "easing": { "kind": "preset", "name": "easeInOut" } },
+                        { "frame": 59.5, "value": 580.0 }
+                    ],
+                    "y": hold(300.0),
+                    "scale": [
+                        { "frame": 0, "value": 0.5, "easing": { "kind": "spring", "bounce": 0.4, "durationMs": 500 } },
+                        { "frame": 20, "value": 1.0 }
+                    ],
+                    "rotation": [
+                        { "frame": 0, "value": -20.0, "easing": { "kind": "steps", "count": 4 } },
+                        { "frame": 12, "value": 0.0 }
+                    ],
+                    "opacity": hold(1.0)
                 },
                 {
-                    "kind": "text", "text": "Hello", "fontSize": 96.0, "fill": "#ffffff",
-                    "x": { "keyframes": [{ "frame": 0, "value": 120.0 }] },
-                    "y": { "keyframes": [{ "frame": 0, "value": 900.0 }] },
-                    "opacity": { "keyframes": [
-                        { "frame": 0, "value": 0.0 },
-                        { "frame": 15, "value": 1.0, "easing": "easeOut" }
-                    ] }
+                    "kind": "text", "text": "Hello big world", "fontSize": 96.0, "fill": "#ffffff",
+                    "units": {
+                        "split": "word",
+                        "opacity": [hold(1.0), [{ "frame": 0, "value": 0.0 }, { "frame": 10, "value": 1.0 }], hold(1.0)],
+                        "offsetY": [hold(0.0), hold(0.0), [{ "frame": 0, "value": 40.0 }, { "frame": 10, "value": 0.0 }]]
+                    },
+                    "x": hold(120.0),
+                    "y": hold(900.0),
+                    "scale": hold(1.0),
+                    "rotation": hold(0.0),
+                    "opacity": [
+                        { "frame": 0, "value": 0.0, "easing": { "kind": "cubicBezier", "x1": 0.34, "y1": 1.56, "x2": 0.64, "y2": 1.0 } },
+                        { "frame": 15, "value": 1.0 }
+                    ]
+                },
+                {
+                    "kind": "image", "image": 0, "width": 256.0, "height": 128.0,
+                    "x": hold(10.0), "y": hold(10.0), "scale": hold(1.0), "rotation": hold(45.0),
+                    "opacity": hold(0.5)
                 }
             ]
         })
+    }
+
+    fn track(error: &DescriptionError, layer: usize, property: &str) -> bool {
+        matches!(error, DescriptionError::Track { layer: l, property: p, .. } if *l == layer && *p == property)
     }
 
     fn parse(value: &Value) -> Result<GraphicsDescription, DescriptionError> {
@@ -452,8 +759,12 @@ mod tests {
                 height: 1920
             }
         );
-        assert_eq!(description.layers.len(), 2);
-        assert!(matches!(&description.layers[1], Layer::Text { text, .. } if text == "Hello"));
+        assert_eq!(description.layers.len(), 3);
+        assert!(
+            matches!(&description.layers[1], Layer::Text { text, units: Some(_), .. } if text == "Hello big world")
+        );
+        assert_eq!(description.image_bytes.len(), 1);
+        assert!(description.image_bytes[0].starts_with(b"\x89PNG"));
     }
 
     #[cfg(windows)]
@@ -463,8 +774,11 @@ mod tests {
         let too_many_layers = Value::Array(vec![valid()["layers"][0].clone(); MAX_LAYERS + 1]);
         type Case = (&'static str, Value, fn(&DescriptionError) -> bool);
         let cases: Vec<Case> = vec![
-            ("schema", with(valid(), "/schemaVersion", json!(2)), |e| {
-                matches!(e, DescriptionError::UnsupportedSchemaVersion(2))
+            ("schema 1", with(valid(), "/schemaVersion", json!(1)), |e| {
+                matches!(e, DescriptionError::UnsupportedSchemaVersion(1))
+            }),
+            ("schema 3", with(valid(), "/schemaVersion", json!(3)), |e| {
+                matches!(e, DescriptionError::UnsupportedSchemaVersion(3))
             }),
             (
                 "unknown field",
@@ -525,13 +839,40 @@ mod tests {
             }),
             (
                 "text long",
-                with(valid(), "/layers/1/text", json!(text)),
+                with(
+                    with(valid(), "/layers/1/units", Value::Null),
+                    "/layers/1/text",
+                    json!(text),
+                ),
                 |e| matches!(e, DescriptionError::Text { layer: 1 }),
             ),
             (
                 "text control",
-                with(valid(), "/layers/1/text", json!("a\u{0007}b")),
+                with(
+                    with(valid(), "/layers/1/units", Value::Null),
+                    "/layers/1/text",
+                    json!("a\u{0007}b"),
+                ),
                 |e| matches!(e, DescriptionError::Text { layer: 1 }),
+            ),
+            (
+                "unit count",
+                with(valid(), "/layers/1/text", json!("Hello world")),
+                |e| matches!(e, DescriptionError::Text { layer: 1 }),
+            ),
+            (
+                "unit opacity",
+                with(valid(), "/layers/1/units/opacity/1/1/value", json!(2.0)),
+                |e| {
+                    matches!(
+                        e,
+                        DescriptionError::Track {
+                            layer: 1,
+                            property: "unit opacity",
+                            ..
+                        }
+                    )
+                },
             ),
             (
                 "color",
@@ -549,84 +890,114 @@ mod tests {
                 |e| matches!(e, DescriptionError::Size { layer: 1 }),
             ),
             (
+                "image size",
+                with(valid(), "/layers/2/width", json!(0.0)),
+                |e| matches!(e, DescriptionError::Size { layer: 2 }),
+            ),
+            (
+                "image reference",
+                with(valid(), "/layers/2/image", json!(1)),
+                |e| matches!(e, DescriptionError::ImageReference { layer: 2 }),
+            ),
+            (
                 "no keyframes",
-                with(valid(), "/layers/0/y/keyframes", json!([])),
-                |e| {
-                    matches!(
-                        e,
-                        DescriptionError::Track {
-                            layer: 0,
-                            property: "y",
-                            ..
-                        }
-                    )
-                },
+                with(valid(), "/layers/0/y", json!([])),
+                |e| track(e, 0, "y"),
             ),
             (
                 "order",
-                with(valid(), "/layers/0/x/keyframes/1/frame", json!(0)),
-                |e| {
-                    matches!(
-                        e,
-                        DescriptionError::Track {
-                            layer: 0,
-                            property: "x",
-                            ..
-                        }
-                    )
-                },
+                with(valid(), "/layers/0/x/1/frame", json!(0)),
+                |e| track(e, 0, "x"),
             ),
             (
-                "past end",
-                with(valid(), "/layers/0/x/keyframes/1/frame", json!(60)),
-                |e| {
-                    matches!(
-                        e,
-                        DescriptionError::Track {
-                            layer: 0,
-                            property: "x",
-                            ..
-                        }
-                    )
-                },
+                "negative frame",
+                with(valid(), "/layers/0/x/0/frame", json!(-1)),
+                |e| track(e, 0, "x"),
             ),
             (
                 "opacity",
-                with(valid(), "/layers/1/opacity/keyframes/1/value", json!(1.5)),
-                |e| {
-                    matches!(
-                        e,
-                        DescriptionError::Track {
-                            layer: 1,
-                            property: "opacity",
-                            ..
-                        }
-                    )
-                },
+                with(valid(), "/layers/1/opacity/1/value", json!(1.5)),
+                |e| track(e, 1, "opacity"),
+            ),
+            (
+                "negative scale",
+                with(valid(), "/layers/0/scale/1/value", json!(-1.0)),
+                |e| track(e, 0, "scale"),
+            ),
+            (
+                "rotation",
+                with(valid(), "/layers/0/rotation/0/value", json!(1.0e6)),
+                |e| track(e, 0, "rotation"),
             ),
             (
                 "far away",
-                with(valid(), "/layers/0/x/keyframes/0/value", json!(1.0e9)),
-                |e| {
-                    matches!(
-                        e,
-                        DescriptionError::Track {
-                            layer: 0,
-                            property: "x",
-                            ..
-                        }
-                    )
-                },
+                with(valid(), "/layers/0/x/0/value", json!(1.0e9)),
+                |e| track(e, 0, "x"),
             ),
             (
-                "easing",
-                with(valid(), "/layers/0/x/keyframes/0/easing", json!("spring")),
+                "spring bounce",
+                with(valid(), "/layers/0/scale/0/easing/bounce", json!(2.0)),
+                |e| track(e, 0, "scale"),
+            ),
+            (
+                "zero steps",
+                with(valid(), "/layers/0/rotation/0/easing/count", json!(0)),
+                |e| track(e, 0, "rotation"),
+            ),
+            (
+                "string easing",
+                with(valid(), "/layers/0/x/0/easing", json!("easeIn")),
                 |e| matches!(e, DescriptionError::Malformed(_)),
             ),
             (
                 "kind",
-                with(valid(), "/layers/0/kind", json!("image")),
+                with(valid(), "/layers/0/kind", json!("video")),
                 |e| matches!(e, DescriptionError::Malformed(_)),
+            ),
+            (
+                "image url",
+                with(
+                    valid(),
+                    "/images/0/data",
+                    json!("https://example.com/a.png"),
+                ),
+                |e| matches!(e, DescriptionError::Image { index: 0, .. }),
+            ),
+            (
+                "image svg",
+                with(
+                    valid(),
+                    "/images/0/data",
+                    json!("data:image/svg+xml;base64,PHN2Zy8+"),
+                ),
+                |e| matches!(e, DescriptionError::Image { index: 0, .. }),
+            ),
+            (
+                "image bad base64",
+                with(
+                    valid(),
+                    "/images/0/data",
+                    json!("data:image/png;base64,iVBOR w0K"),
+                ),
+                |e| matches!(e, DescriptionError::Image { index: 0, .. }),
+            ),
+            (
+                "image disguised",
+                with(
+                    valid(),
+                    "/images/0/data",
+                    json!("data:image/jpeg;base64,iVBORw0KGgoAAAA="),
+                ),
+                |e| matches!(e, DescriptionError::Image { index: 0, .. }),
+            ),
+            (
+                "too many images",
+                with(
+                    valid(),
+                    "/images",
+                    Value::Array(vec![json!({ "data": PNG_URI }); MAX_IMAGES + 1]),
+                ),
+                |e| matches!(e, DescriptionError::Image { .. }),
             ),
         ];
 
@@ -663,5 +1034,32 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(parse_hex_color(input), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn decodes_base64_strictly() {
+        let cases: [(&str, Option<&[u8]>); 9] = [
+            ("TWFu", Some(b"Man")),
+            ("TWE=", Some(b"Ma")),
+            ("TQ==", Some(b"M")),
+            ("/+8=", Some(&[0xFF, 0xEF])),
+            ("", None),
+            ("TWF", None),
+            ("TW=u", None),
+            ("TR==", None), // non-zero trailing bits
+            ("TWFu\n", None),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(decode_base64(input).as_deref(), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn splits_words_and_letters_like_the_project_model() {
+        assert_eq!(
+            split_text(" Hello  big world ", TextSplit::Word),
+            ["Hello", "big", "world"]
+        );
+        assert_eq!(split_text("Hé yo", TextSplit::Letter), ["H", "é", "y", "o"]);
     }
 }

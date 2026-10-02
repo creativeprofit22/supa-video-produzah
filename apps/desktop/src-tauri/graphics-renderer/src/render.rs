@@ -97,7 +97,7 @@ pub fn render_frames(
         default_font: &description.font.family,
         ..RenderOptions::default()
     };
-    let video = GraphicsVideo::new(description);
+    let video = GraphicsVideo::new(description).map_err(RenderError::Input)?;
     let mut previewer = Previewer::new(&video, &options)
         .map_err(|error| RenderError::Render(format!("cannot prepare renderer: {error}")))?;
     require_font_family(previewer.font_db(), &description.font.family)?;

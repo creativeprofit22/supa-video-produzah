@@ -1,19 +1,25 @@
 //! The fframes `Video` built from a validated graphics description.
 //!
-//! fframes fixes `FPS`, `WIDTH` and `HEIGHT` at compile time. Keyframes are addressed by frame
-//! index, so animation runs on a fixed internal time base (`ANIMATION_FPS`) and is exact for any
-//! output frame rate; the real frame rate only matters to the encoder. The canvas size comes
-//! from the description: the SVG root uses it as its viewBox and frames are rendered at that size.
+//! Keyframes are in frames of the description rate and every output frame is one description
+//! frame, so tracks are sampled at `frame.index` with our own easing (`easing.rs`, the same math
+//! as the TypeScript editor). fframes only turns the SVG into pixels; its `FPS` constant is
+//! nominal. The canvas size comes from the description: the SVG root uses it as its viewBox and
+//! frames are rendered at that size.
 
-use fframes::{
-    AudioMap, Color, FFramesContext, Frame, Svgr, Video,
-    animation::{Easing as FfEasing, KeyFrame, KeyFramesAnimation},
+use std::sync::Arc;
+
+use fframes::{AudioMap, Color, FFramesContext, Frame, Svgr, Video, usvgr::PreloadedImageData};
+
+use crate::{
+    description::{
+        GraphicsDescription, Keyframe, Layer, MAX_IMAGE_SIDE, TextUnits, parse_hex_color,
+        split_text,
+    },
+    easing::{CompiledTrack, SampleKey},
 };
 
-use crate::description::{Easing, GraphicsDescription, Layer, Track, parse_hex_color};
-
-/// Internal animation time base; one animation "second" is this many frames.
-pub const ANIMATION_FPS: usize = 30;
+/// Nominal fframes frame rate; animation is sampled by frame index, not by this rate.
+pub const NOMINAL_FPS: usize = 30;
 
 pub struct GraphicsVideo {
     width: u32,
@@ -25,118 +31,157 @@ pub struct GraphicsVideo {
 
 struct AnimatedLayer {
     shape: Shape,
-    fill: String,
-    x: Value,
-    y: Value,
-    opacity: Value,
+    width: f64,
+    height: f64,
+    x: CompiledTrack,
+    y: CompiledTrack,
+    scale: CompiledTrack,
+    rotation: CompiledTrack,
+    opacity: CompiledTrack,
 }
 
 enum Shape {
     Rect {
-        width: f32,
-        height: f32,
         corner_radius: f32,
+        fill: String,
     },
     Text {
-        text: String,
         font_size: f32,
+        fill: String,
+        content: TextContent,
     },
+    Image(Arc<PreloadedImageData>),
 }
 
-enum Value {
-    Constant(f32),
-    Animated(KeyFramesAnimation<f32>),
+enum TextContent {
+    Plain(String),
+    /// One span per reveal unit; each holds the unit and the spaces that follow it.
+    Units(Vec<TextUnit>),
 }
 
-impl Value {
-    fn from_track(track: &Track) -> Self {
-        let keyframes = &track.keyframes;
-        if keyframes.len() == 1 {
-            return Self::Constant(keyframes[0].value as f32);
-        }
-        let seconds = |frame: u32| frame as f32 / ANIMATION_FPS as f32;
-        // Every segment gets an explicit end: fframes drops a final tween without one.
-        let tweens = keyframes
-            .windows(2)
-            .map(|pair| KeyFrame {
-                start: seconds(pair[0].frame),
-                end: Some(seconds(pair[1].frame)),
-                from: pair[0].value as f32,
-                to: pair[1].value as f32,
-                easing: easing(pair[0].easing),
-            })
-            .collect();
-        Self::Animated(KeyFramesAnimation::new(tweens))
-    }
-
-    fn at(&self, frame: &Frame) -> f32 {
-        match self {
-            Self::Constant(value) => *value,
-            Self::Animated(animation) => frame.animate(animation),
-        }
-    }
+struct TextUnit {
+    text: String,
+    opacity: CompiledTrack,
+    offset_y: CompiledTrack,
 }
 
-fn easing(easing: Easing) -> &'static FfEasing {
-    match easing {
-        Easing::Linear => &FfEasing::Linear,
-        Easing::EaseIn => &FfEasing::EaseIn,
-        Easing::EaseOut => &FfEasing::EaseOut,
-        Easing::EaseInOut => &FfEasing::EaseInOut,
+fn track(keys: &[Keyframe]) -> CompiledTrack {
+    let keys: Vec<SampleKey> = keys
+        .iter()
+        .map(|key| SampleKey {
+            time: key.frame,
+            value: key.value,
+            easing: key.easing.unwrap_or_default(),
+        })
+        .collect();
+    CompiledTrack::new(&keys)
+}
+
+/// Spans covering the whole text: each unit plus the spaces after it (leading spaces join the
+/// first unit), so the rendered line matches the plain text.
+fn text_units(text: &str, units: &TextUnits) -> Vec<TextUnit> {
+    let parts = split_text(text, units.split);
+    let mut spans: Vec<String> = Vec::with_capacity(parts.len());
+    let mut rest = text;
+    for (index, part) in parts.iter().enumerate() {
+        let start = rest.find(part).unwrap_or(0);
+        let (before, after) = rest.split_at(start);
+        let mut span = if index == 0 {
+            before.to_owned()
+        } else {
+            String::new()
+        };
+        span.push_str(part);
+        rest = &after[part.len()..];
+        let spaces = rest.len() - rest.trim_start_matches(' ').len();
+        span.push_str(&rest[..spaces]);
+        rest = &rest[spaces..];
+        spans.push(span);
     }
+    spans
+        .into_iter()
+        .zip(units.opacity.iter().zip(&units.offset_y))
+        .map(|(text, (opacity, offset_y))| TextUnit {
+            text,
+            opacity: track(opacity),
+            offset_y: track(offset_y),
+        })
+        .collect()
 }
 
 impl GraphicsVideo {
-    pub fn new(description: &GraphicsDescription) -> Self {
+    /// Builds the scene and decodes embedded images; errors are invalid input.
+    pub fn new(description: &GraphicsDescription) -> Result<Self, String> {
+        let images = description
+            .image_bytes
+            .iter()
+            .enumerate()
+            .map(|(index, bytes)| {
+                let image = fframes::media::decode_image(&format!("image-{index}"), bytes)
+                    .map_err(|error| format!("image {index} cannot be decoded: {error:?}"))?;
+                if image.width == 0
+                    || image.height == 0
+                    || image.width > MAX_IMAGE_SIDE
+                    || image.height > MAX_IMAGE_SIDE
+                {
+                    return Err(format!(
+                        "image {index} is {}x{}; each side must be 1..={MAX_IMAGE_SIDE}",
+                        image.width, image.height
+                    ));
+                }
+                Ok(Arc::new(image))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let layers = description
             .layers
             .iter()
-            .map(|layer| match layer {
-                Layer::Rect {
+            .map(|layer| {
+                let (width, height) = layer.bounds();
+                let shape = match layer {
+                    Layer::Rect {
+                        corner_radius,
+                        fill,
+                        ..
+                    } => Shape::Rect {
+                        corner_radius: *corner_radius as f32,
+                        fill: normalized_fill(fill),
+                    },
+                    Layer::Text {
+                        text,
+                        font_size,
+                        fill,
+                        units,
+                        ..
+                    } => Shape::Text {
+                        font_size: *font_size as f32,
+                        fill: normalized_fill(fill),
+                        content: match units {
+                            Some(units) => TextContent::Units(text_units(text, units)),
+                            None => TextContent::Plain(text.clone()),
+                        },
+                    },
+                    Layer::Image { image, .. } => Shape::Image(Arc::clone(&images[*image])),
+                };
+                let tracks = layer.tracks();
+                AnimatedLayer {
+                    shape,
                     width,
                     height,
-                    corner_radius,
-                    fill,
-                    x,
-                    y,
-                    opacity,
-                } => AnimatedLayer {
-                    shape: Shape::Rect {
-                        width: *width as f32,
-                        height: *height as f32,
-                        corner_radius: *corner_radius as f32,
-                    },
-                    fill: normalized_fill(fill),
-                    x: Value::from_track(x),
-                    y: Value::from_track(y),
-                    opacity: Value::from_track(opacity),
-                },
-                Layer::Text {
-                    text,
-                    font_size,
-                    fill,
-                    x,
-                    y,
-                    opacity,
-                } => AnimatedLayer {
-                    shape: Shape::Text {
-                        text: text.clone(),
-                        font_size: *font_size as f32,
-                    },
-                    fill: normalized_fill(fill),
-                    x: Value::from_track(x),
-                    y: Value::from_track(y),
-                    opacity: Value::from_track(opacity),
-                },
+                    x: track(tracks.x),
+                    y: track(tracks.y),
+                    scale: track(tracks.scale),
+                    rotation: track(tracks.rotation),
+                    opacity: track(tracks.opacity),
+                }
             })
             .collect();
-        Self {
+        Ok(Self {
             width: description.canvas.width,
             height: description.canvas.height,
             duration_frames: description.duration_frames,
             font_family: description.font.family.clone(),
             layers,
-        }
+        })
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -154,8 +199,31 @@ fn normalized_fill(fill: &str) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
+/// `matrix(…)` placing a `width`×`height` box with its top-left at (x, y), scaled and rotated
+/// (degrees, clockwise) around its center.
+pub fn layer_matrix(x: f64, y: f64, width: f64, height: f64, scale: f64, rotation: f64) -> String {
+    let (sin, cos) = rotation.to_radians().sin_cos();
+    let (a, b, c, d) = (scale * cos, scale * sin, -scale * sin, scale * cos);
+    let (half_width, half_height) = (width / 2.0, height / 2.0);
+    let e = x + half_width - (a * half_width + c * half_height);
+    let f = y + half_height - (b * half_width + d * half_height);
+    let clean = |value: f64| {
+        let rounded = (value * 1e6).round() / 1e6;
+        if rounded == 0.0 { 0.0 } else { rounded }
+    };
+    format!(
+        "matrix({} {} {} {} {} {})",
+        clean(a),
+        clean(b),
+        clean(c),
+        clean(d),
+        clean(e),
+        clean(f)
+    )
+}
+
 impl Video for GraphicsVideo {
-    const FPS: usize = ANIMATION_FPS;
+    const FPS: usize = NOMINAL_FPS;
     // Nominal only: frames are rendered at the description's canvas size.
     const WIDTH: usize = 1080;
     const HEIGHT: usize = 1920;
@@ -170,10 +238,11 @@ impl Video for GraphicsVideo {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, _ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
+        let time = frame.index as f64;
         let layers: Vec<Svgr<'a>> = self
             .layers
             .iter()
-            .map(|layer| self.render_layer(layer, &frame))
+            .map(|layer| self.render_layer(layer, time))
             .collect();
         let view_box = format!("0 0 {} {}", self.width, self.height);
         fframes::svgr!(
@@ -185,30 +254,139 @@ impl Video for GraphicsVideo {
 }
 
 impl GraphicsVideo {
-    fn render_layer<'a>(&'a self, layer: &'a AnimatedLayer, frame: &Frame) -> Svgr<'a> {
-        let x = layer.x.at(frame);
-        let y = layer.y.at(frame);
-        let opacity = layer.opacity.at(frame).clamp(0.0, 1.0);
-        let fill = layer.fill.as_str();
-        match &layer.shape {
+    fn render_layer<'a>(&'a self, layer: &'a AnimatedLayer, time: f64) -> Svgr<'a> {
+        let transform = layer_matrix(
+            layer.x.sample(time),
+            layer.y.sample(time),
+            layer.width,
+            layer.height,
+            layer.scale.sample(time).max(0.0),
+            layer.rotation.sample(time),
+        );
+        let opacity = layer.opacity.sample(time).clamp(0.0, 1.0) as f32;
+        let (width, height) = (layer.width as f32, layer.height as f32);
+        let body: Svgr<'a> = match &layer.shape {
             Shape::Rect {
-                width,
-                height,
                 corner_radius,
-            } => fframes::svgr!(
-                <rect x={x} y={y} width={*width} height={*height} rx={*corner_radius}
-                    fill={fill} opacity={opacity} />
-            ),
-            Shape::Text { text, font_size } => {
-                let family = self.font_family.as_str();
-                let text = text.as_str();
+                fill,
+            } => {
+                let fill = fill.as_str();
                 fframes::svgr!(
-                    <text x={x} y={y} font-family={family} font-size={*font_size}
-                        fill={fill} opacity={opacity}>
-                        {text}
-                    </text>
+                    <rect x={0.0} y={0.0} width={width} height={height} rx={*corner_radius}
+                        fill={fill} />
                 )
             }
+            Shape::Text {
+                font_size,
+                fill,
+                content,
+            } => {
+                let family = self.font_family.as_str();
+                let fill = fill.as_str();
+                match content {
+                    TextContent::Plain(text) => {
+                        let text = text.as_str();
+                        fframes::svgr!(
+                            <text x={0.0} y={0.0} dominant-baseline="text-before-edge"
+                                font-family={family} font-size={*font_size} fill={fill}>
+                                {text}
+                            </text>
+                        )
+                    }
+                    TextContent::Units(units) => {
+                        let mut previous_offset = 0.0;
+                        let spans: Vec<Svgr<'a>> = units
+                            .iter()
+                            .map(|unit| {
+                                let offset = unit.offset_y.sample(time);
+                                // `dy` is relative to the previous glyph, so emit the change.
+                                let dy = (offset - previous_offset) as f32;
+                                previous_offset = offset;
+                                let unit_opacity = unit.opacity.sample(time).clamp(0.0, 1.0) as f32;
+                                let text = unit.text.as_str();
+                                fframes::svgr!(
+                                    <tspan dy={dy} fill-opacity={unit_opacity}>{text}</tspan>
+                                )
+                            })
+                            .collect();
+                        fframes::svgr!(
+                            <text x={0.0} y={0.0} dominant-baseline="text-before-edge"
+                                font-family={family} font-size={*font_size} fill={fill}>
+                                {spans}
+                            </text>
+                        )
+                    }
+                }
+            }
+            Shape::Image(image) => {
+                let image = Arc::clone(image);
+                fframes::svgr!(
+                    <image href={image} x={0.0} y={0.0} width={width} height={height}
+                        preserveAspectRatio="none" />
+                )
+            }
+        };
+        fframes::svgr!(
+            <g transform={transform} opacity={opacity}>
+                {body}
+            </g>
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::description::TextSplit;
+
+    #[test]
+    fn layer_matrix_scales_and_rotates_around_the_center() {
+        let cases = [
+            // identity: plain translation
+            ((10.0, 20.0, 100.0, 50.0, 1.0, 0.0), "matrix(1 0 0 1 10 20)"),
+            // half scale keeps the center at (60, 45)
+            (
+                (10.0, 20.0, 100.0, 50.0, 0.5, 0.0),
+                "matrix(0.5 0 0 0.5 35 32.5)",
+            ),
+            // 90° clockwise around (50, 25)
+            (
+                (0.0, 0.0, 100.0, 50.0, 1.0, 90.0),
+                "matrix(0 1 -1 0 75 -25)",
+            ),
+        ];
+        for ((x, y, w, h, s, r), expected) in cases {
+            assert_eq!(layer_matrix(x, y, w, h, s, r), expected);
+        }
+    }
+
+    #[test]
+    fn text_units_cover_the_whole_text() {
+        let hold = vec![Keyframe {
+            frame: 0.0,
+            value: 1.0,
+            easing: None,
+        }];
+        for (text, split, expected) in [
+            (
+                " Hello  big world ",
+                TextSplit::Word,
+                vec![" Hello  ", "big ", "world "],
+            ),
+            ("Hi yo", TextSplit::Letter, vec!["H", "i ", "y", "o"]),
+        ] {
+            let count = expected.len();
+            let units = TextUnits {
+                split,
+                opacity: vec![hold.clone(); count],
+                offset_y: vec![hold.clone(); count],
+            };
+            let spans: Vec<String> = text_units(text, &units)
+                .into_iter()
+                .map(|unit| unit.text)
+                .collect();
+            assert_eq!(spans, expected, "{text:?}");
+            assert_eq!(spans.concat(), text);
         }
     }
 }

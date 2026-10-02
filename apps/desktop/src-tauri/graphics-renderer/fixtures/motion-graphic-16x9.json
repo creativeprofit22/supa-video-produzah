@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 2,
+  "canvas": {
+    "width": 1280,
+    "height": 720
+  },
+  "frameRate": {
+    "numerator": 30,
+    "denominator": 1
+  },
+  "durationFrames": 48,
+  "font": {
+    "file": "C:\\Windows\\Fonts\\arial.ttf",
+    "family": "Arial"
+  },
+  "images": [
+    {
+      "data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAABAAAAAQBPJcTWAAABRUlEQVR4nO2by23DMBBEJ8CrI3d14UKCFBf47nJcTozcjEA/khLJ5egdJWiXOxwK+iw/Pm+PXxmDzEHmIHOQOdRI8vz+yr52+rkrpADPgqKX4pwhBr0Wvhb7SCGIUPiZQhCt+P95S0WgdACtKXUDpYl7IdcN5CbrkRwRyEnSM6kikBo8AikikBI0EntFQOYw4uynuIA9QSKzJQIyh5Fnf48LkDmMPvtbLkDmIHNwsP/aMkDmIHOQOcgcZA4yB5mDzEHmIHOQOcgcZA4yh7mDf6+MI74SX1+EZkDmsHRitGVwfRbPWQLTIC64fo2V3ASn4C4o/jscWYSrQeLI54ApmAsO7xGKJMJpXWIRRDi9T7BnEap1ivYoQvVe4fekLYVo2i3e2g3d7Beo7YYud4zUECLEnqG5wVruGqtZRAnIHGQOrQfQmhf5+o55BVlwcwAAAABJRU5ErkJggg=="
+    }
+  ],
+  "layers": [
+    {
+      "kind": "rect",
+      "width": 720,
+      "height": 200,
+      "cornerRadius": 28,
+      "fill": "#0F766E",
+      "x": [
+        {
+          "frame": 0,
+          "value": 280
+        }
+      ],
+      "y": [
+        {
+          "frame": 0,
+          "value": 260
+        }
+      ],
+      "scale": [
+        {
+          "frame": 0,
+          "value": 0.2,
+          "easing": {
+            "kind": "spring",
+            "bounce": 0.4,
+            "durationMs": 500
+          }
+        },
+        {
+          "frame": 18,
+          "value": 1
+        }
+      ],
+      "rotation": [
+        {
+          "frame": 0,
+          "value": -12,
+          "easing": {
+            "kind": "cubicBezier",
+            "x1": 0.34,
+            "y1": 1.56,
+            "x2": 0.64,
+            "y2": 1
+          }
+        },
+        {
+          "frame": 16,
+          "value": 0
+        }
+      ],
+      "opacity": [
+        {
+          "frame": 0,
+          "value": 0
+        },
+        {
+          "frame": 6,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "kind": "text",
+      "text": "Motion graphics everywhere",
+      "fontSize": 48,
+      "fill": "#FFFFFF",
+      "units": {
+        "split": "word",
+        "opacity": [
+          [
+            {
+              "frame": 6,
+              "value": 0
+            },
+            {
+              "frame": 14,
+              "value": 1
+            }
+          ],
+          [
+            {
+              "frame": 12,
+              "value": 0
+            },
+            {
+              "frame": 20,
+              "value": 1
+            }
+          ],
+          [
+            {
+              "frame": 18,
+              "value": 0
+            },
+            {
+              "frame": 26,
+              "value": 1
+            }
+          ]
+        ],
+        "offsetY": [
+          [
+            {
+              "frame": 6,
+              "value": 30,
+              "easing": {
+                "kind": "preset",
+                "name": "snappy"
+              }
+            },
+            {
+              "frame": 16,
+              "value": 0
+            }
+          ],
+          [
+            {
+              "frame": 12,
+              "value": 30,
+              "easing": {
+                "kind": "preset",
+                "name": "snappy"
+              }
+            },
+            {
+              "frame": 22,
+              "value": 0
+            }
+          ],
+          [
+            {
+              "frame": 18,
+              "value": 30,
+              "easing": {
+                "kind": "preset",
+                "name": "snappy"
+              }
+            },
+            {
+              "frame": 28,
+              "value": 0
+            }
+          ]
+        ]
+      },
+      "x": [
+        {
+          "frame": 0,
+          "value": 330
+        }
+      ],
+      "y": [
+        {
+          "frame": 0,
+          "value": 332
+        }
+      ],
+      "scale": [
+        {
+          "frame": 0,
+          "value": 1
+        }
+      ],
+      "rotation": [
+        {
+          "frame": 0,
+          "value": 0
+        }
+      ],
+      "opacity": [
+        {
+          "frame": 0,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "kind": "image",
+      "image": 0,
+      "width": 96,
+      "height": 96,
+      "x": [
+        {
+          "frame": 0,
+          "value": 940
+        }
+      ],
+      "y": [
+        {
+          "frame": 0,
+          "value": 200
+        }
+      ],
+      "scale": [
+        {
+          "frame": 0,
+          "value": 0,
+          "easing": {
+            "kind": "steps",
+            "count": 4
+          }
+        },
+        {
+          "frame": 12,
+          "value": 1
+        }
+      ],
+      "rotation": [
+        {
+          "frame": 0,
+          "value": 0,
+          "easing": {
+            "kind": "preset",
+            "name": "easeInOut"
+          }
+        },
+        {
+          "frame": 40,
+          "value": 360
+        }
+      ],
+      "opacity": [
+        {
+          "frame": 0,
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

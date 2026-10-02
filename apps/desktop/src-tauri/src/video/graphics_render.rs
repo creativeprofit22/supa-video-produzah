@@ -2,7 +2,7 @@
 //! PNG frames, then the pinned FFmpeg to encode them into a QuickTime Animation (`qtrle`, ARGB)
 //! `.mov` that the export path composites as an ordinary top video input.
 //!
-//! See docs/adr/0002-graphics-render-engine.md. Not wired into exports yet.
+//! See docs/adr/0002-graphics-render-engine.md. Exports call it through `graphics_export.rs` (ADR 0003).
 
 use std::{
     ffi::OsString,
@@ -47,8 +47,12 @@ fn inherited_environment() -> RendererEnvironment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GraphicsBackend {
+    /// Exports use this: GPU when available, CPU otherwise.
     Auto,
+    /// Forced backends exist for the reference-frame tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     Gpu,
+    #[cfg_attr(not(test), allow(dead_code))]
     Cpu,
 }
 
@@ -155,7 +159,7 @@ pub(crate) async fn render_graphics_overlay(
     request: GraphicsRenderRequest<'_>,
     cancellation: ProcessCancellation,
     on_frame: Option<GraphicsProgress>,
-    log: &dyn Fn(&GraphicsRenderLog),
+    log: &(dyn Fn(&GraphicsRenderLog) + Sync),
 ) -> Result<GraphicsOverlay, GraphicsRenderError> {
     render_logged(
         request,
@@ -174,7 +178,7 @@ pub(crate) async fn render_graphics_overlay_with_test_environment(
     request: GraphicsRenderRequest<'_>,
     cancellation: ProcessCancellation,
     on_frame: Option<GraphicsProgress>,
-    log: &dyn Fn(&GraphicsRenderLog),
+    log: &(dyn Fn(&GraphicsRenderLog) + Sync),
     environment: RendererEnvironment,
 ) -> Result<GraphicsOverlay, GraphicsRenderError> {
     render_logged(request, cancellation, on_frame, log, environment).await
@@ -184,7 +188,7 @@ async fn render_logged(
     request: GraphicsRenderRequest<'_>,
     cancellation: ProcessCancellation,
     on_frame: Option<GraphicsProgress>,
-    log: &dyn Fn(&GraphicsRenderLog),
+    log: &(dyn Fn(&GraphicsRenderLog) + Sync),
     environment: RendererEnvironment,
 ) -> Result<GraphicsOverlay, GraphicsRenderError> {
     let started = Instant::now();

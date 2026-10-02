@@ -12,6 +12,7 @@
 
 mod backend;
 mod description;
+mod easing;
 mod render;
 mod video;
 
@@ -274,28 +275,35 @@ fn run_bench(args: &[String]) -> Result<(), Failure> {
 fn bench_description(width: u32, height: u32, fps: u32, frames: u32, font: &str) -> String {
     let end = frames - 1;
     let (w, h) = (f64::from(width), f64::from(height));
+    let hold = |value: f64| serde_json::json!([{"frame": 0, "value": value}]);
+    let ease_out = serde_json::json!({"kind": "preset", "name": "easeOut"});
+    let ease_in_out = serde_json::json!({"kind": "preset", "name": "easeInOut"});
     let mut layers = Vec::new();
     for row in 0..8u32 {
         let y = h * f64::from(row + 1) / 10.0;
         layers.push(serde_json::json!({
             "kind": "rect", "width": w * 0.6, "height": h / 14.0,
             "cornerRadius": 24.0, "fill": "#2050d0",
-            "x": {"keyframes": [{"frame": 0, "value": -w * 0.6, "easing": "easeOut"},
-                                {"frame": end, "value": w * 0.2}]},
-            "y": {"keyframes": [{"frame": 0, "value": y}]},
-            "opacity": {"keyframes": [{"frame": 0, "value": 0.3}, {"frame": end, "value": 1.0}]}
+            "x": [{"frame": 0, "value": -w * 0.6, "easing": ease_out},
+                  {"frame": end, "value": w * 0.2}],
+            "y": hold(y),
+            "scale": hold(1.0),
+            "rotation": hold(0.0),
+            "opacity": [{"frame": 0, "value": 0.3}, {"frame": end, "value": 1.0}]
         }));
         layers.push(serde_json::json!({
             "kind": "text", "text": format!("Benchmark line {row}"), "fontSize": h / 30.0,
             "fill": "#ffffff",
-            "x": {"keyframes": [{"frame": 0, "value": w * 0.25}]},
-            "y": {"keyframes": [{"frame": 0, "value": y + h / 22.0},
-                                {"frame": end, "value": y + h / 20.0, "easing": "easeInOut"}]},
-            "opacity": {"keyframes": [{"frame": 0, "value": 1.0}]}
+            "x": hold(w * 0.25),
+            "y": [{"frame": 0, "value": y + h / 60.0, "easing": ease_in_out},
+                  {"frame": end, "value": y + h / 40.0}],
+            "scale": hold(1.0),
+            "rotation": hold(0.0),
+            "opacity": hold(1.0)
         }));
     }
     serde_json::json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "canvas": {"width": width, "height": height},
         "frameRate": {"numerator": fps, "denominator": 1},
         "durationFrames": frames,

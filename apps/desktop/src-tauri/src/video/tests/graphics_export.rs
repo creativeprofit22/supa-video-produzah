@@ -15,14 +15,41 @@ use crate::video::graphics_render::{
 const WIDTH: usize = 1080;
 const HEIGHT: usize = 1920;
 const FRAMES: u32 = 60;
-const SAMPLE_FRAMES: [u32; 5] = [0, 15, 30, 45, 59];
+
+/// A description fixture and the frames its references sample.
+pub(super) struct Fixture {
+    pub(super) file: &'static str,
+    /// Reference file prefix: `{prefix}{kind}-{frame}.png`.
+    pub(super) prefix: &'static str,
+    pub(super) width: usize,
+    pub(super) height: usize,
+    pub(super) samples: &'static [u32],
+}
+
+/// The phase 14 test graphic: slide-in card and fading title.
+const TEST_GRAPHIC: Fixture = Fixture {
+    file: "test-graphic-9x16.json",
+    prefix: "",
+    width: WIDTH,
+    height: HEIGHT,
+    samples: &[0, 15, 30, 45, 59],
+};
+/// Phase 15 motion: spring scale, bezier and eased rotation, steps, an embedded PNG image and a
+/// per-word text reveal (`scripts/generate-motion-graphic-fixture.py`).
+const MOTION_GRAPHIC: Fixture = Fixture {
+    file: "motion-graphic-16x9.json",
+    prefix: "motion-",
+    width: 1280,
+    height: 720,
+    samples: &[0, 4, 10, 20, 47],
+};
 const OWNER: &str = "graphics-export";
 
-fn crate_root() -> &'static Path {
+pub(super) fn crate_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn renderer_exe() -> PathBuf {
+pub(super) fn renderer_exe() -> PathBuf {
     let path = env::var_os("SUPA_GRAPHICS_RENDERER").map_or_else(
         || crate_root().join("graphics-renderer/target/release/supa-graphics-render.exe"),
         PathBuf::from,
@@ -36,7 +63,13 @@ fn renderer_exe() -> PathBuf {
 }
 
 fn description_fixture() -> PathBuf {
-    crate_root().join("graphics-renderer/fixtures/test-graphic-9x16.json")
+    fixture_path(&TEST_GRAPHIC)
+}
+
+fn fixture_path(fixture: &Fixture) -> PathBuf {
+    crate_root()
+        .join("graphics-renderer/fixtures")
+        .join(fixture.file)
 }
 
 fn reference_dir() -> PathBuf {
@@ -47,12 +80,12 @@ fn writing_references() -> bool {
     env::var_os("SUPA_GRAPHICS_WRITE_REFERENCES").is_some_and(|value| value == "1")
 }
 
-async fn pinned_ffmpeg(root: &Path) -> PathBuf {
+pub(super) async fn pinned_ffmpeg(root: &Path) -> PathBuf {
     let programs = super::qc_export::bundled_programs(root);
     PathBuf::from(programs.verified_ffmpeg("graphics_export").await.unwrap())
 }
 
-fn run_media(command: &mut Command) -> Vec<u8> {
+pub(super) fn run_media(command: &mut Command) -> Vec<u8> {
     let result = command.output().unwrap();
     assert!(
         result.status.success(),
@@ -63,8 +96,14 @@ fn run_media(command: &mut Command) -> Vec<u8> {
 }
 
 /// Decodes the sample frames of `path` as packed RGBA (or RGB) bytes, one buffer per frame.
-fn decode_samples(ffmpeg: &Path, path: &Path, pixel_format: &str) -> Vec<Vec<u8>> {
-    let select = SAMPLE_FRAMES
+fn decode_samples(
+    ffmpeg: &Path,
+    path: &Path,
+    pixel_format: &str,
+    fixture: &Fixture,
+) -> Vec<Vec<u8>> {
+    let select = fixture
+        .samples
         .iter()
         .map(|frame| format!("eq(n\\,{frame})"))
         .collect::<Vec<_>>()
@@ -78,10 +117,10 @@ fn decode_samples(ffmpeg: &Path, path: &Path, pixel_format: &str) -> Vec<Vec<u8>
             .args(["-fps_mode", "passthrough", "-pix_fmt", pixel_format])
             .args(["-f", "rawvideo", "pipe:1"]),
     );
-    let frame_len = WIDTH * HEIGHT * channels(pixel_format);
+    let frame_len = fixture.width * fixture.height * channels(pixel_format);
     assert_eq!(
         bytes.len(),
-        frame_len * SAMPLE_FRAMES.len(),
+        frame_len * fixture.samples.len(),
         "{}",
         path.display()
     );
@@ -96,18 +135,25 @@ fn channels(pixel_format: &str) -> usize {
     }
 }
 
-fn reference_path(kind: &str, frame: u32) -> PathBuf {
-    reference_dir().join(format!("{kind}-{frame:03}.png"))
+fn reference_path(fixture: &Fixture, kind: &str, frame: u32) -> PathBuf {
+    reference_dir().join(format!("{}{kind}-{frame:03}.png", fixture.prefix))
 }
 
-fn write_reference(ffmpeg: &Path, kind: &str, frame: u32, pixel_format: &str, bytes: &[u8]) {
+fn write_reference(
+    ffmpeg: &Path,
+    fixture: &Fixture,
+    kind: &str,
+    frame: u32,
+    pixel_format: &str,
+    bytes: &[u8],
+) {
     fs::create_dir_all(reference_dir()).unwrap();
     let mut child = Command::new(ffmpeg)
         .args(["-hide_banner", "-nostdin", "-v", "error", "-y"])
         .args(["-f", "rawvideo", "-pix_fmt", pixel_format])
-        .args(["-s", &format!("{WIDTH}x{HEIGHT}"), "-i", "pipe:0"])
-        .args(["-frames:v", "1", "-c:v", "png"])
-        .arg(reference_path(kind, frame))
+        .args(["-s", &format!("{}x{}", fixture.width, fixture.height)])
+        .args(["-i", "pipe:0", "-frames:v", "1", "-c:v", "png"])
+        .arg(reference_path(fixture, kind, frame))
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
@@ -115,8 +161,14 @@ fn write_reference(ffmpeg: &Path, kind: &str, frame: u32, pixel_format: &str, by
     assert!(child.wait().unwrap().success());
 }
 
-fn read_reference(ffmpeg: &Path, kind: &str, frame: u32, pixel_format: &str) -> Vec<u8> {
-    let path = reference_path(kind, frame);
+fn read_reference(
+    ffmpeg: &Path,
+    fixture: &Fixture,
+    kind: &str,
+    frame: u32,
+    pixel_format: &str,
+) -> Vec<u8> {
+    let path = reference_path(fixture, kind, frame);
     assert!(
         path.is_file(),
         "reference frame missing: {}",
@@ -142,11 +194,11 @@ const EDGE_THRESHOLD: i32 = 8;
 
 /// Per-channel tolerances for one comparison.
 #[derive(Debug, Clone, Copy)]
-struct Tolerance {
-    max: u8,
-    mean: f64,
+pub(super) struct Tolerance {
+    pub(super) max: u8,
+    pub(super) mean: f64,
     /// Allowed share of pixels over `EDGE_THRESHOLD`; GPU and CPU antialias edges differently.
-    over_edge_threshold: f64,
+    pub(super) over_edge_threshold: f64,
 }
 
 /// Same backend as the references: every pixel within a few levels.
@@ -210,16 +262,28 @@ fn check_against_references(
     pixel_format: &str,
     tolerance: Tolerance,
 ) {
-    let samples = decode_samples(ffmpeg, path, pixel_format);
-    for (frame, actual) in SAMPLE_FRAMES.iter().zip(&samples) {
+    check_fixture_references(ffmpeg, path, &TEST_GRAPHIC, kind, pixel_format, tolerance);
+}
+
+pub(super) fn check_fixture_references(
+    ffmpeg: &Path,
+    path: &Path,
+    fixture: &Fixture,
+    kind: &str,
+    pixel_format: &str,
+    tolerance: Tolerance,
+) {
+    let samples = decode_samples(ffmpeg, path, pixel_format, fixture);
+    for (frame, actual) in fixture.samples.iter().zip(&samples) {
         if writing_references() {
-            write_reference(ffmpeg, kind, *frame, pixel_format, actual);
+            write_reference(ffmpeg, fixture, kind, *frame, pixel_format, actual);
             continue;
         }
-        let expected = read_reference(ffmpeg, kind, *frame, pixel_format);
+        let expected = read_reference(ffmpeg, fixture, kind, *frame, pixel_format);
         let diff = frame_diff(actual, &expected, channels(pixel_format));
         println!(
-            "GRAPHICS_REFERENCE kind={kind} frame={frame} max={} mean={:.4} over8={:.4}%",
+            "GRAPHICS_REFERENCE fixture={} kind={kind} frame={frame} max={} mean={:.4} over8={:.4}%",
+            fixture.file,
             diff.max,
             diff.mean,
             diff.over_edge_threshold * 100.0
@@ -245,8 +309,30 @@ async fn render_overlay(
     Result<GraphicsOverlay, GraphicsRenderError>,
     Vec<GraphicsRenderLog>,
 ) {
+    render_fixture_overlay(
+        &TEST_GRAPHIC,
+        ffmpeg,
+        output,
+        backend,
+        cancellation,
+        on_frame,
+    )
+    .await
+}
+
+async fn render_fixture_overlay(
+    fixture: &Fixture,
+    ffmpeg: &Path,
+    output: &Path,
+    backend: GraphicsBackend,
+    cancellation: ProcessCancellation,
+    on_frame: Option<GraphicsProgress>,
+) -> (
+    Result<GraphicsOverlay, GraphicsRenderError>,
+    Vec<GraphicsRenderLog>,
+) {
     let renderer = renderer_exe();
-    let description = description_fixture();
+    let description = fixture_path(fixture);
     let logs: CapturedLogs = Arc::default();
     let sink = {
         let logs = Arc::clone(&logs);
@@ -270,7 +356,7 @@ async fn render_overlay(
 }
 
 /// Scratch entries the overlay pipeline creates next to its output.
-fn scratch_entries(directory: &Path) -> Vec<String> {
+pub(super) fn scratch_entries(directory: &Path) -> Vec<String> {
     fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -685,4 +771,67 @@ async fn graphics_overlay_cancellation_leaves_nothing_behind() {
     assert_eq!(record.backend, None);
     assert_eq!(record.gpu_fallback_reason, None);
     assert_eq!(record.frames, None);
+}
+
+// Phase 15: scale, rotation, spring and steps easing, an embedded image and a per-word reveal
+// render to the CPU references.
+#[tokio::test]
+async fn motion_graphic_overlay_matches_reference_frames() {
+    let workspace = tempdir().unwrap();
+    let ffmpeg = pinned_ffmpeg(workspace.path()).await;
+    let output = workspace.path().join("motion.mov");
+
+    let (result, records) = render_fixture_overlay(
+        &MOTION_GRAPHIC,
+        &ffmpeg,
+        &output,
+        GraphicsBackend::Cpu,
+        ProcessCancellation::new(),
+        None,
+    )
+    .await;
+
+    let overlay = result.unwrap();
+    assert_eq!((overlay.width, overlay.height), (1280, 720));
+    assert_eq!(overlay.frames, 48);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].outcome, "succeeded");
+    assert!(scratch_entries(workspace.path()).is_empty());
+    check_fixture_references(
+        &ffmpeg,
+        &output,
+        &MOTION_GRAPHIC,
+        "overlay",
+        "rgba",
+        CPU_OVERLAY,
+    );
+}
+
+#[tokio::test]
+async fn motion_graphic_overlay_render_is_deterministic() {
+    let workspace = tempdir().unwrap();
+    let ffmpeg = pinned_ffmpeg(workspace.path()).await;
+    let mut runs = Vec::new();
+    for name in ["first.mov", "second.mov"] {
+        let (result, _) = render_fixture_overlay(
+            &MOTION_GRAPHIC,
+            &ffmpeg,
+            &workspace.path().join(name),
+            GraphicsBackend::Cpu,
+            ProcessCancellation::new(),
+            None,
+        )
+        .await;
+        runs.push(result.unwrap());
+    }
+
+    assert_eq!(runs[0].frame_sha256, runs[1].frame_sha256);
+    let distinct: std::collections::BTreeSet<_> = runs[0].frame_sha256.iter().collect();
+    // Motion settles by frame 41, so the tail repeats; everything before it moves.
+    assert!(distinct.len() >= 40, "{} distinct frames", distinct.len());
+    assert_eq!(
+        fs::read(&runs[0].output).unwrap(),
+        fs::read(&runs[1].output).unwrap(),
+        "encoded overlays differ"
+    );
 }
