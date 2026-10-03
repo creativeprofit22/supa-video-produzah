@@ -7,6 +7,7 @@ import {
   normalizeExpression,
   npmEntries,
   render,
+  runtimeNotices,
   validate,
 } from "../license-inventory.mjs";
 
@@ -88,4 +89,40 @@ test("renders a deterministic, deduplicated inventory", () => {
   assert.equal(text, render([...entries].reverse()));
   assert.match(text, /JavaScript \(npm\) — 1 packages/u);
   assert.match(text, /Rust \(crates.io\) — 1 packages/u);
+});
+
+test("lists the music beat runtime notices from the pinned manifest", () => {
+  const license = (spdx) => ({ spdx, url: `https://example.test/${spdx}` });
+  const manifest = {
+    models: { files: [{ file: "beat_this.onnx", license: license("MIT") }] },
+    gpuPack: {
+      archives: [
+        { url: "https://example.test/dl/cudnn-archive.zip", license: license("LicenseRef-NVIDIA") },
+      ],
+    },
+  };
+  const notices = runtimeNotices(manifest);
+  assert.deepEqual(
+    notices.map((notice) => [notice.name, notice.license]),
+    [
+      ["beat_this.onnx", "MIT"],
+      ["cudnn-archive.zip", "LicenseRef-NVIDIA"],
+    ],
+  );
+  const text = render([], notices);
+  assert.match(text, /Music beat runtime \(downloaded separately\) — 2 items/u);
+  assert.match(
+    text,
+    /\| cudnn-archive\.zip \| LicenseRef-NVIDIA \| https:\/\/example\.test\/LicenseRef-NVIDIA \|/u,
+  );
+  assert.doesNotMatch(render([]), /Music beat runtime/u);
+  assert.throws(() => runtimeNotices({}), /unexpected shape/u);
+  assert.throws(
+    () =>
+      runtimeNotices({
+        models: { files: [{ file: "x.onnx", license: {} }] },
+        gpuPack: { archives: [] },
+      }),
+    /incomplete license for x\.onnx/u,
+  );
 });

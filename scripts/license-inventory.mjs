@@ -1,6 +1,7 @@
 // Third-party license inventory for the desktop app (npm production graph of
-// @supa-video/desktop + Rust normal/build graph of the Tauri crate for
-// x86_64-pc-windows-msvc). Writes a deterministic THIRD_PARTY_LICENSES.md that
+// @supa-video/desktop + Rust normal/build graphs of the Tauri crate and the
+// bundled beat detector sidecar for x86_64-pc-windows-msvc, plus notices for
+// the downloadable music-beat runtime from its pinned manifest). Writes a deterministic THIRD_PARTY_LICENSES.md that
 // is bundled as a Tauri resource next to the FFmpeg notices.
 //
 //   node scripts/license-inventory.mjs           regenerate the file
@@ -19,6 +20,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const OUTPUT = resolve(ROOT, "apps/desktop/src-tauri/licenses/THIRD_PARTY_LICENSES.md");
 const MANIFEST = resolve(ROOT, "apps/desktop/src-tauri/Cargo.toml");
+/** The bundled music beat detector sidecar (ADR 0004); its own Cargo workspace. */
+const BEAT_DETECTOR_MANIFEST = resolve(ROOT, "apps/desktop/src-tauri/beat-detector/Cargo.toml");
+const BEAT_RUNTIME_MANIFEST = resolve(
+  ROOT,
+  "apps/desktop/src-tauri/src/video/beat-detect-runtime-manifest.json",
+);
 const TARGET = "x86_64-pc-windows-msvc";
 const NPM_PACKAGE = "@supa-video/desktop";
 
@@ -200,7 +207,33 @@ export function validate(entries) {
   return problems;
 }
 
-export function render(entries) {
+/**
+ * Notices for the downloadable music-beat runtime (models and GPU pack). These files are
+ * not bundled; the user's runtime folder is filled from the pinned manifest.
+ */
+export function runtimeNotices(manifest) {
+  const models = manifest?.models?.files;
+  const archives = manifest?.gpuPack?.archives;
+  if (!Array.isArray(models) || !Array.isArray(archives)) {
+    fail("beat runtime manifest: unexpected shape");
+  }
+  const notice = (name, license) => {
+    if (
+      typeof name !== "string" ||
+      typeof license?.spdx !== "string" ||
+      typeof license?.url !== "string"
+    ) {
+      fail(`beat runtime manifest: incomplete license for ${String(name)}`);
+    }
+    return { name, license: license.spdx, url: license.url };
+  };
+  return [
+    ...models.map((model) => notice(model.file, model.license)),
+    ...archives.map((archive) => notice(archive.url?.split("/").pop(), archive.license)),
+  ];
+}
+
+export function render(entries, notices = []) {
   const sorted = [...entries].sort(
     (a, b) =>
       a.ecosystem.localeCompare(b.ecosystem) ||
@@ -233,6 +266,19 @@ export function render(entries) {
     for (const row of rows) lines.push(`| ${row.name} | ${row.version} | ${row.license} |`);
     lines.push("");
   }
+  if (notices.length > 0) {
+    lines.push(
+      `## Music beat runtime (downloaded separately) — ${notices.length} items`,
+      "",
+      "Not bundled. `scripts/bootstrap-beat-runtime-windows.ps1` downloads these pinned files into",
+      "the user's music beat runtime folder; NVIDIA components are redistributed under their EULAs.",
+      "",
+      "| File | License | Terms |",
+      "|---|---|---|",
+    );
+    for (const item of notices) lines.push(`| ${item.name} | ${item.license} | ${item.url} |`);
+    lines.push("");
+  }
   return lines.join("\n");
 }
 
@@ -243,26 +289,34 @@ export function collect() {
       "pnpm licenses",
     ),
   ).filter((entry) => !entry.name.startsWith("@supa-video/"));
-  const cargo = cargoEntries(
-    parseJson(
-      run(
-        "cargo",
-        [
-          "metadata",
-          "--format-version",
-          "1",
-          "--locked",
-          "--filter-platform",
-          TARGET,
-          "--manifest-path",
-          MANIFEST,
-        ],
-        ROOT,
+  const cargo = [MANIFEST, BEAT_DETECTOR_MANIFEST].flatMap((manifest) =>
+    cargoEntries(
+      parseJson(
+        run(
+          "cargo",
+          [
+            "metadata",
+            "--format-version",
+            "1",
+            "--locked",
+            "--filter-platform",
+            TARGET,
+            "--manifest-path",
+            manifest,
+          ],
+          ROOT,
+        ),
+        "cargo metadata",
       ),
-      "cargo metadata",
     ),
   );
   return [...npm, ...cargo];
+}
+
+export function collectNotices() {
+  return runtimeNotices(
+    parseJson(readFileSync(BEAT_RUNTIME_MANIFEST, "utf8"), "beat runtime manifest"),
+  );
 }
 
 function main(argv) {
@@ -273,7 +327,7 @@ function main(argv) {
     console.error(problems.join("\n"));
     fail(`${problems.length} package(s) with unknown or denied licenses`);
   }
-  const text = render(entries);
+  const text = render(entries, collectNotices());
   if (check) {
     if (!existsSync(OUTPUT) || readFileSync(OUTPUT, "utf8").replace(/\r\n/gu, "\n") !== text) {
       fail(`${OUTPUT} is missing or stale; run node scripts/license-inventory.mjs`);

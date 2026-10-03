@@ -18,7 +18,7 @@ Full license texts are available from each package's published source.
 | scheduler | 0.27.0 | MIT |
 | zod | 4.4.3 | MIT |
 
-## Rust (crates.io) — 346 packages
+## Rust (crates.io) — 388 packages
 
 | Package | Version | License |
 |---|---|---|
@@ -28,8 +28,13 @@ Full license texts are available from each package's published source.
 | alloc-stdlib | 0.2.4 | BSD-3-Clause |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT |
+| audio-core | 0.2.1 | MIT OR Apache-2.0 |
+| audioadapter | 3.0.0 | MIT OR Apache-2.0 |
+| audioadapter-buffers | 3.0.0 | MIT OR Apache-2.0 |
+| audioadapter-sample | 3.0.0 | MIT OR Apache-2.0 |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
+| beat-this | 1.1.0 | MIT |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT |
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT |
 | bitflags | 1.3.2 | MIT OR Apache-2.0 |
@@ -57,7 +62,10 @@ Full license texts are available from each package's published source.
 | cpufeatures | 0.3.1 | MIT OR Apache-2.0 |
 | crc32fast | 1.5.0 | MIT OR Apache-2.0 |
 | crossbeam-channel | 0.5.16 | MIT OR Apache-2.0 |
+| crossbeam-deque | 0.8.8 | MIT OR Apache-2.0 |
+| crossbeam-epoch | 0.9.21 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.22 | MIT OR Apache-2.0 |
+| crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | cssparser | 0.36.0 | MPL-2.0 |
 | cssparser-macros | 0.6.1 | MPL-2.0 |
@@ -81,6 +89,7 @@ Full license texts are available from each package's published source.
 | dtor-proc-macro | 0.0.6 | Apache-2.0 OR MIT |
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 |
+| either | 1.18.0 | MIT OR Apache-2.0 |
 | embed-resource | 3.0.11 | MIT |
 | equivalent | 1.0.2 | Apache-2.0 OR MIT |
 | erased-serde | 0.4.10 | MIT OR Apache-2.0 |
@@ -89,6 +98,7 @@ Full license texts are available from each package's published source.
 | fastrand | 2.5.0 | Apache-2.0 OR MIT |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 |
 | find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 |
+| flatbuffers | 24.12.23 | Apache-2.0 |
 | flate2 | 1.1.9 | MIT OR Apache-2.0 |
 | fnv | 1.0.7 | Apache-2.0 OR MIT |
 | foldhash | 0.2.0 | Zlib |
@@ -115,6 +125,7 @@ Full license texts are available from each package's published source.
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
 | hex | 0.4.3 | MIT OR Apache-2.0 |
+| hound | 3.5.1 | Apache-2.0 |
 | html5ever | 0.38.0 | MIT OR Apache-2.0 |
 | http | 1.4.2 | MIT OR Apache-2.0 |
 | http-body | 1.1.0 | MIT |
@@ -149,6 +160,7 @@ Full license texts are available from each package's published source.
 | keyboard-types | 0.7.0 | MIT OR Apache-2.0 |
 | keyring | 3.6.3 | MIT OR Apache-2.0 |
 | libc | 0.2.189 | MIT OR Apache-2.0 |
+| libloading | 0.9.0 | ISC |
 | libsqlite3-sys | 0.38.1 | MIT |
 | linebender_resource_handle | 0.1.1 | Apache-2.0 OR MIT |
 | litemap | 0.8.2 | Unicode-3.0 |
@@ -156,18 +168,25 @@ Full license texts are available from each package's published source.
 | log | 0.4.33 | MIT OR Apache-2.0 |
 | lru-slab | 0.1.3 | MIT OR Apache-2.0 OR Zlib |
 | markup5ever | 0.38.0 | MIT OR Apache-2.0 |
+| matrixmultiply | 0.3.11 | MIT OR Apache-2.0 |
 | memchr | 2.8.3 | Unlicense OR MIT |
 | memmap2 | 0.9.11 | MIT OR Apache-2.0 |
 | mime | 0.3.17 | MIT OR Apache-2.0 |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | mio | 1.2.2 | MIT |
 | muda | 0.19.3 | Apache-2.0 OR MIT |
+| ndarray | 0.17.2 | MIT OR Apache-2.0 |
 | new_debug_unreachable | 1.0.6 | MIT |
+| num_cpus | 1.17.0 | MIT OR Apache-2.0 |
+| num-complex | 0.4.6 | MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
+| num-integer | 0.1.47 | MIT OR Apache-2.0 |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 |
 | open | 5.4.4 | MIT |
 | option-ext | 0.2.0 | MPL-2.0 |
+| ort | 2.0.0-rc.13 | MIT OR Apache-2.0 |
+| ort-sys | 2.0.0-rc.13 | MIT OR Apache-2.0 |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
 | parlance | 0.1.0 | Apache-2.0 OR MIT |
@@ -186,6 +205,7 @@ Full license texts are available from each package's published source.
 | potential_utf | 0.1.5 | Unicode-3.0 |
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 |
 | precomputed-hash | 0.1.1 | MIT |
+| primal-check | 0.3.4 | MIT OR Apache-2.0 |
 | proc-macro2 | 1.0.107 | MIT OR Apache-2.0 |
 | process-wrap | 9.1.0 | Apache-2.0 OR MIT |
 | quick-xml | 0.41.0 | MIT |
@@ -197,7 +217,11 @@ Full license texts are available from each package's published source.
 | rand_core | 0.10.1 | MIT OR Apache-2.0 |
 | rand_pcg | 0.10.2 | MIT OR Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
+| rawpointer | 0.2.1 | MIT OR Apache-2.0 |
+| rayon | 1.12.0 | MIT OR Apache-2.0 |
+| rayon-core | 1.13.0 | MIT OR Apache-2.0 |
 | read-fonts | 0.41.0 | MIT OR Apache-2.0 |
+| realfft | 3.5.0 | MIT |
 | ref-cast | 1.0.26 | MIT OR Apache-2.0 |
 | ref-cast-impl | 1.0.26 | MIT OR Apache-2.0 |
 | regex | 1.13.1 | MIT OR Apache-2.0 |
@@ -206,9 +230,20 @@ Full license texts are available from each package's published source.
 | reqwest | 0.12.28 | MIT OR Apache-2.0 |
 | rfd | 0.16.0 | MIT |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
+| rten | 0.24.0 | MIT OR Apache-2.0 |
+| rten-base | 0.24.0 | MIT OR Apache-2.0 |
+| rten-gemm | 0.24.0 | MIT OR Apache-2.0 |
+| rten-model-file | 0.24.0 | MIT OR Apache-2.0 |
+| rten-onnx | 0.24.0 | MIT OR Apache-2.0 |
+| rten-shape-inference | 0.24.0 | MIT OR Apache-2.0 |
+| rten-simd | 0.24.0 | MIT OR Apache-2.0 |
+| rten-tensor | 0.24.0 | MIT OR Apache-2.0 |
+| rten-vecmath | 0.24.0 | MIT OR Apache-2.0 |
+| rubato | 3.0.0 | MIT |
 | rusqlite | 0.40.1 | MIT |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
+| rustfft | 6.4.1 | MIT OR Apache-2.0 |
 | rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 |
 | rustls-webpki | 0.103.15 | ISC |
@@ -244,15 +279,18 @@ Full license texts are available from each package's published source.
 | skrifa | 0.44.0 | MIT OR Apache-2.0 |
 | slab | 0.4.12 | MIT |
 | smallvec | 1.15.2 | MIT OR Apache-2.0 |
+| smallvec | 1.16.2 | MIT OR Apache-2.0 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 |
 | softbuffer | 0.4.8 | MIT OR Apache-2.0 |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
+| strength_reduce | 0.2.4 | MIT OR Apache-2.0 |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 |
 | string_cache_codegen | 0.6.1 | MIT OR Apache-2.0 |
 | strsim | 0.11.1 | MIT |
 | subtle | 2.6.1 | BSD-3-Clause |
 | syn | 2.0.119 | MIT OR Apache-2.0 |
 | syn | 3.0.3 | MIT OR Apache-2.0 |
+| syn | 3.0.6 | MIT OR Apache-2.0 |
 | sync_wrapper | 1.0.2 | Apache-2.0 |
 | synstructure | 0.13.2 | MIT |
 | tao | 0.35.3 | Apache-2.0 |
@@ -296,6 +334,7 @@ Full license texts are available from each package's published source.
 | tracing | 0.1.44 | MIT |
 | tracing-attributes | 0.1.31 | MIT |
 | tracing-core | 0.1.36 | MIT |
+| transpose | 0.2.3 | MIT OR Apache-2.0 |
 | tray-icon | 0.24.1 | MIT OR Apache-2.0 |
 | try-lock | 0.2.5 | MIT |
 | typeid | 1.0.3 | MIT OR Apache-2.0 |
@@ -306,6 +345,7 @@ Full license texts are available from each package's published source.
 | unic-ucd-ident | 0.9.0 | MIT OR Apache-2.0 |
 | unic-ucd-version | 0.9.0 | MIT OR Apache-2.0 |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| unicode-ident | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 |
 | untrusted | 0.9.0 | ISC |
 | url | 2.5.8 | MIT OR Apache-2.0 |
@@ -314,6 +354,7 @@ Full license texts are available from each package's published source.
 | uuid | 1.24.0 | Apache-2.0 OR MIT |
 | vcpkg | 0.2.15 | MIT OR Apache-2.0 |
 | version_check | 0.9.5 | MIT OR Apache-2.0 |
+| visibility | 0.1.1 | Zlib OR MIT OR Apache-2.0 |
 | vswhom | 0.1.0 | MIT |
 | vswhom-sys | 0.1.3 | MIT |
 | walkdir | 2.5.0 | Unlicense OR MIT |
@@ -325,6 +366,7 @@ Full license texts are available from each package's published source.
 | webview2-com-sys | 0.38.2 | MIT |
 | winapi-util | 0.1.11 | Unlicense OR MIT |
 | window-vibrancy | 0.6.0 | Apache-2.0 OR MIT |
+| windowfunctions | 0.1.1 | MIT |
 | windows | 0.61.3 | MIT OR Apache-2.0 |
 | windows | 0.62.2 | MIT OR Apache-2.0 |
 | windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 |
@@ -368,3 +410,17 @@ Full license texts are available from each package's published source.
 | zerovec | 0.11.6 | Unicode-3.0 |
 | zerovec-derive | 0.11.3 | Unicode-3.0 |
 | zmij | 1.0.23 | MIT |
+
+## Music beat runtime (downloaded separately) — 6 items
+
+Not bundled. `scripts/bootstrap-beat-runtime-windows.ps1` downloads these pinned files into
+the user's music beat runtime folder; NVIDIA components are redistributed under their EULAs.
+
+| File | License | Terms |
+|---|---|---|
+| mel_spectrogram.onnx | MIT | https://github.com/danigb/beat-this-rs/blob/1ae768e78f1ad83b0ed3886241dc29ffde853c40/LICENSE |
+| beat_this.onnx | MIT | https://github.com/CPJKU/beat_this/blob/b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c/LICENSE |
+| onnxruntime-win-x64-gpu_cuda12-1.28.0.zip | MIT | https://github.com/microsoft/onnxruntime/blob/v1.28.0/LICENSE |
+| cuda_cudart-windows-x86_64-12.8.90-archive.zip | LicenseRef-NVIDIA-CUDA-EULA | https://docs.nvidia.com/cuda/eula/index.html |
+| libcublas-windows-x86_64-12.8.4.1-archive.zip | LicenseRef-NVIDIA-CUDA-EULA | https://docs.nvidia.com/cuda/eula/index.html |
+| cudnn-windows-x86_64-9.10.2.21_cuda12-archive.zip | LicenseRef-NVIDIA-cuDNN-SLA | https://docs.nvidia.com/deeplearning/cudnn/backend/latest/reference/eula.html |
