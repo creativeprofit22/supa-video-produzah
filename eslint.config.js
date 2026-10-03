@@ -8,6 +8,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/target/**",
       "**/src-tauri/gen/**",
+      "**/.venv/**",
+      ".cache/**",
       ".gg/**",
       // Immutable, deliberately disabled capture snapshots, not runnable tools.
       // Keep their unconditional safety stops and recorded source bytes intact.

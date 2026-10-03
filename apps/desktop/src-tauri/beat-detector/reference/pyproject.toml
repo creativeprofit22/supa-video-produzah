@@ -1,0 +1,37 @@
+# Test/benchmark-only Python environment for the Beat This! reference implementation.
+# Never bundled with the app. Create it with:
+#   uv sync --project apps/desktop/src-tauri/beat-detector/reference
+[project]
+name = "beat-this-reference"
+version = "0.1.0"
+description = "Pinned Python Beat This! reference used to prove the Rust beat detector's parity"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "beat-this @ https://github.com/CPJKU/beat_this/archive/b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c.zip",
+    "torch==2.7.1",
+    "torchaudio==2.7.1",
+    "soundfile==0.13.1",
+    "soxr==0.5.0.post1",
+    "einops==0.8.1",
+    "rotary-embedding-torch==0.8.9",
+    "numpy==2.2.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchaudio = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pyright]
+typeCheckingMode = "strict"
