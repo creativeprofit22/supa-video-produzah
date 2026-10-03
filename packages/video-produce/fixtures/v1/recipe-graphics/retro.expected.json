@@ -1,0 +1,1194 @@
+{
+  "description": {
+    "items": [
+      {
+        "atUs": 0,
+        "durationUs": 2500000,
+        "id": "title",
+        "kind": "card",
+        "role": "title",
+        "text": "Los ríos del oeste"
+      },
+      {
+        "atUs": 6600000,
+        "durationUs": 2500000,
+        "id": "beat-3",
+        "kind": "card",
+        "role": "lowerThird",
+        "text": "Los kayaks bajan por los rápidos."
+      },
+      {
+        "atUs": 11800000,
+        "durationUs": 2500000,
+        "id": "beat-5",
+        "kind": "card",
+        "role": "lowerThird",
+        "text": "cuenca del río Colorado"
+      }
+    ],
+    "recipeId": "retro",
+    "schemaVersion": 1
+  },
+  "proposal": {
+    "commandGroup": {
+      "baseRevision": 4,
+      "commands": [
+        {
+          "commandId": "9e5193f1-fbb3-4a9e-8309-913480a57f55",
+          "index": 0,
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "track": {
+            "graphicsClips": [],
+            "id": "af3f955e-4ae9-4097-afc9-524a16286070",
+            "kind": "graphics",
+            "name": "Graphics"
+          },
+          "type": "InsertTrack"
+        },
+        {
+          "commandId": "a6412a49-0fda-43ef-8c0c-b65499a855c1",
+          "graphicsClip": {
+            "duration": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 75
+            },
+            "fontKey": "georgia-bold",
+            "graphicsVersion": 1,
+            "id": "b1c42965-9470-4c92-b505-9e4795e711e7",
+            "layers": [
+              {
+                "fill": "#FFF3D6",
+                "fontSize": 97,
+                "kind": "text",
+                "opacity": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 0.7426
+                  },
+                  {
+                    "timeMicroseconds": 33400,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 100500,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": -3.2642
+                  },
+                  {
+                    "timeMicroseconds": 33400,
+                    "value": -0.2085
+                  },
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "snappy"
+                    },
+                    "timeMicroseconds": 66700,
+                    "value": 2.3113
+                  },
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "snappy"
+                    },
+                    "timeMicroseconds": 133400,
+                    "value": 0.8043
+                  },
+                  {
+                    "timeMicroseconds": 200000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "easeIn"
+                    },
+                    "timeMicroseconds": 0,
+                    "value": 1.3698
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.5506,
+                      "y1": 0.2373,
+                      "y2": 0.8743
+                    },
+                    "timeMicroseconds": 66700,
+                    "value": 1.1952
+                  },
+                  {
+                    "timeMicroseconds": 166700,
+                    "value": 1.0307
+                  },
+                  {
+                    "timeMicroseconds": 200000,
+                    "value": 1
+                  }
+                ],
+                "text": "Los ríos del oeste",
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 601.38192
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.2309,
+                      "x2": 0.5572,
+                      "y1": 0.4352,
+                      "y2": 0.991
+                    },
+                    "timeMicroseconds": 33400,
+                    "value": 546.83688
+                  },
+                  {
+                    "timeMicroseconds": 200000,
+                    "value": 480
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 522.5356
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.5636,
+                      "x2": 0.3205,
+                      "y1": 0.9728,
+                      "y2": 0.4983
+                    },
+                    "timeMicroseconds": 33400,
+                    "value": 504.61
+                  },
+                  {
+                    "timeMicroseconds": 166700,
+                    "value": 492
+                  }
+                ]
+              },
+              {
+                "cornerRadius": 0,
+                "fill": "#F4A259",
+                "height": 12,
+                "kind": "rect",
+                "opacity": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 0.7426
+                  },
+                  {
+                    "timeMicroseconds": 113400,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 180500,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": -3.2642
+                  },
+                  {
+                    "timeMicroseconds": 113400,
+                    "value": -0.2085
+                  },
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "snappy"
+                    },
+                    "timeMicroseconds": 146700,
+                    "value": 2.3113
+                  },
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "snappy"
+                    },
+                    "timeMicroseconds": 213400,
+                    "value": 0.8043
+                  },
+                  {
+                    "timeMicroseconds": 280000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "easing": {
+                      "kind": "preset",
+                      "name": "easeIn"
+                    },
+                    "timeMicroseconds": 80000,
+                    "value": 1.3698
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.5506,
+                      "y1": 0.2373,
+                      "y2": 0.8743
+                    },
+                    "timeMicroseconds": 146700,
+                    "value": 1.1952
+                  },
+                  {
+                    "timeMicroseconds": 246700,
+                    "value": 1.0307
+                  },
+                  {
+                    "timeMicroseconds": 280000,
+                    "value": 1
+                  }
+                ],
+                "width": 230,
+                "x": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 874.072
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.2309,
+                      "x2": 0.5572,
+                      "y1": 0.4352,
+                      "y2": 0.991
+                    },
+                    "timeMicroseconds": 113400,
+                    "value": 861.008
+                  },
+                  {
+                    "timeMicroseconds": 280000,
+                    "value": 845
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 616.7776
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.5636,
+                      "x2": 0.3205,
+                      "y1": 0.9728,
+                      "y2": 0.4983
+                    },
+                    "timeMicroseconds": 113400,
+                    "value": 614.56
+                  },
+                  {
+                    "timeMicroseconds": 246700,
+                    "value": 613
+                  }
+                ]
+              }
+            ],
+            "timelineStart": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 0
+            }
+          },
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "trackId": "af3f955e-4ae9-4097-afc9-524a16286070",
+          "type": "AddGraphicsClip"
+        },
+        {
+          "commandId": "bdb5532c-98f6-488b-9e56-3cc0e1792c2d",
+          "graphicsClip": {
+            "duration": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 75
+            },
+            "fontKey": "georgia-bold",
+            "graphicsVersion": 1,
+            "id": "2e123248-7c79-4565-9ab8-7dfe20d8e3e2",
+            "layers": [
+              {
+                "cornerRadius": 0,
+                "fill": "#5A2E1C",
+                "height": 86,
+                "kind": "rect",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 0,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 221100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 366700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 237700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 433300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 1
+                  }
+                ],
+                "width": 1034,
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": -2466.1486
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 266600,
+                    "value": -2466.1486
+                  },
+                  {
+                    "timeMicroseconds": 446400,
+                    "value": 96
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1023.3654
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 265700,
+                    "value": 1023.3654
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 842
+                  }
+                ]
+              },
+              {
+                "cornerRadius": 0,
+                "fill": "#F4A259",
+                "height": 86,
+                "kind": "rect",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 80000,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 301100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 480000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 446700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 480000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 317700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 513300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 1
+                  }
+                ],
+                "width": 8,
+                "x": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 76.1768
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 346600,
+                    "value": 76.1768
+                  },
+                  {
+                    "timeMicroseconds": 526400,
+                    "value": 96
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 1023.3654
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 345700,
+                    "value": 1023.3654
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 842
+                  }
+                ]
+              },
+              {
+                "fill": "#FFF3D6",
+                "fontSize": 54,
+                "kind": "text",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 160000,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 381100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 560000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 526700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 560000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 397700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 593300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 1
+                  }
+                ],
+                "text": "Los kayaks bajan por los rápidos.",
+                "x": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": -2305.58979
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 426600,
+                    "value": -2305.58979
+                  },
+                  {
+                    "timeMicroseconds": 606400,
+                    "value": 123
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 971.8806
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 425700,
+                    "value": 971.8806
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 858
+                  }
+                ]
+              }
+            ],
+            "timelineStart": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 198
+            }
+          },
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "trackId": "af3f955e-4ae9-4097-afc9-524a16286070",
+          "type": "AddGraphicsClip"
+        },
+        {
+          "commandId": "877ee6a6-2d64-48a6-92c7-812e87ebc524",
+          "graphicsClip": {
+            "duration": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 75
+            },
+            "fontKey": "georgia-bold",
+            "graphicsVersion": 1,
+            "id": "44bfbf9b-59c9-44c2-a42b-dff4fafcbc60",
+            "layers": [
+              {
+                "cornerRadius": 0,
+                "fill": "#5A2E1C",
+                "height": 86,
+                "kind": "rect",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 0,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 221100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 400000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 366700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 400000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 237700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 433300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 1
+                  }
+                ],
+                "width": 737,
+                "x": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": -1730.2123
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 266600,
+                    "value": -1730.2123
+                  },
+                  {
+                    "timeMicroseconds": 446400,
+                    "value": 96
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 0,
+                    "value": 1023.3654
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 265700,
+                    "value": 1023.3654
+                  },
+                  {
+                    "timeMicroseconds": 466700,
+                    "value": 842
+                  }
+                ]
+              },
+              {
+                "cornerRadius": 0,
+                "fill": "#F4A259",
+                "height": 86,
+                "kind": "rect",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 80000,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 301100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 480000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 446700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 480000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 317700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 513300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 1
+                  }
+                ],
+                "width": 8,
+                "x": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 76.1768
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 346600,
+                    "value": 76.1768
+                  },
+                  {
+                    "timeMicroseconds": 526400,
+                    "value": 96
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 80000,
+                    "value": 1023.3654
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 345700,
+                    "value": 1023.3654
+                  },
+                  {
+                    "timeMicroseconds": 546700,
+                    "value": 842
+                  }
+                ]
+              },
+              {
+                "fill": "#FFF3D6",
+                "fontSize": 54,
+                "kind": "text",
+                "opacity": [
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.3352,
+                      "x2": 0.4795,
+                      "y1": 0.4361,
+                      "y2": 0.6179
+                    },
+                    "timeMicroseconds": 160000,
+                    "value": 0.0014
+                  },
+                  {
+                    "timeMicroseconds": 381100,
+                    "value": 1
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4061,
+                      "y1": 0.4169,
+                      "y2": 0.7517
+                    },
+                    "timeMicroseconds": 560000,
+                    "value": 1
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 1
+                  }
+                ],
+                "rotation": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 526700,
+                    "value": 2.0634
+                  },
+                  {
+                    "timeMicroseconds": 560000,
+                    "value": 0
+                  }
+                ],
+                "scale": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.7402,
+                      "x2": 0.1668,
+                      "y1": 0.2697,
+                      "y2": -0.4097
+                    },
+                    "timeMicroseconds": 397700,
+                    "value": 1.2646
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0,
+                      "x2": 0.4217,
+                      "y1": 0,
+                      "y2": 0.4964
+                    },
+                    "timeMicroseconds": 593300,
+                    "value": 0.8158
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 1
+                  }
+                ],
+                "text": "cuenca del río Colorado",
+                "x": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": -1569.65349
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 1,
+                      "x2": 0.4523,
+                      "y1": 1.3679,
+                      "y2": 0.6958
+                    },
+                    "timeMicroseconds": 426600,
+                    "value": -1569.65349
+                  },
+                  {
+                    "timeMicroseconds": 606400,
+                    "value": 123
+                  }
+                ],
+                "y": [
+                  {
+                    "timeMicroseconds": 160000,
+                    "value": 971.8806
+                  },
+                  {
+                    "easing": {
+                      "kind": "cubicBezier",
+                      "x1": 0.8552,
+                      "x2": 0.3926,
+                      "y1": 1.1939,
+                      "y2": 0.6441
+                    },
+                    "timeMicroseconds": 425700,
+                    "value": 971.8806
+                  },
+                  {
+                    "timeMicroseconds": 626700,
+                    "value": 858
+                  }
+                ]
+              }
+            ],
+            "timelineStart": {
+              "rateDenominator": 1,
+              "rateNumerator": 30,
+              "value": 354
+            }
+          },
+          "sequenceId": "000000e1-0000-4000-8000-000000000064",
+          "trackId": "af3f955e-4ae9-4097-afc9-524a16286070",
+          "type": "AddGraphicsClip"
+        }
+      ],
+      "groupId": "9ee427b4-95b6-4413-b927-3b80a861df18",
+      "projectId": "000000e0-0000-4000-8000-000000000001"
+    },
+    "description": {
+      "items": [
+        {
+          "atUs": 0,
+          "durationUs": 2500000,
+          "id": "title",
+          "kind": "card",
+          "role": "title",
+          "text": "Los ríos del oeste"
+        },
+        {
+          "atUs": 6600000,
+          "durationUs": 2500000,
+          "id": "beat-3",
+          "kind": "card",
+          "role": "lowerThird",
+          "text": "Los kayaks bajan por los rápidos."
+        },
+        {
+          "atUs": 11800000,
+          "durationUs": 2500000,
+          "id": "beat-5",
+          "kind": "card",
+          "role": "lowerThird",
+          "text": "cuenca del río Colorado"
+        }
+      ],
+      "recipeId": "retro",
+      "schemaVersion": 1
+    },
+    "items": [
+      {
+        "graphicsClipId": "b1c42965-9470-4c92-b505-9e4795e711e7",
+        "itemId": "title",
+        "label": "Title · Los ríos del oeste"
+      },
+      {
+        "graphicsClipId": "2e123248-7c79-4565-9ab8-7dfe20d8e3e2",
+        "itemId": "beat-3",
+        "label": "Lower third · Los kayaks bajan por los rápidos."
+      },
+      {
+        "graphicsClipId": "44bfbf9b-59c9-44c2-a42b-dff4fafcbc60",
+        "itemId": "beat-5",
+        "label": "Lower third · cuenca del río Colorado"
+      }
+    ],
+    "producer": {
+      "id": "recipe-graphics",
+      "kind": "rule",
+      "parameters": {
+        "recipeId": "retro"
+      },
+      "version": "1"
+    },
+    "projectId": "000000e0-0000-4000-8000-000000000001",
+    "projectRevision": {
+      "committedAt": "2026-10-03T12:00:00.000Z",
+      "id": "000000a0-0000-4000-8000-000000000004",
+      "number": 4,
+      "operationId": "000000a1-0000-4000-8000-000000000004",
+      "parentId": "000000a0-0000-4000-8000-000000000003",
+      "stateHash": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+    },
+    "proposalId": "bf9c40c3-0a3c-4060-9e7f-dcdd82274ef1",
+    "proposalKind": "graphics",
+    "schemaVersion": 1,
+    "sequenceId": "000000e1-0000-4000-8000-000000000064",
+    "trackId": "af3f955e-4ae9-4097-afc9-524a16286070"
+  }
+}

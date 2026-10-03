@@ -1,0 +1,574 @@
+{
+  "commandGroup": {
+    "baseRevision": 1,
+    "commands": [
+      {
+        "commandId": "000000b1-0000-4000-8000-000000000004",
+        "index": 0,
+        "sequenceId": "000000b0-0000-4000-8000-000000000003",
+        "track": {
+          "graphicsClips": [],
+          "id": "000000b1-0000-4000-8000-000000000003",
+          "kind": "graphics",
+          "name": "Graphics"
+        },
+        "type": "InsertTrack"
+      },
+      {
+        "commandId": "000000b1-0000-4000-8000-000000000006",
+        "graphicsClip": {
+          "duration": {
+            "rateDenominator": 1,
+            "rateNumerator": 30,
+            "value": 27
+          },
+          "fontKey": "verdana-bold",
+          "graphicsVersion": 1,
+          "id": "000000b1-0000-4000-8000-000000000005",
+          "layers": [
+            {
+              "fill": "#FFFFFF",
+              "fontSize": 65,
+              "kind": "text",
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.0003,
+                    "x2": 0.6907,
+                    "y1": 0.2871,
+                    "y2": 1.3395
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 1.1132
+                },
+                {
+                  "timeMicroseconds": 266700,
+                  "value": 0
+                }
+              ],
+              "scale": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.1969,
+                    "x2": 0.1095,
+                    "y1": 0.9238,
+                    "y2": 0.92
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 1.3309
+                },
+                {
+                  "timeMicroseconds": 270800,
+                  "value": 1
+                }
+              ],
+              "text": "Agent graphics",
+              "x": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.2509,
+                    "x2": 0.5346,
+                    "y1": 1.2201,
+                    "y2": 0.9369
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 305.4155
+                },
+                {
+                  "timeMicroseconds": 181500,
+                  "value": 390
+                }
+              ],
+              "y": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.2468,
+                    "x2": 0.4822,
+                    "y1": 0.7757,
+                    "y2": 0.7053
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 325.452
+                },
+                {
+                  "timeMicroseconds": 87000,
+                  "value": 328
+                }
+              ]
+            },
+            {
+              "cornerRadius": 0,
+              "fill": "#FF2D55",
+              "height": 8,
+              "kind": "rect",
+              "opacity": [
+                {
+                  "timeMicroseconds": 80000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.0003,
+                    "x2": 0.6907,
+                    "y1": 0.2871,
+                    "y2": 1.3395
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 1.1132
+                },
+                {
+                  "timeMicroseconds": 346700,
+                  "value": 0
+                }
+              ],
+              "scale": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.1969,
+                    "x2": 0.1095,
+                    "y1": 0.9238,
+                    "y2": 0.92
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 1.3309
+                },
+                {
+                  "timeMicroseconds": 350800,
+                  "value": 1
+                }
+              ],
+              "width": 154,
+              "x": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.2509,
+                    "x2": 0.5346,
+                    "y1": 1.2201,
+                    "y2": 0.9369
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 536.974
+                },
+                {
+                  "timeMicroseconds": 261500,
+                  "value": 563
+                }
+              ],
+              "y": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.2468,
+                    "x2": 0.4822,
+                    "y1": 0.7757,
+                    "y2": 0.7053
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 408.6864
+                },
+                {
+                  "timeMicroseconds": 167000,
+                  "value": 409
+                }
+              ]
+            }
+          ],
+          "timelineStart": {
+            "rateDenominator": 1,
+            "rateNumerator": 30,
+            "value": 0
+          }
+        },
+        "sequenceId": "000000b0-0000-4000-8000-000000000003",
+        "trackId": "000000b1-0000-4000-8000-000000000003",
+        "type": "AddGraphicsClip"
+      },
+      {
+        "commandId": "000000b1-0000-4000-8000-000000000008",
+        "graphicsClip": {
+          "duration": {
+            "rateDenominator": 1,
+            "rateNumerator": 30,
+            "value": 27
+          },
+          "fontKey": "verdana-bold",
+          "graphicsVersion": 1,
+          "id": "000000b1-0000-4000-8000-000000000007",
+          "layers": [
+            {
+              "cornerRadius": 0,
+              "fill": "#111111",
+              "height": 58,
+              "kind": "rect",
+              "opacity": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": -1.2227
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4104,
+                    "x2": 0.7337,
+                    "y1": 0.5422,
+                    "y2": 0.8439
+                  },
+                  "timeMicroseconds": 33300,
+                  "value": -2.6206
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 0
+                }
+              ],
+              "scale": [
+                {
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 0.5462
+                },
+                {
+                  "timeMicroseconds": 33300,
+                  "value": 1
+                }
+              ],
+              "width": 432,
+              "x": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.0268,
+                    "x2": 0.4616,
+                    "y1": 0.6758,
+                    "y2": 0.9309
+                  },
+                  "timeMicroseconds": 0,
+                  "value": 307.3456
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 64
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 0,
+                  "value": 532.0952
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4064,
+                    "x2": 0.5612,
+                    "y1": 0.0375,
+                    "y2": 1.0188
+                  },
+                  "timeMicroseconds": 33300,
+                  "value": 549.9824
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.1826,
+                    "x2": 0.2521,
+                    "y1": 0.1329,
+                    "y2": 0.8739
+                  },
+                  "timeMicroseconds": 100000,
+                  "value": 557.1048
+                },
+                {
+                  "timeMicroseconds": 200000,
+                  "value": 562
+                }
+              ]
+            },
+            {
+              "cornerRadius": 0,
+              "fill": "#FF2D55",
+              "height": 58,
+              "kind": "rect",
+              "opacity": [
+                {
+                  "timeMicroseconds": 80000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 80000,
+                  "value": -1.2227
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4104,
+                    "x2": 0.7337,
+                    "y1": 0.5422,
+                    "y2": 0.8439
+                  },
+                  "timeMicroseconds": 113300,
+                  "value": -2.6206
+                },
+                {
+                  "timeMicroseconds": 280000,
+                  "value": 0
+                }
+              ],
+              "scale": [
+                {
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 0.5462
+                },
+                {
+                  "timeMicroseconds": 113300,
+                  "value": 1
+                }
+              ],
+              "width": 5,
+              "x": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.0268,
+                    "x2": 0.4616,
+                    "y1": 0.6758,
+                    "y2": 0.9309
+                  },
+                  "timeMicroseconds": 80000,
+                  "value": 66.8165
+                },
+                {
+                  "timeMicroseconds": 280000,
+                  "value": 64
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 80000,
+                  "value": 532.0952
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4064,
+                    "x2": 0.5612,
+                    "y1": 0.0375,
+                    "y2": 1.0188
+                  },
+                  "timeMicroseconds": 113300,
+                  "value": 549.9824
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.1826,
+                    "x2": 0.2521,
+                    "y1": 0.1329,
+                    "y2": 0.8739
+                  },
+                  "timeMicroseconds": 180000,
+                  "value": 557.1048
+                },
+                {
+                  "timeMicroseconds": 280000,
+                  "value": 562
+                }
+              ]
+            },
+            {
+              "fill": "#FFFFFF",
+              "fontSize": 36,
+              "kind": "text",
+              "opacity": [
+                {
+                  "timeMicroseconds": 160000,
+                  "value": 1
+                }
+              ],
+              "rotation": [
+                {
+                  "timeMicroseconds": 160000,
+                  "value": -1.2227
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4104,
+                    "x2": 0.7337,
+                    "y1": 0.5422,
+                    "y2": 0.8439
+                  },
+                  "timeMicroseconds": 193300,
+                  "value": -2.6206
+                },
+                {
+                  "timeMicroseconds": 360000,
+                  "value": 0
+                }
+              ],
+              "scale": [
+                {
+                  "easing": {
+                    "kind": "preset",
+                    "name": "strong"
+                  },
+                  "timeMicroseconds": 160000,
+                  "value": 0.5462
+                },
+                {
+                  "timeMicroseconds": 193300,
+                  "value": 1
+                }
+              ],
+              "text": "Proposed by an agent",
+              "x": [
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.0268,
+                    "x2": 0.4616,
+                    "y1": 0.6758,
+                    "y2": 0.9309
+                  },
+                  "timeMicroseconds": 160000,
+                  "value": 305.0668
+                },
+                {
+                  "timeMicroseconds": 360000,
+                  "value": 82
+                }
+              ],
+              "y": [
+                {
+                  "timeMicroseconds": 160000,
+                  "value": 554.4384
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.4064,
+                    "x2": 0.5612,
+                    "y1": 0.0375,
+                    "y2": 1.0188
+                  },
+                  "timeMicroseconds": 193300,
+                  "value": 565.5408
+                },
+                {
+                  "easing": {
+                    "kind": "cubicBezier",
+                    "x1": 0.1826,
+                    "x2": 0.2521,
+                    "y1": 0.1329,
+                    "y2": 0.8739
+                  },
+                  "timeMicroseconds": 260000,
+                  "value": 569.9616
+                },
+                {
+                  "timeMicroseconds": 360000,
+                  "value": 573
+                }
+              ]
+            }
+          ],
+          "timelineStart": {
+            "rateDenominator": 1,
+            "rateNumerator": 30,
+            "value": 30
+          }
+        },
+        "sequenceId": "000000b0-0000-4000-8000-000000000003",
+        "trackId": "000000b1-0000-4000-8000-000000000003",
+        "type": "AddGraphicsClip"
+      }
+    ],
+    "groupId": "000000b1-0000-4000-8000-000000000002",
+    "projectId": "000000b0-0000-4000-8000-000000000064"
+  },
+  "description": {
+    "items": [
+      {
+        "atUs": 0,
+        "durationUs": 900000,
+        "id": "title",
+        "kind": "card",
+        "role": "title",
+        "text": "Agent graphics"
+      },
+      {
+        "atUs": 1000000,
+        "durationUs": 900000,
+        "id": "lower-third",
+        "kind": "card",
+        "role": "lowerThird",
+        "text": "Proposed by an agent"
+      }
+    ],
+    "recipeId": "punchy-short-form",
+    "schemaVersion": 1
+  },
+  "items": [
+    {
+      "graphicsClipId": "000000b1-0000-4000-8000-000000000005",
+      "itemId": "title",
+      "label": "Title · Agent graphics"
+    },
+    {
+      "graphicsClipId": "000000b1-0000-4000-8000-000000000007",
+      "itemId": "lower-third",
+      "label": "Lower third · Proposed by an agent"
+    }
+  ],
+  "producer": {
+    "id": "fixture-agent",
+    "kind": "model",
+    "parameters": {
+      "recipeId": "punchy-short-form"
+    },
+    "version": "1"
+  },
+  "projectId": "000000b0-0000-4000-8000-000000000064",
+  "projectRevision": {
+    "committedAt": "2026-10-03T12:00:00.000Z",
+    "id": "000000a0-0000-4000-8000-000000000001",
+    "number": 1,
+    "operationId": "000000a1-0000-4000-8000-000000000001",
+    "parentId": "000000a0-0000-4000-8000-000000000000",
+    "stateHash": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+  },
+  "proposalId": "000000b1-0000-4000-8000-000000000001",
+  "proposalKind": "graphics",
+  "schemaVersion": 1,
+  "sequenceId": "000000b0-0000-4000-8000-000000000003",
+  "trackId": "000000b1-0000-4000-8000-000000000003"
+}
