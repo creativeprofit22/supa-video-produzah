@@ -142,7 +142,8 @@ describe("editorial checks", () => {
     [
       "same shot reused outside the window",
       { sequence: sequence([clip(10, 1, 0, 5), clip(11, 2, 5, 40), clip(12, 1, 45, 5)]) },
-      [],
+      // The 40 s gap shot is far past 7 s: an info pacing note, not a repeat.
+      ["shot_length_out_of_range:info"],
     ],
     [
       "clip of a removed asset",
@@ -304,7 +305,7 @@ describe("editorial checks", () => {
 
     const evaluation = await evaluateEditorial(withMotion);
 
-    expect(evaluation.evaluatorVersion).toBe("editorial-v2");
+    expect(evaluation.evaluatorVersion).toBe("editorial-v3");
     expect(evaluation.findings).toEqual([
       expect.objectContaining({
         kind: "motion_stutter",

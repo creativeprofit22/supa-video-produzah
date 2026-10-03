@@ -121,6 +121,14 @@ pub enum QcFindingKind {
     MotionStutter,
     MotionDrift,
     MotionCutJump,
+    /// Pacing (info): a cut further than the tolerance from its nearest music beat.
+    CutOffMusicBeat,
+    /// Pacing (info): on-beat cut fraction and shot-to-music-beat ratio summary.
+    MusicFit,
+    /// Pacing (info): a shot shorter than 1 s or longer than 7 s.
+    ShotLengthOutOfRange,
+    /// Pacing (info): four or more consecutive shots of equal length.
+    SteadyShotRun,
 }
 
 impl QcFindingKind {
@@ -144,6 +152,10 @@ impl QcFindingKind {
             Self::MotionStutter => "motion_stutter",
             Self::MotionDrift => "motion_drift",
             Self::MotionCutJump => "motion_cut_jump",
+            Self::CutOffMusicBeat => "cut_off_music_beat",
+            Self::MusicFit => "music_fit",
+            Self::ShotLengthOutOfRange => "shot_length_out_of_range",
+            Self::SteadyShotRun => "steady_shot_run",
         }
     }
 
@@ -158,6 +170,10 @@ impl QcFindingKind {
                 | Self::MotionStutter
                 | Self::MotionDrift
                 | Self::MotionCutJump
+                | Self::CutOffMusicBeat
+                | Self::MusicFit
+                | Self::ShotLengthOutOfRange
+                | Self::SteadyShotRun
         )
     }
 }
@@ -288,13 +304,19 @@ pub(crate) fn sort_findings(findings: &mut [QcFinding]) {
 
 /// Keep-order when more than `QC_MAX_FINDINGS` findings exist: blockers first,
 /// then other findings, then motion smoothness warnings (one graphics clip can
-/// emit dozens of those).
+/// emit dozens of those) and info pacing findings (one per off-beat cut).
 fn retention_rank(finding: &QcFinding) -> u8 {
     if finding.severity == QcSeverity::Blocker {
         0
     } else if matches!(
         finding.kind,
-        QcFindingKind::MotionStutter | QcFindingKind::MotionDrift | QcFindingKind::MotionCutJump
+        QcFindingKind::MotionStutter
+            | QcFindingKind::MotionDrift
+            | QcFindingKind::MotionCutJump
+            | QcFindingKind::CutOffMusicBeat
+            | QcFindingKind::MusicFit
+            | QcFindingKind::ShotLengthOutOfRange
+            | QcFindingKind::SteadyShotRun
     ) {
         2
     } else {
@@ -1351,6 +1373,65 @@ mod tests {
         }
     }
 
+    /// Pacing kinds mirror `QC_FINDING_KIND` in `@supa-video/contracts`; golden
+    /// ids are shared with `@supa-video/qc` qc.test.ts.
+    #[test]
+    fn pacing_finding_kinds_mirror_typescript() {
+        for (kind, name, golden) in [
+            (
+                QcFindingKind::CutOffMusicBeat,
+                "cut_off_music_beat",
+                "487b3af36c3eb142043db5da86e7dbe8cfaf8a4aa7a932fc242c6a94c252fcc8",
+            ),
+            (
+                QcFindingKind::MusicFit,
+                "music_fit",
+                "986268e8dcc1b937c5b4d4cc63bc69374f7257e216ba9a23471163d844c1a826",
+            ),
+            (
+                QcFindingKind::ShotLengthOutOfRange,
+                "shot_length_out_of_range",
+                "9e777915472934350754a1fd96b7ddd25a84fc17ac02c88cd5d3154f8ed6ffcf",
+            ),
+            (
+                QcFindingKind::SteadyShotRun,
+                "steady_shot_run",
+                "9a6091d4b674039c7ea1f16c6332c6e95ac7eda455da2159c9b9b23a68d3f552",
+            ),
+        ] {
+            assert_eq!(kind.as_str(), name);
+            assert_eq!(serde_json::to_value(kind).unwrap(), json!(name));
+            assert!(
+                kind.is_editorial(),
+                "{name} must come from the editorial evaluation"
+            );
+            let payload = finding_id_payload(
+                kind,
+                QcSource::Editorial,
+                "clip:0",
+                QcRange {
+                    start_us: 1_000_000,
+                    end_us: 2_000_000,
+                },
+                STATE,
+            );
+            assert_eq!(hex_sha256(payload.as_bytes()), golden, "{name}");
+            let finding = QcFinding::new(
+                kind,
+                QcSeverity::Info,
+                QcSource::Editorial,
+                "clip:0",
+                QcRange {
+                    start_us: 1_000_000,
+                    end_us: 2_000_000,
+                },
+                "pacing".to_owned(),
+                STATE,
+            );
+            assert_eq!(retention_rank(&finding), 2, "{name}");
+        }
+    }
+
     #[test]
     fn editorial_evaluation_accepts_motion_kinds_only_from_editorial() {
         let revision_id = "00000000-0000-4000-8000-0000000000aa";
@@ -1377,7 +1458,7 @@ mod tests {
             })
             .collect();
             json!({
-                "evaluatorVersion": "editorial-v2",
+                "evaluatorVersion": "editorial-v3",
                 "revisionId": revision_id,
                 "revisionStateHash": STATE,
                 "findings": findings,

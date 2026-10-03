@@ -3148,7 +3148,7 @@ describe("canonical project controller", () => {
     // The editorial evaluation is bound to the exact revision being exported.
     const calls = startVideoRender.mock.calls as unknown as [RenderPlan, boolean, unknown][];
     expect(calls[0]?.[2]).toMatchObject({
-      evaluatorVersion: "editorial-v2",
+      evaluatorVersion: "editorial-v3",
       revisionId: opened.revision.id,
       revisionStateHash: opened.revision.stateHash,
     });

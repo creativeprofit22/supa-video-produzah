@@ -2,6 +2,7 @@ export * from "./editorial.js";
 export * from "./finding.js";
 export * from "./manifest.js";
 export * from "./motion.js";
+export * from "./pacing.js";
 export * from "./policy.js";
 export * from "./result.js";
 export * from "./review-decision.js";

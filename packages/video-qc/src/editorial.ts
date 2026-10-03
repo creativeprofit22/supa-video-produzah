@@ -24,9 +24,10 @@ import {
 import { canonicalJson, normalizeTokens, sha256Hex, type NarrativeBeat } from "@supa-video/produce";
 import { createFinding, sortFindings } from "./finding.js";
 import { motionFindings } from "./motion.js";
+import { pacingFindings } from "./pacing.js";
 
-/** v2 adds graphics motion findings (motion.ts). */
-export const EDITORIAL_EVALUATOR_VERSION = "editorial-v2";
+/** v2 adds graphics motion findings (motion.ts); v3 adds pacing findings (pacing.ts). */
+export const EDITORIAL_EVALUATOR_VERSION = "editorial-v3";
 export const EDITORIAL_MAX_FINDINGS = 512;
 
 export const editorialEvaluationSchema = z.strictObject({
@@ -58,6 +59,13 @@ export interface EditorialInput {
   readonly beats: readonly NarrativeBeat[];
   /** Extra searchable words per asset id (asset index / transcript tokens). */
   readonly assetTokens?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Sorted timeline-microsecond music beats of the sequence's music tracks;
+   * omitted or [] when none were detected. Never narrative beats.
+   */
+  readonly musicBeatsUs?: readonly number[];
+  /** The music beats came from the in-app tempo fallback, not Beat This!. */
+  readonly musicBeatsFromTempoFallback?: boolean;
   readonly config?: EditorialConfig;
 }
 
@@ -271,18 +279,39 @@ export async function evaluateEditorial(input: EditorialInput): Promise<Editoria
     0,
     EDITORIAL_MAX_FINDINGS,
   );
-  // Motion warnings only fill the room the other kinds leave, so they never displace them.
+  // Motion warnings only fill the room the other kinds leave, so they never
+  // displace them; info-only pacing findings fill what is left after that.
   const known = new Set(base.map((finding) => finding.findingId));
   const motion = sortFindings(
     await toFindings(motionFindings(input.sequence), input.revisionStateHash),
   )
     .filter((finding) => !known.has(finding.findingId))
     .slice(0, EDITORIAL_MAX_FINDINGS - base.length);
+  for (const finding of motion) known.add(finding.findingId);
+  const pacingDrafts = pacingFindings({
+    sequence: input.sequence,
+    musicBeatsUs: input.musicBeatsUs ?? [],
+    musicBeatsFromTempoFallback: input.musicBeatsFromTempoFallback === true,
+  });
+  // The music fit summary goes first so a long list of off-beat cuts cannot crowd it out.
+  const summaries = await toFindings(
+    pacingDrafts.filter((draft) => draft.kind === "music_fit"),
+    input.revisionStateHash,
+  );
+  const details = sortFindings(
+    await toFindings(
+      pacingDrafts.filter((draft) => draft.kind !== "music_fit"),
+      input.revisionStateHash,
+    ),
+  );
+  const pacing = [...summaries, ...details]
+    .filter((finding) => !known.has(finding.findingId))
+    .slice(0, EDITORIAL_MAX_FINDINGS - base.length - motion.length);
   return editorialEvaluationSchema.parse({
     evaluatorVersion: EDITORIAL_EVALUATOR_VERSION,
     revisionId: input.revisionId,
     revisionStateHash: input.revisionStateHash,
-    findings: sortFindings([...base, ...motion]),
+    findings: sortFindings([...base, ...motion, ...pacing]),
   });
 }
 

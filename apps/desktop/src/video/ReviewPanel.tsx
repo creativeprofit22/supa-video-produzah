@@ -22,6 +22,10 @@ const kindLabels: Readonly<Record<QcFinding["kind"], string>> = {
   motion_stutter: "Stuttering motion",
   motion_drift: "Slow drift",
   motion_cut_jump: "Motion jumps across a cut",
+  cut_off_music_beat: "Cut off the music beat",
+  music_fit: "Music fit",
+  shot_length_out_of_range: "Shot length outside 1–7 s",
+  steady_shot_run: "Steady run of equal shots",
 };
 
 const severityLabels: Readonly<Record<QcFinding["severity"], string>> = {
