@@ -294,6 +294,10 @@ function createController(overrides: Partial<WorkspaceController> = {}): Workspa
     exportVideo: vi.fn(),
     confirmOverwrite: vi.fn(),
     cancelRender: vi.fn(),
+    musicBeatRuntimeStatus: null,
+    musicBeatRuntimeError: null,
+    chooseMusicBeatRuntimeFolder: vi.fn(),
+    refreshMusicBeatRuntimeStatus: vi.fn(),
     ...overrides,
   } as unknown as WorkspaceController;
 }

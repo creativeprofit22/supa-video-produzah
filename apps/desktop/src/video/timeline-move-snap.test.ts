@@ -208,4 +208,50 @@ describe("timeline move snap resolution", () => {
       }),
     ).toEqual({ startFrame: 11, guide: null });
   });
+
+  it("snaps a moving clip edge to a music beat", () => {
+    const musicContext = createTimelineMoveSnapContext(sequence([movingClip, otherClip]), null, [
+      { frame: 20, clipId: "music-clip" },
+      { frame: 60, clipId: "music-clip" },
+    ]);
+    expect(
+      resolveTimelineMoveSnap(musicContext, {
+        movingClipId: movingClip.id,
+        destinationTrackId: "video-track",
+        proposedStartFrame: 18,
+        durationFrames: 4,
+        ...snapGeometry,
+      }),
+    ).toEqual({
+      startFrame: 20,
+      guide: { frame: 20, targetKind: "music-beat", movingEdge: "start" },
+    });
+    expect(
+      resolveTimelineMoveSnap(musicContext, {
+        movingClipId: movingClip.id,
+        destinationTrackId: "video-track",
+        proposedStartFrame: 57,
+        durationFrames: 4,
+        ...snapGeometry,
+      }),
+    ).toEqual({
+      startFrame: 56,
+      guide: { frame: 60, targetKind: "music-beat", movingEdge: "end" },
+    });
+  });
+
+  it("does not snap a music clip to its own music beats", () => {
+    const musicContext = createTimelineMoveSnapContext(sequence([movingClip]), null, [
+      { frame: 13, clipId: movingClip.id },
+    ]);
+    expect(
+      resolveTimelineMoveSnap(musicContext, {
+        movingClipId: movingClip.id,
+        destinationTrackId: "video-track",
+        proposedStartFrame: 12,
+        durationFrames: 4,
+        ...snapGeometry,
+      }),
+    ).toEqual({ startFrame: 12, guide: null });
+  });
 });

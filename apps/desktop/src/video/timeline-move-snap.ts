@@ -3,6 +3,7 @@ import {
   createRationalTime,
   createTimelineSnapIndex,
   isMediaTrack,
+  type MusicBeatTimelineTarget,
   type ProjectClip,
   rateOf,
   type RationalRate,
@@ -14,7 +15,7 @@ import {
   type VideoSequenceV2,
 } from "@supa-video/contracts";
 
-export type TimelineMoveSnapTargetKind = "clip-start" | "clip-end" | "playhead";
+export type TimelineMoveSnapTargetKind = "clip-start" | "clip-end" | "playhead" | "music-beat";
 export type TimelineMovingEdge = "start" | "end";
 
 export interface TimelineMoveSnapTarget extends TimelineSnapTarget {
@@ -87,10 +88,15 @@ export function timelineFrameForClipSourceFrame(
   }
 }
 
-/** Builds targets from the full canonical sequence, independent of viewport materialization. */
+/**
+ * Builds targets from the full canonical sequence, independent of viewport
+ * materialization. Music beat targets (from `musicBeatTimelineTargets`) carry
+ * their music clip id, so a dragged music clip never snaps to its own beats.
+ */
 export function createTimelineMoveSnapContext(
   sequence: VideoSequenceV2,
   timelinePlayheadFrame: number | null,
+  musicBeatTargets: readonly MusicBeatTimelineTarget[] = [],
 ): TimelineMoveSnapContext {
   const clipIntervals: TimelineMoveClipInterval[] = [];
   const targets: TimelineMoveSnapTarget[] =
@@ -103,6 +109,14 @@ export function createTimelineMoveSnapContext(
             time: createRationalTime(timelinePlayheadFrame, sequence.rate),
           },
         ];
+  for (const musicBeat of musicBeatTargets) {
+    targets.push({
+      kind: "music-beat",
+      clipId: musicBeat.clipId,
+      trackId: null,
+      time: createRationalTime(musicBeat.frame, sequence.rate),
+    });
+  }
   for (const track of sequence.tracks) {
     if (!isMediaTrack(track)) continue;
     for (const clip of track.clips) {

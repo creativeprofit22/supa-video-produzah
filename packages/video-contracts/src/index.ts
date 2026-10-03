@@ -5,6 +5,7 @@ export * from "./commands.js";
 export * from "./easing.js";
 export * from "./errors.js";
 export * from "./migrations.js";
+export * from "./music-beat-timeline.js";
 export * from "./project.js";
 export * from "./project-v2.js";
 export * from "./project-commands-v2.js";

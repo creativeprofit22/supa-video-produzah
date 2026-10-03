@@ -52,6 +52,7 @@ import {
   applyMotionPreset,
   type GraphicsClipRef,
   type GraphicsPresetRequest,
+  snapGraphicsKeyframesToMusicBeats,
 } from "@supa-video/project";
 import {
   compileActiveSequenceRenderPlan,
@@ -64,7 +65,9 @@ import {
   selectAffectedCaptionReferences,
 } from "./managed-transcript-resolution";
 import type { ProposalEditOutcome } from "./proposal-ipc";
+import { tauriMusicBeatBackend, type MusicBeatBackend } from "./music-beat-ipc";
 import { tauriRightsBackend } from "./rights-ipc";
+import { musicBeatQcInputForProjection, useMusicBeats } from "./use-music-beats";
 import { editorialEvaluationFor } from "./video/editorial-evaluation";
 import { runRightsPreflight, type RightsPreflightBackend } from "./video/export-rights";
 import type { EditorialEvaluation } from "@supa-video/qc";
@@ -111,7 +114,8 @@ export type TimelineEditOperation =
   | "track-lock"
   | "track-mute"
   | "track-visibility"
-  | "graphics-preset";
+  | "graphics-preset"
+  | "graphics-music-beat-snap";
 export interface SplitTimelineClipInput {
   readonly clipId: string;
   readonly sourceFrame: number;
@@ -461,9 +465,22 @@ function eventMatchesIdentity(event: VideoRenderNotification, identity: RenderId
   );
 }
 
+/** Music beats this close to a graphics keyframe pull it on: 1 frame, at least 40 ms. */
+function musicBeatSnapToleranceUs(projection: ProjectProjection): number {
+  const sequence = projection.state.sequences.find(
+    ({ id }) => id === projection.state.activeSequenceId,
+  );
+  const frameUs =
+    sequence === undefined
+      ? 0
+      : Math.round((sequence.rate.denominator * 1_000_000) / sequence.rate.numerator);
+  return Math.max(frameUs, 40_000);
+}
+
 export function useVideoProject(
   backend: VideoBackend = tauriVideoBackend,
   rightsBackend: RightsPreflightBackend | null = tauriRightsBackend,
+  musicBeatBackend: MusicBeatBackend = tauriMusicBeatBackend,
 ) {
   const [state, setState] = useState(initialControllerState);
   const [exportIntendedUse, setExportIntendedUseState] = useState<UsePolicyProfile | null>(null);
@@ -478,6 +495,9 @@ export function useVideoProject(
   const [trimDraft, setTrimDraft] = useState<TrimDraft | null>(null);
   const [editOperation, setEditOperation] = useState<EditOperationState>({ phase: "idle" });
   const stateRef = useRef(state);
+  const musicBeats = useMusicBeats(state.projection, backend, musicBeatBackend);
+  const musicBeatAnalysesRef = useRef(musicBeats.musicBeatAnalyses);
+  musicBeatAnalysesRef.current = musicBeats.musicBeatAnalyses;
   const renderRef = useRef(render);
   const renderListenerRef = useRef<(() => void) | null>(null);
   const projectOperationRef = useRef(0);
@@ -2125,6 +2145,35 @@ export function useVideoProject(
     },
     [executeTimelineCommandGroup],
   );
+  /**
+   * Snaps every keyframe of a graphics clip to the nearest music beat (one
+   * frame, at least 40 ms) as one `SetGraphicsClipLayers` command, so a
+   * single undo restores the original keyframe times.
+   */
+  const snapGraphicsClipToMusicBeats = useCallback(
+    async (
+      clip: GraphicsClipRef,
+    ): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
+      const base = stateRef.current.projection;
+      if (base === null || editOperationPendingRef.current)
+        return { ok: false, message: "Another edit is in progress. Try again when it finishes." };
+      if (musicBeats.musicBeatTimelineUs.length === 0)
+        return { ok: false, message: "Detect music beats on a music track first." };
+      const built = snapGraphicsKeyframesToMusicBeats(
+        base.state,
+        clip,
+        musicBeats.musicBeatTimelineUs,
+        musicBeatSnapToleranceUs(base),
+        newId(),
+      );
+      if (!built.ok) return { ok: false, message: built.error.message };
+      const applied = await executeTimelineCommandGroup(base, "graphics-music-beat-snap", [
+        built.command,
+      ]);
+      return applied ? { ok: true } : { ok: false, message: "The keyframes could not be snapped." };
+    },
+    [executeTimelineCommandGroup, musicBeats.musicBeatTimelineUs],
+  );
   const applyTrim = useCallback(async () => {
     const base = stateRef.current.projection;
     const selection = activeClip(base);
@@ -2243,7 +2292,11 @@ export function useVideoProject(
         outputPath,
         ...(intendedUse === null ? {} : { intendedUse }),
       });
-      const editorial = await editorialEvaluationFor(active);
+      const editorial = await editorialEvaluationFor(
+        active,
+        [],
+        musicBeatQcInputForProjection(active, musicBeatAnalysesRef.current),
+      );
       if (operation !== destinationOperationRef.current) return;
       await startRenderPlan(plan, false, editorial);
     } catch (error) {
@@ -2370,6 +2423,16 @@ export function useVideoProject(
     setTimelineTrackMuted,
     setTimelineTrackHidden,
     applyGraphicsPreset,
+    snapGraphicsClipToMusicBeats,
+    musicBeatAnalyses: musicBeats.musicBeatAnalyses,
+    musicBeatDetection: musicBeats.musicBeatDetection,
+    musicBeatTargets: musicBeats.musicBeatTargets,
+    detectMusicBeats: musicBeats.detectMusicBeats,
+    cancelMusicBeatDetection: musicBeats.cancelMusicBeatDetection,
+    musicBeatRuntimeStatus: musicBeats.musicBeatRuntimeStatus,
+    musicBeatRuntimeError: musicBeats.musicBeatRuntimeError,
+    refreshMusicBeatRuntimeStatus: musicBeats.refreshMusicBeatRuntimeStatus,
+    chooseMusicBeatRuntimeFolder: musicBeats.chooseMusicBeatRuntimeFolder,
     undoEdit,
     redoEdit,
     convertCachePath: backend.convertFileSrc,

@@ -53,7 +53,7 @@ import { createPlaybackClock } from "./playback-clock";
 import { timelineFrameForClipSourceFrame } from "./timeline-move-snap";
 import { ProjectInspector } from "./ProjectInspector";
 import { TrimInspector } from "./TrimInspector";
-import { AudioPanel, loudnessReportFrom } from "./AudioPanel";
+import { AudioPanel, loudnessReportFrom, type AudioPanelMusicBeats } from "./AudioPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
 import { TranscriptPanel, type TranscriptTarget } from "./TranscriptPanel";
 import { tauriTranscriptionBackend, type TranscriptionBackend } from "../asr-ipc";
@@ -296,7 +296,33 @@ export function VideoWorkspace({
     inputPathsByAssetId: renderInputPaths(controller.projection),
     intendedUse: controller.exportIntendedUse,
     newId: () => crypto.randomUUID(),
+    musicBeatAnalyses: controller.musicBeatAnalyses,
   });
+  const assets = controller.projection?.state.assets;
+  const musicBeatPanel = useMemo<AudioPanelMusicBeats>(
+    () => ({
+      analyses: controller.musicBeatAnalyses,
+      detection: controller.musicBeatDetection,
+      assetNames: new Map((assets ?? []).map((asset) => [asset.id, asset.displayName])),
+      onDetect: controller.detectMusicBeats,
+      onCancel: controller.cancelMusicBeatDetection,
+      runtimeStatus: controller.musicBeatRuntimeStatus,
+      runtimeError: controller.musicBeatRuntimeError,
+      onChooseRuntimeFolder: controller.chooseMusicBeatRuntimeFolder,
+      onRefreshRuntimeStatus: controller.refreshMusicBeatRuntimeStatus,
+    }),
+    [
+      assets,
+      controller.cancelMusicBeatDetection,
+      controller.chooseMusicBeatRuntimeFolder,
+      controller.detectMusicBeats,
+      controller.musicBeatAnalyses,
+      controller.musicBeatDetection,
+      controller.musicBeatRuntimeError,
+      controller.musicBeatRuntimeStatus,
+      controller.refreshMusicBeatRuntimeStatus,
+    ],
+  );
   const [transcriptArtifact, setTranscriptArtifact] = useState<TranscriptArtifactV1 | null>(null);
   const [proposalRanges, setProposalRanges] = useState<readonly ProposalTimelineRange[]>([]);
   const [agentProposalVersion, setAgentProposalVersion] = useState(0);
@@ -1148,6 +1174,7 @@ export function VideoWorkspace({
               onMoveClip={moveTimelineClip}
               onTrimClip={trimTimelineClip}
               proposalRanges={proposalRanges}
+              musicBeatTargets={controller.musicBeatTargets}
             />
           ) : null}
           {sequence !== null && clip !== undefined && draft !== null ? (
@@ -1453,6 +1480,7 @@ export function VideoWorkspace({
             }
             onSetRole={controller.setTrackAudioRole}
             onSetTarget={controller.setSequenceLoudnessTarget}
+            musicBeats={musicBeatPanel}
           />
           <CaptionsPanel
             projection={controller.projection}

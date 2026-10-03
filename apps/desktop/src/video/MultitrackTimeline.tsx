@@ -3,6 +3,7 @@ import {
   createTimelineViewport,
   frameToPixel,
   isMediaTrack,
+  type MusicBeatTimelineTarget,
   pixelToFrame,
   type ProjectClip,
   type ProjectProjection,
@@ -72,9 +73,12 @@ interface MultitrackTimelineProps {
   ) => void;
   /** Suggested cuts under review, drawn as bands. Listed accessibly in the review panel. */
   readonly proposalRanges?: readonly ProposalTimelineRange[];
+  /** Music beats of music clips, as move snap targets (`musicBeatTimelineTargets`). */
+  readonly musicBeatTargets?: readonly MusicBeatTimelineTarget[];
 }
 
 const noProposalRanges: readonly ProposalTimelineRange[] = [];
+const noMusicBeatTargets: readonly MusicBeatTimelineTarget[] = [];
 
 interface CanonicalTimelineClip {
   readonly clip: ProjectClip;
@@ -212,6 +216,7 @@ export function MultitrackTimeline({
   onMoveClip,
   onTrimClip,
   proposalRanges = noProposalRanges,
+  musicBeatTargets = noMusicBeatTargets,
 }: MultitrackTimelineProps) {
   const panelRef = useRef<HTMLElement | null>(null);
   const scrollRegionRef = useRef<HTMLDivElement | null>(null);
@@ -355,7 +360,7 @@ export function MultitrackTimeline({
     const proposedStartFrame = selectedTimelineClip.startFrame + frameDelta;
     if (proposedStartFrame < 0) return;
     const resolution = resolveTimelineMoveSnap(
-      createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame()),
+      createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame(), musicBeatTargets),
       {
         movingClipId: selectedClipId,
         destinationTrackId: selectedCanonicalClip.trackId,
@@ -462,7 +467,7 @@ export function MultitrackTimeline({
       draftSourceOutFrame: canonical.clip.sourceOut.value,
       moveSnapContext:
         mode === "move" && sequence !== undefined
-          ? createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame())
+          ? createTimelineMoveSnapContext(sequence, liveTimelinePlayheadFrame(), musicBeatTargets)
           : null,
       snapGuide: null,
     });

@@ -6,6 +6,7 @@ import {
   type ProjectProjection,
 } from "@supa-video/contracts";
 
+import { musicBeatQcInputForProjection } from "../use-music-beats";
 import { editorialEvaluationFor } from "./editorial-evaluation";
 import { compileDeliveryPlan, deliveryFileName } from "./delivery-plans";
 import { explainer, projectionFor } from "./produce-panel-fixtures";
@@ -86,8 +87,158 @@ describe("delivery plans", () => {
     expect(evaluation).toMatchObject({
       revisionId: projection.revision.id,
       revisionStateHash: projection.revision.stateHash,
-      evaluatorVersion: "editorial-v2",
+      evaluatorVersion: "editorial-v3",
     });
     for (const finding of evaluation.findings) expect(finding.source).toBe("editorial");
+  });
+
+  it("feeds music beats of music tracks into the export evaluation", async () => {
+    const base = withOneClip(projectionFor(explainer));
+    const sequence = base.state.sequences.find(({ id }) => id === base.state.activeSequenceId);
+    const video = sequence?.tracks[0];
+    const asset = base.state.assets[0];
+    if (sequence === undefined || video?.kind !== "video" || asset === undefined)
+      throw new Error("fixture needs a video track");
+    const musicClip = video.clips[0];
+    if (musicClip === undefined) throw new Error("fixture needs a clip");
+    const projection: ProjectProjection = {
+      ...base,
+      state: {
+        ...base.state,
+        sequences: base.state.sequences.map((item) =>
+          item.id !== sequence.id
+            ? item
+            : {
+                ...item,
+                tracks: [
+                  ...item.tracks,
+                  {
+                    id: "0f000000-0000-4000-8000-0000000000c1",
+                    name: "Music",
+                    kind: "audio",
+                    audioRole: "music",
+                    clips: [{ ...musicClip, id: "0f000000-0000-4000-8000-0000000000c2" }],
+                  },
+                ],
+              },
+        ),
+      },
+    };
+    const analyses = new Map([
+      [
+        asset.id,
+        {
+          schemaVersion: 1 as const,
+          detector: {
+            kind: "tempo_fallback" as const,
+            version: "tempo-fallback-v1",
+            checkpointSha256: null,
+          },
+          durationUs: 2_000_000,
+          tempoBpm: 120,
+          beatsUs: [0, 500_000, 1_000_000],
+          downbeatsUs: [0],
+          onsetsUs: [],
+        },
+      ],
+    ]);
+    const musicBeats = musicBeatQcInputForProjection(projection, analyses);
+    expect(musicBeats.musicBeatsFromTempoFallback).toBe(true);
+    expect(musicBeats.musicBeatsUs.length).toBeGreaterThan(0);
+
+    const evaluation = await editorialEvaluationFor(projection, [], musicBeats);
+    const fit = evaluation.findings.find((finding) => finding.kind === "music_fit");
+    expect(fit?.severity).toBe("info");
+    expect(fit?.message).toContain("in-app tempo fallback");
+    const without = await editorialEvaluationFor(projection);
+    expect(without.findings.some((finding) => finding.kind === "music_fit")).toBe(false);
+  });
+
+  it("ignores tempo fallback analyses of muted music tracks", async () => {
+    const base = withOneClip(projectionFor(explainer));
+    const sequence = base.state.sequences.find(({ id }) => id === base.state.activeSequenceId);
+    const video = sequence?.tracks[0];
+    const asset = base.state.assets[0];
+    if (sequence === undefined || video?.kind !== "video" || asset === undefined)
+      throw new Error("fixture needs a video track");
+    const musicClip = video.clips[0];
+    if (musicClip === undefined) throw new Error("fixture needs a clip");
+    const mutedAssetId = "0f000000-0000-4000-8000-0000000000d0";
+    const projection: ProjectProjection = {
+      ...base,
+      state: {
+        ...base.state,
+        sequences: base.state.sequences.map((item) =>
+          item.id !== sequence.id
+            ? item
+            : {
+                ...item,
+                tracks: [
+                  ...item.tracks,
+                  {
+                    id: "0f000000-0000-4000-8000-0000000000d1",
+                    name: "Muted music",
+                    kind: "audio",
+                    audioRole: "music",
+                    muted: true,
+                    clips: [
+                      {
+                        ...musicClip,
+                        id: "0f000000-0000-4000-8000-0000000000d2",
+                        source: { kind: "asset", assetId: mutedAssetId },
+                      },
+                    ],
+                  },
+                  {
+                    id: "0f000000-0000-4000-8000-0000000000d3",
+                    name: "Music",
+                    kind: "audio",
+                    audioRole: "music",
+                    clips: [{ ...musicClip, id: "0f000000-0000-4000-8000-0000000000d4" }],
+                  },
+                ],
+              },
+        ),
+      },
+    };
+    const analysis = {
+      schemaVersion: 1 as const,
+      durationUs: 2_000_000,
+      tempoBpm: 120,
+      beatsUs: [0, 500_000, 1_000_000],
+      downbeatsUs: [0],
+      onsetsUs: [],
+    };
+    const analyses = new Map([
+      [
+        mutedAssetId,
+        {
+          ...analysis,
+          detector: {
+            kind: "tempo_fallback" as const,
+            version: "tempo-fallback-v1",
+            checkpointSha256: null,
+          },
+        },
+      ],
+      [
+        asset.id,
+        {
+          ...analysis,
+          detector: {
+            kind: "beat_this" as const,
+            version: "1.0.0",
+            checkpointSha256: "a".repeat(64),
+          },
+        },
+      ],
+    ]);
+    const musicBeats = musicBeatQcInputForProjection(projection, analyses);
+    expect(musicBeats.musicBeatsUs.length).toBeGreaterThan(0);
+    expect(musicBeats.musicBeatsFromTempoFallback).toBe(false);
+
+    const evaluation = await editorialEvaluationFor(projection, [], musicBeats);
+    for (const finding of evaluation.findings)
+      expect(finding.message).not.toContain("in-app tempo fallback");
   });
 });

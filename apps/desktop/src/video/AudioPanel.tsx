@@ -7,8 +7,33 @@ import {
   VideoDomainError,
   type VideoSequenceV2,
 } from "@supa-video/contracts";
-import { AudioLines } from "lucide-react";
+import type {
+  MusicBeatAnalysisV1,
+  MusicBeatDetectorKind,
+  MusicBeatRuntimeProblem,
+  MusicBeatRuntimeStatus,
+} from "@supa-video/media";
+import { AudioLines, FolderOpen } from "lucide-react";
 import { useId, useState } from "react";
+
+import type { MusicBeatDetectionStatus } from "../use-music-beats";
+
+/** Music beat detection for assets on music-role tracks. */
+export interface AudioPanelMusicBeats {
+  readonly analyses: ReadonlyMap<string, MusicBeatAnalysisV1>;
+  readonly detection: ReadonlyMap<string, MusicBeatDetectionStatus>;
+  /** Display names by asset id. */
+  readonly assetNames: ReadonlyMap<string, string>;
+  readonly onDetect: (assetId: string) => Promise<boolean>;
+  readonly onCancel: (assetId: string) => Promise<void>;
+  /** The Beat This! runtime; `null` while it is being checked. */
+  readonly runtimeStatus: MusicBeatRuntimeStatus | null;
+  /** Why the runtime could not be checked or saved, if it failed. */
+  readonly runtimeError: string | null;
+  /** Opens the native folder picker; a cancelled pick keeps the current status. */
+  readonly onChooseRuntimeFolder: () => Promise<void>;
+  readonly onRefreshRuntimeStatus: () => Promise<void>;
+}
 
 interface AudioPanelProps {
   readonly sequence: VideoSequenceV2 | null;
@@ -18,6 +43,187 @@ interface AudioPanelProps {
   readonly onSetRole: (trackId: string, role: TrackAudioRole | null) => Promise<boolean>;
   /** `null` turns normalization, ducking and dialogue cleanup off. */
   readonly onSetTarget: (target: SequenceLoudnessTarget | null) => Promise<boolean>;
+  readonly musicBeats?: AudioPanelMusicBeats;
+}
+
+const detectorLabels: Record<MusicBeatDetectorKind, string> = {
+  beat_this: "Beat This!",
+  tempo_fallback: "in-app tempo fallback",
+};
+
+/** Asset ids of clips on music-role tracks, in track then clip order. */
+function musicAssetIds(sequence: VideoSequenceV2): string[] {
+  const ids: string[] = [];
+  for (const track of sequence.tracks) {
+    if (!isMediaTrack(track) || track.audioRole !== "music") continue;
+    for (const clip of track.clips)
+      if (clip.source.kind === "asset" && !ids.includes(clip.source.assetId))
+        ids.push(clip.source.assetId);
+  }
+  return ids;
+}
+
+function musicBeatSummary(
+  status: MusicBeatDetectionStatus | undefined,
+  analysis: MusicBeatAnalysisV1 | undefined,
+): string {
+  if (status?.phase === "running") return "Detecting music beats…";
+  if (status?.phase === "cancelled") return "Detection cancelled.";
+  if (status?.phase === "failed") return status.message;
+  if (analysis === undefined) return "No music beats yet.";
+  const tempo = analysis.tempoBpm === null ? "" : ` at ${analysis.tempoBpm.toFixed(0)} BPM`;
+  return `${String(analysis.beatsUs.length)} music beats${tempo} (${detectorLabels[analysis.detector.kind]}).`;
+}
+
+function runtimeProblemMessage(
+  problem: MusicBeatRuntimeProblem,
+  status: MusicBeatRuntimeStatus,
+): string {
+  switch (problem.reason) {
+    case "folderMissing":
+      return "The Beat This! folder could not be found. Choose it again.";
+    case "linkedPath":
+      return "The Beat This! folder or its checkpoint is a link or shortcut. Choose the real folder.";
+    case "pythonMissing":
+      return "The folder has no Python environment. Run the setup script, then choose the folder again.";
+    case "checkpointMissing":
+      return "The folder has no final0.ckpt checkpoint.";
+    case "checkpointMismatch":
+      return "The checkpoint does not match the pinned final0 file.";
+    case "packageMismatch":
+      return `The installed Beat This! package is not the pinned version ${status.beatThisVersion}.`;
+    case "probeFailed":
+      return "Python could not load Beat This! from that folder.";
+  }
+}
+
+function runtimeDetail(status: MusicBeatRuntimeStatus): string | null {
+  switch (status.runtime.state) {
+    case "ready":
+      return null;
+    case "notConfigured":
+      return "No Beat This! folder chosen yet.";
+    case "unavailable":
+      return runtimeProblemMessage(status.runtime.problem, status);
+  }
+}
+
+/** Which detector the next detection runs, and the folder picker that changes it. */
+function MusicBeatRuntimeRow({
+  musicBeats,
+  disabled,
+}: {
+  readonly musicBeats: AudioPanelMusicBeats;
+  readonly disabled: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+  const status = musicBeats.runtimeStatus;
+  const run = async (action: () => Promise<void>) => {
+    setPending(true);
+    try {
+      await action();
+    } finally {
+      setPending(false);
+    }
+  };
+  const detector =
+    status === null
+      ? "Checking the Beat This! runtime…"
+      : status.runtime.state === "ready"
+        ? "Beat This! ready"
+        : "In-app tempo fallback";
+  const detail = status === null ? null : runtimeDetail(status);
+  return (
+    <>
+      <div className="audio-row">
+        <span>
+          <span role="status">{detector}</span>
+          {detail === null ? null : <span className="muted-copy"> {detail}</span>}
+        </span>
+        {status !== null && status.runtime.state === "unavailable" ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={pending || disabled}
+            onClick={() => void run(musicBeats.onRefreshRuntimeStatus)}
+          >
+            Check again
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={pending || disabled}
+          onClick={() => void run(musicBeats.onChooseRuntimeFolder)}
+        >
+          <FolderOpen size={16} aria-hidden />
+          Choose Beat This! folder…
+        </button>
+      </div>
+      {musicBeats.runtimeError === null ? null : (
+        <p className="inline-error" role="alert">
+          {musicBeats.runtimeError}
+        </p>
+      )}
+    </>
+  );
+}
+
+function MusicBeatRows({
+  sequence,
+  musicBeats,
+  disabled,
+}: {
+  readonly sequence: VideoSequenceV2;
+  readonly musicBeats: AudioPanelMusicBeats;
+  readonly disabled: boolean;
+}) {
+  const assetIds = musicAssetIds(sequence);
+  return (
+    <fieldset className="audio-fieldset">
+      <legend>Music beats</legend>
+      <MusicBeatRuntimeRow musicBeats={musicBeats} disabled={disabled} />
+      {assetIds.length === 0 ? (
+        <p className="muted-copy">Mark a track as Music to detect its music beats.</p>
+      ) : (
+        assetIds.map((assetId) => {
+          const name = musicBeats.assetNames.get(assetId) ?? "Music";
+          const status = musicBeats.detection.get(assetId);
+          const running = status?.phase === "running";
+          return (
+            <div key={assetId} className="audio-row">
+              <span>
+                {name}
+                <span className="muted-copy" role="status">
+                  {" "}
+                  {musicBeatSummary(status, musicBeats.analyses.get(assetId))}
+                </span>
+              </span>
+              {running ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void musicBeats.onCancel(assetId)}
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={disabled}
+                  aria-label={`Detect music beats in ${name}`}
+                  onClick={() => void musicBeats.onDetect(assetId)}
+                >
+                  Detect music beats
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
+    </fieldset>
+  );
 }
 
 const roleLabels: Record<TrackAudioRole, string> = {
@@ -72,6 +278,7 @@ export function AudioPanel({
   lastReport,
   onSetRole,
   onSetTarget,
+  musicBeats,
 }: AudioPanelProps) {
   const headingId = useId();
   const [pending, setPending] = useState(false);
@@ -158,6 +365,9 @@ export function AudioPanel({
               ))
             )}
           </fieldset>
+          {musicBeats === undefined ? null : (
+            <MusicBeatRows sequence={sequence} musicBeats={musicBeats} disabled={busy} />
+          )}
           <fieldset className="audio-fieldset">
             <legend>Loudness</legend>
             <label className="audio-row">

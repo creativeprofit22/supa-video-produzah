@@ -993,6 +993,29 @@ describe("MultitrackTimeline", () => {
     expect(rendered.container.querySelector(".multitrack-snap-guide")).toBeNull();
   });
 
+  it("snaps a dragged clip to a music beat and commits one move", () => {
+    const firstId = id(100_000);
+    const onMoveClip = vi.fn();
+    const rendered = render(
+      <MultitrackTimeline
+        {...timelineProps({ selectedClipId: firstId, timelinePlayheadFrame: null, onMoveClip })}
+        musicBeatTargets={[{ frame: 1, clipId: "music-clip" }]}
+      />,
+    );
+    const body = screen.getByRole("button", { name: /camera-a\.mp4, frames 0 through 2/ });
+
+    fireEvent.pointerDown(body, { button: 0, pointerId: 43, clientX: 10 });
+    fireEvent.pointerMove(body, { pointerId: 43, clientX: 14 });
+
+    const guide = rendered.container.querySelector<HTMLElement>(".multitrack-snap-guide");
+    expect(guide?.dataset.snapFrame).toBe("1");
+    expect(guide?.dataset.snapTargetKind).toBe("music-beat");
+    fireEvent.pointerUp(body, { pointerId: 43, clientX: 14 });
+
+    expect(onMoveClip).toHaveBeenCalledOnce();
+    expect(onMoveClip).toHaveBeenCalledWith(firstId, 1);
+  });
+
   it("clamps a move before frame zero and commits the clamped start", () => {
     const projection = interactionProjection();
     const firstId = id(100_000);

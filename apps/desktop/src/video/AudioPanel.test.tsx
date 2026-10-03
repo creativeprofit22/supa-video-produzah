@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import type { VideoSequenceV2 } from "@supa-video/contracts";
+import type { MusicBeatRuntimeStatus } from "@supa-video/media";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AudioPanel } from "./AudioPanel";
+import type { MusicBeatDetectionStatus } from "../use-music-beats";
+import { AudioPanel, type AudioPanelMusicBeats } from "./AudioPanel";
 
 const id = (value: number): string =>
   `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -91,5 +93,158 @@ describe("AudioPanel", () => {
 
     expect(onSetTarget).toHaveBeenCalledWith(null);
     expect(onSetRole).toHaveBeenCalledWith(id(2), null);
+  });
+
+  describe("music beats", () => {
+    const musicAsset = id(50);
+    const musicSequence = (): VideoSequenceV2 => ({
+      ...sequenceWith({ audioRole: "dialogue" }, false),
+      tracks: [
+        {
+          id: id(3),
+          name: "Score",
+          kind: "audio",
+          audioRole: "music",
+          clips: [
+            {
+              id: id(4),
+              source: { kind: "asset", assetId: musicAsset },
+              timelineStart: { value: 0, rateNumerator: 30, rateDenominator: 1 },
+              sourceIn: { value: 0, rateNumerator: 30, rateDenominator: 1 },
+              sourceOut: { value: 60, rateNumerator: 30, rateDenominator: 1 },
+              transform: {
+                positionXPermille: 0,
+                positionYPermille: 0,
+                scaleXPermille: 1_000,
+                scaleYPermille: 1_000,
+                rotationMilliDegrees: 0,
+                opacityPermille: 1_000,
+              },
+              gainMilliDecibels: 0,
+            },
+          ],
+        },
+      ],
+    });
+    const runtime = (
+      availability: MusicBeatRuntimeStatus["runtime"] = { state: "notConfigured" },
+    ): MusicBeatRuntimeStatus => ({
+      runtimeFolder: availability.state === "notConfigured" ? null : "D:\\supa-music-beats",
+      runtime: availability,
+      manifestSha256: "a".repeat(64),
+      beatThisVersion: "1.1.0",
+      checkpointSha256: "b".repeat(64),
+    });
+    const panel = (
+      detection: ReadonlyMap<string, MusicBeatDetectionStatus>,
+      analyses: AudioPanelMusicBeats["analyses"] = new Map(),
+      runtimeStatus: MusicBeatRuntimeStatus | null = runtime(),
+    ) => {
+      const musicBeats = {
+        analyses,
+        detection,
+        assetNames: new Map([[musicAsset, "score.wav"]]),
+        onDetect: vi.fn(async () => true),
+        onCancel: vi.fn(async () => undefined),
+        runtimeStatus,
+        runtimeError: null,
+        onChooseRuntimeFolder: vi.fn(async () => undefined),
+        onRefreshRuntimeStatus: vi.fn(async () => undefined),
+      };
+      render(
+        <AudioPanel
+          sequence={musicSequence()}
+          disabled={false}
+          lastReport={null}
+          onSetRole={vi.fn(async () => true)}
+          onSetTarget={vi.fn(async () => true)}
+          musicBeats={musicBeats}
+        />,
+      );
+      return musicBeats;
+    };
+
+    it("starts detection for an asset on a music track", () => {
+      const musicBeats = panel(new Map());
+      expect(screen.getByText(/No music beats yet/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Detect music beats in score.wav" }));
+      expect(musicBeats.onDetect).toHaveBeenCalledWith(musicAsset);
+    });
+
+    it("offers cancel while detection runs", () => {
+      const musicBeats = panel(new Map([[musicAsset, { phase: "running", jobId: id(60) }]]));
+      expect(screen.getByText(/Detecting music beats/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(musicBeats.onCancel).toHaveBeenCalledWith(musicAsset);
+    });
+
+    it("shows the detector and tempo of a finished analysis", () => {
+      panel(
+        new Map([[musicAsset, { phase: "ready", detector: "tempo_fallback" }]]),
+        new Map([
+          [
+            musicAsset,
+            {
+              schemaVersion: 1,
+              detector: {
+                kind: "tempo_fallback",
+                version: "tempo-fallback-v1",
+                checkpointSha256: null,
+              },
+              durationUs: 2_000_000,
+              tempoBpm: 120,
+              beatsUs: [0, 500_000, 1_000_000, 1_500_000],
+              downbeatsUs: [0],
+              onsetsUs: [],
+            },
+          ],
+        ]),
+      );
+      expect(screen.getByText(/4 music beats at 120 BPM \(in-app tempo fallback\)/)).toBeTruthy();
+    });
+
+    it("says Beat This! will run when its runtime is ready", () => {
+      panel(new Map(), new Map(), runtime({ state: "ready" }));
+      expect(screen.getByText("Beat This! ready")).toBeTruthy();
+      expect(screen.queryByText("In-app tempo fallback")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    });
+
+    it("says the tempo fallback will run when no runtime folder is chosen", () => {
+      panel(new Map(), new Map(), runtime({ state: "notConfigured" }));
+      expect(screen.getByText("In-app tempo fallback")).toBeTruthy();
+      expect(screen.getByText(/No Beat This! folder chosen yet/)).toBeTruthy();
+    });
+
+    it.each([
+      ["folderMissing", /could not be found/],
+      ["linkedPath", /link or shortcut/],
+      ["pythonMissing", /no Python environment/],
+      ["checkpointMissing", /no final0\.ckpt checkpoint/],
+      ["checkpointMismatch", /The checkpoint does not match the pinned final0 file/],
+      ["packageMismatch", /not the pinned version 1\.1\.0/],
+      ["probeFailed", /could not load Beat This!/],
+    ] as const)("explains an unavailable runtime (%s)", (reason, message) => {
+      const musicBeats = panel(
+        new Map(),
+        new Map(),
+        runtime({ state: "unavailable", problem: { reason } }),
+      );
+      expect(screen.getByText("In-app tempo fallback")).toBeTruthy();
+      expect(screen.getByText(message)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+      expect(musicBeats.onRefreshRuntimeStatus).toHaveBeenCalledOnce();
+    });
+
+    it("shows that the runtime is being checked before its status loads", () => {
+      panel(new Map(), new Map(), null);
+      expect(screen.getByText("Checking the Beat This! runtime…")).toBeTruthy();
+    });
+
+    it("opens the folder picker from the choose-folder button", () => {
+      const musicBeats = panel(new Map());
+      fireEvent.click(screen.getByRole("button", { name: "Choose Beat This! folder…" }));
+      expect(musicBeats.onChooseRuntimeFolder).toHaveBeenCalledOnce();
+    });
   });
 });

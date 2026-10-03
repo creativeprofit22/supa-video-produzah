@@ -7,6 +7,7 @@ import type {
   UsePolicyProfile,
   VerifiedRenderOutput,
 } from "@supa-video/contracts";
+import type { MusicBeatAnalysisV1 } from "@supa-video/media";
 import type { ReviewDecisionRequest, ReviewState } from "@supa-video/qc";
 
 import type {
@@ -20,6 +21,7 @@ import type {
 } from "../video-ipc";
 import type { DeliveryOutputStatus } from "./DeliverPanel";
 import { compileDeliveryPlan, deliveryFileName, presetById } from "./delivery-plans";
+import { musicBeatQcInputForProjection } from "../use-music-beats";
 import { editorialEvaluationFor } from "./editorial-evaluation";
 
 export interface ReviewDeliverBackend {
@@ -38,7 +40,11 @@ export interface ReviewDeliverInput {
   readonly inputPathsByAssetId: Readonly<Record<string, string>> | null;
   readonly intendedUse: UsePolicyProfile | null;
   readonly newId: () => string;
+  /** Music beat analyses by asset id; their music beats feed the pacing QC. */
+  readonly musicBeatAnalyses?: ReadonlyMap<string, MusicBeatAnalysisV1>;
 }
+
+const noMusicBeatAnalyses: ReadonlyMap<string, MusicBeatAnalysisV1> = new Map();
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : "The request could not be completed.";
@@ -51,6 +57,7 @@ export function useReviewDeliver({
   inputPathsByAssetId,
   intendedUse,
   newId,
+  musicBeatAnalyses = noMusicBeatAnalyses,
 }: ReviewDeliverInput) {
   const outputPath = reviewed?.qc === undefined ? null : reviewed.outputPath;
   const [review, setReview] = useState<ReviewState | null>(null);
@@ -193,7 +200,11 @@ export function useReviewDeliver({
         throw new Error("The project changed since review. Export and review it again.");
       }
       const baseName = outputPath.split(/[\\/]/u).pop() ?? "export.mp4";
-      const editorial = await editorialEvaluationFor(projection);
+      const editorial = await editorialEvaluationFor(
+        projection,
+        [],
+        musicBeatQcInputForProjection(projection, musicBeatAnalyses),
+      );
       const jobs: DeliveryPresetJob[] = [];
       for (const presetId of selected) {
         const target = await backend.pickVideoExportPath(deliveryFileName(baseName, presetId));
@@ -225,7 +236,17 @@ export function useReviewDeliver({
     } finally {
       setPending(false);
     }
-  }, [backend, inputPathsByAssetId, intendedUse, newId, outputPath, projection, review, selected]);
+  }, [
+    backend,
+    inputPathsByAssetId,
+    intendedUse,
+    musicBeatAnalyses,
+    newId,
+    outputPath,
+    projection,
+    review,
+    selected,
+  ]);
 
   return {
     review,
