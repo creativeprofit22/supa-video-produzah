@@ -24,6 +24,7 @@ export const mediaJobKindSchema = z.enum([
   "thumbnail_tile",
   "final_render",
   "transcription",
+  "music_beat_detection",
 ]);
 export type MediaJobKind = z.infer<typeof mediaJobKindSchema>;
 

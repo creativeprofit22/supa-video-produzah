@@ -161,6 +161,11 @@ fn configure_builder<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R
             video::asr_ipc::video_asr_accept_consent,
             video::asr_ipc::video_start_transcription,
             video::asr_ipc::video_transcription_result,
+            video::music_beat_ipc::video_music_beat_runtime_status,
+            video::music_beat_ipc::video_music_beat_set_runtime,
+            video::music_beat_ipc::video_start_music_beat_detection,
+            video::music_beat_ipc::video_music_beat_detection_result,
+            video::music_beat_ipc::video_load_music_beat_analysis,
             video::subtitle_export::video_pick_subtitle_path,
             video::subtitle_export::video_write_subtitles,
             ai_account::commands::ai_account_status,
@@ -1389,6 +1394,10 @@ mod tests {
                 video::asr_ipc::video_asr_accept_consent,
                 video::asr_ipc::video_start_transcription,
                 video::asr_ipc::video_transcription_result,
+                video::music_beat_ipc::video_music_beat_runtime_status,
+                video::music_beat_ipc::video_start_music_beat_detection,
+                video::music_beat_ipc::video_music_beat_detection_result,
+                video::music_beat_ipc::video_load_music_beat_analysis,
                 video::subtitle_export::video_pick_subtitle_path,
                 video::subtitle_export::video_write_subtitles,
             ])
@@ -1488,6 +1497,76 @@ mod tests {
         .expect_err("subtitle writes need a dialog-issued grant");
         assert_eq!(error["code"], "path_not_granted");
         assert!(!ungranted.exists());
+        let _ = fs::remove_dir_all(config_dir);
+    }
+
+    #[test]
+    fn music_beat_commands_fail_closed_over_mock_ipc() {
+        let app = mock_transcription_app();
+        let config_dir = app
+            .path()
+            .app_config_dir()
+            .expect("config dir must resolve");
+        let webview = WebviewWindowBuilder::new(&app, "music-beat-owner", Default::default())
+            .build()
+            .expect("music beat webview must build");
+
+        let status = get_ipc_response(
+            &webview,
+            invoke_request("video_music_beat_runtime_status", json!({})),
+        )
+        .expect("status must answer")
+        .deserialize::<Value>()
+        .expect("status must be JSON");
+        assert_eq!(status["runtime"]["state"], "notConfigured");
+        assert_eq!(status["beatThisVersion"], "1.1.0");
+
+        // A real file the user never picked: authorization fails before any
+        // probing or detection.
+        let ungranted = std::env::temp_dir().join(format!("{}.wav", uuid::Uuid::new_v4()));
+        fs::write(&ungranted, b"RIFF").expect("ungranted fixture must write");
+        let error = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_start_music_beat_detection",
+                json!({ "request": {
+                    "projectId": uuid::Uuid::new_v4().to_string(),
+                    "assetId": uuid::Uuid::new_v4().to_string(),
+                    "sourcePath": ungranted.to_string_lossy(),
+                }}),
+            ),
+        )
+        .expect_err("an ungranted source must fail closed");
+        let _ = fs::remove_file(&ungranted);
+        assert_eq!(error["code"], "path_not_granted");
+
+        let unknown = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_music_beat_detection_result",
+                json!({ "request": { "jobId": uuid::Uuid::new_v4().to_string(), "extra": 1 } }),
+            ),
+        );
+        assert!(unknown.is_err(), "unknown fields must be rejected");
+        let missing = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_music_beat_detection_result",
+                json!({ "request": { "jobId": uuid::Uuid::new_v4().to_string() } }),
+            ),
+        )
+        .expect_err("unknown music beat job must read as not found");
+        assert_eq!(missing["details"]["category"], "not_found");
+
+        let traversal = get_ipc_response(
+            &webview,
+            invoke_request(
+                "video_load_music_beat_analysis",
+                json!({ "request": { "analysisKey": "../../secrets" } }),
+            ),
+        )
+        .expect_err("a non-digest key must not reach the filesystem");
+        assert_eq!(traversal["details"]["category"], "not_found");
         let _ = fs::remove_dir_all(config_dir);
     }
 

@@ -22,6 +22,7 @@ pub(crate) enum MediaJobKind {
     ThumbnailTile,
     FinalRender,
     Transcription,
+    MusicBeatDetection,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

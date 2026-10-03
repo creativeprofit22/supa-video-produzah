@@ -32,6 +32,7 @@ pub(crate) enum CacheArtifactKind {
     Proxy,
     ThumbnailTile,
     Transcript,
+    MusicBeats,
 }
 
 impl CacheArtifactKind {
@@ -41,6 +42,7 @@ impl CacheArtifactKind {
             Self::Proxy => "proxy",
             Self::ThumbnailTile => "thumbnail_tile",
             Self::Transcript => "transcript",
+            Self::MusicBeats => "music_beats",
         }
     }
 
@@ -64,6 +66,10 @@ impl CacheArtifactKind {
                 .join("transcript")
                 .join(prefix)
                 .join(format!("{key}.json")),
+            Self::MusicBeats => PathBuf::from("derived")
+                .join("music_beats")
+                .join(prefix)
+                .join(format!("{key}.json")),
         })
     }
 
@@ -85,6 +91,10 @@ impl CacheArtifactKind {
                 .join(format!("{key}.lock")),
             Self::Transcript => PathBuf::from("locks")
                 .join("transcript")
+                .join(prefix)
+                .join(format!("{key}.lock")),
+            Self::MusicBeats => PathBuf::from("locks")
+                .join("music_beats")
                 .join(prefix)
                 .join(format!("{key}.lock")),
         })
@@ -505,6 +515,12 @@ impl MediaCacheService {
             "json",
             &mut registrations,
         )?;
+        collect_owned_artifacts(
+            &root.join("derived").join("music_beats"),
+            CacheArtifactKind::MusicBeats,
+            "json",
+            &mut registrations,
+        )?;
         let mut registered = 0_u64;
         for (kind, key, path) in registrations {
             self.register_sync(&CacheArtifactRegistration {
@@ -539,6 +555,11 @@ impl MediaCacheService {
             (
                 CacheArtifactKind::Transcript,
                 ArtifactStoreKind::Transcript,
+                "json",
+            ),
+            (
+                CacheArtifactKind::MusicBeats,
+                ArtifactStoreKind::MusicBeats,
                 "json",
             ),
         ] {
@@ -1379,6 +1400,7 @@ fn parse_kind(value: &str) -> rusqlite::Result<CacheArtifactKind> {
         "proxy" => Ok(CacheArtifactKind::Proxy),
         "thumbnail_tile" => Ok(CacheArtifactKind::ThumbnailTile),
         "transcript" => Ok(CacheArtifactKind::Transcript),
+        "music_beats" => Ok(CacheArtifactKind::MusicBeats),
         _ => Err(rusqlite::Error::InvalidQuery),
     }
 }
@@ -2606,6 +2628,77 @@ pub(crate) mod tests {
             .query_row(
                 "SELECT availability FROM cache_artifacts WHERE artifact_key = ?1",
                 [&key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(availability, "missing");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn music_beats_catalog_rows_parse_for_eviction_and_missing_repair() {
+        // Arrange
+        let root = tempfile::tempdir().unwrap();
+        let (_store, cache) = service(root.path()).await;
+        let beats_key = format!("0a{}", "1".repeat(62));
+        let proxy_key = format!("0b{}", "2".repeat(62));
+        let beats = create_artifact(root.path(), CacheArtifactKind::MusicBeats, &beats_key, 8);
+        let proxy = create_artifact(root.path(), CacheArtifactKind::Proxy, &proxy_key, 8);
+        assert!(beats.ends_with(
+            PathBuf::from("derived")
+                .join("music_beats")
+                .join("0a")
+                .join(format!("{beats_key}.json"))
+        ));
+        for (path, kind, key) in [
+            (beats.clone(), CacheArtifactKind::MusicBeats, &beats_key),
+            (proxy.clone(), CacheArtifactKind::Proxy, &proxy_key),
+        ] {
+            cache.register(registration(path, kind, key)).await.unwrap();
+        }
+        let connection = cache.state.open_connection().unwrap();
+        for (key, accessed) in [(&beats_key, 1_i64), (&proxy_key, 2_i64)] {
+            connection
+                .execute(
+                    "UPDATE cache_artifacts SET last_accessed_at_ms = ?2 WHERE artifact_key = ?1",
+                    params![key, accessed],
+                )
+                .unwrap();
+        }
+
+        // Act / Assert: the reverse kind mapping and LRU eviction accept music beats.
+        assert_eq!(
+            parse_kind("music_beats").unwrap(),
+            CacheArtifactKind::MusicBeats
+        );
+        let report = cache.enforce_budget_sync(Some(0)).unwrap();
+        assert_eq!(report.evicted_artifacts, 2);
+        assert!(!report.pinned_pressure);
+        assert!(!beats.exists());
+        assert!(!proxy.exists());
+
+        // Arrange: an available music beats artifact whose file disappears.
+        let missing_key = format!("0c{}", "3".repeat(62));
+        let missing = create_artifact(root.path(), CacheArtifactKind::MusicBeats, &missing_key, 8);
+        cache
+            .register(registration(
+                missing.clone(),
+                CacheArtifactKind::MusicBeats,
+                &missing_key,
+            ))
+            .await
+            .unwrap();
+        fs::remove_file(missing).unwrap();
+
+        // Act
+        let status = cache.status().await.unwrap();
+
+        // Assert
+        assert_eq!(status.managed_bytes, 0);
+        assert_eq!(status.artifact_count, 0);
+        let availability: String = connection
+            .query_row(
+                "SELECT availability FROM cache_artifacts WHERE artifact_key = ?1",
+                [&missing_key],
                 |row| row.get(0),
             )
             .unwrap();

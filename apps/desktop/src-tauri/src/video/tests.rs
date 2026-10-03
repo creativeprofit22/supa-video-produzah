@@ -6637,6 +6637,9 @@ fn supervised_process_helper() {
         "nemo_runner_ffmpeg" => nemo_runner_ffmpeg_helper(),
         "nemo_runner_nemo" => nemo_runner_nemo_helper(),
         "nemo_runner_diarize" => nemo_runner_diarize_helper(),
+        "music_beat_probe" => super::music_beat_runtime::music_beat_probe_helper(),
+        "music_beat_detect" => super::music_beat_runtime::music_beat_detect_helper(),
+        "music_beat_ffmpeg" => super::music_beat_runtime::music_beat_ffmpeg_helper(),
         other => panic!("unknown process helper mode: {other}"),
     }
 }

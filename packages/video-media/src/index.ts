@@ -4,4 +4,5 @@ export * from "./caption.js";
 export * from "./derived-media.js";
 export * from "./identity.js";
 export * from "./jobs.js";
+export * from "./music-beats.js";
 export * from "./transcript.js";

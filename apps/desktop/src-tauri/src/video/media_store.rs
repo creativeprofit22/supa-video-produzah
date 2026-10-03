@@ -861,6 +861,7 @@ pub(crate) enum ArtifactStoreKind {
     Proxy,
     ThumbnailTile,
     Transcript,
+    MusicBeats,
 }
 
 impl ArtifactStoreKind {
@@ -869,6 +870,7 @@ impl ArtifactStoreKind {
             Self::Proxy => "proxy",
             Self::ThumbnailTile => "thumbnail_tile",
             Self::Transcript => "transcript",
+            Self::MusicBeats => "music_beats",
         }
     }
 
@@ -876,7 +878,7 @@ impl ArtifactStoreKind {
         match self {
             Self::Proxy => "mp4",
             Self::ThumbnailTile => "jpg",
-            Self::Transcript => "json",
+            Self::Transcript | Self::MusicBeats => "json",
         }
     }
 
@@ -884,6 +886,7 @@ impl ArtifactStoreKind {
         match self {
             Self::Proxy | Self::ThumbnailTile => "prepare_asset",
             Self::Transcript => "transcribe_asset",
+            Self::MusicBeats => "detect_music_beats",
         }
     }
 }
