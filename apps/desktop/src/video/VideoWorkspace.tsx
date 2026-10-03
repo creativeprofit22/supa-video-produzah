@@ -26,6 +26,7 @@ import type { TranscriptArtifactV1 } from "@supa-video/media";
 
 import { useCommand, useCommandHandler } from "../commands/CommandProvider";
 import { type useVideoProject } from "../use-video-project";
+import { firstCutOnTimeline, type AppliedFirstCut } from "./applied-first-cut";
 import { AssetPanel } from "./AssetPanel";
 import { TwoPaneWorkspace } from "./TwoPaneWorkspace";
 import {
@@ -325,6 +326,9 @@ export function VideoWorkspace({
   );
   const [transcriptArtifact, setTranscriptArtifact] = useState<TranscriptArtifactV1 | null>(null);
   const [proposalRanges, setProposalRanges] = useState<readonly ProposalTimelineRange[]>([]);
+  // The last first cut put on the timeline; graphics suggestions build on its beats
+  // only while its tracks are still there (undo hides it, redo brings it back).
+  const [appliedFirstCut, setAppliedFirstCut] = useState<AppliedFirstCut | null>(null);
   const [agentProposalVersion, setAgentProposalVersion] = useState(0);
   const exportIntendedUseRef = useRef(controller.exportIntendedUse);
   useEffect(() => {
@@ -1435,6 +1439,8 @@ export function VideoWorkspace({
             disabled={editPending}
             runEdit={controller.runProposalEdit}
             onPreviewRanges={setProposalRanges}
+            firstCut={firstCutOnTimeline(appliedFirstCut, controller.projection)}
+            musicBeatsUs={controller.musicBeatTimelineUs}
           />
           <ProducePanel
             projection={controller.projection}
@@ -1443,6 +1449,7 @@ export function VideoWorkspace({
             intendedUse={controller.exportIntendedUse}
             disabled={editPending}
             onApply={controller.applyFirstCut}
+            onFirstCutApplied={setAppliedFirstCut}
           />
           <RightsPanel
             projectId={controller.projection?.projectId ?? null}

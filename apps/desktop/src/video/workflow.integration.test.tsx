@@ -7,6 +7,7 @@ import type { EventCallback } from "@tauri-apps/api/event";
 import type { MediaJobRecord, TranscriptArtifactV1 } from "@supa-video/media";
 import type { FirstCutFixture } from "@supa-video/produce";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
@@ -14,7 +15,10 @@ import { CommandProvider } from "../commands/CommandProvider";
 import { createMockVideoService, testMediaJob } from "../test-video-service";
 import { useVideoProject } from "../use-video-project";
 import { VideoWorkspace } from "./VideoWorkspace";
+import { firstCutOnTimeline, type AppliedFirstCut } from "./applied-first-cut";
 import { ProducePanel, type ProducePanelProps } from "./ProducePanel";
+import { ProposalsPanel } from "./ProposalsPanel";
+import { fakeBackend } from "./proposals-panel-fixtures";
 import {
   explainer,
   podcast,
@@ -1296,6 +1300,46 @@ function FirstCutHarness({
   );
 }
 
+/** Wires Produce to Proposals the way the workspace does, with real undo/redo. */
+function FirstCutGraphicsHarness({ fixture }: { readonly fixture: FirstCutFixture }) {
+  const controller = useVideoProject();
+  const [applied, setApplied] = useState<AppliedFirstCut | null>(null);
+  const [proposalBackend] = useState(() => fakeBackend());
+  return (
+    <>
+      <button type="button" onClick={() => void controller.openProject()}>
+        Open first-cut project
+      </button>
+      <button type="button" onClick={() => void controller.undoEdit()}>
+        Undo
+      </button>
+      <button type="button" onClick={() => void controller.redoEdit()}>
+        Redo
+      </button>
+      <ProposalsPanel
+        projection={controller.projection}
+        target={null}
+        artifact={null}
+        disabled={false}
+        runEdit={controller.runProposalEdit}
+        firstCut={firstCutOnTimeline(applied, controller.projection)}
+        backend={proposalBackend}
+      />
+      <ProducePanel
+        projection={controller.projection}
+        aRoll={null}
+        artifact={null}
+        intendedUse={fixture.intendedUse}
+        disabled={controller.editOperation.phase === "saving"}
+        onApply={controller.applyFirstCut}
+        onFirstCutApplied={setApplied}
+        backend={receiptsBackend(fixture.receipts)}
+        now={() => fixture.nowMs}
+      />
+    </>
+  );
+}
+
 describe("first-cut production workflow", { timeout: 15_000 }, () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -1373,6 +1417,45 @@ describe("first-cut production workflow", { timeout: 15_000 }, () => {
       await waitFor(() => expect(service.projection.state).toEqual(original));
     },
   );
+
+  it("offers graphics suggestions only while the applied first cut is on the timeline", async () => {
+    const service = createMockVideoService({ seedProjection: projectionFor(explainer) });
+    invokeMock.mockImplementation(service.invoke);
+    render(<FirstCutGraphicsHarness fixture={explainer} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open first-cut project" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Plan first cut" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    await screen.findByRole("heading", { name: "Suggested edits" });
+    expect(screen.queryByRole("button", { name: "Suggest graphics" })).toBeNull();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+      target: { value: explainer.language },
+    });
+    if (explainer.source.workflow !== "explainer") throw new Error("Expected explainer fixture");
+    fireEvent.change(screen.getByRole("textbox", { name: /Script/ }), {
+      target: { value: explainer.source.script },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Plan first cut" }));
+    await screen.findByRole("list", { name: "First cut beats" });
+    fireEvent.click(screen.getByRole("button", { name: "Apply first cut" }));
+    await screen.findByText(/First cut added on new tracks/);
+    expect(await screen.findByRole("button", { name: "Suggest graphics" })).toBeTruthy();
+    const appliedRevision = service.projection.revision.number;
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    // Undo appends a newer revision, so only the removed tracks reveal the stale cut.
+    await waitFor(() => expect(service.projection.revision.number).toBe(appliedRevision + 1));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Suggest graphics" })).toBeNull(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    expect(await screen.findByRole("button", { name: "Suggest graphics" })).toBeTruthy();
+  });
 
   it("asks for a re-plan when native rejects the first cut as stale", async () => {
     const service = createMockVideoService({ seedProjection: projectionFor(explainer) });

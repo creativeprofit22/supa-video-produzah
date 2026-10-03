@@ -5,7 +5,7 @@ import {
   type CommandResult,
   type ProjectProjection,
 } from "@supa-video/contracts";
-import { defaultProposalPolicy } from "@supa-video/project";
+import { defaultProposalPolicy, isGraphicsProposal } from "@supa-video/project";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -56,7 +56,7 @@ describe("ProposalsPanel", () => {
     const backend = fakeBackend(false);
     await renderPanel(backend);
     await waitFor(() => expect(backend.getAgentProposalsEnabled.calls.length).toBe(1));
-    expect(screen.queryByRole("region", { name: "Suggested cuts" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Suggested edits" })).toBeNull();
     expect(backend.listProposals.calls).toEqual([]);
   });
 
@@ -123,7 +123,9 @@ describe("ProposalsPanel", () => {
     const [, proposalId, approved] = backend.applyProposal.calls[0] ?? [];
     const original = backend.submitProposal.calls[0]?.[1];
     expect(proposalId).toBe(original?.proposalId);
-    expect(approved?.selectedWords.map(({ text }) => text)).toEqual(["uh"]);
+    if (approved === undefined || isGraphicsProposal(approved))
+      throw new Error("expected a transcript proposal");
+    expect(approved.selectedWords.map(({ text }) => text)).toEqual(["uh"]);
     expect(approved?.producer.id).toBe("filler-words");
     expect(await screen.findByText(/Proposal applied/)).toBeTruthy();
 

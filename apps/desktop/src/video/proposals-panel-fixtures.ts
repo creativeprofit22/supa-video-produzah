@@ -7,7 +7,7 @@ import {
   type StoredProposal,
 } from "@supa-video/contracts";
 import { createTranscriptArtifactV1, type TranscriptArtifactV1 } from "@supa-video/media";
-import type { TranscriptEditProposal } from "@supa-video/project";
+import type { LifecycleProposal } from "@supa-video/project";
 
 import type { ProposalBackend } from "../proposal-ipc";
 
@@ -152,7 +152,7 @@ export const projection = {
 } as ProjectProjection;
 
 export function stored(
-  proposal: TranscriptEditProposal,
+  proposal: LifecycleProposal,
   status: StoredProposal["status"],
 ): StoredProposal {
   return {
@@ -195,23 +195,20 @@ export function fakeBackend(
   const backend = {
     getAgentProposalsEnabled: track(async () => enabled),
     listProposals: track(async () => ({ proposals, audit: [], storeDiscarded: false })),
-    submitProposal: track(async (_projectId: string, proposal: TranscriptEditProposal) => {
+    submitProposal: track(async (_projectId: string, proposal: LifecycleProposal) => {
       const entry = stored(proposal, "pending");
       proposals = [...proposals, entry];
       return entry;
     }),
-    applyProposal: track(
-      async (_p: string, proposalId: string, approved: TranscriptEditProposal) => {
-        if (options.applyError !== undefined) throw options.applyError;
-        if (options.applyFails === true) throw new Error("Native apply refused");
-        if (approved.producer.id.length === 0)
-          throw new Error("Approved proposal lacks a producer");
-        proposals = proposals.map((entry) =>
-          entry.proposalId === proposalId ? { ...entry, status: "applied" as const } : entry,
-        );
-        return result;
-      },
-    ),
+    applyProposal: track(async (_p: string, proposalId: string, approved: LifecycleProposal) => {
+      if (options.applyError !== undefined) throw options.applyError;
+      if (options.applyFails === true) throw new Error("Native apply refused");
+      if (approved.producer.id.length === 0) throw new Error("Approved proposal lacks a producer");
+      proposals = proposals.map((entry) =>
+        entry.proposalId === proposalId ? { ...entry, status: "applied" as const } : entry,
+      );
+      return result;
+    }),
     rejectProposal: track(async (_p: string, proposalId: string) => {
       proposals = proposals.map((entry) =>
         entry.proposalId === proposalId ? { ...entry, status: "rejected" as const } : entry,

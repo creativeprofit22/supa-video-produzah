@@ -2427,6 +2427,7 @@ export function useVideoProject(
     musicBeatAnalyses: musicBeats.musicBeatAnalyses,
     musicBeatDetection: musicBeats.musicBeatDetection,
     musicBeatTargets: musicBeats.musicBeatTargets,
+    musicBeatTimelineUs: musicBeats.musicBeatTimelineUs,
     detectMusicBeats: musicBeats.detectMusicBeats,
     cancelMusicBeatDetection: musicBeats.cancelMusicBeatDetection,
     musicBeatRuntimeStatus: musicBeats.musicBeatRuntimeStatus,

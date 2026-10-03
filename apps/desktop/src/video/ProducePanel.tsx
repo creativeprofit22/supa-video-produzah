@@ -26,6 +26,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 
 import { tauriRightsBackend, type RightsBackend } from "../rights-ipc";
 import type { FirstCutApplyOutcome } from "../use-video-project";
+import type { AppliedFirstCut } from "./applied-first-cut";
 
 /*
  * Produce: plans a reviewable first cut from a script (explainer) or the
@@ -44,6 +45,8 @@ export interface ProducePanelProps {
   readonly intendedUse: UsePolicyProfile | null;
   readonly disabled: boolean;
   readonly onApply: (request: CommandGroupRequest) => Promise<FirstCutApplyOutcome>;
+  /** Called with the first cut and its inserted tracks once it is on the timeline. */
+  readonly onFirstCutApplied?: (applied: AppliedFirstCut) => void;
   readonly backend?: Pick<RightsBackend, "listRightsReceipts">;
   readonly now?: () => number;
 }
@@ -276,6 +279,7 @@ export function ProducePanel({
   intendedUse,
   disabled,
   onApply,
+  onFirstCutApplied,
   backend = tauriRightsBackend,
   now = Date.now,
 }: ProducePanelProps): React.JSX.Element {
@@ -418,13 +422,20 @@ export function ProducePanel({
       setStatus({ kind: "error", message: outcome.message });
       return;
     }
+    onFirstCutApplied?.({
+      firstCut: proposal,
+      sequenceId: sequence.id,
+      trackIds: [compiled.value.videoTrackId, compiled.value.titleTrackId].filter(
+        (trackId): trackId is string => trackId !== null,
+      ),
+    });
     setProposal(null);
     setOverrides({});
     setStatus({
       kind: "applied",
       message: `First cut added on new tracks (${compiled.value.clipCount} shots, ${compiled.value.markerCount} unresolved markers). Undo removes it in one step.`,
     });
-  }, [onApply, overrides, projection, proposal]);
+  }, [onApply, onFirstCutApplied, overrides, projection, proposal]);
 
   const covered = proposal?.beats.filter(
     (item) =>

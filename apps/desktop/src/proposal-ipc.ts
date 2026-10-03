@@ -5,7 +5,7 @@ import {
   storedProposalSchema,
 } from "@supa-video/contracts";
 import type { CommandResult, ProposalListing, StoredProposal } from "@supa-video/contracts";
-import type { TranscriptEditProposal } from "@supa-video/project";
+import type { LifecycleProposal } from "@supa-video/project";
 import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
 
@@ -53,7 +53,7 @@ export async function listProposals(projectId: string): Promise<ProposalListing>
 
 export async function submitProposal(
   projectId: string,
-  proposal: TranscriptEditProposal,
+  proposal: LifecycleProposal,
 ): Promise<StoredProposal> {
   const response = await invokeProposalCommand("video_submit_proposal", { projectId, proposal });
   return parsed(storedProposalSchema.safeParse(response));
@@ -62,7 +62,7 @@ export async function submitProposal(
 export async function applyProposal(
   projectId: string,
   proposalId: string,
-  approved: TranscriptEditProposal,
+  approved: LifecycleProposal,
 ): Promise<CommandResult> {
   const response = await invokeProposalCommand("video_apply_proposal", {
     projectId,
