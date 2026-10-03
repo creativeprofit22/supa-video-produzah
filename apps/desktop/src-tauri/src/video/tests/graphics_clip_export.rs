@@ -31,7 +31,7 @@ const EXPORT_COMPOSITE: Tolerance = Tolerance {
     over_edge_threshold: 0.01,
 };
 
-fn programs_with_renderer(root: &Path) -> MediaPrograms {
+pub(super) fn programs_with_renderer(root: &Path) -> MediaPrograms {
     let destination = root.join("media-tools");
     fs::create_dir_all(&destination).unwrap();
     let staged = crate_root().join("media-toolchain/bin/x86_64-pc-windows-msvc");
@@ -46,7 +46,7 @@ fn programs_with_renderer(root: &Path) -> MediaPrograms {
     )
 }
 
-fn node_json(arguments: &[&std::ffi::OsStr]) -> Value {
+pub(super) fn node_json(arguments: &[&std::ffi::OsStr]) -> Value {
     serde_json::from_slice(&run_media(
         Command::new("node")
             .arg(crate_root().join("../browser-tests/compile-graphics-export.mjs"))

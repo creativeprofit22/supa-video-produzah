@@ -96,7 +96,7 @@ pub(super) fn run_media(command: &mut Command) -> Vec<u8> {
 }
 
 /// Decodes the sample frames of `path` as packed RGBA (or RGB) bytes, one buffer per frame.
-fn decode_samples(
+pub(super) fn decode_samples(
     ffmpeg: &Path,
     path: &Path,
     pixel_format: &str,

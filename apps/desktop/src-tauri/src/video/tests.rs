@@ -5420,6 +5420,8 @@ mod rights_gate;
 mod rights_export_e2e;
 
 #[cfg(target_os = "windows")]
+mod agent_graphics_e2e;
+#[cfg(target_os = "windows")]
 mod audio_export;
 #[cfg(target_os = "windows")]
 mod audio_mix_export;
