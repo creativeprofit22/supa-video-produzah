@@ -996,7 +996,8 @@ fn failed_store_write_on_submit_keeps_nothing_half_written() {
     assert!(listing.proposals.is_empty());
 }
 
-/// Graphics commands stay outside the agent proposal surface until phase 19 (ADR 0003).
+/// Graphics commands never ride inside a transcript cut proposal; agents offer
+/// graphics only through graphics proposals (ADR 0005, `graphics_proposal_tests`).
 fn graphics_proposal(snapshot: &VideoProjectSnapshotV2, seed: u64, command: Value) -> Value {
     let mut proposal = sample_proposal(snapshot, seed);
     let mut graphics = command;
@@ -1050,7 +1051,7 @@ fn graphics_commands() -> [(&'static str, Value); 2] {
 }
 
 #[test]
-fn proposals_carrying_graphics_commands_are_rejected_by_policy() {
+fn transcript_proposals_carrying_graphics_commands_are_rejected_by_policy() {
     let snapshot = fixture();
     for (name, command) in graphics_commands() {
         let proposal = graphics_proposal(&snapshot, 100, command);
@@ -1068,7 +1069,7 @@ fn proposals_carrying_graphics_commands_are_rejected_by_policy() {
 }
 
 #[test]
-fn submitting_a_graphics_proposal_leaves_no_pending_proposal() {
+fn submitting_a_transcript_proposal_with_graphics_commands_leaves_no_pending_proposal() {
     let service = VideoProjectService::default();
     let project = open_project(&service);
     let snapshot = &project.original;

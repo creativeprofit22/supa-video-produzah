@@ -16,6 +16,7 @@ use crate::video::{
     error::{VideoCommandError, VideoErrorCode},
     grants::VideoPathGrants,
     project::{
+        hash::canonical_bytes,
         history::{
             attribute_commit, command_group_payload_hash, commit_transition,
             reject_duplicate_conflict, undo_transition,
@@ -24,9 +25,10 @@ use crate::video::{
         journal::{journal_path, scan},
         proposal::{
             affected_ranges, load_proposal_store, ranges_are_offered, reconcile_with_journal,
-            refresh_open_proposals, save_proposal_store, validate_proposal, JournalProposalCommit,
-            NativeProposalStatus, ProposalAudit, ProposalAuditAction, ProposalDeletedRange,
-            ProposalStoreV1, ProposalView, StoreWriteFailpoint, StoredProposal, MAX_OPEN_PROPOSALS,
+            refresh_open_proposals, save_proposal_store, validate_proposal, GraphicsProposalItem,
+            GraphicsProposalView, JournalProposalCommit, NativeProposalStatus, ProposalAudit,
+            ProposalAuditAction, ProposalBody, ProposalDeletedRange, ProposalStoreV1, ProposalView,
+            StoreWriteFailpoint, StoredProposal, MAX_OPEN_PROPOSALS,
         },
         types::{CommandGroupRequest, CommandResult, JournalRecordKind},
     },
@@ -324,20 +326,32 @@ impl VideoProjectService {
                 "proposal_mismatch",
             ));
         }
-        let offered = validate_offered_ranges(&stored)?;
-        let approved_range_ids: Vec<String> = view
-            .deleted_ranges
-            .iter()
-            .map(|range| range.range_id())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        if !ranges_are_offered(&offered, &view.deleted_ranges) {
-            return Err(proposal_error(
-                VideoErrorCode::InvalidCommand,
-                "proposal_range_not_offered",
-            ));
-        }
+        let approved_range_ids: Vec<String> = match &view.body {
+            ProposalBody::Transcript { deleted_ranges } => {
+                let offered = validate_offered_ranges(&stored)?;
+                if !ranges_are_offered(&offered, deleted_ranges) {
+                    return Err(proposal_error(
+                        VideoErrorCode::InvalidCommand,
+                        "proposal_range_not_offered",
+                    ));
+                }
+                deleted_ranges
+                    .iter()
+                    .map(|range| range.range_id())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect()
+            }
+            ProposalBody::Graphics { items } => {
+                graphics_items_are_offered(&stored, items, &view.command_group)?;
+                items
+                    .iter()
+                    .map(|item| item.item_id.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect()
+            }
+        };
 
         let request = view.command_group.clone();
         let payload_hash = command_group_payload_hash(&request)?;
@@ -529,7 +543,50 @@ fn restore_step_id(operation_id: &str, index: usize) -> String {
 fn validate_offered_ranges(
     stored: &StoredProposal,
 ) -> Result<Vec<ProposalDeletedRange>, VideoCommandError> {
+    if stored.proposal.get("proposalKind").is_some() {
+        return Err(proposal_error(
+            VideoErrorCode::InvalidCommand,
+            "proposal_mismatch",
+        ));
+    }
     let original: ProposalView = serde_json::from_value(stored.proposal.clone())
         .map_err(|_| proposal_error(VideoErrorCode::InvalidProject, "proposal_store_entry"))?;
     Ok(original.deleted_ranges)
+}
+
+/// The approved graphics proposal may only carry items the stored proposal
+/// offered, each with a command canonically byte-equal to the offered one, and
+/// at most the offered track insert. Nothing new can slip in at apply time.
+fn graphics_items_are_offered(
+    stored: &StoredProposal,
+    approved_items: &[GraphicsProposalItem],
+    approved_group: &CommandGroupRequest,
+) -> Result<(), VideoCommandError> {
+    if stored.proposal.get("proposalKind").is_none() {
+        return Err(proposal_error(
+            VideoErrorCode::InvalidCommand,
+            "proposal_mismatch",
+        ));
+    }
+    let original: GraphicsProposalView = serde_json::from_value(stored.proposal.clone())
+        .map_err(|_| proposal_error(VideoErrorCode::InvalidProject, "proposal_store_entry"))?;
+    let offered_commands = original
+        .command_group
+        .commands
+        .iter()
+        .map(canonical_bytes)
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let not_offered =
+        || proposal_error(VideoErrorCode::InvalidCommand, "proposal_item_not_offered");
+    for item in approved_items {
+        if !original.items.contains(item) {
+            return Err(not_offered());
+        }
+    }
+    for command in &approved_group.commands {
+        if !offered_commands.contains(&canonical_bytes(command)?) {
+            return Err(not_offered());
+        }
+    }
+    Ok(())
 }

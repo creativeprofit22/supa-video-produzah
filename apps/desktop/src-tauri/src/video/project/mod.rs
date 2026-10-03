@@ -28,6 +28,8 @@ mod graphics_contract_tests;
 #[cfg(test)]
 mod graphics_entity_tests;
 #[cfg(test)]
+mod graphics_proposal_tests;
+#[cfg(test)]
 mod proposal_tests;
 #[cfg(test)]
 mod speed_contract_tests;

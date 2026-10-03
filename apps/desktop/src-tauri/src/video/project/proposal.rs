@@ -22,8 +22,8 @@ use super::{
     integrity::is_canonical_uuid,
     journal::sidecar_path,
     types::{
-        CommandGroupRequest, ProjectCommand, ProjectRevisionDescriptorV2, VideoProjectSnapshotV2,
-        MAX_COMMAND_GROUP_BYTES,
+        CommandGroupRequest, ProjectCommand, ProjectRevisionDescriptorV2, ProjectTrack,
+        VideoProjectSnapshotV2, MAX_COMMAND_GROUP_BYTES,
     },
 };
 use crate::video::error::{VideoCommandError, VideoErrorCode};
@@ -33,6 +33,7 @@ pub const PROPOSAL_STORE_FILE: &str = "proposals.json";
 pub const MAX_OPEN_PROPOSALS: usize = 64;
 pub const MAX_RESOLVED_PROPOSALS: usize = 64;
 pub const MAX_AUDIT_ENTRIES: usize = 500;
+/// Mirrored by `MAX_PROPOSAL_BYTES` in `@supa-video/contracts`.
 pub const MAX_PROPOSAL_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PROPOSAL_STORE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_PARAMETERS: usize = 32;
@@ -148,7 +149,7 @@ pub fn ranges_are_offered(
     })
 }
 
-/// Typed view over the proposal JSON produced by `@supa-video/project`.
+/// Typed view over a transcript cut proposal produced by `@supa-video/project`.
 /// Only schema v2 is accepted natively; the UI upgrades v1 before sending.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +163,71 @@ pub struct ProposalView {
     pub producer: ProposalProducer,
     pub deleted_ranges: Vec<ProposalDeletedRange>,
     pub command_group: CommandGroupRequest,
+}
+
+pub const GRAPHICS_PROPOSAL_KIND: &str = "graphics";
+const MAX_GRAPHICS_ITEMS: usize = 64;
+const MAX_GRAPHICS_ITEM_LABEL_CHARS: usize = 280;
+
+/// One reviewable graphics item; maps 1:1 to an `AddGraphicsClip` command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GraphicsProposalItem {
+    pub item_id: String,
+    pub label: String,
+    pub graphics_clip_id: String,
+}
+
+/// Typed view over a graphics proposal (`graphicsProposalV1WireSchema`). The
+/// description is display-only here; the UI compiler already turned it into the
+/// commands checked below. See docs/adr/0005-agent-graphics-proposals.md.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GraphicsProposalView {
+    pub schema_version: u8,
+    pub proposal_kind: String,
+    pub proposal_id: String,
+    pub project_id: String,
+    pub project_revision: ProjectRevisionDescriptorV2,
+    pub sequence_id: String,
+    pub track_id: String,
+    pub producer: ProposalProducer,
+    pub description: serde_json::Map<String, Value>,
+    pub items: Vec<GraphicsProposalItem>,
+    pub command_group: CommandGroupRequest,
+}
+
+/// What the proposal offers for review, by kind.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProposalBody {
+    Transcript {
+        deleted_ranges: Vec<ProposalDeletedRange>,
+    },
+    Graphics {
+        items: Vec<GraphicsProposalItem>,
+    },
+}
+
+/// A proposal that passed native validation, whatever its kind.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValidatedProposal {
+    pub proposal_id: String,
+    pub project_revision: ProjectRevisionDescriptorV2,
+    pub sequence_id: String,
+    pub track_id: String,
+    pub producer: ProposalProducer,
+    pub command_group: CommandGroupRequest,
+    pub body: ProposalBody,
+}
+
+impl ValidatedProposal {
+    pub fn is_graphics(&self) -> bool {
+        matches!(self.body, ProposalBody::Graphics { .. })
+    }
+}
+
+fn is_graphics_value(value: &Value) -> bool {
+    value.get("proposalKind").is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -446,13 +512,238 @@ fn allowed_command(command: &ProjectCommand) -> bool {
 
 /// Parses and validates an untrusted proposal against the open project:
 /// schema, ids, producer, base revision, command policy and locked tracks.
+/// Transcript cut and graphics proposals each follow their own command policy.
 pub fn validate_proposal(
     value: &Value,
     snapshot: &VideoProjectSnapshotV2,
-) -> Result<ProposalView, VideoCommandError> {
+) -> Result<ValidatedProposal, VideoCommandError> {
     if canonical_bytes(value)?.len() > MAX_PROPOSAL_BYTES {
         return Err(error(VideoErrorCode::StorageLimit, "proposal_bytes"));
     }
+    if is_graphics_value(value) {
+        return validate_graphics_proposal(value, snapshot);
+    }
+    let view = validate_transcript_proposal(value, snapshot)?;
+    Ok(ValidatedProposal {
+        proposal_id: view.proposal_id,
+        project_revision: view.project_revision,
+        sequence_id: view.sequence_id,
+        track_id: view.track_id,
+        producer: view.producer,
+        command_group: view.command_group,
+        body: ProposalBody::Transcript {
+            deleted_ranges: view.deleted_ranges,
+        },
+    })
+}
+
+/// Graphics proposal envelope checks (the same rules the transcript path
+/// applies): ids, producer, project and base revision.
+fn validate_graphics_envelope(
+    view: &GraphicsProposalView,
+    snapshot: &VideoProjectSnapshotV2,
+) -> Result<(), VideoCommandError> {
+    let GraphicsProposalView {
+        proposal_id,
+        project_id,
+        project_revision,
+        sequence_id,
+        track_id,
+        producer,
+        command_group,
+        ..
+    } = view;
+    if !is_canonical_uuid(proposal_id)
+        || !is_canonical_uuid(&command_group.group_id)
+        || !is_canonical_uuid(sequence_id)
+        || !is_canonical_uuid(track_id)
+    {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_ids"));
+    }
+    if !valid_producer(producer) {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_producer"));
+    }
+    if *project_id != snapshot.id || command_group.project_id != snapshot.id {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_project"));
+    }
+    if *project_revision != snapshot.revision
+        || command_group.base_revision != snapshot.revision.number
+    {
+        return Err(error(
+            VideoErrorCode::StaleRevision,
+            "proposal_base_revision",
+        ));
+    }
+    Ok(())
+}
+
+/// A proposal's command group must fit the command-group limit the apply path
+/// enforces; mirrored by `MAX_PROPOSAL_COMMAND_GROUP_BYTES` in `@supa-video/contracts`.
+fn validate_command_group_bytes(group: &CommandGroupRequest) -> Result<(), VideoCommandError> {
+    if canonical_bytes(group)?.len() > MAX_COMMAND_GROUP_BYTES {
+        return Err(error(
+            VideoErrorCode::StorageLimit,
+            "proposal_command_group_bytes",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_item_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Graphics proposals are add-only: at most one leading `InsertTrack` that
+/// creates the empty, unlocked graphics target track, then one
+/// `AddGraphicsClip` per item on that track, in item order. Agents never
+/// remove or rewrite existing graphics.
+pub fn validate_graphics_proposal(
+    value: &Value,
+    snapshot: &VideoProjectSnapshotV2,
+) -> Result<ValidatedProposal, VideoCommandError> {
+    let view: GraphicsProposalView = serde_json::from_value(value.clone())
+        .map_err(|_| error(VideoErrorCode::InvalidCommand, "proposal_schema"))?;
+    if view.proposal_kind != GRAPHICS_PROPOSAL_KIND {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_schema"));
+    }
+    if view.schema_version != 1 {
+        return Err(error(
+            VideoErrorCode::UnsupportedSchema,
+            "proposal_schema_version",
+        ));
+    }
+    validate_graphics_envelope(&view, snapshot)?;
+    if view.items.is_empty()
+        || view.items.len() > MAX_GRAPHICS_ITEMS
+        || view.command_group.commands.is_empty()
+    {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_empty"));
+    }
+    validate_command_group_bytes(&view.command_group)?;
+    let mut item_ids = std::collections::BTreeSet::new();
+    let mut clip_ids = std::collections::BTreeSet::new();
+    for item in &view.items {
+        if !valid_item_id(&item.item_id)
+            || !item_ids.insert(item.item_id.as_str())
+            || !is_canonical_uuid(&item.graphics_clip_id)
+            || !clip_ids.insert(item.graphics_clip_id.as_str())
+            || item.label.is_empty()
+            || item.label.chars().count() > MAX_GRAPHICS_ITEM_LABEL_CHARS
+        {
+            return Err(error(VideoErrorCode::InvalidCommand, "proposal_items"));
+        }
+    }
+    let sequence = snapshot
+        .state
+        .sequences
+        .iter()
+        .find(|sequence| sequence.id == view.sequence_id)
+        .ok_or_else(|| error(VideoErrorCode::InvalidCommand, "proposal_sequence"))?;
+    let existing = sequence
+        .tracks
+        .iter()
+        .find(|track| track.id() == view.track_id);
+    let mut commands = view.command_group.commands.iter().peekable();
+    match (
+        existing,
+        commands.next_if(|c| matches!(c, ProjectCommand::InsertTrack { .. })),
+    ) {
+        (Some(track), None) => {
+            if !matches!(track, ProjectTrack::Graphics { .. }) {
+                return Err(error(VideoErrorCode::InvalidCommand, "proposal_track"));
+            }
+            if track.is_locked() {
+                return Err(error(
+                    VideoErrorCode::InvalidCommand,
+                    "proposal_track_locked",
+                ));
+            }
+            // Export skips hidden tracks, so approved graphics there would never show.
+            if matches!(track, ProjectTrack::Graphics { hidden: true, .. }) {
+                return Err(error(
+                    VideoErrorCode::InvalidCommand,
+                    "proposal_track_hidden",
+                ));
+            }
+        }
+        (
+            None,
+            Some(ProjectCommand::InsertTrack {
+                command_id,
+                sequence_id,
+                track,
+                ..
+            }),
+        ) => {
+            let empty_graphics = matches!(
+                track,
+                ProjectTrack::Graphics { id, locked: false, hidden: false, graphics_clips, .. }
+                    if *id == view.track_id && graphics_clips.is_empty()
+            );
+            if !is_canonical_uuid(command_id) || *sequence_id != view.sequence_id || !empty_graphics
+            {
+                return Err(error(
+                    VideoErrorCode::InvalidCommand,
+                    "proposal_insert_track",
+                ));
+            }
+        }
+        // An insert for a track that already exists, or no track at all.
+        _ => return Err(error(VideoErrorCode::InvalidCommand, "proposal_track")),
+    }
+    let mut adds = 0_usize;
+    for command in commands {
+        let ProjectCommand::AddGraphicsClip {
+            command_id,
+            sequence_id,
+            track_id,
+            graphics_clip,
+            ..
+        } = command
+        else {
+            return Err(error(
+                VideoErrorCode::InvalidCommand,
+                "proposal_command_policy",
+            ));
+        };
+        if !is_canonical_uuid(command_id) {
+            return Err(error(VideoErrorCode::InvalidCommand, "proposal_ids"));
+        }
+        if *sequence_id != view.sequence_id || *track_id != view.track_id {
+            return Err(error(
+                VideoErrorCode::InvalidCommand,
+                "proposal_command_scope",
+            ));
+        }
+        if view.items.get(adds).map(|item| &item.graphics_clip_id) != Some(&graphics_clip.id) {
+            return Err(error(VideoErrorCode::InvalidCommand, "proposal_items"));
+        }
+        adds += 1;
+    }
+    if adds != view.items.len() {
+        return Err(error(VideoErrorCode::InvalidCommand, "proposal_items"));
+    }
+    Ok(ValidatedProposal {
+        proposal_id: view.proposal_id,
+        project_revision: view.project_revision,
+        sequence_id: view.sequence_id,
+        track_id: view.track_id,
+        producer: view.producer,
+        command_group: view.command_group,
+        body: ProposalBody::Graphics { items: view.items },
+    })
+}
+
+/// The transcript cut path, unchanged from before graphics proposals existed.
+fn validate_transcript_proposal(
+    value: &Value,
+    snapshot: &VideoProjectSnapshotV2,
+) -> Result<ProposalView, VideoCommandError> {
     let view: ProposalView = serde_json::from_value(value.clone())
         .map_err(|_| error(VideoErrorCode::InvalidCommand, "proposal_schema"))?;
     if view.schema_version != 2 {
@@ -482,12 +773,10 @@ pub fn validate_proposal(
             "proposal_base_revision",
         ));
     }
-    if view.deleted_ranges.is_empty()
-        || view.command_group.commands.is_empty()
-        || canonical_bytes(&view.command_group)?.len() > MAX_COMMAND_GROUP_BYTES
-    {
+    if view.deleted_ranges.is_empty() || view.command_group.commands.is_empty() {
         return Err(error(VideoErrorCode::InvalidCommand, "proposal_empty"));
     }
+    validate_command_group_bytes(&view.command_group)?;
     let sequence = snapshot
         .state
         .sequences
@@ -630,9 +919,30 @@ pub fn reconcile_with_journal(
     settled
 }
 
-pub fn affected_ranges(view: &ProposalView) -> Vec<ProposalTimelineRange> {
-    view.deleted_ranges
-        .iter()
-        .map(|range| range.original_timeline_range.clone())
-        .collect()
+/// Timeline spans the proposal touches: original cut ranges, or graphics clip spans.
+pub fn affected_ranges(view: &ValidatedProposal) -> Vec<ProposalTimelineRange> {
+    match &view.body {
+        ProposalBody::Transcript { deleted_ranges } => deleted_ranges
+            .iter()
+            .map(|range| range.original_timeline_range.clone())
+            .collect(),
+        ProposalBody::Graphics { .. } => view
+            .command_group
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                ProjectCommand::AddGraphicsClip { graphics_clip, .. } => {
+                    let end = graphics_clip.timeline_end()?;
+                    Some(ProposalTimelineRange {
+                        start: graphics_clip.timeline_start.clone(),
+                        end: RationalTime {
+                            value: end,
+                            ..graphics_clip.timeline_start.clone()
+                        },
+                    })
+                }
+                _ => None,
+            })
+            .collect(),
+    }
 }
