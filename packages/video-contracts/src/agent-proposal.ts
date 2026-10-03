@@ -1,10 +1,25 @@
 import { z } from "zod";
 
+import {
+  AGENT_GRAPHICS_MAX_ITEMS,
+  agentGraphicsDescriptionSchema,
+} from "./agent-graphics-description.js";
 import { commandGroupRequestSchema } from "./project-commands-v2.js";
 import { projectRevisionDescriptorV2Schema } from "./project-revision.js";
 import { projectUuidSchema } from "./project.js";
 import { mediaContentIdentityV1Schema } from "./source-content.js";
 import { rationalTimeSchema } from "./time.js";
+
+/**
+ * Most canonical-JSON bytes a proposal's command group may take. Mirrors `MAX_COMMAND_GROUP_BYTES`
+ * in apps/desktop/src-tauri/src/video/project/types.rs.
+ */
+export const MAX_PROPOSAL_COMMAND_GROUP_BYTES = 1024 * 1024;
+/**
+ * Most canonical-JSON bytes a whole proposal may take. Mirrors `MAX_PROPOSAL_BYTES` in
+ * apps/desktop/src-tauri/src/video/project/proposal.rs.
+ */
+export const MAX_PROPOSAL_BYTES = 2 * 1024 * 1024;
 
 const boundedString = z.string().min(1).max(1_024);
 const nonNegativeInteger = z.number().int().safe().nonnegative();
@@ -114,6 +129,50 @@ export const transcriptEditProposalWireSchema = z.discriminatedUnion("schemaVers
 ]);
 export type TranscriptEditProposalWire = z.infer<typeof transcriptEditProposalWireSchema>;
 
+/**
+ * Graphics proposal: agent-authored graphics clips offered for review (see CONTEXT.md and
+ * docs/adr/0005-agent-graphics-proposals.md). Each item maps 1:1 to one `AddGraphicsClip` in the
+ * command group; an optional leading `InsertTrack` creates the empty graphics track first.
+ */
+export const graphicsProposalItemSchema = z
+  .object({
+    itemId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/u),
+    label: z.string().min(1).max(280),
+    graphicsClipId: projectUuidSchema,
+  })
+  .strict();
+export type GraphicsProposalItem = z.infer<typeof graphicsProposalItemSchema>;
+
+export const graphicsProposalV1WireSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    proposalKind: z.literal("graphics"),
+    proposalId: projectUuidSchema,
+    projectId: projectUuidSchema,
+    projectRevision: projectRevisionDescriptorV2Schema,
+    sequenceId: projectUuidSchema,
+    trackId: projectUuidSchema,
+    producer: producerProvenanceSchema,
+    description: agentGraphicsDescriptionSchema,
+    items: z.array(graphicsProposalItemSchema).min(1).max(AGENT_GRAPHICS_MAX_ITEMS),
+    commandGroup: commandGroupRequestSchema,
+  })
+  .strict();
+export type GraphicsProposalWire = z.infer<typeof graphicsProposalV1WireSchema>;
+
+/** Any proposal the native store holds: transcript cuts (v2) or graphics (v1). */
+export const agentProposalWireSchema = z.union([
+  transcriptEditProposalV2WireSchema,
+  graphicsProposalV1WireSchema,
+]);
+export type AgentProposalWire = z.infer<typeof agentProposalWireSchema>;
+
+export function isGraphicsProposalWire(
+  proposal: AgentProposalWire,
+): proposal is GraphicsProposalWire {
+  return "proposalKind" in proposal && proposal.proposalKind === "graphics";
+}
+
 // ---- Native proposal store, as returned over IPC -------------------------
 
 export const nativeProposalStatusSchema = z.enum([
@@ -142,7 +201,7 @@ export const storedProposalSchema = z
     approvedRangeIds: z.array(boundedString).max(1_000),
     restoreOperationId: projectUuidSchema.nullable(),
     restoreSteps: nonNegativeInteger,
-    proposal: transcriptEditProposalV2WireSchema,
+    proposal: agentProposalWireSchema,
   })
   .strict();
 export type StoredProposal = z.infer<typeof storedProposalSchema>;

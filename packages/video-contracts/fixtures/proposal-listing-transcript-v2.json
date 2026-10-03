@@ -1,0 +1,259 @@
+{
+  "proposals": [
+    {
+      "proposalId": "00ffc93e-956c-4152-a4a4-4096c144982a",
+      "producer": {
+        "id": "user-selection",
+        "version": "1",
+        "kind": "user",
+        "parameters": {}
+      },
+      "sequenceId": "00000000-0000-4000-8000-000000000002",
+      "trackId": "00000000-0000-4000-8000-000000000010",
+      "baseRevision": {
+        "number": 7,
+        "id": "00000000-0000-4000-8000-000000900107",
+        "parentId": "00000000-0000-4000-8000-000000900106",
+        "committedAt": "2026-08-08T12:00:00.000Z",
+        "operationId": "00000000-0000-4000-8000-000000900207",
+        "stateHash": "0000000000000000000000000000000000000000000000000000000000000007"
+      },
+      "status": "pending",
+      "statusReason": null,
+      "createdAtMs": 1000,
+      "expiresAtMs": 2000,
+      "appliedGroupId": null,
+      "preApplyRevision": null,
+      "approvedRangeIds": [],
+      "restoreOperationId": null,
+      "restoreSteps": 0,
+      "proposal": {
+        "schemaVersion": 2,
+        "producer": {
+          "id": "user-selection",
+          "version": "1",
+          "kind": "user",
+          "parameters": {}
+        },
+        "deletedGaps": [],
+        "proposalId": "00ffc93e-956c-4152-a4a4-4096c144982a",
+        "artifactIdentityKey": "abababababababababababababababababababababababababababababababab",
+        "sourceIdentity": {
+          "schemaVersion": 1,
+          "algorithm": "sha256",
+          "digest": "1212121212121212121212121212121212121212121212121212121212121212",
+          "byteLength": 1000
+        },
+        "projectId": "00000000-0000-4000-8000-000000900001",
+        "projectRevision": {
+          "number": 7,
+          "id": "00000000-0000-4000-8000-000000900107",
+          "parentId": "00000000-0000-4000-8000-000000900106",
+          "committedAt": "2026-08-08T12:00:00.000Z",
+          "operationId": "00000000-0000-4000-8000-000000900207",
+          "stateHash": "0000000000000000000000000000000000000000000000000000000000000007"
+        },
+        "sequenceId": "00000000-0000-4000-8000-000000000002",
+        "trackId": "00000000-0000-4000-8000-000000000010",
+        "selectedOccurrenceIds": [
+          "24:transcript-occurrence-v1|64:abababababababababababababababababababababababababababababababab|36:00000000-0000-4000-8000-000000000002|36:00000000-0000-4000-8000-000000000010|36:00000000-0000-4000-8000-000000000100|36:00000000-0000-4000-8000-000000000001|7:words:0|2:10|2:15"
+        ],
+        "assetIdentities": [
+          {
+            "assetId": "00000000-0000-4000-8000-000000000001",
+            "contentIdentity": {
+              "schemaVersion": 1,
+              "algorithm": "sha256",
+              "digest": "1212121212121212121212121212121212121212121212121212121212121212",
+              "byteLength": 1000
+            }
+          }
+        ],
+        "selectedWords": [
+          {
+            "occurrenceId": "24:transcript-occurrence-v1|64:abababababababababababababababababababababababababababababababab|36:00000000-0000-4000-8000-000000000002|36:00000000-0000-4000-8000-000000000010|36:00000000-0000-4000-8000-000000000100|36:00000000-0000-4000-8000-000000000001|7:words:0|2:10|2:15",
+            "wordId": "words:0",
+            "text": "um",
+            "sourceStartUs": 1000000,
+            "sourceEndUs": 1500000
+          }
+        ],
+        "keptRanges": [
+          {
+            "clipId": "00000000-0000-4000-8000-000000000100",
+            "assetId": "00000000-0000-4000-8000-000000000001",
+            "sourceRange": {
+              "start": {
+                "value": 0,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "originalTimelineRange": {
+              "start": {
+                "value": 0,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "previewTimelineRange": {
+              "start": {
+                "value": 0,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            }
+          },
+          {
+            "clipId": "00000000-0000-4000-8000-000000000100",
+            "assetId": "00000000-0000-4000-8000-000000000001",
+            "sourceRange": {
+              "start": {
+                "value": 15,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 100,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "originalTimelineRange": {
+              "start": {
+                "value": 15,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 100,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "previewTimelineRange": {
+              "start": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 95,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            }
+          }
+        ],
+        "deletedRanges": [
+          {
+            "clipId": "00000000-0000-4000-8000-000000000100",
+            "assetId": "00000000-0000-4000-8000-000000000001",
+            "sourceRange": {
+              "start": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 15,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "originalTimelineRange": {
+              "start": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 15,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "previewTimelineRange": {
+              "start": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "end": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              }
+            },
+            "selectedWords": [
+              {
+                "occurrenceId": "24:transcript-occurrence-v1|64:abababababababababababababababababababababababababababababababab|36:00000000-0000-4000-8000-000000000002|36:00000000-0000-4000-8000-000000000010|36:00000000-0000-4000-8000-000000000100|36:00000000-0000-4000-8000-000000000001|7:words:0|2:10|2:15",
+                "wordId": "words:0",
+                "text": "um",
+                "sourceStartUs": 1000000,
+                "sourceEndUs": 1500000
+              }
+            ]
+          }
+        ],
+        "commandGroup": {
+          "groupId": "5a9b2fb5-a2c0-44ff-8d96-06b25766b2a5",
+          "projectId": "00000000-0000-4000-8000-000000900001",
+          "baseRevision": 7,
+          "commands": [
+            {
+              "type": "SplitClip",
+              "commandId": "0527daad-4491-4353-a365-b6b09990edb8",
+              "sequenceId": "00000000-0000-4000-8000-000000000002",
+              "trackId": "00000000-0000-4000-8000-000000000010",
+              "clipId": "00000000-0000-4000-8000-000000000100",
+              "splitAt": {
+                "value": 10,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "rightClipId": "01e4d6ac-7e45-4a0a-83ae-901e914f2b8e"
+            },
+            {
+              "type": "SplitClip",
+              "commandId": "08404a57-8bd9-470f-9efc-fc9ade7c8595",
+              "sequenceId": "00000000-0000-4000-8000-000000000002",
+              "trackId": "00000000-0000-4000-8000-000000000010",
+              "clipId": "01e4d6ac-7e45-4a0a-83ae-901e914f2b8e",
+              "splitAt": {
+                "value": 15,
+                "rateNumerator": 10,
+                "rateDenominator": 1
+              },
+              "rightClipId": "7fdda475-a39c-4fc5-a9ca-1f658a2623a6"
+            },
+            {
+              "type": "RippleDeleteClip",
+              "commandId": "cbdf246f-9bc3-4bfb-aa1a-2b3b73374e1c",
+              "sequenceId": "00000000-0000-4000-8000-000000000002",
+              "trackId": "00000000-0000-4000-8000-000000000010",
+              "clipId": "01e4d6ac-7e45-4a0a-83ae-901e914f2b8e"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "audit": [],
+  "storeDiscarded": false
+}
