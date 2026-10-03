@@ -49,4 +49,5 @@ export * from "./proposal-lifecycle.js";
 export { derivedUuid } from "./transcript-edit-command-compiler.js";
 export * from "./motion-presets.js";
 export * from "./apply-motion-preset.js";
+export * from "./compile-agent-graphics.js";
 export * from "./snap-graphics-to-music-beats.js";

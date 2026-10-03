@@ -1,4 +1,9 @@
-import type { ProjectProjection } from "@supa-video/contracts";
+import {
+  type GraphicsProposalWire,
+  isTrackHidden,
+  isTrackLocked,
+  type ProjectProjection,
+} from "@supa-video/contracts";
 import type { TranscriptArtifactV1 } from "@supa-video/media";
 
 import { err, ok, type Result } from "./proposal-producer.js";
@@ -75,14 +80,25 @@ export interface ProposalScope {
   readonly trackId: string;
 }
 
+/** Proposals the lifecycle reviews: transcript cuts or graphics. */
+export type LifecycleProposal = TranscriptEditProposal | GraphicsProposalWire;
+
+export function isGraphicsProposal(proposal: LifecycleProposal): proposal is GraphicsProposalWire {
+  return "proposalKind" in proposal && proposal.proposalKind === "graphics";
+}
+
+/**
+ * One reviewable decision unit. `rangeId` is a deleted range id for transcript proposals and a
+ * graphics item id for graphics proposals.
+ */
 export interface ProposalRangeState {
   readonly rangeId: string;
   readonly decision: RangeDecision;
 }
 
-export interface ProposalRecord {
+export interface ProposalRecord<P extends LifecycleProposal = TranscriptEditProposal> {
   readonly schemaVersion: 1;
-  readonly proposal: TranscriptEditProposal;
+  readonly proposal: P;
   readonly status: ProposalStatus;
   readonly scope: ProposalScope;
   readonly createdAtMs: number;
@@ -109,6 +125,13 @@ export function rangeIdOf(range: TranscriptEditDeletedRange): string {
   return `${range.clipId}:${range.sourceRange.start.value}:${range.sourceRange.end.value}`;
 }
 
+/** Ids of a proposal's decision units, in proposal order. */
+export function decisionUnitIds(proposal: LifecycleProposal): readonly string[] {
+  return isGraphicsProposal(proposal)
+    ? proposal.items.map(({ itemId }) => itemId)
+    : proposal.deletedRanges.map(rangeIdOf);
+}
+
 function validatePolicy(policy: ProposalPolicy): LifecycleError | null {
   const valid =
     Number.isSafeInteger(policy.ttlMs) &&
@@ -122,30 +145,31 @@ function validatePolicy(policy: ProposalPolicy): LifecycleError | null {
     : { code: "invalid_policy", message: "Policy values must be non-negative integers" };
 }
 
-function withStatus(
-  record: ProposalRecord,
+function withStatus<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
   status: ProposalStatus,
   statusReason: string | null,
-): Result<ProposalRecord, LifecycleError> {
+): Result<ProposalRecord<P>, LifecycleError> {
   if (!canTransition(record.status, status)) {
     return err({ code: "invalid_transition", from: record.status, to: status });
   }
   return ok(Object.freeze({ ...record, status, statusReason }));
 }
 
-export function openProposalRecord(input: {
-  readonly proposal: TranscriptEditProposal;
+export function openProposalRecord<P extends LifecycleProposal>(input: {
+  readonly proposal: P;
   readonly scope: ProposalScope;
   readonly nowMs: number;
   readonly policy?: ProposalPolicy;
-}): Result<ProposalRecord, LifecycleError> {
+}): Result<ProposalRecord<P>, LifecycleError> {
   const policy = input.policy ?? defaultProposalPolicy;
   const invalid = validatePolicy(policy);
   if (invalid !== null) return err(invalid);
   const { proposal, scope } = input;
-  for (const range of proposal.deletedRanges) {
+  const unitIds = decisionUnitIds(proposal);
+  for (const rangeId of unitIds) {
     const inTrack = proposal.sequenceId === scope.sequenceId && proposal.trackId === scope.trackId;
-    if (!inTrack) return err({ code: "out_of_scope", rangeId: rangeIdOf(range) });
+    if (!inTrack) return err({ code: "out_of_scope", rangeId });
   }
   return ok(
     Object.freeze({
@@ -156,9 +180,7 @@ export function openProposalRecord(input: {
       createdAtMs: input.nowMs,
       expiresAtMs: input.nowMs + policy.ttlMs,
       ranges: Object.freeze(
-        proposal.deletedRanges.map((range) =>
-          Object.freeze({ rangeId: rangeIdOf(range), decision: "undecided" as const }),
-        ),
+        unitIds.map((rangeId) => Object.freeze({ rangeId, decision: "undecided" as const })),
       ),
       repairCount: 0,
       appliedProposalId: null,
@@ -168,11 +190,11 @@ export function openProposalRecord(input: {
 }
 
 /** Records the user's decision for one range. Any decision makes it partially approved. */
-export function decideRange(
-  record: ProposalRecord,
+export function decideRange<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
   rangeId: string,
   decision: RangeDecision,
-): Result<ProposalRecord, LifecycleError> {
+): Result<ProposalRecord<P>, LifecycleError> {
   if (!record.ranges.some((range) => range.rangeId === rangeId)) {
     return err({ code: "unknown_range", rangeId });
   }
@@ -188,11 +210,11 @@ export function decideRange(
   return next.ok ? ok(Object.freeze({ ...next.value, ranges })) : next;
 }
 
-export function decideAllRanges(
-  record: ProposalRecord,
+export function decideAllRanges<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
   decision: Exclude<RangeDecision, "undecided">,
-): Result<ProposalRecord, LifecycleError> {
-  let current: Result<ProposalRecord, LifecycleError> = ok(record);
+): Result<ProposalRecord<P>, LifecycleError> {
+  let current: Result<ProposalRecord<P>, LifecycleError> = ok(record);
   for (const { rangeId } of record.ranges) {
     if (!current.ok) return current;
     current = decideRange(current.value, rangeId, decision);
@@ -200,10 +222,10 @@ export function decideAllRanges(
   return current;
 }
 
-export function rejectProposal(
-  record: ProposalRecord,
+export function rejectProposal<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
   reason = "Rejected by user",
-): Result<ProposalRecord, LifecycleError> {
+): Result<ProposalRecord<P>, LifecycleError> {
   return withStatus(record, "rejected", reason);
 }
 
@@ -211,12 +233,12 @@ export function rejectProposal(
  * Checks time- and revision-based expiry. Returns the record unchanged if it is
  * still live or already settled (applied or terminal).
  */
-export function refreshExpiry(
-  record: ProposalRecord,
+export function refreshExpiry<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
   nowMs: number,
   currentRevision: number,
   policy: ProposalPolicy = defaultProposalPolicy,
-): ProposalRecord {
+): ProposalRecord<P> {
   if (!isOpenStatus(record.status)) return record;
   if (nowMs >= record.expiresAtMs) {
     return Object.freeze({ ...record, status: "expired", statusReason: "Proposal timed out" });
@@ -337,12 +359,104 @@ export async function deriveApprovedProposal(input: {
   }
 }
 
-export function markApplied(
-  record: ProposalRecord,
-  appliedProposal: TranscriptEditProposal,
-): Result<ProposalRecord, LifecycleError> {
+export function markApplied<P extends LifecycleProposal>(
+  record: ProposalRecord<P>,
+  appliedProposal: Pick<LifecycleProposal, "proposalId">,
+): Result<ProposalRecord<P>, LifecycleError> {
   const next = withStatus(record, "applied", null);
   return next.ok
     ? ok(Object.freeze({ ...next.value, appliedProposalId: appliedProposal.proposalId }))
     : next;
+}
+
+export type DeriveGraphicsApprovalResult =
+  | {
+      readonly kind: "ready";
+      readonly record: ProposalRecord<GraphicsProposalWire>;
+      readonly proposal: GraphicsProposalWire;
+    }
+  | { readonly kind: "stale"; readonly record: ProposalRecord<GraphicsProposalWire> };
+
+/**
+ * Builds the graphics proposal to apply from the accepted items. A full approval at the
+ * proposal's own base reuses it unchanged. Otherwise the accepted items' commands are kept
+ * byte-for-byte (the native apply refuses anything the stored proposal did not offer) under a
+ * fresh proposal and group id at the current revision. The proposal's own graphics track insert
+ * is kept only when an item survives and the track does not exist yet. Re-basing onto a newer
+ * revision counts as a repair; past `maxRepairs`, or when the target track is gone, locked or
+ * hidden, the record goes stale.
+ */
+export function deriveApprovedGraphicsProposal(input: {
+  readonly record: ProposalRecord<GraphicsProposalWire>;
+  readonly projection: ProjectProjection;
+  /** Fresh ids: the derived proposal id, then its command group id. */
+  readonly newId: () => string;
+  readonly policy?: ProposalPolicy;
+}): Result<DeriveGraphicsApprovalResult, LifecycleError> {
+  const policy = input.policy ?? defaultProposalPolicy;
+  const { record, projection } = input;
+  const offered = record.proposal;
+  if (!isOpenStatus(record.status)) {
+    return err({ code: "invalid_transition", from: record.status, to: "applied" });
+  }
+  const accepted = new Set(
+    record.ranges.filter(({ decision }) => decision === "accepted").map(({ rangeId }) => rangeId),
+  );
+  const items = offered.items.filter(({ itemId }) => accepted.has(itemId));
+  if (items.length === 0) return err({ code: "nothing_accepted" });
+  const sameBase =
+    projection.projectId === offered.projectId &&
+    projection.revision.id === offered.projectRevision.id;
+  if (items.length === offered.items.length && sameBase) {
+    return ok({ kind: "ready", record, proposal: offered });
+  }
+  const repairCount = sameBase ? record.repairCount : record.repairCount + 1;
+  const goStale = (reason: string): Result<DeriveGraphicsApprovalResult, LifecycleError> =>
+    ok({
+      kind: "stale",
+      record: Object.freeze({ ...record, status: "stale", statusReason: reason, repairCount }),
+    });
+  if (repairCount > policy.maxRepairs) {
+    return goStale("Project changed too often while this proposal was waiting");
+  }
+  if (projection.projectId !== offered.projectId) return goStale("Proposal is for another project");
+  const sequence = projection.state.sequences.find(({ id }) => id === offered.sequenceId);
+  if (sequence === undefined) return goStale("The proposal's sequence no longer exists");
+  const track = sequence.tracks.find(({ id }) => id === offered.trackId);
+  const insert = offered.commandGroup.commands.find(
+    (command) => command.type === "InsertTrack" && command.track.id === offered.trackId,
+  );
+  if (track === undefined && insert === undefined) {
+    return goStale("The proposal's graphics track no longer exists");
+  }
+  if (track !== undefined && (track.kind !== "graphics" || isTrackLocked(track))) {
+    return goStale("The proposal's graphics track is locked or changed");
+  }
+  if (track !== undefined && isTrackHidden(track)) {
+    return goStale("The proposal's graphics track is hidden, so its graphics would not export");
+  }
+  const clipIds = new Set(items.map(({ graphicsClipId }) => graphicsClipId));
+  const commands = offered.commandGroup.commands.filter((command) =>
+    command.type === "AddGraphicsClip"
+      ? clipIds.has(command.graphicsClip.id)
+      : command === insert && track === undefined,
+  );
+  const proposalId = input.newId();
+  const groupId = input.newId();
+  return ok({
+    kind: "ready",
+    record: Object.freeze({ ...record, repairCount }),
+    proposal: Object.freeze({
+      ...offered,
+      proposalId,
+      projectRevision: projection.revision,
+      items,
+      commandGroup: {
+        ...offered.commandGroup,
+        groupId,
+        baseRevision: projection.revision.number,
+        commands,
+      },
+    }),
+  });
 }
