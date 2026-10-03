@@ -1164,6 +1164,18 @@ impl MediaPrograms {
             .ok_or_else(|| VideoCommandError::tool_unavailable(operation, "supa-graphics-render"))
     }
 
+    /// The music beat detector sidecar (ADR 0004), when this build bundles it.
+    pub(crate) fn beat_detector(&self) -> Option<PathBuf> {
+        let detector = match &self.source {
+            MediaProgramSource::Bundled(toolchain) => toolchain.beat_detector(),
+            #[cfg(test)]
+            MediaProgramSource::Explicit { .. } => None,
+        };
+        detector
+            .filter(|path| path.is_file())
+            .map(Path::to_path_buf)
+    }
+
     pub(crate) fn toolchain_id(&self) -> &str {
         match &self.source {
             MediaProgramSource::Bundled(toolchain) => toolchain.toolchain_id(),

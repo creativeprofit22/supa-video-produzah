@@ -2,6 +2,8 @@
 //! `music_beat_runtime` and `music_beat_job` so it is testable without a
 //! webview.
 
+use std::path::PathBuf;
+
 use serde::Deserialize;
 use tauri::{Manager, Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
@@ -35,21 +37,31 @@ fn config_dir<R: Runtime>(
         .map_err(|_| VideoCommandError::project_io(operation, "app_config"))
 }
 
+/// The bundled `supa-beat-detect` sidecar, when this build ships it.
+fn beat_detector(toolchain: &State<'_, MediaToolchainState>) -> Option<PathBuf> {
+    MediaPrograms::bundled(toolchain.inner().clone()).beat_detector()
+}
+
 #[tauri::command]
 pub(crate) async fn video_music_beat_runtime_status<R: Runtime>(
     window: WebviewWindow<R>,
+    toolchain: State<'_, MediaToolchainState>,
 ) -> Result<MusicBeatRuntimeStatus, VideoCommandError> {
     let config_dir = config_dir(&window, "music_beat_runtime_status")?;
-    Ok(music_beat_runtime_status(&config_dir).await.0)
+    let sidecar = beat_detector(&toolchain);
+    Ok(music_beat_runtime_status(&config_dir, sidecar.as_deref())
+        .await
+        .0)
 }
 
 /// Opens a native folder picker; the webview never supplies the path.
 /// Returns `None` when the user cancels. A running job keeps the runtime it
-/// verified at start and re-hashes the checkpoint before use, so changing the
+/// verified at start and re-hashes the models before use, so changing the
 /// folder mid-job is safe.
 #[tauri::command]
 pub(crate) async fn video_music_beat_set_runtime<R: Runtime>(
     window: WebviewWindow<R>,
+    toolchain: State<'_, MediaToolchainState>,
 ) -> Result<Option<MusicBeatRuntimeStatus>, VideoCommandError> {
     let config_dir = config_dir(&window, "set_music_beat_runtime")?;
     let selection = window
@@ -65,7 +77,8 @@ pub(crate) async fn video_music_beat_set_runtime<R: Runtime>(
         .to_str()
         .ok_or_else(|| VideoCommandError::invalid_path("set_music_beat_runtime", "folder"))?
         .to_owned();
-    set_music_beat_runtime_folder(&config_dir, &folder)
+    let sidecar = beat_detector(&toolchain);
+    set_music_beat_runtime_folder(&config_dir, sidecar.as_deref(), &folder)
         .await
         .map(Some)
 }
@@ -81,7 +94,9 @@ pub(crate) async fn video_start_music_beat_detection<R: Runtime>(
     request: StartMusicBeatDetectionRequest,
 ) -> Result<MusicBeatDetectionStarted, VideoCommandError> {
     const OPERATION: &str = "start_music_beat_detection";
-    let (_, verified) = music_beat_runtime_status(&config_dir(&window, OPERATION)?).await;
+    let sidecar = beat_detector(&toolchain);
+    let (_, verified) =
+        music_beat_runtime_status(&config_dir(&window, OPERATION)?, sidecar.as_deref()).await;
     let choice = verified.map_or(
         MusicBeatDetectorChoice::TempoFallback,
         MusicBeatDetectorChoice::BeatThis,

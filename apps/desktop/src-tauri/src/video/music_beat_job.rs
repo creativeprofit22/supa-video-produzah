@@ -1,7 +1,8 @@
 //! Music beat detection as a cancellable derived-media job.
 //!
 //! One job decodes the asset's first audio stream to 22.05 kHz mono WAV, then
-//! detects music beats with Beat This! when the managed runtime is ready, or
+//! detects music beats with Beat This! (the `supa-beat-detect` sidecar, ADR 0004) when the
+//! managed runtime is ready, or
 //! with the in-app tempo fallback otherwise. Onsets always come from the
 //! in-app envelope. The `music-beats-v1` analysis is published as a
 //! content-addressed `music_beats` artifact keyed by the source content
@@ -38,9 +39,7 @@ use super::{
         acquire_artifact, ingest_source_guarded, is_reparse_or_symlink, ArtifactStoreKind,
         IngestedSource,
     },
-    music_beat_runtime::{
-        extract_analysis_wav, materialize_runner, run_beat_this, VerifiedMusicBeatRuntime,
-    },
+    music_beat_runtime::{extract_analysis_wav, run_beat_detector, VerifiedMusicBeatRuntime},
     music_beats::{
         detect_onsets_us, normalized_times, onset_envelope_from_wav, seconds_to_us,
         tempo_from_beats_us, track_music_beats_fallback, MusicBeatAnalysisV1,
@@ -75,8 +74,9 @@ impl MusicBeatDetectorChoice {
         match self {
             Self::BeatThis(runtime) => MusicBeatDetectorV1 {
                 kind: MusicBeatDetectorKind::BeatThis,
-                version: runtime.beat_this_version.clone(),
-                checkpoint_sha256: Some(runtime.checkpoint_sha256.clone()),
+                version: runtime.detector_version.clone(),
+                // The weights that actually run: SHA-256 of `beat_this.onnx`.
+                checkpoint_sha256: Some(runtime.beat_model_sha256.clone()),
             },
             Self::TempoFallback => MusicBeatDetectorV1 {
                 kind: MusicBeatDetectorKind::TempoFallback,
@@ -436,10 +436,14 @@ async fn detect_and_publish(
     let onsets_us = detect_onsets_us(&envelope);
     let (tempo_bpm, beats_us, downbeats_us) = match input.choice {
         MusicBeatDetectorChoice::BeatThis(runtime) => {
-            runtime.recheck_checkpoint().await?;
-            let runner = materialize_runner(input.app_cache_root)?;
-            let output =
-                run_beat_this(runtime, &runner, &wav_path, input.cancellation.clone()).await?;
+            let gpu_pack = runtime.recheck_before_run().await?;
+            let output = run_beat_detector(
+                runtime,
+                gpu_pack.as_deref(),
+                &wav_path,
+                input.cancellation.clone(),
+            )
+            .await?;
             let to_times = |seconds: Vec<f64>, cap: usize| {
                 seconds
                     .into_iter()
@@ -696,7 +700,8 @@ mod tests {
     use crate::video::{
         media_store::ingest_blocking_for_test,
         music_beat_runtime::{
-            fixture_manifest, runtime_folder_fixture, verify_runtime_folder, write_test_wav,
+            fake_sidecar_path, fixture_manifest, runtime_folder_fixture, verify_runtime_folder,
+            write_test_wav, MusicBeatAccelerator, RuntimeFixture,
         },
         music_beats::click_track_samples,
     };
@@ -783,12 +788,25 @@ mod tests {
         }
     }
 
-    async fn ready_beat_this(fixture: &Fixture) -> VerifiedMusicBeatRuntime {
-        let checkpoint = b"fake final0 checkpoint";
-        let folder = runtime_folder_fixture(&fixture.workspace_path, checkpoint);
-        verify_runtime_folder(&folder, &fixture_manifest(checkpoint))
+    /// A verified fake runtime; the test binary's helper modes stand in for the sidecar.
+    async fn ready_beat_this(
+        fixture: &Fixture,
+        files: &RuntimeFixture,
+    ) -> VerifiedMusicBeatRuntime {
+        let folder = runtime_folder_fixture(&fixture.workspace_path, files);
+        let sidecar = fake_sidecar_path();
+        verify_runtime_folder(&folder, Some(&sidecar), &fixture_manifest(files))
             .await
             .expect("fake runtime must verify")
+    }
+
+    fn runtime_folder(runtime: &VerifiedMusicBeatRuntime) -> PathBuf {
+        runtime.models_dir.parent().unwrap().to_path_buf()
+    }
+
+    fn recorded_detect_args(runtime: &VerifiedMusicBeatRuntime) -> Vec<String> {
+        let record = runtime_folder(runtime).join("fake-detect-args.json");
+        serde_json::from_slice(&fs::read(record).unwrap()).unwrap()
     }
 
     #[test]
@@ -796,14 +814,23 @@ mod tests {
         let fallback = MusicBeatDetectorChoice::TempoFallback.detector();
         let beat_this = MusicBeatDetectorV1 {
             kind: MusicBeatDetectorKind::BeatThis,
-            version: "1.1.0".to_owned(),
+            version: "rs-1.1.0".to_owned(),
             checkpoint_sha256: Some("a".repeat(64)),
+        };
+        let python_era = MusicBeatDetectorV1 {
+            version: "1.1.0".to_owned(),
+            ..beat_this.clone()
         };
         let source = "b".repeat(64);
         let key = music_beat_analysis_key(&source, &fallback);
         assert!(is_lower_hex_64(&key));
         assert_eq!(key, music_beat_analysis_key(&source, &fallback));
         assert_ne!(key, music_beat_analysis_key(&source, &beat_this));
+        // Analyses from the Python runner are not reused by the sidecar.
+        assert_ne!(
+            music_beat_analysis_key(&source, &beat_this),
+            music_beat_analysis_key(&source, &python_era)
+        );
         assert_ne!(key, music_beat_analysis_key(&"c".repeat(64), &fallback));
     }
 
@@ -842,11 +869,12 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn beat_this_job_uses_the_runner_output_and_records_the_checkpoint() {
+    async fn beat_this_job_uses_the_sidecar_output_and_records_the_beat_model() {
         let fixture = fixture().await;
-        let runtime = ready_beat_this(&fixture).await;
-        let checkpoint_sha256 = runtime.checkpoint_sha256.clone();
-        let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime)).await;
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::WITH_GPU_PACK).await;
+        assert_eq!(runtime.accelerator, MusicBeatAccelerator::Cuda);
+        let beat_model_sha256 = runtime.beat_model_sha256.clone();
+        let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime.clone())).await;
         assert_eq!(
             wait_settled(&fixture, &job_id).await,
             MediaJobState::Complete
@@ -859,10 +887,15 @@ mod tests {
         let analysis = load_music_beat_analysis(&fixture.cache_root, &result.analysis_key)
             .await
             .unwrap();
+        assert_eq!(analysis.detector.version, "rs-1.1.0");
         assert_eq!(
             analysis.detector.checkpoint_sha256.as_deref(),
-            Some(checkpoint_sha256.as_str())
+            Some(beat_model_sha256.as_str())
         );
+        // The verified GPU pack was passed to the sidecar.
+        let args = recorded_detect_args(&runtime);
+        assert_eq!(args[4], "--cuda");
+        assert_eq!(&args[6..8], ["--device", "auto"]);
         assert_eq!(
             analysis.beats_us,
             vec![500_000, 1_000_000, 1_500_000, 2_000_000, 2_500_000, 3_000_000, 3_500_000]
@@ -873,14 +906,80 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn malformed_runner_output_fails_without_publishing() {
+    async fn a_changed_gpu_pack_runs_that_job_on_the_cpu() {
         let fixture = fixture().await;
-        let runtime = ready_beat_this(&fixture).await;
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::WITH_GPU_PACK).await;
+        // Same size, new contents and modification time.
+        let pack_file = runtime_folder(&runtime)
+            .join("cuda")
+            .join("cudart64_12.dll");
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(&pack_file, b"evil cudart").unwrap();
+        let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime.clone())).await;
+        assert_eq!(
+            wait_settled(&fixture, &job_id).await,
+            MediaJobState::Complete
+        );
+        let args = recorded_detect_args(&runtime);
+        assert!(!args.iter().any(|arg| arg == "--cuda"), "{args:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_changed_model_blocks_the_job_before_running_the_sidecar() {
+        let fixture = fixture().await;
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::CPU_ONLY).await;
         fs::write(
-            runtime.checkpoint.with_file_name("fake-detect-malformed"),
-            b"",
+            runtime.models_dir.join("beat_this.onnx"),
+            b"fake beat modeX",
         )
         .unwrap();
+        let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime.clone())).await;
+        // A runtime problem is actionable (verify the runtime), so the job waits as Blocked.
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let job = loop {
+            let job = fixture
+                .jobs
+                .store()
+                .get_private(job_id.clone())
+                .await
+                .unwrap()
+                .public;
+            if !matches!(job.state, MediaJobState::Queued | MediaJobState::Running) {
+                break job;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "job stuck in {:?}",
+                job.state
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        assert_eq!(job.state, MediaJobState::Blocked);
+        assert_eq!(job.error.unwrap().code, "music_beat_runtime_unavailable");
+        assert!(!runtime_folder(&runtime)
+            .join("fake-detect-args.json")
+            .exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_sidecar_crash_with_the_gpu_pack_is_retried_on_the_cpu() {
+        let fixture = fixture().await;
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::WITH_GPU_PACK).await;
+        fs::write(runtime_folder(&runtime).join("fake-cuda-crash"), b"").unwrap();
+        let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime.clone())).await;
+        assert_eq!(
+            wait_settled(&fixture, &job_id).await,
+            MediaJobState::Complete
+        );
+        let args = recorded_detect_args(&runtime);
+        assert!(!args.iter().any(|arg| arg == "--cuda"), "{args:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn malformed_sidecar_output_fails_without_publishing() {
+        let fixture = fixture().await;
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::CPU_ONLY).await;
+        fs::write(runtime_folder(&runtime).join("fake-detect-malformed"), b"").unwrap();
         let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime)).await;
         assert_eq!(wait_settled(&fixture, &job_id).await, MediaJobState::Failed);
         let job = fixture
@@ -917,16 +1016,19 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn cancelling_a_running_job_stops_the_runner() {
+    async fn cancelling_a_running_job_kills_the_sidecar() {
         let fixture = fixture().await;
-        let runtime = ready_beat_this(&fixture).await;
-        let marker_dir = runtime.checkpoint.parent().unwrap().to_path_buf();
+        let runtime = ready_beat_this(&fixture, &RuntimeFixture::CPU_ONLY).await;
+        let marker_dir = runtime_folder(&runtime);
         fs::write(marker_dir.join("fake-detect-hang"), b"").unwrap();
         let job_id = start(&fixture, MusicBeatDetectorChoice::BeatThis(runtime)).await;
         let running = marker_dir.join("fake-detect-running");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while !running.exists() {
-            assert!(std::time::Instant::now() < deadline, "runner never started");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "sidecar never started"
+            );
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
         fixture.jobs.scheduler().cancel(&job_id).await.unwrap();
@@ -940,8 +1042,11 @@ mod tests {
     async fn a_missing_runtime_selects_the_fallback() {
         let fixture = fixture().await;
         let config_dir = fixture.workspace_path.join("config");
-        let (status, verified) =
-            crate::video::music_beat_runtime::music_beat_runtime_status(&config_dir).await;
+        let (status, verified) = crate::video::music_beat_runtime::music_beat_runtime_status(
+            &config_dir,
+            Some(&fake_sidecar_path()),
+        )
+        .await;
         assert!(verified.is_none());
         assert_eq!(
             status.runtime,
@@ -1072,29 +1177,40 @@ mod tests {
         assert_eq!(analysis.detector.kind, MusicBeatDetectorKind::TempoFallback);
     }
 
-    /// The real Beat This! proof: needs a runtime folder built by
-    /// `scripts/setup-music-beat-runtime.ps1` (PyTorch plus the pinned
-    /// checkpoint). Run with `SUPA_VIDEO_REAL_BEAT_THIS_PROOF=1
-    /// SUPA_VIDEO_MUSIC_BEAT_RUNTIME=<folder> cargo test --lib
-    /// music_beat_real_beat_this -- --ignored`.
+    /// The real sidecar proof: the release `supa-beat-detect` build and a runtime folder built by
+    /// `scripts/bootstrap-beat-runtime-windows.ps1`. Run with
+    /// `SUPA_VIDEO_REAL_BEAT_DETECT_PROOF=1 SUPA_VIDEO_MUSIC_BEAT_RUNTIME=<folder> cargo test
+    /// --lib music_beat_real_beat_detect -- --ignored`. With a GPU pack it must run on CUDA.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs ffmpeg, PyTorch and the Beat This! checkpoint"]
-    async fn music_beat_real_beat_this_click_track_end_to_end() {
+    #[ignore = "needs ffmpeg, the beat detector sidecar build and a runtime folder"]
+    async fn music_beat_real_beat_detect_click_track_end_to_end() {
         assert_eq!(
-            std::env::var(crate::video::music_beat_runtime::REAL_BEAT_THIS_PROOF_ENV).as_deref(),
+            std::env::var(crate::video::music_beat_runtime::REAL_BEAT_DETECT_PROOF_ENV).as_deref(),
             Ok("1"),
-            "set SUPA_VIDEO_REAL_BEAT_THIS_PROOF=1"
+            "set SUPA_VIDEO_REAL_BEAT_DETECT_PROOF=1"
         );
         let folder = std::env::var("SUPA_VIDEO_MUSIC_BEAT_RUNTIME")
             .expect("set SUPA_VIDEO_MUSIC_BEAT_RUNTIME to the runtime folder");
-        let runtime = crate::video::music_beat_runtime::verify_runtime_folder(
+        let sidecar = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("beat-detector/target/release/supa-beat-detect.exe");
+        assert!(
+            sidecar.is_file(),
+            "build the sidecar first: scripts/build-beat-detector-windows.ps1"
+        );
+        let runtime = verify_runtime_folder(
             Path::new(&folder),
+            Some(&sidecar),
             &crate::video::music_beat_runtime::pinned_manifest(),
         )
         .await
         .expect("the runtime folder must match the pinned manifest");
+        let expect_cuda = Path::new(&folder).join("cuda").is_dir();
+        if expect_cuda {
+            assert_eq!(runtime.accelerator, MusicBeatAccelerator::Cuda);
+        }
         let analysis = click_track_end_to_end(MusicBeatDetectorChoice::BeatThis(runtime)).await;
         assert_eq!(analysis.detector.kind, MusicBeatDetectorKind::BeatThis);
+        assert_eq!(analysis.detector.version, "rs-1.1.0");
         assert!(!analysis.downbeats_us.is_empty());
     }
 }

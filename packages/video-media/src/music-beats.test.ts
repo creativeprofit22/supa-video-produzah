@@ -106,15 +106,46 @@ describe("music beat detection IPC schemas", () => {
     ).toBe(false);
   });
 
-  it("validates runtime status with a problem reason", () => {
-    expect(
-      musicBeatRuntimeStatusSchema.safeParse({
-        runtimeFolder: "C:\\beat-this",
-        runtime: { state: "unavailable", problem: { reason: "checkpointMismatch" } },
-        manifestSha256: "c".repeat(64),
-        beatThisVersion: "1.0.0",
-        checkpointSha256: "d".repeat(64),
-      }).success,
-    ).toBe(true);
+  const status = (overrides: Record<string, unknown>): unknown => ({
+    runtimeFolder: "C:\\beat-runtime",
+    runtime: { state: "ready" },
+    accelerator: { kind: "cuda" },
+    manifestSha256: "c".repeat(64),
+    beatThisVersion: "rs-1.1.0",
+    checkpointSha256: "d".repeat(64),
+    ...overrides,
+  });
+
+  it.each([
+    ["ready on the GPU", {}],
+    ["ready on the CPU", { accelerator: { kind: "cpu", reason: "cudaInitFailed" } }],
+    [
+      "a model problem",
+      {
+        runtime: { state: "unavailable", problem: { reason: "modelMismatch" } },
+        accelerator: null,
+      },
+    ],
+    [
+      "a missing detector",
+      {
+        runtime: { state: "unavailable", problem: { reason: "detectorMissing" } },
+        accelerator: null,
+      },
+    ],
+  ])("accepts runtime status %s", (_name, overrides) => {
+    expect(musicBeatRuntimeStatusSchema.safeParse(status(overrides)).success).toBe(true);
+  });
+
+  it.each([
+    [
+      "a retired Python problem",
+      { runtime: { state: "unavailable", problem: { reason: "pythonMissing" } } },
+    ],
+    ["an unknown CPU reason", { accelerator: { kind: "cpu", reason: "tooHot" } }],
+    ["a CPU accelerator without a reason", { accelerator: { kind: "cpu" } }],
+    ["no accelerator field", { accelerator: undefined }],
+  ])("rejects runtime status with %s", (_name, overrides) => {
+    expect(musicBeatRuntimeStatusSchema.safeParse(status(overrides)).success).toBe(false);
   });
 });

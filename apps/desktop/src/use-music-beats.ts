@@ -180,6 +180,8 @@ function settledStatus(job: MediaJobRecord): MusicBeatDetectionStatus | null {
   }
 }
 
+/** Job error code of a detection the backend's runtime recheck refused. */
+const RUNTIME_UNAVAILABLE_CODE = "music_beat_runtime_unavailable";
 const RUNTIME_CHECK_FAILED = "The Beat This! runtime could not be checked. Try again.";
 const RUNTIME_SAVE_FAILED = "The Beat This! folder could not be saved. Try again.";
 
@@ -216,7 +218,8 @@ export function useMusicBeats(
   const sequence = activeSequence(projection);
   const musicAssetKey = musicTrackAssetIds(sequence).join(",");
 
-  // Which detector the next detection will use; checked once on mount.
+  // Which detector the next detection will use; checked on mount, then again
+  // after each detection starts and whenever a run finds the runtime changed.
   useEffect(() => {
     let current = true;
     void (async () => {
@@ -289,6 +292,9 @@ export function useMusicBeats(
           const settled = job === undefined ? null : settledStatus(job);
           if (settled !== null) {
             setStatus(assetId, settled);
+            // The runtime changed under this run, so the shown status is stale.
+            if (job?.error?.code === RUNTIME_UNAVAILABLE_CODE)
+              await refreshMusicBeatRuntimeStatus();
             return;
           }
           await sleep(pollIntervalMs, controller.signal);
@@ -300,7 +306,7 @@ export function useMusicBeats(
         if (pollsRef.current.get(assetId) === controller) pollsRef.current.delete(assetId);
       }
     },
-    [jobsBackend, loadResult, pollIntervalMs, setStatus],
+    [jobsBackend, loadResult, pollIntervalMs, refreshMusicBeatRuntimeStatus, setStatus],
   );
 
   // On project open (and when music clips change), recover analyses and
@@ -364,6 +370,8 @@ export function useMusicBeats(
           assetId,
           sourcePath: source.resolvedPath,
         });
+        // Starting re-verified the runtime; show what this run uses.
+        await refreshMusicBeatRuntimeStatus();
         if (started.state === "complete") await loadResult(assetId, started.jobId, forProject);
         else await pollJob(assetId, started.jobId, forProject);
         return true;
@@ -372,7 +380,7 @@ export function useMusicBeats(
         return false;
       }
     },
-    [loadResult, musicBeatBackend, pollJob, projection, setStatus],
+    [loadResult, musicBeatBackend, pollJob, projection, refreshMusicBeatRuntimeStatus, setStatus],
   );
 
   const cancelMusicBeatDetection = useCallback(

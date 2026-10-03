@@ -128,11 +128,13 @@ describe("AudioPanel", () => {
     });
     const runtime = (
       availability: MusicBeatRuntimeStatus["runtime"] = { state: "notConfigured" },
+      accelerator: MusicBeatRuntimeStatus["accelerator"] = null,
     ): MusicBeatRuntimeStatus => ({
       runtimeFolder: availability.state === "notConfigured" ? null : "D:\\supa-music-beats",
       runtime: availability,
+      accelerator,
       manifestSha256: "a".repeat(64),
-      beatThisVersion: "1.1.0",
+      beatThisVersion: "rs-1.1.0",
       checkpointSha256: "b".repeat(64),
     });
     const panel = (
@@ -203,10 +205,22 @@ describe("AudioPanel", () => {
       expect(screen.getByText(/4 music beats at 120 BPM \(in-app tempo fallback\)/)).toBeTruthy();
     });
 
-    it("says Beat This! will run when its runtime is ready", () => {
-      panel(new Map(), new Map(), runtime({ state: "ready" }));
-      expect(screen.getByText("Beat This! ready")).toBeTruthy();
+    it("says Beat This! will run on the GPU when its runtime is ready with a GPU pack", () => {
+      panel(new Map(), new Map(), runtime({ state: "ready" }, { kind: "cuda" }));
+      expect(screen.getByText("Beat This! ready on the GPU")).toBeTruthy();
+      expect(screen.queryByText(/runs on the CPU/)).toBeNull();
       expect(screen.queryByText("In-app tempo fallback")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    });
+
+    it.each([
+      ["noGpuPack", /No GPU pack in the folder/],
+      ["gpuPackMismatch", /GPU pack does not match the pinned files/],
+      ["cudaInitFailed", /GPU could not be started/],
+    ] as const)("says why Beat This! runs on the CPU (%s)", (reason, message) => {
+      panel(new Map(), new Map(), runtime({ state: "ready" }, { kind: "cpu", reason }));
+      expect(screen.getByText("Beat This! ready on the CPU")).toBeTruthy();
+      expect(screen.getByText(message)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
     });
 
@@ -219,11 +233,10 @@ describe("AudioPanel", () => {
     it.each([
       ["folderMissing", /could not be found/],
       ["linkedPath", /link or shortcut/],
-      ["pythonMissing", /no Python environment/],
-      ["checkpointMissing", /no final0\.ckpt checkpoint/],
-      ["checkpointMismatch", /The checkpoint does not match the pinned final0 file/],
-      ["packageMismatch", /not the pinned version 1\.1\.0/],
-      ["probeFailed", /could not load Beat This!/],
+      ["modelMissing", /missing a Beat This! model file/],
+      ["modelMismatch", /model file does not match the pinned version/],
+      ["detectorMissing", /does not include the beat detector/],
+      ["probeFailed", /could not load the models/],
     ] as const)("explains an unavailable runtime (%s)", (reason, message) => {
       const musicBeats = panel(
         new Map(),

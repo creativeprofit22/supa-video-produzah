@@ -1,19 +1,18 @@
-//! The managed music-beat runtime: a user-chosen folder holding a Python
-//! environment with `beat-this` installed and the pinned `final0` checkpoint.
+//! The managed music-beat runtime: a user-chosen folder holding the pinned Beat This! ONNX
+//! models and, optionally, a GPU pack (ONNX Runtime with CUDA). Detection itself runs in the
+//! bundled `supa-beat-detect` sidecar (ADR 0004).
 //!
-//! Python is never bundled. The folder is checked against the embedded
-//! manifest (checkpoint SHA-256 and size, `beat-this` package version). The
-//! runner script is embedded and written content-addressed into the app cache,
-//! and it is always given the local checkpoint path, so Beat This! never
-//! downloads anything at run time. When the runtime is not ready, music beat
-//! detection uses the in-app tempo fallback instead.
+//! The folder is checked against the embedded manifest (SHA-256 and size of every file) and the
+//! sidecar is probed once on it. Models are re-hashed right before each run; the GPU pack is
+//! rechecked by size and modification time, and a pack that changed runs that job on the CPU.
+//! When the runtime is not ready, music beat detection uses the in-app tempo fallback instead.
 
 use std::{
     ffi::OsString,
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,22 +25,26 @@ use super::{
 };
 
 const OPERATION: &str = "detect_music_beats";
-const MANIFEST_JSON: &str = include_str!("music-beat-runtime-manifest.json");
-const RUNNER_SCRIPT: &str = include_str!("beat_this_runner.py");
+const MANIFEST_JSON: &str = include_str!("beat-detect-runtime-manifest.json");
+const MANIFEST_SCHEMA_VERSION: u8 = 2;
+/// File names the sidecar loads from the models folder, by manifest role.
+const MEL_MODEL_FILE: &str = "mel_spectrogram.onnx";
+const BEAT_MODEL_FILE: &str = "beat_this.onnx";
+/// Executable name used in process errors.
+const SIDECAR_NAME: &str = "supa-beat-detect";
 pub(crate) const MUSIC_BEAT_SETTINGS_FILE: &str = "music-beat-settings.json";
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
 const MAX_RUNTIME_PATH_CHARS: usize = 1_024;
 const HASH_BUFFER_BYTES: usize = 1 << 20;
-const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Loading the GPU pack from a cold disk cache takes ~20 s on the development machine.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(180);
 const PROBE_STDOUT_LIMIT: usize = 4 * 1024;
-/// Beat This! on CPU runs at roughly real time on long tracks.
+/// An hour of audio takes ~5 minutes on the CPU; the limit leaves wide headroom.
 const DETECT_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const DETECT_STDOUT_LIMIT: usize = 4 * 1024 * 1024;
 const STDERR_TAIL_LIMIT: usize = 8 * 1024;
-/// Prints `{"version": "<beat-this version>"}`; `-I` ignores user site and
-/// `PYTHON*` variables while still honouring the venv.
-const PROBE_SOURCE: &str = "import importlib.metadata as m, json, sys; \
-json.dump({'version': m.version('beat-this')}, sys.stdout)";
+/// Sidecar exit code for bad input (arguments or WAV); anything else may be device-related.
+const SIDECAR_EXIT_BAD_INPUT: i32 = 2;
 
 // ---------------------------------------------------------------------------
 // Manifest
@@ -52,25 +55,57 @@ json.dump({'version': m.version('beat-this')}, sys.stdout)";
 pub(crate) struct MusicBeatRuntimeManifest {
     pub(crate) schema_version: u8,
     pub(crate) detector: ManifestDetector,
-    pub(crate) checkpoint: ManifestCheckpoint,
-    pub(crate) python: ManifestPython,
+    pub(crate) models: ManifestModels,
+    pub(crate) gpu_pack: ManifestGpuPack,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ManifestDetector {
     pub(crate) kind: String,
-    pub(crate) package: String,
+    /// Detector identity recorded in analyses (`rs-<crate version>`).
     pub(crate) version: String,
+    #[serde(rename = "crate")]
+    pub(crate) crate_name: String,
+    /// The `beat-this` crate version the sidecar must report from `probe`.
+    pub(crate) crate_version: String,
     pub(crate) source_repository: String,
     pub(crate) source_revision: String,
+    pub(crate) reference_repository: String,
+    pub(crate) reference_revision: String,
+    pub(crate) reference_checkpoint: ManifestReferenceCheckpoint,
     pub(crate) license: ManifestLicense,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ManifestCheckpoint {
+pub(crate) struct ManifestReferenceCheckpoint {
     pub(crate) name: String,
+    pub(crate) file: String,
+    pub(crate) byte_length: u64,
+    pub(crate) sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ManifestLicense {
+    pub(crate) spdx: String,
+    pub(crate) url: String,
+    #[serde(default)]
+    pub(crate) attribution: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ManifestModels {
+    pub(crate) folder: String,
+    pub(crate) files: Vec<ManifestModelFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ManifestModelFile {
+    pub(crate) role: String,
     pub(crate) file: String,
     pub(crate) byte_length: u64,
     pub(crate) sha256: String,
@@ -80,26 +115,39 @@ pub(crate) struct ManifestCheckpoint {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ManifestLicense {
-    pub(crate) spdx: String,
-    pub(crate) url: String,
-    pub(crate) attribution: String,
+pub(crate) struct ManifestGpuPack {
+    pub(crate) folder: String,
+    pub(crate) archives: Vec<ManifestArchive>,
+    pub(crate) files: Vec<ManifestPackFile>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ManifestPython {
-    pub(crate) windows: String,
-    pub(crate) unix: String,
+pub(crate) struct ManifestArchive {
+    pub(crate) id: String,
+    pub(crate) url: String,
+    pub(crate) byte_length: u64,
+    pub(crate) sha256: String,
+    pub(crate) license: ManifestLicense,
 }
 
-impl ManifestPython {
-    fn relative_path(&self) -> &str {
-        if cfg!(windows) {
-            &self.windows
-        } else {
-            &self.unix
-        }
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ManifestPackFile {
+    pub(crate) file: String,
+    pub(crate) archive: String,
+    pub(crate) archive_path: String,
+    pub(crate) byte_length: u64,
+    pub(crate) sha256: String,
+}
+
+impl MusicBeatRuntimeManifest {
+    fn model(&self, role: &str) -> Option<&ManifestModelFile> {
+        self.models.files.iter().find(|model| model.role == role)
+    }
+
+    fn beat_model_sha256(&self) -> &str {
+        self.model("beat").map_or("", |model| model.sha256.as_str())
     }
 }
 
@@ -120,18 +168,15 @@ fn is_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-/// A manifest-relative path: plain components only, no traversal or roots.
-fn is_relative_plain_path(value: &str) -> bool {
+/// A single plain file or folder name: no separators, traversal or roots.
+fn is_plain_name(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 256
-        && value.split('/').all(|part| {
-            !part.is_empty()
-                && part != "."
-                && part != ".."
-                && part
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-        })
+        && value.len() <= 128
+        && value != "."
+        && value != ".."
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 }
 
 fn is_version(value: &str) -> bool {
@@ -143,15 +188,38 @@ fn is_version(value: &str) -> bool {
 }
 
 pub(crate) fn validate_manifest(manifest: &MusicBeatRuntimeManifest) -> bool {
-    manifest.schema_version == 1
+    let pinned_file = |sha256: &str, byte_length: u64, file: &str| {
+        is_sha256(sha256) && byte_length > 0 && is_plain_name(file)
+    };
+    let model_ok = |role: &str, expected_file: &str| {
+        manifest
+            .models
+            .files
+            .iter()
+            .filter(|model| model.role == role)
+            .count()
+            == 1
+            && manifest.model(role).is_some_and(|model| {
+                model.file == expected_file
+                    && pinned_file(&model.sha256, model.byte_length, &model.file)
+            })
+    };
+    manifest.schema_version == MANIFEST_SCHEMA_VERSION
         && manifest.detector.kind == "beat_this"
         && is_version(&manifest.detector.version)
-        && is_sha256(&manifest.checkpoint.sha256)
-        && manifest.checkpoint.byte_length > 0
-        && is_relative_plain_path(&manifest.checkpoint.file)
-        && !manifest.checkpoint.file.contains('/')
-        && is_relative_plain_path(&manifest.python.windows)
-        && is_relative_plain_path(&manifest.python.unix)
+        && manifest.detector.version == format!("rs-{}", manifest.detector.crate_version)
+        && manifest.models.files.len() == 2
+        && model_ok("mel", MEL_MODEL_FILE)
+        && model_ok("beat", BEAT_MODEL_FILE)
+        && is_plain_name(&manifest.models.folder)
+        && is_plain_name(&manifest.gpu_pack.folder)
+        && manifest.models.folder != manifest.gpu_pack.folder
+        && !manifest.gpu_pack.files.is_empty()
+        && manifest
+            .gpu_pack
+            .files
+            .iter()
+            .all(|file| pinned_file(&file.sha256, file.byte_length, &file.file))
 }
 
 // ---------------------------------------------------------------------------
@@ -249,10 +317,11 @@ pub(crate) fn save_settings(
 pub(crate) enum MusicBeatRuntimeProblem {
     FolderMissing,
     LinkedPath,
-    PythonMissing,
-    CheckpointMissing,
-    CheckpointMismatch,
-    PackageMismatch,
+    ModelMissing,
+    ModelMismatch,
+    /// This build does not include the `supa-beat-detect` sidecar.
+    DetectorMissing,
+    /// The detector could not load the models.
     ProbeFailed,
 }
 
@@ -264,68 +333,125 @@ pub(crate) enum MusicBeatRuntimeAvailability {
     Unavailable { problem: MusicBeatRuntimeProblem },
 }
 
+/// Why a ready runtime runs on the CPU.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum MusicBeatCpuReason {
+    NoGpuPack,
+    GpuPackMismatch,
+    CudaInitFailed,
+}
+
+/// The device a ready runtime will run on.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum MusicBeatAccelerator {
+    Cuda,
+    Cpu { reason: MusicBeatCpuReason },
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MusicBeatRuntimeStatus {
     pub(crate) runtime_folder: Option<String>,
     pub(crate) runtime: MusicBeatRuntimeAvailability,
+    /// Set when `runtime` is ready.
+    pub(crate) accelerator: Option<MusicBeatAccelerator>,
     pub(crate) manifest_sha256: String,
+    /// Detector version recorded in analyses (`rs-1.1.0`).
     pub(crate) beat_this_version: String,
+    /// SHA-256 of the beat model (`beat_this.onnx`) that runs.
     pub(crate) checkpoint_sha256: String,
 }
 
-/// A runtime folder whose checkpoint matched the manifest and whose Python
-/// reported the pinned `beat-this` version.
+/// A model file whose digest matched the manifest at verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VerifiedModelFile {
+    pub(crate) path: PathBuf,
+    pub(crate) byte_length: u64,
+    pub(crate) sha256: String,
+}
+
+/// A GPU pack file as it was when its digest matched the manifest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GpuPackFileSnapshot {
+    pub(crate) path: PathBuf,
+    pub(crate) byte_length: u64,
+    pub(crate) modified: SystemTime,
+}
+
+/// A runtime folder whose files matched the manifest and on which the sidecar's probe succeeded.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct VerifiedMusicBeatRuntime {
-    pub(crate) python: PathBuf,
-    pub(crate) checkpoint: PathBuf,
-    pub(crate) checkpoint_sha256: String,
-    pub(crate) checkpoint_byte_length: u64,
-    pub(crate) beat_this_version: String,
+    pub(crate) sidecar: PathBuf,
+    pub(crate) models_dir: PathBuf,
+    pub(crate) models: Vec<VerifiedModelFile>,
+    /// The verified GPU pack, only when the probe ran on CUDA with it.
+    pub(crate) gpu_pack: Option<(PathBuf, Vec<GpuPackFileSnapshot>)>,
+    pub(crate) accelerator: MusicBeatAccelerator,
+    pub(crate) detector_version: String,
+    pub(crate) beat_model_sha256: String,
 }
 
 impl VerifiedMusicBeatRuntime {
-    /// Re-hashes the checkpoint right before a run so a file swapped after
-    /// verification is never loaded.
-    pub(crate) async fn recheck_checkpoint(&self) -> Result<(), VideoCommandError> {
-        let path = self.checkpoint.clone();
-        let expected_len = self.checkpoint_byte_length;
-        let expected = self.checkpoint_sha256.clone();
-        let matches = tauri::async_runtime::spawn_blocking(move || {
-            checkpoint_digest(&path, expected_len).is_ok_and(|digest| digest == expected)
+    /// Re-hashes the models right before a run, so a file swapped after verification is never
+    /// loaded. Returns the GPU pack folder to use, or `None` (CPU) when the pack changed since
+    /// verification by size or modification time.
+    pub(crate) async fn recheck_before_run(&self) -> Result<Option<PathBuf>, VideoCommandError> {
+        let models = self.models.clone();
+        let gpu_pack = self.gpu_pack.clone();
+        let (models_match, gpu_pack) = tauri::async_runtime::spawn_blocking(move || {
+            let models_match = models.iter().all(|model| {
+                file_digest(&model.path, model.byte_length)
+                    .is_ok_and(|digest| digest == model.sha256)
+            });
+            let gpu_pack = gpu_pack.and_then(|(folder, files)| {
+                let unchanged = files.iter().all(|file| {
+                    fs::symlink_metadata(&file.path).is_ok_and(|metadata| {
+                        metadata.is_file()
+                            && !is_reparse_or_symlink(&metadata)
+                            && metadata.len() == file.byte_length
+                            && metadata
+                                .modified()
+                                .is_ok_and(|modified| modified == file.modified)
+                    })
+                });
+                if !unchanged {
+                    eprintln!("music_beats.gpu_pack_changed folder={folder:?} fallback=cpu");
+                }
+                unchanged.then_some(folder)
+            });
+            (models_match, gpu_pack)
         })
         .await
-        .unwrap_or(false);
-        if matches {
-            Ok(())
+        .unwrap_or((false, None));
+        if models_match {
+            Ok(gpu_pack)
         } else {
             Err(VideoCommandError::tool_unavailable(OPERATION, "beat_this"))
         }
     }
 }
 
-fn checkpoint_digest(path: &Path, expected_len: u64) -> Result<String, MusicBeatRuntimeProblem> {
-    let metadata =
-        fs::symlink_metadata(path).map_err(|_| MusicBeatRuntimeProblem::CheckpointMissing)?;
+/// Streams `path` through SHA-256, failing when it is not a plain file of `expected_len` bytes.
+fn file_digest(path: &Path, expected_len: u64) -> Result<String, FileCheck> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| FileCheck::Missing)?;
     if is_reparse_or_symlink(&metadata) {
-        return Err(MusicBeatRuntimeProblem::LinkedPath);
+        return Err(FileCheck::Linked);
     }
     if !metadata.is_file() {
-        return Err(MusicBeatRuntimeProblem::CheckpointMissing);
+        return Err(FileCheck::Missing);
     }
     if metadata.len() != expected_len {
-        return Err(MusicBeatRuntimeProblem::CheckpointMismatch);
+        return Err(FileCheck::Mismatch);
     }
-    let file = File::open(path).map_err(|_| MusicBeatRuntimeProblem::CheckpointMissing)?;
+    let file = File::open(path).map_err(|_| FileCheck::Missing)?;
     let mut reader = file.take(expected_len.saturating_add(1));
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; HASH_BUFFER_BYTES];
     let mut total = 0_u64;
     loop {
-        let read = reader
-            .read(&mut buffer)
-            .map_err(|_| MusicBeatRuntimeProblem::CheckpointMissing)?;
+        let read = reader.read(&mut buffer).map_err(|_| FileCheck::Missing)?;
         if read == 0 {
             break;
         }
@@ -333,54 +459,154 @@ fn checkpoint_digest(path: &Path, expected_len: u64) -> Result<String, MusicBeat
         hasher.update(&buffer[..read]);
     }
     if total != expected_len {
-        return Err(MusicBeatRuntimeProblem::CheckpointMismatch);
+        return Err(FileCheck::Mismatch);
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Checks the folder layout and checkpoint digest (blocking file work).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FileCheck {
+    Missing,
+    Linked,
+    Mismatch,
+}
+
+/// Checks that `path` is a real (non-linked) directory.
+fn plain_directory(path: &Path) -> Result<(), FileCheck> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| FileCheck::Missing)?;
+    if is_reparse_or_symlink(&metadata) {
+        return Err(FileCheck::Linked);
+    }
+    if metadata.is_dir() {
+        Ok(())
+    } else {
+        Err(FileCheck::Missing)
+    }
+}
+
+/// Result of checking the folder's files (blocking file work).
+#[derive(Debug)]
+struct VerifiedFiles {
+    models_dir: PathBuf,
+    models: Vec<VerifiedModelFile>,
+    gpu_pack: Result<(PathBuf, Vec<GpuPackFileSnapshot>), MusicBeatCpuReason>,
+}
+
 fn verify_runtime_files(
     folder: &Path,
     manifest: &MusicBeatRuntimeManifest,
-) -> Result<(PathBuf, PathBuf), MusicBeatRuntimeProblem> {
-    let metadata =
-        fs::symlink_metadata(folder).map_err(|_| MusicBeatRuntimeProblem::FolderMissing)?;
-    if is_reparse_or_symlink(&metadata) {
-        return Err(MusicBeatRuntimeProblem::LinkedPath);
-    }
-    if !metadata.is_dir() {
-        return Err(MusicBeatRuntimeProblem::FolderMissing);
-    }
+) -> Result<VerifiedFiles, MusicBeatRuntimeProblem> {
+    plain_directory(folder).map_err(|check| match check {
+        FileCheck::Linked => MusicBeatRuntimeProblem::LinkedPath,
+        _ => MusicBeatRuntimeProblem::FolderMissing,
+    })?;
     let folder = fs::canonicalize(folder).map_err(|_| MusicBeatRuntimeProblem::FolderMissing)?;
-    // A venv's interpreter may itself be a link to the base install (Unix),
-    // so only its existence as a file is required here.
-    let python = folder.join(manifest.python.relative_path());
-    if !fs::metadata(&python).is_ok_and(|metadata| metadata.is_file()) {
-        return Err(MusicBeatRuntimeProblem::PythonMissing);
+
+    let models_dir = folder.join(&manifest.models.folder);
+    plain_directory(&models_dir).map_err(|check| match check {
+        FileCheck::Linked => MusicBeatRuntimeProblem::LinkedPath,
+        _ => MusicBeatRuntimeProblem::ModelMissing,
+    })?;
+    let mut models = Vec::with_capacity(manifest.models.files.len());
+    for model in &manifest.models.files {
+        let path = models_dir.join(&model.file);
+        let digest = file_digest(&path, model.byte_length).map_err(|check| match check {
+            FileCheck::Missing => MusicBeatRuntimeProblem::ModelMissing,
+            FileCheck::Linked => MusicBeatRuntimeProblem::LinkedPath,
+            FileCheck::Mismatch => MusicBeatRuntimeProblem::ModelMismatch,
+        })?;
+        if digest != model.sha256 {
+            return Err(MusicBeatRuntimeProblem::ModelMismatch);
+        }
+        models.push(VerifiedModelFile {
+            path,
+            byte_length: model.byte_length,
+            sha256: digest,
+        });
     }
-    let checkpoint = folder.join(&manifest.checkpoint.file);
-    let digest = checkpoint_digest(&checkpoint, manifest.checkpoint.byte_length)?;
-    if digest != manifest.checkpoint.sha256 {
-        return Err(MusicBeatRuntimeProblem::CheckpointMismatch);
+
+    Ok(VerifiedFiles {
+        models_dir,
+        models,
+        gpu_pack: verify_gpu_pack(&folder.join(&manifest.gpu_pack.folder), manifest),
+    })
+}
+
+fn verify_gpu_pack(
+    pack: &Path,
+    manifest: &MusicBeatRuntimeManifest,
+) -> Result<(PathBuf, Vec<GpuPackFileSnapshot>), MusicBeatCpuReason> {
+    match plain_directory(pack) {
+        Ok(()) => {}
+        Err(FileCheck::Missing) => return Err(MusicBeatCpuReason::NoGpuPack),
+        Err(_) => return Err(MusicBeatCpuReason::GpuPackMismatch),
     }
-    Ok((python, checkpoint))
+    let mut snapshots = Vec::with_capacity(manifest.gpu_pack.files.len());
+    for file in &manifest.gpu_pack.files {
+        let path = pack.join(&file.file);
+        let modified = fs::symlink_metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|_| MusicBeatCpuReason::GpuPackMismatch)?;
+        let digest = file_digest(&path, file.byte_length)
+            .map_err(|_| MusicBeatCpuReason::GpuPackMismatch)?;
+        if digest != file.sha256 {
+            return Err(MusicBeatCpuReason::GpuPackMismatch);
+        }
+        snapshots.push(GpuPackFileSnapshot {
+            path,
+            byte_length: file.byte_length,
+            modified,
+        });
+    }
+    Ok((pack.to_path_buf(), snapshots))
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProbeOutput {
     version: String,
+    device: SidecarDevice,
+    cuda_error: Option<String>,
 }
 
-async fn probe_package_version(python: &Path) -> Result<String, MusicBeatRuntimeProblem> {
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SidecarDevice {
+    Cuda,
+    Cpu,
+}
+
+impl SidecarDevice {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Cuda => "cuda",
+            Self::Cpu => "cpu",
+        }
+    }
+}
+
+fn sidecar_args(command: &str, models_dir: &Path, gpu_pack: Option<&Path>) -> Vec<OsString> {
+    let mut args = vec![
+        OsString::from(command),
+        OsString::from("--models"),
+        models_dir.as_os_str().to_owned(),
+    ];
+    if let Some(pack) = gpu_pack {
+        args.push(OsString::from("--cuda"));
+        args.push(pack.as_os_str().to_owned());
+    }
+    args
+}
+
+async fn probe_once(
+    sidecar: &Path,
+    models_dir: &Path,
+    gpu_pack: Option<&Path>,
+) -> Result<ProbeOutput, MusicBeatRuntimeProblem> {
     let output = run_music_beat_process(
         ProcessSpec {
-            program: python.as_os_str().to_owned(),
-            args: vec![
-                OsString::from("-I"),
-                OsString::from("-c"),
-                OsString::from(PROBE_SOURCE),
-            ],
+            program: sidecar.as_os_str().to_owned(),
+            args: sidecar_args("probe", models_dir, gpu_pack),
             current_dir: None,
             operation: OPERATION,
             timeout: PROBE_TIMEOUT,
@@ -392,16 +618,39 @@ async fn probe_package_version(python: &Path) -> Result<String, MusicBeatRuntime
     )
     .await
     .map_err(|_| MusicBeatRuntimeProblem::ProbeFailed)?;
-    let parsed: ProbeOutput =
-        serde_json::from_slice(&output.stdout).map_err(|_| MusicBeatRuntimeProblem::ProbeFailed)?;
-    if !is_version(&parsed.version) {
+    serde_json::from_slice(&output.stdout).map_err(|_| MusicBeatRuntimeProblem::ProbeFailed)
+}
+
+/// Loads both models in the sidecar (CUDA when a verified pack is given) and runs one second of
+/// silence. A pack whose CUDA setup crashes the process is retried without it.
+async fn probe_sidecar(
+    sidecar: &Path,
+    models_dir: &Path,
+    gpu_pack: Option<&Path>,
+    manifest: &MusicBeatRuntimeManifest,
+) -> Result<SidecarDevice, MusicBeatRuntimeProblem> {
+    let probed = match probe_once(sidecar, models_dir, gpu_pack).await {
+        Err(_) if gpu_pack.is_some() => {
+            eprintln!("music_beats.probe_cuda_crashed retry=cpu");
+            probe_once(sidecar, models_dir, None).await?
+        }
+        result => result?,
+    };
+    if probed.version != manifest.detector.crate_version {
         return Err(MusicBeatRuntimeProblem::ProbeFailed);
     }
-    Ok(parsed.version)
+    if let Some(error) = probed.cuda_error.as_deref() {
+        eprintln!(
+            "music_beats.probe_cuda_failed error={:?}",
+            error.chars().take(512).collect::<String>()
+        );
+    }
+    Ok(probed.device)
 }
 
 pub(crate) async fn verify_runtime_folder(
     folder: &Path,
+    sidecar: Option<&Path>,
     manifest: &MusicBeatRuntimeManifest,
 ) -> Result<VerifiedMusicBeatRuntime, MusicBeatRuntimeProblem> {
     // Paths below are joined from manifest values, so an invalid manifest
@@ -412,52 +661,71 @@ pub(crate) async fn verify_runtime_folder(
     let started = std::time::Instant::now();
     let owned_folder = folder.to_path_buf();
     let owned_manifest = manifest.clone();
-    let (python, checkpoint) = tauri::async_runtime::spawn_blocking(move || {
+    let files = tauri::async_runtime::spawn_blocking(move || {
         verify_runtime_files(&owned_folder, &owned_manifest)
     })
     .await
     .map_err(|_| MusicBeatRuntimeProblem::FolderMissing)??;
-    let version = probe_package_version(&python).await?;
-    let result = if version == manifest.detector.version {
-        Ok(VerifiedMusicBeatRuntime {
-            python,
-            checkpoint,
-            checkpoint_sha256: manifest.checkpoint.sha256.clone(),
-            checkpoint_byte_length: manifest.checkpoint.byte_length,
-            beat_this_version: version,
-        })
-    } else {
-        Err(MusicBeatRuntimeProblem::PackageMismatch)
+    let sidecar = sidecar
+        .filter(|path| path.is_file())
+        .ok_or(MusicBeatRuntimeProblem::DetectorMissing)?;
+    let pack_folder = files
+        .gpu_pack
+        .as_ref()
+        .ok()
+        .map(|(folder, _)| folder.as_path());
+    let device = probe_sidecar(sidecar, &files.models_dir, pack_folder, manifest).await?;
+    let (accelerator, gpu_pack) = match (files.gpu_pack, device) {
+        (Ok(pack), SidecarDevice::Cuda) => (MusicBeatAccelerator::Cuda, Some(pack)),
+        (Ok(_), SidecarDevice::Cpu) => (
+            MusicBeatAccelerator::Cpu {
+                reason: MusicBeatCpuReason::CudaInitFailed,
+            },
+            None,
+        ),
+        (Err(reason), _) => (MusicBeatAccelerator::Cpu { reason }, None),
     };
     eprintln!(
-        "music_beats.runtime_verify ready={} elapsed_ms={}",
-        result.is_ok(),
+        "music_beats.runtime_verify ready=true accelerator={accelerator:?} elapsed_ms={}",
         started.elapsed().as_millis()
     );
-    result
+    Ok(VerifiedMusicBeatRuntime {
+        sidecar: sidecar.to_path_buf(),
+        models_dir: files.models_dir,
+        models: files.models,
+        gpu_pack,
+        accelerator,
+        detector_version: manifest.detector.version.clone(),
+        beat_model_sha256: manifest.beat_model_sha256().to_owned(),
+    })
 }
 
 /// Status plus the verified runtime when ready.
 pub(crate) async fn runtime_status_with(
     config_dir: &Path,
+    sidecar: Option<&Path>,
     manifest: &MusicBeatRuntimeManifest,
     manifest_sha256: &str,
 ) -> (MusicBeatRuntimeStatus, Option<VerifiedMusicBeatRuntime>) {
     let settings = load_settings(config_dir);
     let (runtime, verified) = match settings.runtime_folder.as_deref() {
         None => (MusicBeatRuntimeAvailability::NotConfigured, None),
-        Some(folder) => match verify_runtime_folder(Path::new(folder), manifest).await {
+        Some(folder) => match verify_runtime_folder(Path::new(folder), sidecar, manifest).await {
             Ok(verified) => (MusicBeatRuntimeAvailability::Ready, Some(verified)),
-            Err(problem) => (MusicBeatRuntimeAvailability::Unavailable { problem }, None),
+            Err(problem) => {
+                eprintln!("music_beats.runtime_verify ready=false problem={problem:?}");
+                (MusicBeatRuntimeAvailability::Unavailable { problem }, None)
+            }
         },
     };
     (
         MusicBeatRuntimeStatus {
             runtime_folder: settings.runtime_folder,
             runtime,
+            accelerator: verified.as_ref().map(|verified| verified.accelerator),
             manifest_sha256: manifest_sha256.to_owned(),
             beat_this_version: manifest.detector.version.clone(),
-            checkpoint_sha256: manifest.checkpoint.sha256.clone(),
+            checkpoint_sha256: manifest.beat_model_sha256().to_owned(),
         },
         verified,
     )
@@ -465,12 +733,20 @@ pub(crate) async fn runtime_status_with(
 
 pub(crate) async fn music_beat_runtime_status(
     config_dir: &Path,
+    sidecar: Option<&Path>,
 ) -> (MusicBeatRuntimeStatus, Option<VerifiedMusicBeatRuntime>) {
-    runtime_status_with(config_dir, &pinned_manifest(), &pinned_manifest_sha256()).await
+    runtime_status_with(
+        config_dir,
+        sidecar,
+        &pinned_manifest(),
+        &pinned_manifest_sha256(),
+    )
+    .await
 }
 
 pub(crate) async fn set_music_beat_runtime_folder(
     config_dir: &Path,
+    sidecar: Option<&Path>,
     folder: &str,
 ) -> Result<MusicBeatRuntimeStatus, VideoCommandError> {
     if !valid_runtime_folder(folder) {
@@ -483,71 +759,47 @@ pub(crate) async fn set_music_beat_runtime_folder(
             runtime_folder: Some(folder.to_owned()),
         },
     )?;
-    Ok(music_beat_runtime_status(config_dir).await.0)
+    Ok(music_beat_runtime_status(config_dir, sidecar).await.0)
 }
 
 // ---------------------------------------------------------------------------
-// Runner
+// Detection
 // ---------------------------------------------------------------------------
 
-/// Writes the embedded runner as `beat_this_runner-<sha256>.py` under the app
-/// cache and returns its path. An existing file is reused only when its bytes
-/// match; anything else at that path is replaced.
-pub(crate) fn materialize_runner(app_cache_root: &Path) -> Result<PathBuf, VideoCommandError> {
-    let io = |category| VideoCommandError::project_io(OPERATION, category);
-    let digest = format!("{:x}", Sha256::digest(RUNNER_SCRIPT.as_bytes()));
-    let directory = app_cache_root.join("runners");
-    fs::create_dir_all(&directory).map_err(|_| io("runner_directory"))?;
-    let directory_metadata =
-        fs::symlink_metadata(&directory).map_err(|_| io("runner_directory"))?;
-    if is_reparse_or_symlink(&directory_metadata) || !directory_metadata.is_dir() {
-        return Err(io("runner_directory"));
-    }
-    let path = directory.join(format!("beat_this_runner-{digest}.py"));
-    if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if metadata.is_file()
-            && !is_reparse_or_symlink(&metadata)
-            && metadata.len() == RUNNER_SCRIPT.len() as u64
-            && fs::read(&path).is_ok_and(|bytes| bytes == RUNNER_SCRIPT.as_bytes())
-        {
-            return Ok(path);
-        }
-    }
-    let mut temporary =
-        tempfile::NamedTempFile::new_in(&directory).map_err(|_| io("runner_temporary"))?;
-    temporary
-        .write_all(RUNNER_SCRIPT.as_bytes())
-        .and_then(|()| temporary.as_file().sync_all())
-        .map_err(|_| io("runner_write"))?;
-    temporary.persist(&path).map_err(|_| io("runner_publish"))?;
-    Ok(path)
-}
-
-/// Raw runner output in seconds, before bounds and conversion.
+/// Raw sidecar output in seconds, before bounds and conversion.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BeatThisOutput {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BeatDetectorOutput {
     pub(crate) beats: Vec<f64>,
     pub(crate) downbeats: Vec<f64>,
+    pub(crate) device: SidecarDevice,
+    pub(crate) cuda_error: Option<String>,
+    pub(crate) timing: BeatDetectorTiming,
 }
 
-pub(crate) async fn run_beat_this(
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BeatDetectorTiming {
+    pub(crate) mel_ms: u64,
+    pub(crate) inference_ms: u64,
+}
+
+async fn detect_once(
     runtime: &VerifiedMusicBeatRuntime,
-    runner: &Path,
+    gpu_pack: Option<&Path>,
     wav_path: &Path,
     cancellation: ProcessCancellation,
-) -> Result<BeatThisOutput, VideoCommandError> {
-    let started = std::time::Instant::now();
-    let output = run_music_beat_process(
+) -> Result<SupervisedOutput, ProcessFailure> {
+    let mut args = sidecar_args("detect", &runtime.models_dir, gpu_pack);
+    args.extend([
+        OsString::from("--device"),
+        OsString::from("auto"),
+        wav_path.as_os_str().to_owned(),
+    ]);
+    run_music_beat_process(
         ProcessSpec {
-            program: runtime.python.as_os_str().to_owned(),
-            args: vec![
-                OsString::from("-I"),
-                OsString::from("-B"),
-                runner.as_os_str().to_owned(),
-                wav_path.as_os_str().to_owned(),
-                runtime.checkpoint.as_os_str().to_owned(),
-            ],
+            program: runtime.sidecar.as_os_str().to_owned(),
+            args,
             current_dir: None,
             operation: OPERATION,
             timeout: DETECT_TIMEOUT,
@@ -558,14 +810,48 @@ pub(crate) async fn run_beat_this(
         "detect",
     )
     .await
-    .map_err(|failure| map_process_failure(failure, "beat_this"))?;
-    let parsed = serde_json::from_slice::<BeatThisOutput>(&output.stdout)
+}
+
+/// Runs the sidecar on the analysis WAV. `gpu_pack` comes from
+/// [`VerifiedMusicBeatRuntime::recheck_before_run`]. The sidecar itself reruns on the CPU after
+/// a CUDA error; a process that dies with the GPU pack loaded is retried once without it.
+pub(crate) async fn run_beat_detector(
+    runtime: &VerifiedMusicBeatRuntime,
+    gpu_pack: Option<&Path>,
+    wav_path: &Path,
+    cancellation: ProcessCancellation,
+) -> Result<BeatDetectorOutput, VideoCommandError> {
+    let started = std::time::Instant::now();
+    let mut output = detect_once(runtime, gpu_pack, wav_path, cancellation.clone()).await;
+    if gpu_pack.is_some() {
+        if let Err(ProcessFailure::NonZero { exit_code, .. }) = &output {
+            if *exit_code != Some(SIDECAR_EXIT_BAD_INPUT) {
+                eprintln!("music_beats.beat_detect_cuda_crashed exit_code={exit_code:?} retry=cpu");
+                output = detect_once(runtime, None, wav_path, cancellation).await;
+            }
+        }
+    }
+    let output = output.map_err(|failure| map_process_failure(failure, SIDECAR_NAME))?;
+    let parsed = serde_json::from_slice::<BeatDetectorOutput>(&output.stdout)
         .map_err(|_| VideoCommandError::invalid_media(OPERATION, "music_beats_output"));
-    eprintln!(
-        "music_beats.beat_this_run ok={} elapsed_ms={}",
-        parsed.is_ok(),
-        started.elapsed().as_millis()
-    );
+    match &parsed {
+        Ok(result) => eprintln!(
+            "music_beats.beat_detect_run ok=true device={} mel_ms={} inference_ms={} elapsed_ms={} cuda_error={:?}",
+            result.device.as_str(),
+            result.timing.mel_ms,
+            result.timing.inference_ms,
+            started.elapsed().as_millis(),
+            result
+                .cuda_error
+                .as_deref()
+                .map(|error| error.chars().take(512).collect::<String>())
+                .unwrap_or_default(),
+        ),
+        Err(_) => eprintln!(
+            "music_beats.beat_detect_run ok=false elapsed_ms={}",
+            started.elapsed().as_millis()
+        ),
+    }
     parsed
 }
 
@@ -654,12 +940,13 @@ async fn run_music_beat_process(
     super::process::run_supervised(spec, cancellation).await
 }
 
+/// Set to `1` to run the real sidecar (and real ffmpeg) in the ignored end-to-end proof.
 #[cfg(test)]
-pub(crate) const REAL_BEAT_THIS_PROOF_ENV: &str = "SUPA_VIDEO_REAL_BEAT_THIS_PROOF";
+pub(crate) const REAL_BEAT_DETECT_PROOF_ENV: &str = "SUPA_VIDEO_REAL_BEAT_DETECT_PROOF";
 #[cfg(test)]
 const HELPER_ARGUMENTS_ENV: &str = "SUPA_VIDEO_MUSIC_BEAT_HELPER_ARGUMENTS";
 
-/// Tests swap Python for the test binary's helper mode; the ignored real
+/// Tests swap the sidecar for the test binary's helper mode; the ignored real
 /// proof opts back into the production path.
 #[cfg(test)]
 async fn run_music_beat_process(
@@ -673,9 +960,10 @@ async fn run_music_beat_process(
         operation: OPERATION,
     })?;
     // A real ffmpeg (anything but this test binary) and the opt-in real
-    // Beat This! proof run unmodified.
+    // sidecar proof run unmodified.
     let real_ffmpeg = helper_kind == "ffmpeg" && Path::new(&spec.program) != current_executable;
-    if real_ffmpeg || std::env::var_os(REAL_BEAT_THIS_PROOF_ENV).is_some_and(|value| value == "1") {
+    if real_ffmpeg || std::env::var_os(REAL_BEAT_DETECT_PROOF_ENV).is_some_and(|value| value == "1")
+    {
         return super::process::run_supervised(spec, cancellation).await;
     }
     let original: Vec<String> = std::iter::once(spec.program.clone())
@@ -768,46 +1056,99 @@ pub(crate) fn write_test_wav(path: &Path, samples: &[i16]) {
     fs::write(path, bytes).expect("test wav must write");
 }
 
-/// Fake `python -I -c <probe>`. Marker files in the runtime folder select
-/// failures: `fake-probe-fail` exits non-zero, `fake-probe-version` overrides
-/// the reported version.
+/// Parsed fake-sidecar command line: `<program> <command> --models <dir> [--cuda <dir>] ...`.
+#[cfg(test)]
+struct FakeSidecarCall {
+    runtime_folder: PathBuf,
+    models_dir: PathBuf,
+    cuda: Option<PathBuf>,
+    rest: Vec<String>,
+}
+
+#[cfg(test)]
+fn fake_sidecar_call(expected_command: &str) -> FakeSidecarCall {
+    let arguments = helper_arguments();
+    assert_eq!(arguments[1], expected_command);
+    assert_eq!(arguments[2], "--models");
+    let models_dir = PathBuf::from(&arguments[3]);
+    assert!(
+        models_dir.join(MEL_MODEL_FILE).is_file(),
+        "mel model must exist"
+    );
+    assert!(
+        models_dir.join(BEAT_MODEL_FILE).is_file(),
+        "beat model must exist"
+    );
+    let (cuda, rest) = if arguments.get(4).is_some_and(|flag| flag == "--cuda") {
+        (Some(PathBuf::from(&arguments[5])), arguments[6..].to_vec())
+    } else {
+        (None, arguments[4..].to_vec())
+    };
+    if let Some(cuda) = &cuda {
+        assert!(cuda.is_dir(), "GPU pack folder must exist");
+    }
+    let runtime_folder = models_dir
+        .parent()
+        .expect("models live inside the runtime folder")
+        .to_path_buf();
+    // Record the call so tests can check which device the app asked for.
+    fs::write(
+        runtime_folder.join(format!("fake-{expected_command}-args.json")),
+        serde_json::to_vec(&arguments).expect("arguments serialize"),
+    )
+    .expect("argument record must write");
+    FakeSidecarCall {
+        runtime_folder,
+        models_dir,
+        cuda,
+        rest,
+    }
+}
+
+/// Fake `supa-beat-detect probe`. Markers in the runtime folder: `fake-probe-fail` exits 3,
+/// `fake-probe-version` overrides the reported version, `fake-cuda-fail` reports a CPU run with
+/// a CUDA error, `fake-cuda-crash` exits 3 whenever `--cuda` is given.
 #[cfg(test)]
 pub(crate) fn music_beat_probe_helper() {
-    let arguments = helper_arguments();
-    assert_eq!(arguments[1..3], ["-I", "-c"]);
-    assert_eq!(arguments[3], PROBE_SOURCE);
-    let folder = Path::new(&arguments[0])
-        .ancestors()
-        .nth(pinned_manifest().python.relative_path().split('/').count())
-        .expect("python lives inside the runtime folder")
-        .to_path_buf();
-    if folder.join("fake-probe-fail").exists() {
-        eprintln!("ModuleNotFoundError: No module named 'beat_this'");
-        std::process::exit(1);
+    let call = fake_sidecar_call("probe");
+    assert!(call.rest.is_empty(), "probe takes no further arguments");
+    let folder = &call.runtime_folder;
+    if folder.join("fake-probe-fail").exists()
+        || (call.cuda.is_some() && folder.join("fake-cuda-crash").exists())
+    {
+        eprintln!("supa-beat-detect: could not load the models");
+        std::process::exit(3);
     }
     let version = fs::read_to_string(folder.join("fake-probe-version"))
         .map(|version| version.trim().to_owned())
-        .unwrap_or_else(|_| pinned_manifest().detector.version);
-    println!("{}", serde_json::json!({ "version": version }));
+        .unwrap_or_else(|_| pinned_manifest().detector.crate_version);
+    let cuda_fails = folder.join("fake-cuda-fail").exists();
+    let (device, cuda_error) = match (&call.cuda, cuda_fails) {
+        (Some(_), false) => ("cuda", None),
+        (Some(_), true) => ("cpu", Some("CUDA driver version is insufficient")),
+        (None, _) => ("cpu", None),
+    };
+    println!(
+        "{}",
+        serde_json::json!({ "version": version, "device": device, "cudaError": cuda_error })
+    );
 }
 
-/// Fake Beat This! run. Markers next to the checkpoint: `fake-detect-hang`
-/// writes `fake-detect-running` and sleeps, `fake-detect-malformed` prints
-/// invalid output. Otherwise it reports a music beat every 0.5 s from 0.5 s
-/// and a downbeat every 2 s.
+/// Fake `supa-beat-detect detect`. Markers in the runtime folder: `fake-detect-hang` writes
+/// `fake-detect-running` and sleeps, `fake-detect-malformed` prints invalid output,
+/// `fake-cuda-crash` exits 3 whenever `--cuda` is given. Otherwise it reports a music beat every
+/// 0.5 s from 0.5 s and downbeats at 0.5 s and 2.5 s.
 #[cfg(test)]
 pub(crate) fn music_beat_detect_helper() {
-    let arguments = helper_arguments();
-    assert_eq!(arguments[1..3], ["-I", "-B"]);
-    let runner = Path::new(&arguments[3]);
-    assert_eq!(
-        fs::read(runner).expect("runner script must exist"),
-        RUNNER_SCRIPT.as_bytes()
-    );
-    assert!(Path::new(&arguments[4]).is_file(), "audio must exist");
-    let checkpoint = Path::new(&arguments[5]);
-    assert!(checkpoint.is_file(), "checkpoint must be a local file");
-    let folder = checkpoint.parent().expect("checkpoint has a folder");
+    let call = fake_sidecar_call("detect");
+    assert_eq!(call.rest.len(), 3, "detect takes --device auto <wav>");
+    assert_eq!(call.rest[..2], ["--device", "auto"]);
+    assert!(Path::new(&call.rest[2]).is_file(), "audio must exist");
+    assert!(call.models_dir.is_dir());
+    let folder = &call.runtime_folder;
+    if call.cuda.is_some() && folder.join("fake-cuda-crash").exists() {
+        std::process::exit(3);
+    }
     if folder.join("fake-detect-hang").exists() {
         fs::write(folder.join("fake-detect-running"), b"1").expect("marker must write");
         std::thread::sleep(Duration::from_secs(30));
@@ -817,34 +1158,101 @@ pub(crate) fn music_beat_detect_helper() {
         return;
     }
     let beats: Vec<f64> = (1..=7).map(|index| f64::from(index) * 0.5).collect();
+    let device = if call.cuda.is_some() { "cuda" } else { "cpu" };
     println!(
         "{}",
-        serde_json::json!({ "beats": beats, "downbeats": [0.5, 2.5] })
+        serde_json::json!({
+            "beats": beats,
+            "downbeats": [0.5, 2.5],
+            "device": device,
+            "cudaError": null,
+            "timing": { "melMs": 1, "inferenceMs": 2 },
+        })
     );
 }
 
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use tests::{fixture_manifest, runtime_folder_fixture};
+pub(crate) use tests::{
+    fake_sidecar_path, fixture_manifest, runtime_folder_fixture, RuntimeFixture,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    pub(crate) fn fixture_manifest(checkpoint: &[u8]) -> MusicBeatRuntimeManifest {
+    /// File contents for a fake runtime folder; the fixture manifest pins exactly these bytes.
+    pub(crate) struct RuntimeFixture {
+        pub(crate) mel: &'static [u8],
+        pub(crate) beat: &'static [u8],
+        pub(crate) gpu_pack: Option<&'static [(&'static str, &'static [u8])]>,
+    }
+
+    pub(crate) const FAKE_GPU_PACK: &[(&str, &[u8])] = &[
+        ("onnxruntime.dll", b"fake onnxruntime"),
+        ("cudart64_12.dll", b"fake cudart"),
+    ];
+
+    impl RuntimeFixture {
+        pub(crate) const CPU_ONLY: Self = Self {
+            mel: b"fake mel model",
+            beat: b"fake beat model",
+            gpu_pack: None,
+        };
+        pub(crate) const WITH_GPU_PACK: Self = Self {
+            mel: b"fake mel model",
+            beat: b"fake beat model",
+            gpu_pack: Some(FAKE_GPU_PACK),
+        };
+    }
+
+    fn sha256(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    pub(crate) fn fixture_manifest(fixture: &RuntimeFixture) -> MusicBeatRuntimeManifest {
         let mut manifest = pinned_manifest();
-        manifest.checkpoint.byte_length = checkpoint.len() as u64;
-        manifest.checkpoint.sha256 = format!("{:x}", Sha256::digest(checkpoint));
+        for model in &mut manifest.models.files {
+            let bytes = if model.role == "mel" {
+                fixture.mel
+            } else {
+                fixture.beat
+            };
+            model.byte_length = bytes.len() as u64;
+            model.sha256 = sha256(bytes);
+        }
+        let template = manifest.gpu_pack.files[0].clone();
+        manifest.gpu_pack.files = FAKE_GPU_PACK
+            .iter()
+            .map(|(name, bytes)| ManifestPackFile {
+                file: (*name).to_owned(),
+                byte_length: bytes.len() as u64,
+                sha256: sha256(bytes),
+                ..template.clone()
+            })
+            .collect();
         manifest
     }
 
-    pub(crate) fn runtime_folder_fixture(root: &Path, checkpoint: &[u8]) -> PathBuf {
-        let folder = root.join("beat-this-runtime");
-        let python = folder.join(pinned_manifest().python.relative_path());
-        fs::create_dir_all(python.parent().unwrap()).unwrap();
-        fs::write(&python, b"fake interpreter").unwrap();
-        fs::write(folder.join("final0.ckpt"), checkpoint).unwrap();
+    pub(crate) fn runtime_folder_fixture(root: &Path, fixture: &RuntimeFixture) -> PathBuf {
+        let folder = root.join("beat-runtime");
+        let models = folder.join("models");
+        fs::create_dir_all(&models).unwrap();
+        fs::write(models.join(MEL_MODEL_FILE), fixture.mel).unwrap();
+        fs::write(models.join(BEAT_MODEL_FILE), fixture.beat).unwrap();
+        if let Some(files) = fixture.gpu_pack {
+            let pack = folder.join("cuda");
+            fs::create_dir_all(&pack).unwrap();
+            for (name, bytes) in files {
+                fs::write(pack.join(name), bytes).unwrap();
+            }
+        }
         folder
+    }
+
+    /// Any existing file stands in for the sidecar: tests replace it with the helper mode.
+    pub(crate) fn fake_sidecar_path() -> PathBuf {
+        std::env::current_exe().unwrap()
     }
 
     fn configure(config_dir: &Path, folder: &Path) {
@@ -858,129 +1266,428 @@ mod tests {
         .unwrap();
     }
 
+    async fn verify(
+        folder: &Path,
+        fixture: &RuntimeFixture,
+    ) -> Result<VerifiedMusicBeatRuntime, MusicBeatRuntimeProblem> {
+        let sidecar = fake_sidecar_path();
+        verify_runtime_folder(folder, Some(&sidecar), &fixture_manifest(fixture)).await
+    }
+
+    fn recorded_args(folder: &Path, command: &str) -> Vec<String> {
+        serde_json::from_slice(&fs::read(folder.join(format!("fake-{command}-args.json"))).unwrap())
+            .unwrap()
+    }
+
     #[test]
     fn pinned_manifest_is_valid() {
         let manifest = pinned_manifest();
+
         assert!(validate_manifest(&manifest));
-        assert_eq!(manifest.checkpoint.byte_length, 81_058_141);
+        assert_eq!(manifest.detector.version, "rs-1.1.0");
+        assert_eq!(manifest.detector.crate_version, "1.1.0");
+        assert_eq!(
+            manifest.detector.reference_checkpoint.byte_length,
+            81_058_141
+        );
         assert_eq!(manifest.detector.license.spdx, "MIT");
+        assert_eq!(
+            manifest.beat_model_sha256(),
+            "5f810debe53459b559127fb55bbad40035bb47cc567b20e501670f968c770f02"
+        );
         assert!(is_sha256(&pinned_manifest_sha256()));
+        // Every GPU pack file comes from a pinned archive.
+        for file in &manifest.gpu_pack.files {
+            assert!(
+                manifest
+                    .gpu_pack
+                    .archives
+                    .iter()
+                    .any(|archive| archive.id == file.archive && is_sha256(&archive.sha256)),
+                "{} has no pinned archive",
+                file.file
+            );
+        }
+    }
+
+    #[test]
+    fn manifests_with_unsafe_or_unexpected_paths_fail_validation() {
+        let fixture = RuntimeFixture::CPU_ONLY;
+        type Mutation = fn(&mut MusicBeatRuntimeManifest);
+        let cases: [(&str, Mutation); 6] = [
+            ("model traversal", |m| {
+                m.models.files[0].file = "../beat_this.onnx".to_owned()
+            }),
+            ("models folder traversal", |m| {
+                m.models.folder = "..".to_owned()
+            }),
+            ("pack file path", |m| {
+                m.gpu_pack.files[0].file = "sub/onnxruntime.dll".to_owned()
+            }),
+            ("renamed beat model", |m| {
+                m.models.files[1].file = "other.onnx".to_owned()
+            }),
+            ("duplicate role", |m| {
+                m.models.files[1].role = "mel".to_owned()
+            }),
+            ("version not tied to crate", |m| {
+                m.detector.version = "rs-9.9.9".to_owned()
+            }),
+        ];
+        for (name, mutate) in cases {
+            let mut manifest = fixture_manifest(&fixture);
+            mutate(&mut manifest);
+
+            assert!(!validate_manifest(&manifest), "{name} must be rejected");
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn a_manifest_with_traversal_paths_fails_closed() {
+    async fn an_invalid_manifest_fails_closed_before_touching_files() {
         let workspace = tempfile::tempdir().unwrap();
-        let checkpoint = b"fake final0 checkpoint";
-        let folder = runtime_folder_fixture(workspace.path(), checkpoint);
-        let mut manifest = fixture_manifest(checkpoint);
-        manifest.checkpoint.file = "../final0.ckpt".to_owned();
-        assert!(!validate_manifest(&manifest));
-        assert_eq!(
-            verify_runtime_folder(&folder, &manifest).await.unwrap_err(),
-            MusicBeatRuntimeProblem::FolderMissing
-        );
-        let mut manifest = fixture_manifest(checkpoint);
-        manifest.python.windows = "../../python.exe".to_owned();
-        manifest.python.unix = "../../python".to_owned();
-        assert!(verify_runtime_folder(&folder, &manifest).await.is_err());
+        let fixture = RuntimeFixture::CPU_ONLY;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        let mut manifest = fixture_manifest(&fixture);
+        manifest.models.files[0].file = "../mel_spectrogram.onnx".to_owned();
+
+        let result = verify_runtime_folder(&folder, Some(&fake_sidecar_path()), &manifest).await;
+
+        assert_eq!(result.unwrap_err(), MusicBeatRuntimeProblem::FolderMissing);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn status_is_not_configured_without_a_folder() {
         let config = tempfile::tempdir().unwrap();
-        let (status, verified) = music_beat_runtime_status(config.path()).await;
+
+        let (status, verified) =
+            music_beat_runtime_status(config.path(), Some(&fake_sidecar_path())).await;
+
         assert_eq!(status.runtime, MusicBeatRuntimeAvailability::NotConfigured);
+        assert_eq!(status.accelerator, None);
         assert!(verified.is_none());
         assert_eq!(status.runtime_folder, None);
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn status_is_ready_for_a_matching_folder() {
-        let workspace = tempfile::tempdir().unwrap();
-        let checkpoint = b"checkpoint fixture";
-        let folder = runtime_folder_fixture(workspace.path(), checkpoint);
-        configure(workspace.path(), &folder);
-        let manifest = fixture_manifest(checkpoint);
+    #[test]
+    fn the_bundled_sidecar_resolves_only_when_the_file_exists() {
+        use crate::video::{
+            derived::MediaPrograms,
+            toolchain::{MediaToolchain, MediaToolchainState},
+        };
+        let resources = tempfile::tempdir().unwrap();
+        let sidecar = resources
+            .path()
+            .join(crate::video::toolchain::BEAT_DETECTOR_RESOURCE);
+        let programs = |path: &Path| {
+            MediaPrograms::bundled(
+                MediaToolchainState::from_ready(MediaToolchain::resolve_from_resource_root(
+                    resources.path(),
+                ))
+                .with_beat_detector(path.to_path_buf()),
+            )
+        };
 
-        let (status, verified) = runtime_status_with(workspace.path(), &manifest, "a").await;
+        assert_eq!(programs(&sidecar).beat_detector(), None);
+        fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+        fs::write(&sidecar, b"exe").unwrap();
+        assert_eq!(programs(&sidecar).beat_detector(), Some(sidecar.clone()));
+        assert_eq!(
+            programs(sidecar.parent().unwrap()).beat_detector(),
+            None,
+            "a folder is not the sidecar"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn setting_a_folder_saves_it_and_reports_its_status() {
+        let workspace = tempfile::tempdir().unwrap();
+        let config = workspace.path().join("config");
+        let folder = workspace.path().join("missing-runtime");
+
+        let rejected =
+            set_music_beat_runtime_folder(&config, Some(&fake_sidecar_path()), "relative").await;
+        let status = set_music_beat_runtime_folder(
+            &config,
+            Some(&fake_sidecar_path()),
+            folder.to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(rejected.is_err());
+        assert_eq!(status.runtime_folder.as_deref(), folder.to_str());
+        assert_eq!(
+            status.runtime,
+            MusicBeatRuntimeAvailability::Unavailable {
+                problem: MusicBeatRuntimeProblem::FolderMissing
+            }
+        );
+        assert_eq!(
+            load_settings(&config).runtime_folder.as_deref(),
+            folder.to_str()
+        );
+    }
+
+    #[test]
+    fn status_serializes_to_the_ipc_shape() {
+        let status = |runtime, accelerator| MusicBeatRuntimeStatus {
+            runtime_folder: Some("C:\\beats".to_owned()),
+            runtime,
+            accelerator,
+            manifest_sha256: "a".repeat(64),
+            beat_this_version: "rs-1.1.0".to_owned(),
+            checkpoint_sha256: "b".repeat(64),
+        };
+
+        let ready = serde_json::to_value(status(
+            MusicBeatRuntimeAvailability::Ready,
+            Some(MusicBeatAccelerator::Cpu {
+                reason: MusicBeatCpuReason::GpuPackMismatch,
+            }),
+        ))
+        .unwrap();
+        let unavailable = serde_json::to_value(status(
+            MusicBeatRuntimeAvailability::Unavailable {
+                problem: MusicBeatRuntimeProblem::ModelMismatch,
+            },
+            None,
+        ))
+        .unwrap();
+        let cuda = serde_json::to_value(MusicBeatAccelerator::Cuda).unwrap();
+
+        assert_eq!(
+            ready,
+            serde_json::json!({
+                "runtimeFolder": "C:\\beats",
+                "runtime": { "state": "ready" },
+                "accelerator": { "kind": "cpu", "reason": "gpuPackMismatch" },
+                "manifestSha256": "a".repeat(64),
+                "beatThisVersion": "rs-1.1.0",
+                "checkpointSha256": "b".repeat(64),
+            })
+        );
+        assert_eq!(
+            unavailable["runtime"],
+            serde_json::json!({ "state": "unavailable", "problem": { "reason": "modelMismatch" } })
+        );
+        assert_eq!(unavailable["accelerator"], serde_json::Value::Null);
+        assert_eq!(cuda, serde_json::json!({ "kind": "cuda" }));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_folder_with_a_matching_gpu_pack_is_ready_on_cuda() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = RuntimeFixture::WITH_GPU_PACK;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        configure(workspace.path(), &folder);
+        let manifest = fixture_manifest(&fixture);
+
+        let (status, verified) =
+            runtime_status_with(workspace.path(), Some(&fake_sidecar_path()), &manifest, "a").await;
 
         assert_eq!(status.runtime, MusicBeatRuntimeAvailability::Ready);
+        assert_eq!(status.accelerator, Some(MusicBeatAccelerator::Cuda));
+        assert_eq!(status.checkpoint_sha256, sha256(fixture.beat));
         let verified = verified.expect("ready runtime");
-        assert_eq!(verified.beat_this_version, manifest.detector.version);
-        assert!(verified.checkpoint.ends_with("final0.ckpt"));
-        verified.recheck_checkpoint().await.unwrap();
+        assert_eq!(verified.detector_version, "rs-1.1.0");
+        assert_eq!(verified.beat_model_sha256, sha256(fixture.beat));
+        let probe = recorded_args(&folder, "probe");
+        assert_eq!(probe[1..3], ["probe", "--models"]);
+        assert_eq!(probe[4], "--cuda");
+        assert!(verified.recheck_before_run().await.unwrap().is_some());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_accelerator_explains_every_cpu_case() {
+        let workspace = tempfile::tempdir().unwrap();
+        let cpu = |reason| Some(MusicBeatAccelerator::Cpu { reason });
+        let accelerator_of = |name: &'static str, fixture: RuntimeFixture, prepare: fn(&Path)| {
+            let root = workspace.path().join(name);
+            async move {
+                let folder = runtime_folder_fixture(&root, &fixture);
+                prepare(&folder);
+                let verified = verify(&folder, &fixture).await.expect("ready runtime");
+                (verified.accelerator, verified.gpu_pack.is_some())
+            }
+        };
+
+        let no_pack = accelerator_of("no-pack", RuntimeFixture::CPU_ONLY, |_| {}).await;
+        let changed = accelerator_of("changed", RuntimeFixture::WITH_GPU_PACK, |folder| {
+            fs::write(folder.join("cuda/cudart64_12.dll"), b"fake cudarX").unwrap();
+        })
+        .await;
+        let missing_file = accelerator_of("missing", RuntimeFixture::WITH_GPU_PACK, |folder| {
+            fs::remove_file(folder.join("cuda/onnxruntime.dll")).unwrap();
+        })
+        .await;
+        let init_failed = accelerator_of("init", RuntimeFixture::WITH_GPU_PACK, |folder| {
+            fs::write(folder.join("fake-cuda-fail"), b"1").unwrap();
+        })
+        .await;
+        let crashed = accelerator_of("crash", RuntimeFixture::WITH_GPU_PACK, |folder| {
+            fs::write(folder.join("fake-cuda-crash"), b"1").unwrap();
+        })
+        .await;
+
+        assert_eq!(
+            no_pack,
+            (cpu(MusicBeatCpuReason::NoGpuPack).unwrap(), false)
+        );
+        assert_eq!(
+            changed,
+            (cpu(MusicBeatCpuReason::GpuPackMismatch).unwrap(), false)
+        );
+        assert_eq!(
+            missing_file,
+            (cpu(MusicBeatCpuReason::GpuPackMismatch).unwrap(), false)
+        );
+        assert_eq!(
+            init_failed,
+            (cpu(MusicBeatCpuReason::CudaInitFailed).unwrap(), false)
+        );
+        assert_eq!(
+            crashed,
+            (cpu(MusicBeatCpuReason::CudaInitFailed).unwrap(), false)
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn status_reports_each_problem() {
         let workspace = tempfile::tempdir().unwrap();
-        let checkpoint = b"checkpoint fixture";
-        let manifest = fixture_manifest(checkpoint);
-        let status_of = |folder: PathBuf| {
+        let fixture = RuntimeFixture::CPU_ONLY;
+        let manifest = fixture_manifest(&fixture);
+        let sidecar = fake_sidecar_path();
+        let status_of = |folder: PathBuf, sidecar: Option<PathBuf>| {
             let config = workspace.path().join("config");
             let manifest = manifest.clone();
             async move {
                 configure(&config, &folder);
-                runtime_status_with(&config, &manifest, "a").await.0.runtime
+                runtime_status_with(&config, sidecar.as_deref(), &manifest, "a")
+                    .await
+                    .0
+                    .runtime
             }
         };
         let unavailable = |problem| MusicBeatRuntimeAvailability::Unavailable { problem };
+        let fresh = |name: &str| runtime_folder_fixture(&workspace.path().join(name), &fixture);
 
         assert_eq!(
-            status_of(workspace.path().join("missing")).await,
+            status_of(workspace.path().join("missing"), Some(sidecar.clone())).await,
             unavailable(MusicBeatRuntimeProblem::FolderMissing)
         );
-
-        let no_checkpoint = workspace.path().join("no-checkpoint");
-        let folder = runtime_folder_fixture(&no_checkpoint, checkpoint);
-        fs::remove_file(folder.join("final0.ckpt")).unwrap();
+        let folder = fresh("no-model");
+        fs::remove_file(folder.join("models").join(BEAT_MODEL_FILE)).unwrap();
         assert_eq!(
-            status_of(folder).await,
-            unavailable(MusicBeatRuntimeProblem::CheckpointMissing)
+            status_of(folder, Some(sidecar.clone())).await,
+            unavailable(MusicBeatRuntimeProblem::ModelMissing)
         );
-
-        let wrong_hash = workspace.path().join("wrong-hash");
-        let folder = runtime_folder_fixture(&wrong_hash, b"checkpoint fixturX");
+        let folder = fresh("no-models-folder");
+        fs::remove_dir_all(folder.join("models")).unwrap();
         assert_eq!(
-            status_of(folder).await,
-            unavailable(MusicBeatRuntimeProblem::CheckpointMismatch)
+            status_of(folder, Some(sidecar.clone())).await,
+            unavailable(MusicBeatRuntimeProblem::ModelMissing)
         );
-
-        let no_python = workspace.path().join("no-python");
-        let folder = runtime_folder_fixture(&no_python, checkpoint);
-        fs::remove_file(folder.join(pinned_manifest().python.relative_path())).unwrap();
+        let folder = fresh("wrong-hash");
+        fs::write(
+            folder.join("models").join(MEL_MODEL_FILE),
+            b"fake mel modeX",
+        )
+        .unwrap();
         assert_eq!(
-            status_of(folder).await,
-            unavailable(MusicBeatRuntimeProblem::PythonMissing)
+            status_of(folder, Some(sidecar.clone())).await,
+            unavailable(MusicBeatRuntimeProblem::ModelMismatch)
         );
-
-        let probe_fails = workspace.path().join("probe-fails");
-        let folder = runtime_folder_fixture(&probe_fails, checkpoint);
+        assert_eq!(
+            status_of(fresh("no-sidecar"), None).await,
+            unavailable(MusicBeatRuntimeProblem::DetectorMissing)
+        );
+        let folder = fresh("probe-fails");
         fs::write(folder.join("fake-probe-fail"), b"1").unwrap();
         assert_eq!(
-            status_of(folder).await,
+            status_of(folder, Some(sidecar.clone())).await,
             unavailable(MusicBeatRuntimeProblem::ProbeFailed)
         );
-
-        let old_package = workspace.path().join("old-package");
-        let folder = runtime_folder_fixture(&old_package, checkpoint);
-        fs::write(folder.join("fake-probe-version"), b"0.9.0").unwrap();
+        let folder = fresh("old-crate");
+        fs::write(folder.join("fake-probe-version"), b"1.0.0").unwrap();
         assert_eq!(
-            status_of(folder).await,
-            unavailable(MusicBeatRuntimeProblem::PackageMismatch)
+            status_of(folder, Some(sidecar.clone())).await,
+            unavailable(MusicBeatRuntimeProblem::ProbeFailed)
         );
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn recheck_rejects_a_swapped_checkpoint() {
+    async fn recheck_rejects_a_swapped_model() {
         let workspace = tempfile::tempdir().unwrap();
-        let checkpoint = b"checkpoint fixture";
-        let folder = runtime_folder_fixture(workspace.path(), checkpoint);
-        let verified = verify_runtime_folder(&folder, &fixture_manifest(checkpoint))
-            .await
-            .unwrap();
-        fs::write(folder.join("final0.ckpt"), b"checkpoint fixturX").unwrap();
-        assert!(verified.recheck_checkpoint().await.is_err());
+        let fixture = RuntimeFixture::CPU_ONLY;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        let verified = verify(&folder, &fixture).await.unwrap();
+
+        fs::write(
+            folder.join("models").join(BEAT_MODEL_FILE),
+            b"fake beat modeX",
+        )
+        .unwrap();
+
+        assert!(verified.recheck_before_run().await.is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn recheck_runs_on_cpu_when_the_gpu_pack_changed_after_verification() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = RuntimeFixture::WITH_GPU_PACK;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        let verified = verify(&folder, &fixture).await.unwrap();
+        assert!(verified.recheck_before_run().await.unwrap().is_some());
+
+        fs::write(
+            folder.join("cuda/onnxruntime.dll"),
+            b"a different, longer library",
+        )
+        .unwrap();
+
+        assert_eq!(verified.recheck_before_run().await.unwrap(), None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn detect_passes_the_gpu_pack_and_reports_the_device() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = RuntimeFixture::WITH_GPU_PACK;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        let verified = verify(&folder, &fixture).await.unwrap();
+        let wav = workspace.path().join("analysis.wav");
+        write_test_wav(&wav, &[0; 64]);
+        let pack = verified.recheck_before_run().await.unwrap();
+
+        let output =
+            run_beat_detector(&verified, pack.as_deref(), &wav, ProcessCancellation::new())
+                .await
+                .unwrap();
+
+        assert_eq!(output.device, SidecarDevice::Cuda);
+        assert_eq!(output.beats.len(), 7);
+        let args = recorded_args(&folder, "detect");
+        assert_eq!(args[4], "--cuda");
+        assert_eq!(args[6..8], ["--device", "auto"]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn detect_reruns_on_cpu_when_the_sidecar_dies_with_the_gpu_pack() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = RuntimeFixture::WITH_GPU_PACK;
+        let folder = runtime_folder_fixture(workspace.path(), &fixture);
+        let verified = verify(&folder, &fixture).await.unwrap();
+        let pack = verified.recheck_before_run().await.unwrap();
+        fs::write(folder.join("fake-cuda-crash"), b"1").unwrap();
+        let wav = workspace.path().join("analysis.wav");
+        write_test_wav(&wav, &[0; 64]);
+
+        let output =
+            run_beat_detector(&verified, pack.as_deref(), &wav, ProcessCancellation::new())
+                .await
+                .unwrap();
+
+        assert_eq!(output.device, SidecarDevice::Cpu);
+        assert_eq!(recorded_args(&folder, "detect")[4], "--device");
     }
 
     #[test]
@@ -1002,24 +1709,5 @@ mod tests {
             }
         )
         .is_err());
-    }
-
-    #[test]
-    fn runner_is_content_addressed_and_repaired() {
-        let cache = tempfile::tempdir().unwrap();
-        let path = materialize_runner(cache.path()).unwrap();
-        let digest = format!("{:x}", Sha256::digest(RUNNER_SCRIPT.as_bytes()));
-        assert!(path.ends_with(format!("beat_this_runner-{digest}.py")));
-        fs::write(&path, b"import os; os.system('evil')").unwrap();
-        let repaired = materialize_runner(cache.path()).unwrap();
-        assert_eq!(repaired, path);
-        assert_eq!(fs::read(&path).unwrap(), RUNNER_SCRIPT.as_bytes());
-    }
-
-    #[test]
-    fn runner_never_passes_a_checkpoint_shortname() {
-        // Beat This! downloads any checkpoint argument that is not a file.
-        assert!(RUNNER_SCRIPT.contains("checkpoint.is_file()"));
-        assert!(RUNNER_SCRIPT.contains("dbn=False"));
     }
 }

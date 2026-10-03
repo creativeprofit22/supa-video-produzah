@@ -22,6 +22,8 @@ use super::{
 
 /// Bundled renderer location under the resource directory (`tauri.conf.json` resources).
 pub(crate) const GRAPHICS_RENDERER_RESOURCE: &str = "graphics-renderer/supa-graphics-render.exe";
+/// Bundled music beat detector location under the resource directory (ADR 0004).
+pub(crate) const BEAT_DETECTOR_RESOURCE: &str = "beat-detector/supa-beat-detect.exe";
 const COMPILED_MANIFEST: &str = include_str!("../../media-toolchain/manifest.v1.json");
 const SUPPORTED_TARGET: &str = "x86_64-pc-windows-msvc";
 const PINNED_TOOLCHAIN_ID: &str = "ffmpeg-8.1.2-gyan-essentials-windows-x86_64";
@@ -160,6 +162,8 @@ pub struct MediaToolchainState {
     resolution: Arc<MediaToolchainResolution>,
     /// The bundled `supa-graphics-render` executable (ADR 0003), when this build ships one.
     graphics_renderer: Option<PathBuf>,
+    /// The bundled `supa-beat-detect` executable (ADR 0004), when this build ships one.
+    beat_detector: Option<PathBuf>,
 }
 
 type MediaToolchainResolver =
@@ -224,16 +228,15 @@ impl MediaToolchainResolution {
 
 impl MediaToolchainState {
     pub fn start_for_app<R: Runtime>(app: &AppHandle<R>) -> Self {
-        let graphics_renderer = app
-            .path()
-            .resource_dir()
-            .ok()
-            .map(|root| root.join(GRAPHICS_RENDERER_RESOURCE));
+        let resource_dir = app.path().resource_dir().ok();
         let app = app.clone();
         let mut state = Self::start_with_resolver(INITIALIZATION_TIMEOUT, move || {
             MediaToolchain::try_resolve_for_app(&app)
         });
-        state.graphics_renderer = graphics_renderer;
+        state.graphics_renderer = resource_dir
+            .as_ref()
+            .map(|root| root.join(GRAPHICS_RENDERER_RESOURCE));
+        state.beat_detector = resource_dir.map(|root| root.join(BEAT_DETECTOR_RESOURCE));
         state
     }
 
@@ -246,6 +249,18 @@ impl MediaToolchainState {
     #[cfg(test)]
     pub(crate) fn with_graphics_renderer(mut self, renderer: PathBuf) -> Self {
         self.graphics_renderer = Some(renderer);
+        self
+    }
+
+    /// The music beat detector sidecar. Like the graphics renderer, it is resolved from the
+    /// resource folder and must be a regular file there.
+    pub(crate) fn beat_detector(&self) -> Option<&Path> {
+        self.beat_detector.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_beat_detector(mut self, detector: PathBuf) -> Self {
+        self.beat_detector = Some(detector);
         self
     }
 
@@ -270,6 +285,7 @@ impl MediaToolchainState {
             phase,
             resolution,
             graphics_renderer: None,
+            beat_detector: None,
         }
     }
 
@@ -289,6 +305,7 @@ impl MediaToolchainState {
             phase,
             resolution,
             graphics_renderer: None,
+            beat_detector: None,
         }
     }
 

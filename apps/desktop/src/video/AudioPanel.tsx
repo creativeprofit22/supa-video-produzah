@@ -9,6 +9,7 @@ import {
 } from "@supa-video/contracts";
 import type {
   MusicBeatAnalysisV1,
+  MusicBeatCpuReason,
   MusicBeatDetectorKind,
   MusicBeatRuntimeProblem,
   MusicBeatRuntimeStatus,
@@ -75,36 +76,51 @@ function musicBeatSummary(
   return `${String(analysis.beatsUs.length)} music beats${tempo} (${detectorLabels[analysis.detector.kind]}).`;
 }
 
-function runtimeProblemMessage(
-  problem: MusicBeatRuntimeProblem,
-  status: MusicBeatRuntimeStatus,
-): string {
+function runtimeProblemMessage(problem: MusicBeatRuntimeProblem): string {
   switch (problem.reason) {
     case "folderMissing":
       return "The Beat This! folder could not be found. Choose it again.";
     case "linkedPath":
-      return "The Beat This! folder or its checkpoint is a link or shortcut. Choose the real folder.";
-    case "pythonMissing":
-      return "The folder has no Python environment. Run the setup script, then choose the folder again.";
-    case "checkpointMissing":
-      return "The folder has no final0.ckpt checkpoint.";
-    case "checkpointMismatch":
-      return "The checkpoint does not match the pinned final0 file.";
-    case "packageMismatch":
-      return `The installed Beat This! package is not the pinned version ${status.beatThisVersion}.`;
+      return "The Beat This! folder or one of its files is a link or shortcut. Choose the real folder.";
+    case "modelMissing":
+      return "The folder is missing a Beat This! model file. Run the setup script, then choose the folder again.";
+    case "modelMismatch":
+      return "A Beat This! model file does not match the pinned version. Run the setup script again.";
+    case "detectorMissing":
+      return "This build of the app does not include the beat detector.";
     case "probeFailed":
-      return "Python could not load Beat This! from that folder.";
+      return "The beat detector could not load the models from that folder.";
   }
 }
+
+const cpuReasonMessages: Record<MusicBeatCpuReason, string> = {
+  noGpuPack: "No GPU pack in the folder, so detection runs on the CPU (slower).",
+  gpuPackMismatch:
+    "The GPU pack does not match the pinned files, so detection runs on the CPU (slower). Run the setup script again.",
+  cudaInitFailed: "The GPU could not be started, so detection runs on the CPU (slower).",
+};
 
 function runtimeDetail(status: MusicBeatRuntimeStatus): string | null {
   switch (status.runtime.state) {
     case "ready":
-      return null;
+      return status.accelerator?.kind === "cpu"
+        ? cpuReasonMessages[status.accelerator.reason]
+        : null;
     case "notConfigured":
       return "No Beat This! folder chosen yet.";
     case "unavailable":
-      return runtimeProblemMessage(status.runtime.problem, status);
+      return runtimeProblemMessage(status.runtime.problem);
+  }
+}
+
+function readyLabel(status: MusicBeatRuntimeStatus): string {
+  switch (status.accelerator?.kind) {
+    case "cuda":
+      return "Beat This! ready on the GPU";
+    case "cpu":
+      return "Beat This! ready on the CPU";
+    case undefined:
+      return "Beat This! ready";
   }
 }
 
@@ -130,7 +146,7 @@ function MusicBeatRuntimeRow({
     status === null
       ? "Checking the Beat This! runtime…"
       : status.runtime.state === "ready"
-        ? "Beat This! ready"
+        ? readyLabel(status)
         : "In-app tempo fallback";
   const detail = status === null ? null : runtimeDetail(status);
   return (

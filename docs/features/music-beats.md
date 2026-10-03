@@ -8,15 +8,15 @@ In **Audio → Music beats**, every asset on a track marked **Music** has a **De
 
 1. ffmpeg decodes the first audio stream to 22.05 kHz mono 16-bit WAV. Audio past one hour is not analysed.
 2. The detector runs:
-   - **Beat This!**, when the music beat runtime is ready (see below). It runs `File2Beats(checkpoint_path=<local final0.ckpt>, dbn=False)` and uses CUDA when it is available.
+   - **Beat This!**, when the music beat runtime is ready (see below). The bundled `supa-beat-detect` sidecar runs the final0 model as ONNX: on the GPU through CUDA when the runtime has a working GPU pack, otherwise on the CPU. Results are identical on both (see `docs/benchmarks/beat-detect.md`), and match Python Beat This! `File2Beats(final0, dbn=False)`.
    - Otherwise the **in-app tempo fallback**, written in Rust. It computes a spectral-flux onset envelope, estimates tempo by autocorrelation over 60–200 BPM with a prior centred on 120 BPM, and tracks music beats with Ellis-style dynamic programming. It handles percussive music well and non-percussive music poorly.
 3. Onsets always come from the in-app envelope.
-4. The result is stored as derived media: artifact kind `music_beats`, format `music-beats-v1`. It is keyed by the source content digest plus detector kind, version and checkpoint digest. Running detection again on the same file with the same detector reuses the stored analysis.
+4. The result is stored as derived media: artifact kind `music_beats`, format `music-beats-v1`. It is keyed by the source content digest plus detector kind, version and checkpoint digest. Running detection again on the same file with the same detector reuses the stored analysis. For Beat This! the version is `rs-1.1.0` and the checkpoint digest is the SHA-256 of `beat_this.onnx`, so analyses from the earlier Python runner (`1.1.0`) are detected again once. The device is not part of the key.
 
 ```json
 {
   "schemaVersion": 1,
-  "detector": { "kind": "beat_this", "version": "1.1.0", "checkpointSha256": "8c32…" },
+  "detector": { "kind": "beat_this", "version": "rs-1.1.0", "checkpointSha256": "5f81…" },
   "durationUs": 184000000,
   "tempoBpm": 120.0,
   "beatsUs": [500000, 1000000],
@@ -29,28 +29,32 @@ All times are integer source-time microseconds, strictly increasing and capped (
 
 ## Music beat runtime (Beat This!)
 
-Python is not bundled with the app. The runtime is a folder you choose, and it must contain:
+The app bundles the detector program (`beat-detector/supa-beat-detect.exe`, ADR 0004) but not the models or GPU libraries. The runtime is a folder you choose:
 
-- `.venv/Scripts/python.exe` (`.venv/bin/python` outside Windows), with `beat-this` installed;
-- `final0.ckpt`, the official Beat This! checkpoint.
+- `models/mel_spectrogram.onnx` and `models/beat_this.onnx` — required;
+- `cuda/` — the optional GPU pack: ONNX Runtime 1.28.0 (CUDA 12 build), the CUDA 12.8 runtime, cuBLAS and cuDNN 9.10.2 libraries (about 1.8 GB). Without it, detection runs on the CPU.
 
-`apps/desktop/src-tauri/src/video/music-beat-runtime-manifest.json` pins these values:
+`apps/desktop/src-tauri/src/video/beat-detect-runtime-manifest.json` (schema 2) pins every file by SHA-256 and size, with its source URL and licence:
 
-| Item               | Value                                                              |
-| ------------------ | ------------------------------------------------------------------ |
-| Package            | `beat-this` 1.1.0 (CPJKU/beat_this @ `b95c8ab0`)                   |
-| Checkpoint         | `final0.ckpt`, 81 058 141 bytes                                    |
-| Checkpoint SHA-256 | `8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331` |
-| Licence            | MIT (repository LICENSE); no separate checkpoint licence is stated |
+| Item       | Value                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| Pipeline   | `beat-this` crate 1.1.0 (danigb/beat-this-rs @ `1ae768e7`), detector version `rs-1.1.0`       |
+| Beat model | `beat_this.onnx` (final0 exported to ONNX, FP32), 83 162 650 bytes, SHA-256 `5f810deb…0f02`   |
+| Mel model  | `mel_spectrogram.onnx`, 270 742 bytes                                                         |
+| Reference  | Python Beat This! 1.1.0 (CPJKU/beat_this @ `b95c8ab0`), `final0.ckpt` SHA-256 `8c328b45…8331` |
+| Licence    | MIT (Beat This! and beat-this-rs); NVIDIA libraries under the CUDA and cuDNN EULAs            |
 
-Before each run the app checks the checkpoint's size and hash and probes `python -I -c` for the `beat-this` version. The runner script is embedded in the app and written content-addressed into the app cache. It always receives the local checkpoint path, so Beat This! never downloads anything. If the runtime is missing or does not match the manifest, detection uses the tempo fallback, and the analysis and QC messages say so.
+When you choose the folder, the app hashes every file and asks the detector to load the models once (`probe`). **Audio → Music beats** then says whether Beat This! will run on the GPU or the CPU, and why it is on the CPU (no GPU pack, a GPU pack that does not match, or a GPU that could not be started). Before each run the app re-hashes the models. It also checks that the GPU pack files keep the size and modification time they had at verification; if they changed, that run uses the CPU. If the CUDA run fails, the job retries on the CPU. If the models are missing or do not match, detection uses the tempo fallback, and the analysis and QC messages say so.
 
-To build the folder (this downloads PyTorch, about 2.5 GB, and the 81 MB checkpoint, and needs `uv`):
+To build the folder (the GPU pack downloads about 1.7 GB of archives once):
 
 ```powershell
-scripts/setup-music-beat-runtime.ps1 -RuntimeFolder D:\supa-music-beats
-scripts/setup-music-beat-runtime.ps1 -RuntimeFolder D:\supa-music-beats -VerifyOnly
+scripts/bootstrap-beat-runtime-windows.ps1 -RuntimeFolder D:\supa-music-beats
+scripts/bootstrap-beat-runtime-windows.ps1 -RuntimeFolder D:\supa-music-beats -SkipGpuPack   # CPU only
+scripts/bootstrap-beat-runtime-windows.ps1 -RuntimeFolder D:\supa-music-beats -VerifyOnly
 ```
+
+Build the detector with `scripts/build-beat-detector-windows.ps1`; the Windows media-tools bundle includes it.
 
 ## Snapping
 
@@ -74,13 +78,16 @@ These rules are ported from diffusion-studio-2 `checker/music-fit.ts` (`cutsOnBe
 
 ## Tests
 
-- **Rust (`cargo test`):**
+- **Detector (`cargo test --locked` in `apps/desktop/src-tauri/beat-detector`):** WAV parsing, CLI contract and exit codes, device policy (forced CUDA failure falls back to the CPU), the F-measure helper, and parity with Python on the committed fixture on the CPU (goldens are committed, so no Python is needed). The models come from `.cache/beat-runtime` or `SUPA_VIDEO_BEAT_RUNTIME_DIR`.
+- **Parity with Python, ignored by default:** `cargo test --release --test parity -- --ignored` needs `SUPA_VIDEO_BEAT_REFERENCE_PYTHON` (from `uv sync --project apps/desktop/src-tauri/beat-detector/reference`) and `SUPA_VIDEO_BEAT_REFERENCE_CHECKPOINT` (a local `final0.ckpt`); for real music also `SUPA_VIDEO_BEAT_PARITY_DIR`. A missing variable fails the test. The reference script `beat-detector/reference/beat_this_reference.py` is test-only and refuses to run unless the beat-this version, commit and checkpoint match the pins.
+- **Benchmark:** `node scripts/benchmark-beat-detect.mjs` times Python, Rust CUDA and Rust CPU on 3/10/60-minute inputs and updates `docs/benchmarks/beat-detect.md`; without the reference variables it prints `SKIPPED:` and exits 77.
+- **App (`cargo test`):**
   - fallback tempo within ±1 BPM and music beats within 20 ms on synthesized 100/120/128 BPM clicks;
   - analysis validation;
-  - runtime status (ready, missing, hash mismatch, probe failure);
-  - job complete, cancel, fallback and malformed runner output;
+  - runtime status (ready on CUDA or CPU with each reason, missing or changed models, missing detector, probe failure);
+  - job complete, cancel (kills the sidecar), fallback, changed models, changed GPU pack, CUDA crash retried on the CPU, and malformed sidecar output;
   - media-state v1/v2/v3 → v4 migration;
   - pacing QC kinds mirrored with golden finding ids.
 - **End-to-end, ignored by default:** `cargo test --lib music_beat_ffmpeg_click_track_end_to_end -- --ignored` makes a 120 BPM click track with ffmpeg `aevalsrc`, then detects, publishes and reloads it.
-- **Real Beat This! proof:** set `SUPA_VIDEO_REAL_BEAT_THIS_PROOF=1` and a configured runtime. It needs PyTorch and the checkpoint.
+- **Real detector proof:** set `SUPA_VIDEO_REAL_BEAT_DETECT_PROOF=1` and `SUPA_VIDEO_MUSIC_BEAT_RUNTIME=<folder>`, build the sidecar, and run `cargo test --lib music_beat_real_beat_detect -- --ignored`. With a GPU pack it must run on CUDA.
 - **TypeScript (`pnpm test`):** schemas, the timeline mapping, move snap, graphics keyframe snap and undo, hook detection, AudioPanel, and `pacing.test.ts` on a known 120 BPM fixture.

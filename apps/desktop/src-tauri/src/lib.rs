@@ -1395,6 +1395,7 @@ mod tests {
                 video::asr_ipc::video_start_transcription,
                 video::asr_ipc::video_transcription_result,
                 video::music_beat_ipc::video_music_beat_runtime_status,
+                video::music_beat_ipc::video_music_beat_set_runtime,
                 video::music_beat_ipc::video_start_music_beat_detection,
                 video::music_beat_ipc::video_music_beat_detection_result,
                 video::music_beat_ipc::video_load_music_beat_analysis,

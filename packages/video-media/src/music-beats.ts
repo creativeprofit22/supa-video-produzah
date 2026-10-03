@@ -114,13 +114,27 @@ export type LoadMusicBeatAnalysisRequest = z.infer<typeof loadMusicBeatAnalysisR
 export const musicBeatRuntimeProblemSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.literal("folderMissing") }).strict(),
   z.object({ reason: z.literal("linkedPath") }).strict(),
-  z.object({ reason: z.literal("pythonMissing") }).strict(),
-  z.object({ reason: z.literal("checkpointMissing") }).strict(),
-  z.object({ reason: z.literal("checkpointMismatch") }).strict(),
-  z.object({ reason: z.literal("packageMismatch") }).strict(),
+  /** A pinned model file is missing from `models/`. */
+  z.object({ reason: z.literal("modelMissing") }).strict(),
+  /** A model file does not match the pinned SHA-256 and size. */
+  z.object({ reason: z.literal("modelMismatch") }).strict(),
+  /** This build does not include the beat detector program. */
+  z.object({ reason: z.literal("detectorMissing") }).strict(),
+  /** The beat detector could not load the models. */
   z.object({ reason: z.literal("probeFailed") }).strict(),
 ]);
 export type MusicBeatRuntimeProblem = z.infer<typeof musicBeatRuntimeProblemSchema>;
+
+/** Why a ready runtime runs on the CPU instead of the GPU. */
+export const musicBeatCpuReasonSchema = z.enum(["noGpuPack", "gpuPackMismatch", "cudaInitFailed"]);
+export type MusicBeatCpuReason = z.infer<typeof musicBeatCpuReasonSchema>;
+
+/** The device a ready runtime runs on. */
+export const musicBeatAcceleratorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("cuda") }).strict(),
+  z.object({ kind: z.literal("cpu"), reason: musicBeatCpuReasonSchema }).strict(),
+]);
+export type MusicBeatAccelerator = z.infer<typeof musicBeatAcceleratorSchema>;
 
 export const musicBeatRuntimeAvailabilitySchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("notConfigured") }).strict(),
@@ -133,6 +147,8 @@ export const musicBeatRuntimeStatusSchema = z
   .object({
     runtimeFolder: z.string().min(1).max(1_024).nullable(),
     runtime: musicBeatRuntimeAvailabilitySchema,
+    /** Set when `runtime` is ready. */
+    accelerator: musicBeatAcceleratorSchema.nullable(),
     manifestSha256: sha256HexSchema,
     beatThisVersion: z.string().min(1).max(64),
     checkpointSha256: sha256HexSchema,

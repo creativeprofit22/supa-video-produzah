@@ -135,7 +135,7 @@ fn windows_media_overlay_maps_only_pinned_resources_to_declared_destinations() {
     let resources = overlay["bundle"]["resources"]
         .as_object()
         .expect("media-tool resources must be an exact map");
-    assert_eq!(resources.len(), 7);
+    assert_eq!(resources.len(), 16);
     assert_eq!(
         resources,
         &serde_json::from_value(json!({
@@ -145,7 +145,18 @@ fn windows_media_overlay_maps_only_pinned_resources_to_declared_destinations() {
             "media-toolchain/THIRD_PARTY_NOTICES.md": "media-tools/THIRD_PARTY_NOTICES.md",
             "media-toolchain/SOURCE_OFFER.md": "media-tools/SOURCE_OFFER.md",
             "media-toolchain/licenses/GPL-3.0.txt": "media-tools/licenses/GPL-3.0.txt",
-            "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt"
+            "media-toolchain/licenses/GYAN-FFMPEG-README.txt": "media-tools/licenses/GYAN-FFMPEG-README.txt",
+            // Graphics renderer sidecar and the FFmpeg 9 DLLs it imports (ADR 0002/0003).
+            "graphics-renderer/target/release/supa-graphics-render.exe": "graphics-renderer/supa-graphics-render.exe",
+            "graphics-renderer/target/release/avcodec-63.dll": "graphics-renderer/avcodec-63.dll",
+            "graphics-renderer/target/release/avdevice-63.dll": "graphics-renderer/avdevice-63.dll",
+            "graphics-renderer/target/release/avfilter-12.dll": "graphics-renderer/avfilter-12.dll",
+            "graphics-renderer/target/release/avformat-63.dll": "graphics-renderer/avformat-63.dll",
+            "graphics-renderer/target/release/avutil-61.dll": "graphics-renderer/avutil-61.dll",
+            "graphics-renderer/target/release/swresample-7.dll": "graphics-renderer/swresample-7.dll",
+            "graphics-renderer/target/release/swscale-10.dll": "graphics-renderer/swscale-10.dll",
+            // Music beat detector sidecar (ADR 0004); ONNX Runtime/CUDA are never bundled.
+            "beat-detector/target/release/supa-beat-detect.exe": "beat-detector/supa-beat-detect.exe"
         }))
         .expect("expected resource map must deserialize")
     );

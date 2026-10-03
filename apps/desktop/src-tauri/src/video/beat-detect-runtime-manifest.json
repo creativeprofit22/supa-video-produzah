@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 2,
+  "detector": {
+    "kind": "beat_this",
+    "version": "rs-1.1.0",
+    "crate": "beat-this",
+    "crateVersion": "1.1.0",
+    "sourceRepository": "https://github.com/danigb/beat-this-rs",
+    "sourceRevision": "1ae768e78f1ad83b0ed3886241dc29ffde853c40",
+    "referenceRepository": "https://github.com/CPJKU/beat_this",
+    "referenceRevision": "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
+    "referenceCheckpoint": {
+      "name": "final0",
+      "file": "final0.ckpt",
+      "byteLength": 81058141,
+      "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
+    },
+    "license": {
+      "spdx": "MIT",
+      "url": "https://github.com/CPJKU/beat_this/blob/b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c/LICENSE",
+      "attribution": "Beat This! by Francesco Foscarin, Jan Schl\u00fcter and Gerhard Widmer, Institute of Computational Perception, JKU Linz; Rust port and ONNX export by danigb (beat-this-rs, MIT)"
+    }
+  },
+  "models": {
+    "folder": "models",
+    "files": [
+      {
+        "role": "mel",
+        "file": "mel_spectrogram.onnx",
+        "byteLength": 270742,
+        "sha256": "fdd59e65c515331308e4c8841edf99972deca646bdf6197744c2a5b7755e3de9",
+        "url": "https://raw.githubusercontent.com/danigb/beat-this-rs/1ae768e78f1ad83b0ed3886241dc29ffde853c40/models/mel_spectrogram.onnx",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/danigb/beat-this-rs/blob/1ae768e78f1ad83b0ed3886241dc29ffde853c40/LICENSE"
+        }
+      },
+      {
+        "role": "beat",
+        "file": "beat_this.onnx",
+        "byteLength": 83162650,
+        "sha256": "5f810debe53459b559127fb55bbad40035bb47cc567b20e501670f968c770f02",
+        "url": "https://github.com/danigb/beat-this-rs/releases/download/model-large/beat_this.onnx",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/CPJKU/beat_this/blob/b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c/LICENSE"
+        }
+      }
+    ]
+  },
+  "gpuPack": {
+    "folder": "cuda",
+    "archives": [
+      {
+        "id": "onnxruntime",
+        "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-win-x64-gpu_cuda12-1.28.0.zip",
+        "byteLength": 455344532,
+        "sha256": "6b7bf16d6d30180db7f386fb179aa4e4f1313f0924531a2879b7b090b56518c1",
+        "license": {
+          "spdx": "MIT",
+          "url": "https://github.com/microsoft/onnxruntime/blob/v1.28.0/LICENSE"
+        }
+      },
+      {
+        "id": "cudart",
+        "url": "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.8.90-archive.zip",
+        "byteLength": 3037735,
+        "sha256": "4a39058fd8519444a81cfc7ae055d136f48d1a31ffa41ae255b35b2edd61e13b",
+        "license": {
+          "spdx": "LicenseRef-NVIDIA-CUDA-EULA",
+          "url": "https://docs.nvidia.com/cuda/eula/index.html"
+        }
+      },
+      {
+        "id": "cublas",
+        "url": "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.8.4.1-archive.zip",
+        "byteLength": 563660944,
+        "sha256": "57a470112cec7e112c95253dde8b3c7184d795dbd92b0bde77a4cb7f8c94c8aa",
+        "license": {
+          "spdx": "LicenseRef-NVIDIA-CUDA-EULA",
+          "url": "https://docs.nvidia.com/cuda/eula/index.html"
+        }
+      },
+      {
+        "id": "cudnn",
+        "url": "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.10.2.21_cuda12-archive.zip",
+        "byteLength": 683336095,
+        "sha256": "c1a4567d822ebda7373fa1f19255dff4942302de741f830160b6c7d1fb31af23",
+        "license": {
+          "spdx": "LicenseRef-NVIDIA-cuDNN-SLA",
+          "url": "https://docs.nvidia.com/deeplearning/cudnn/backend/latest/reference/eula.html"
+        }
+      }
+    ],
+    "files": [
+      {
+        "file": "onnxruntime.dll",
+        "archive": "onnxruntime",
+        "archivePath": "onnxruntime-win-x64-gpu_cuda12-1.28.0/lib/onnxruntime.dll",
+        "byteLength": 16277816,
+        "sha256": "26f031bfda1d4c5e5e257de72c45dad2f6f19c4f29c30e315e1808faaadbfe0e"
+      },
+      {
+        "file": "onnxruntime_providers_shared.dll",
+        "archive": "onnxruntime",
+        "archivePath": "onnxruntime-win-x64-gpu_cuda12-1.28.0/lib/onnxruntime_providers_shared.dll",
+        "byteLength": 21816,
+        "sha256": "e3b1c6abb05ad0c4cb63bbaf5b2284c43d6aa31cf0f5fa6398d31c13fb423e65"
+      },
+      {
+        "file": "onnxruntime_providers_cuda.dll",
+        "archive": "onnxruntime",
+        "archivePath": "onnxruntime-win-x64-gpu_cuda12-1.28.0/lib/onnxruntime_providers_cuda.dll",
+        "byteLength": 496741176,
+        "sha256": "b8012b65a44a721113bee42aa3826b90e2957d24c2431254e6090b73450e027f"
+      },
+      {
+        "file": "cudart64_12.dll",
+        "archive": "cudart",
+        "archivePath": "cuda_cudart-windows-x86_64-12.8.90-archive/bin/cudart64_12.dll",
+        "byteLength": 573952,
+        "sha256": "c2c9a9c22a9bcba90e261825968836787b331038047a26770cffb7a583c28344"
+      },
+      {
+        "file": "cublasLt64_12.dll",
+        "archive": "cublas",
+        "archivePath": "libcublas-windows-x86_64-12.8.4.1-archive/bin/cublasLt64_12.dll",
+        "byteLength": 674667520,
+        "sha256": "b199d1ff892a81b7fd3d57ba1781549609b41500b36008fef326038393ad46c7"
+      },
+      {
+        "file": "cublas64_12.dll",
+        "archive": "cublas",
+        "archivePath": "libcublas-windows-x86_64-12.8.4.1-archive/bin/cublas64_12.dll",
+        "byteLength": 113716224,
+        "sha256": "9513540e4ec4c51ee9e7304138c2cc255c29a8c181f9e80c38efa25738becd99"
+      },
+      {
+        "file": "cudnn64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn64_9.dll",
+        "byteLength": 266288,
+        "sha256": "9edbcdff73b0af070eb160b2ce66e59feca04aa017351d8eedcc5e8e149967d2"
+      },
+      {
+        "file": "cudnn_graph64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_graph64_9.dll",
+        "byteLength": 2420256,
+        "sha256": "a933efeb280a3252297f92d79f7e83003bcbc6f665872d11645d1dbbab9cb598"
+      },
+      {
+        "file": "cudnn_ops64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_ops64_9.dll",
+        "byteLength": 126508576,
+        "sha256": "851d8f4191a24b322b0be738d191a3159455f0da4db47a19f5cc7ad6e55edf61"
+      },
+      {
+        "file": "cudnn_heuristic64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_heuristic64_9.dll",
+        "byteLength": 56823328,
+        "sha256": "458175f12771a35de0ea39c04250d727c2424d42a7ffe0bc987ae81204748fba"
+      },
+      {
+        "file": "cudnn_adv64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_adv64_9.dll",
+        "byteLength": 282445872,
+        "sha256": "f202e8ff36209ac4292fe2ef79d4539487495b3b948f0c978cc63298f43a1850"
+      },
+      {
+        "file": "cudnn_cnn64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_cnn64_9.dll",
+        "byteLength": 4618272,
+        "sha256": "3f03dec3b81f137f049e1d1c06ff469248eef54ff9424b3b9045fc0f69559d1a"
+      },
+      {
+        "file": "cudnn_engines_precompiled64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_engines_precompiled64_9.dll",
+        "byteLength": 513926688,
+        "sha256": "ebc2c1f74366b029a4350f7f9a3b109ccd5aa9b4ae02527950793dd29f7b74fb"
+      },
+      {
+        "file": "cudnn_engines_runtime_compiled64_9.dll",
+        "archive": "cudnn",
+        "archivePath": "cudnn-windows-x86_64-9.10.2.21_cuda12-archive/bin/cudnn_engines_runtime_compiled64_9.dll",
+        "byteLength": 20201008,
+        "sha256": "93ab6351ca0f2b6ca842f83d284e56c427525778c14657229801a13cf8121bd8"
+      }
+    ]
+  }
+}

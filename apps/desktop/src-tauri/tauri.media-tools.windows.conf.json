@@ -16,7 +16,8 @@
       "graphics-renderer/target/release/avformat-63.dll": "graphics-renderer/avformat-63.dll",
       "graphics-renderer/target/release/avutil-61.dll": "graphics-renderer/avutil-61.dll",
       "graphics-renderer/target/release/swresample-7.dll": "graphics-renderer/swresample-7.dll",
-      "graphics-renderer/target/release/swscale-10.dll": "graphics-renderer/swscale-10.dll"
+      "graphics-renderer/target/release/swscale-10.dll": "graphics-renderer/swscale-10.dll",
+      "beat-detector/target/release/supa-beat-detect.exe": "beat-detector/supa-beat-detect.exe"
     }
   }
 }

@@ -77,8 +77,9 @@ const musicBeatAnalysis: MusicBeatAnalysisV1 = {
 const runtimeStatus = (runtime: MusicBeatRuntimeStatus["runtime"]): MusicBeatRuntimeStatus => ({
   runtimeFolder: runtime.state === "notConfigured" ? null : "D:\\supa-music-beats",
   runtime,
+  accelerator: runtime.state === "ready" ? { kind: "cuda" } : null,
   manifestSha256: "a".repeat(64),
-  beatThisVersion: "1.1.0",
+  beatThisVersion: "rs-1.1.0",
   checkpointSha256: "c".repeat(64),
 });
 
@@ -131,6 +132,19 @@ const blockedJob: MediaJobRecord = {
     message: "Choose the source again to continue.",
     retryable: false,
     action: "reauthorize_source",
+  },
+};
+
+/** A detection whose per-run runtime recheck found the models changed. */
+const runtimeChangedJob: MediaJobRecord = {
+  ...blockedJob,
+  stage: "detect",
+  error: {
+    code: "music_beat_runtime_unavailable",
+    category: "toolchain_unavailable",
+    message: "The music beat runtime is unavailable or changed.",
+    retryable: false,
+    action: "verify_toolchain",
   },
 };
 
@@ -400,14 +414,82 @@ describe("useVideoProject music beat runtime", () => {
     expect(result.current.musicBeatRuntimeError).toMatch(/could not be checked/);
 
     musicBeats.getMusicBeatRuntimeStatus.mockResolvedValueOnce(
-      runtimeStatus({ state: "unavailable", problem: { reason: "checkpointMismatch" } }),
+      runtimeStatus({ state: "unavailable", problem: { reason: "modelMismatch" } }),
     );
     await act(() => result.current.refreshMusicBeatRuntimeStatus());
     expect(result.current.musicBeatRuntimeError).toBeNull();
     expect(result.current.musicBeatRuntimeStatus?.runtime).toEqual({
       state: "unavailable",
-      problem: { reason: "checkpointMismatch" },
+      problem: { reason: "modelMismatch" },
     });
+  });
+
+  it("refreshes the status after a detection starts", async () => {
+    const { result, musicBeats } = await fixture();
+    await waitFor(() => expect(result.current.musicBeatRuntimeStatus).not.toBeNull());
+    musicBeats.getMusicBeatRuntimeStatus.mockReset();
+    musicBeats.getMusicBeatRuntimeStatus
+      .mockResolvedValueOnce(runtimeStatus({ state: "ready" }))
+      .mockResolvedValueOnce(
+        runtimeStatus({ state: "unavailable", problem: { reason: "modelMismatch" } }),
+      );
+    await act(() => result.current.refreshMusicBeatRuntimeStatus());
+    expect(result.current.musicBeatRuntimeStatus).toEqual(runtimeStatus({ state: "ready" }));
+    expect(result.current.musicBeatRuntimeStatus?.accelerator).toEqual({ kind: "cuda" });
+
+    await detect(result);
+
+    expect(musicBeats.getMusicBeatRuntimeStatus).toHaveBeenCalledTimes(2);
+    expect(result.current.musicBeatRuntimeStatus).toEqual(
+      runtimeStatus({ state: "unavailable", problem: { reason: "modelMismatch" } }),
+    );
+  });
+
+  it("refreshes the status when a polled detection finds the runtime changed", async () => {
+    let started = false;
+    const { result, musicBeats } = await fixture("complete", null, async () =>
+      jobList(started ? [runtimeChangedJob] : []),
+    );
+    await waitFor(() => expect(result.current.musicBeatRuntimeStatus).not.toBeNull());
+    musicBeats.startMusicBeatDetection.mockImplementationOnce(async () => {
+      started = true;
+      return { jobId: ids.job, state: "queued" };
+    });
+    musicBeats.getMusicBeatRuntimeStatus
+      .mockResolvedValueOnce(runtimeStatus({ state: "ready" }))
+      .mockResolvedValueOnce(
+        runtimeStatus({ state: "unavailable", problem: { reason: "modelMismatch" } }),
+      );
+
+    await detect(result);
+
+    // Mount, detection start, then the blocked run.
+    expect(musicBeats.getMusicBeatRuntimeStatus).toHaveBeenCalledTimes(3);
+    expect(result.current.musicBeatDetection.get(ids.musicAsset)).toEqual({
+      phase: "failed",
+      message: "The music beat runtime is unavailable or changed.",
+    });
+    expect(result.current.musicBeatRuntimeStatus?.runtime).toEqual({
+      state: "unavailable",
+      problem: { reason: "modelMismatch" },
+    });
+  });
+
+  it("keeps the status when a detection is blocked for another reason", async () => {
+    let started = false;
+    const { result, musicBeats } = await fixture("complete", null, async () =>
+      jobList(started ? [blockedJob] : []),
+    );
+    await waitFor(() => expect(result.current.musicBeatRuntimeStatus).not.toBeNull());
+    musicBeats.startMusicBeatDetection.mockImplementationOnce(async () => {
+      started = true;
+      return { jobId: ids.job, state: "queued" };
+    });
+
+    await detect(result);
+
+    // Mount and detection start only.
+    expect(musicBeats.getMusicBeatRuntimeStatus).toHaveBeenCalledTimes(2);
   });
 });
 
